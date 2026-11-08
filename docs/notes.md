@@ -91,6 +91,14 @@ thing a visual check catches.
     Fountain title page and project bundle.
 13. **Rebuild check.** Passed: build, screenshot 2880×1860, populated start
     screen. Pictures stored under `checks/round-0/` by the checker.
+14. **Closed the persistence loop.** The File menu now has Open, Save and Save
+    As with a typed-path modal and `Ctrl/Cmd+O` / `Ctrl/Cmd+Shift+S`. A project
+    saved from the app can be reopened, which is the minimum a writing tool owes
+    its writer.
+15. **Final visual pass.** Re-checked the writing desk and Compile screen after
+    the persistence work; the compile path field gained a proper input frame so
+    it reads as editable, and the compile header action now says “Open outline”
+    rather than pretending to be a preview.
 
 ## Screen review notes
 

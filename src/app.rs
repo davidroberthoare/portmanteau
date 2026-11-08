@@ -101,6 +101,12 @@ pub struct Toast {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PathDialog {
+    Open,
+    SaveAs,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
     Ok,
     Error,
@@ -133,6 +139,8 @@ pub struct ScriptoriumApp {
     pub cmd_payload: String,
     pub cmd_output: String,
     pub cmd_selected: usize,
+    pub path_dialog: Option<PathDialog>,
+    pub path_draft: String,
     pub outline_filter: usize,
     pub screenshot: Option<PathBuf>,
     pub frame_no: u32,
@@ -194,6 +202,8 @@ impl ScriptoriumApp {
             cmd_payload: "{}".into(),
             cmd_output: String::new(),
             cmd_selected: 0,
+            path_dialog: None,
+            path_draft: String::new(),
             outline_filter: 0,
             screenshot,
             frame_no: 0,
@@ -407,6 +417,29 @@ impl ScriptoriumApp {
             }
             if ui.button("Save project").clicked() {
                 self.save_project();
+                ui.close_menu();
+            }
+            if ui.button("Save project as…").clicked() {
+                self.path_dialog = Some(PathDialog::SaveAs);
+                self.path_draft = self
+                    .ws
+                    .path
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| {
+                        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+                        format!("{home}/Scriptorium/{}.scriptorium.json", slug(&self.ws.project.title))
+                    });
+                ui.close_menu();
+            }
+            if ui.button("Open project…").clicked() {
+                self.path_dialog = Some(PathDialog::Open);
+                self.path_draft = self
+                    .ws
+                    .path
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default();
                 ui.close_menu();
             }
             if ui.button("Save checkpoint").clicked() {
@@ -782,6 +815,119 @@ impl ScriptoriumApp {
         }
 
         self.idea_modal(ctx);
+        self.path_modal(ctx);
+    }
+
+    fn path_modal(&mut self, ctx: &egui::Context) {
+        let Some(mode) = self.path_dialog else { return };
+        let mut open = true;
+        let mut commit = false;
+        let (title, verb, hint) = match mode {
+            PathDialog::Open => (
+                "Open project",
+                "Open",
+                "Path to a .scriptorium.json project",
+            ),
+            PathDialog::SaveAs => (
+                "Save project as",
+                "Save",
+                "Where the project file should live",
+            ),
+        };
+        egui::Window::new(title)
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .min_width(520.0)
+            .show(ctx, |ui| {
+                ui.add_space(4.0);
+                section_label(ui, "Project file");
+                ui.add_space(3.0);
+                let resp = ui.add(
+                    TextEdit::singleline(&mut self.path_draft)
+                        .hint_text(hint)
+                        .font(mono(10.5))
+                        .desired_width(f32::INFINITY),
+                );
+                if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                    commit = true;
+                }
+                ui.add_space(5.0);
+                ui.label(
+                    RichText::new(match mode {
+                        PathDialog::Open => "Unsaved changes in the current project are left untouched.",
+                        PathDialog::SaveAs => "A new copy is written; the open project switches to it.",
+                    })
+                    .font(sans(9.5))
+                    .color(FAINT),
+                );
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    let btn = egui::Button::new(
+                        RichText::new(verb)
+                            .font(sans(11.5))
+                            .color(Color32::from_rgb(29, 24, 17)),
+                    )
+                    .fill(ACCENT)
+                    .corner_radius(CornerRadius::same(6))
+                    .min_size(Vec2::new(100.0, 30.0));
+                    if ui
+                        .add_enabled(!self.path_draft.trim().is_empty(), btn)
+                        .clicked()
+                    {
+                        commit = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.path_dialog = None;
+                    }
+                });
+            });
+
+        if commit {
+            match mode {
+                PathDialog::Open => {
+                    let path = PathBuf::from(self.path_draft.trim());
+                    match Workspace::open(&path) {
+                        Ok(ws) => {
+                            self.ws = ws;
+                            self.selected = self
+                                .ws
+                                .project
+                                .documents
+                                .iter()
+                                .find(|d| d.kind == DocKind::Chapter)
+                                .map(|d| d.id.clone());
+                            self.collapsed.clear();
+                            self.view = View::Write;
+                            self.path_dialog = None;
+                            self.toast("Project opened", path.display().to_string(), ToastKind::Ok);
+                        }
+                        Err(e) => {
+                            self.toast("Could not open project", e, ToastKind::Error);
+                        }
+                    }
+                }
+                PathDialog::SaveAs => {
+                    let mut path = PathBuf::from(self.path_draft.trim());
+                    if path.extension().is_none() {
+                        path.set_extension("scriptorium.json");
+                    }
+                    match self.ws.save(Some(path.clone())) {
+                        Ok(msg) => {
+                            self.path_dialog = None;
+                            self.toast("Project saved", msg, ToastKind::Ok);
+                        }
+                        Err(e) => {
+                            self.toast("Could not save project", e, ToastKind::Error);
+                        }
+                    }
+                }
+            }
+        }
+        if !open && self.path_dialog.is_some() {
+            self.path_dialog = None;
+        }
     }
 
     fn idea_modal(&mut self, ctx: &egui::Context) {
@@ -843,15 +989,38 @@ impl ScriptoriumApp {
     }
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
-        let (save, compile, focus) = ctx.input(|i| {
+        let (save, save_as, open, compile, focus) = ctx.input(|i| {
             (
                 i.modifiers.command && i.key_pressed(Key::S),
+                i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::S),
+                i.modifiers.command && i.key_pressed(Key::O),
                 i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::E),
                 i.key_pressed(Key::F11),
             )
         });
-        if save {
+        if save && !save_as {
             self.save_project();
+        }
+        if save_as {
+            self.path_dialog = Some(PathDialog::SaveAs);
+            self.path_draft = self
+                .ws
+                .path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+                    format!("{home}/Scriptorium/{}.scriptorium.json", slug(&self.ws.project.title))
+                });
+        }
+        if open {
+            self.path_dialog = Some(PathDialog::Open);
+            self.path_draft = self
+                .ws
+                .path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
         }
         if compile {
             self.view = View::Compile;
@@ -898,6 +1067,19 @@ impl ScriptoriumApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
+}
+
+fn slug(title: &str) -> String {
+    let s: String = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect();
+    let s = s
+        .split('-')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if s.is_empty() { "untitled".into() } else { s }
 }
 
 impl eframe::App for ScriptoriumApp {

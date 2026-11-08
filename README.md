@@ -155,7 +155,8 @@ cargo run -p msc-cli -- document.create '{"title":"New scene","kind":"Scene","me
 ```
 
 Project files are JSON with the extension `.scriptorium.json`. Saving without a
-path uses `~/Scriptorium/the-salt-road.scriptorium.json`.
+path uses `~/Scriptorium/the-salt-road.scriptorium.json`. The File menu has
+Open, Save and Save As, with `Ctrl/Cmd+O` and `Ctrl/Cmd+Shift+S` shortcuts.
 
 ## Collaboration, deliberately staged
 

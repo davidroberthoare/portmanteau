@@ -213,7 +213,11 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
         });
     });
 
+    let before = app.ws.project.export.clone();
     app.ws.project.export = settings.clone();
+    if before != settings {
+        app.ws.dirty = true;
+    }
     if compile {
         run_export(app, &settings);
     }
@@ -296,12 +300,20 @@ fn output_panel(app: &ScriptoriumApp, ui: &mut egui::Ui, settings: &mut msc_core
             section_label(ui, "Where it goes");
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.add(
-                    TextEdit::singleline(&mut settings.output_path)
-                        .hint_text("Folder for the export (blank = exports/)")
-                        .font(mono(10.0))
-                        .desired_width((ui.available_width() - 170.0).max(160.0)),
-                );
+                Frame::new()
+                    .fill(BG)
+                    .stroke(Stroke::new(1.0, BORDER_SOFT))
+                    .corner_radius(CornerRadius::same(5))
+                    .inner_margin(Margin::symmetric(8, 3))
+                    .show(ui, |ui| {
+                        ui.add(
+                            TextEdit::singleline(&mut settings.output_path)
+                                .hint_text("Folder for the export (blank = exports/)")
+                                .font(mono(10.0))
+                                .frame(false)
+                                .desired_width((ui.available_width() - 170.0).max(160.0)),
+                        );
+                    });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let name = msc_export::default_filename(&app.ws.project, settings.kind);
                     ui.label(
