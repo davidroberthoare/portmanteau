@@ -64,22 +64,6 @@ pub fn demo() -> Project {
         doc.text = "The tide went out that morning and did not come back.\n\nMara Venn stood at the end of the harbour wall with her father's compass in her fist. The town had not changed. That was the first lie.".into();
         doc.snapshot("Second pass · the boy", "Cut the ferry office; brought the boy in earlier.");
         doc.text = chapter_one_text.into();
-        doc.comments = vec![
-            Comment {
-                id: new_id("note"),
-                author: "Ada".into(),
-                body: "Does the boy need a name here? I like that he doesn't have one yet — but a reader may stumble.".into(),
-                created: now_stamp(),
-                resolved: false,
-            },
-            Comment {
-                id: new_id("note"),
-                author: "Editor".into(),
-                body: "The line about the font is doing a lot of work. Keep it, but make sure the planning application comes back in chapter three.".into(),
-                created: now_stamp(),
-                resolved: true,
-            },
-        ];
     }
 
     let chapter_two = p.add_document(

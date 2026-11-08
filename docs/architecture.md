@@ -32,9 +32,8 @@ when moving out. This keeps one document model rather than parallel prose and
 screenplay types.
 
 Hierarchy is a parent id plus an order integer, not a nested tree. That makes
-serialisation flat, filtering cheap, and future sync simpler (each document is
-an addressable record). `ordered_documents` and `children` reconstruct the tree
-for display.
+serialisation flat, filtering cheap, and each document an addressable record.
+`ordered_documents` and `children` reconstruct the tree for display.
 
 Versions are stored twice, at different scopes:
 
@@ -65,7 +64,7 @@ can type a folder in the Compile screen.
 `Workspace` owns the `Project`, the open path, a dirty flag and a short log.
 `execute(command, payload)` is a single match with one response shape. Commands
 are deliberately coarse and intention-revealing (`document.snapshot`,
-`export.run`, `comment.resolve`) rather than CRUD-only.
+`export.run`, `project.checkpoint`) rather than CRUD-only.
 
 `command_catalogue()` is the shared source of truth for:
 
@@ -147,8 +146,8 @@ leaves the app can always be traced back to the project state that produced it.
   entry and, if agents should see it, an MCP tool mapping.
 - **New workspace:** add a `View` variant, an icon, a module in `ui/views/`, and
   a dispatch arm. It can call any command.
-- **Collaboration:** introduce a document-level change log in `msc-core`, a
-  sync transport beside `msc-api`, and presence in the UI. The existing flat
-  document records and comment model are designed to survive that move.
+- **Local commenting:** if it is revisited, keep it file-based and versioned:
+  store annotations in the project file or a sidecar file the writer owns, with
+  no account, server or presence layer.
 - **Reordering:** add `document.move` to the command bus (parent + target
   order), then wire drag-and-drop in the binder to it.

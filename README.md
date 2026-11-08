@@ -91,7 +91,7 @@ app/
     ui/
       binder.rs         binder tree and session target
       editor.rs         prose and screenplay surfaces
-      inspector.rs      metadata, notes, versions, comments
+      inspector.rs      metadata, notes and versions
       views/            corkboard, outline, research, develop,
                         characters, history, compile, command desk
   crates/
@@ -134,7 +134,6 @@ A command always returns `{ ok, command, message, data }`.
 | `document.list` / `document.get` | Read the binder or one document |
 | `document.create` / `document.update` / `document.delete` | Write the binder |
 | `document.snapshot` / `snapshot.restore` | Document versions |
-| `comment.add` / `comment.resolve` | Review comments |
 | `character.add` / `character.update` | Character sheets |
 | `research.add` | Research note plus its binder entry |
 | `idea.add` / `idea.update` / `idea.delete` | Idea board |
@@ -158,13 +157,13 @@ Project files are JSON with the extension `.scriptorium.json`. Saving without a
 path uses `~/Scriptorium/the-salt-road.scriptorium.json`. The File menu has
 Open, Save and Save As, with `Ctrl/Cmd+O` and `Ctrl/Cmd+Shift+S` shortcuts.
 
-## Collaboration, deliberately staged
+## Local-only, deliberately
 
-This first version is solo-first, as requested. It already keeps review
-comments with authors, resolve state, timestamps and restore points, and the
-project bundle carries them. Real-time shared editing needs a sync protocol,
-presence and conflict handling; that belongs in a later milestone rather than a
-half-working toggle.
+Scriptorium has no accounts, network code, shared review server or sync layer.
+Everything lives in a plain `.scriptorium.json` project file on the writer's
+own disk, and the project bundle is a local archive rather than a collaboration
+format. Any future commenting should be built on versioned files in the
+writer's own repository, not on a hosted service.
 
 ## Known limits and next steps
 
@@ -175,7 +174,8 @@ half-working toggle.
   first, then the binder.
 - File dialogs are not bundled; paths are typed. A native picker can be added
   without changing the export engine.
-- Real-time collaboration, a shared review server, and revision comparison
-  (not just restore) are the next large milestones.
+- Collaboration is out of scope for this version: no real-time co-writing, no
+  shared review server, and no comment system. Revision comparison (not just
+  restore) is the next versioning milestone.
 - Windows/macOS packaging needs a release pipeline. The code is platform-neutral
   Rust/egui.

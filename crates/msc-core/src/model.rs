@@ -169,7 +169,6 @@ pub struct Document {
     pub created: String,
     pub updated: String,
     pub snapshots: Vec<Snapshot>,
-    pub comments: Vec<Comment>,
     pub pinned: bool,
 }
 
@@ -200,7 +199,6 @@ impl Document {
             created: stamp.clone(),
             updated: stamp,
             snapshots: Vec::new(),
-            comments: Vec::new(),
             pinned: false,
         }
     }
@@ -323,15 +321,6 @@ pub struct Snapshot {
     pub text: String,
     pub blocks: Vec<Block>,
     pub words: u32,
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct Comment {
-    pub id: String,
-    pub author: String,
-    pub body: String,
-    pub created: String,
-    pub resolved: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -609,7 +598,6 @@ pub struct Project {
     pub daily_target: u32,
     pub export: ExportSettings,
     pub presets: Vec<ExportPreset>,
-    pub collaborator: String,
 }
 
 impl Project {
@@ -636,7 +624,6 @@ impl Project {
             daily_target: 1200,
             export: ExportSettings::default(),
             presets: Vec::new(),
-            collaborator: String::new(),
         };
         project.ensure_folders();
         project
@@ -851,25 +838,6 @@ impl Project {
             }
         }
         false
-    }
-
-    pub fn add_comment(&mut self, doc_id: &str, author: &str, body: &str) -> bool {
-        if let Some(doc) = self.document_mut(doc_id) {
-            doc.comments.insert(
-                0,
-                Comment {
-                    id: new_id("note"),
-                    author: author.to_string(),
-                    body: body.to_string(),
-                    created: now_stamp(),
-                    resolved: false,
-                },
-            );
-            doc.touch();
-            true
-        } else {
-            false
-        }
     }
 
     pub fn search(&self, query: &str) -> Vec<(&Document, String)> {

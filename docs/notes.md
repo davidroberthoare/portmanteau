@@ -6,9 +6,9 @@ deliberately concrete: what was decided, why, and what was seen on screen.
 ## Starting point
 
 The request asks for the core of Scrivener, Final Draft and WriterDuet, solo
-first, with collaboration coming later. The important words are *novel*,
-*theatre*, *film*, *TV*, *idea development*, *research*, *versioning*, *many
-export formats* and *front/back matter*.
+first, with collaboration explicitly out of scope for now. The important words
+are *novel*, *theatre*, *film*, *TV*, *idea development*, *research*,
+*versioning*, *many export formats* and *front/back matter*.
 
 The stack was fixed by the person and by the house pattern: Rust, egui/eframe,
 a command API and an MCP layer under a replaceable UI.
@@ -64,7 +64,7 @@ thing a visual check catches.
    checkboxes and target progress. First screenshot exposed the word count and
    percentage overprinting; removed the percentage and kept the bar.
 5. **Built Research.** Sourcebook list plus note editor; title/kind/source/body
-   sync into the linked research document. Added a “new note” path through the
+   flow into the linked research document. Added a “new note” path through the
    command bus.
 6. **Built Develop.** Idea cards in a responsive grid, the spine strip, and an
    editable three-act beat sheet with add/tick. Beats are direct model edits;
@@ -99,6 +99,14 @@ thing a visual check catches.
     the persistence work; the compile path field gained a proper input frame so
     it reads as editable, and the compile header action now says “Open outline”
     rather than pretending to be a preview.
+16. **Removed the collaboration scaffolding.** The person asked to skip
+    collaboration entirely and keep the app local-only. Deleted the comment
+    model, inspector tab, `comment.add` / `comment.resolve` commands and MCP
+    tool, the unused `collaborator` field, the sample review comments, and the
+    “collaboration-ready” copy. The project bundle is now described as a local
+    archive, and the docs say plainly that there is no sync, account or server
+    layer. Existing project files still load because serde ignores the removed
+    fields.
 
 ## Screen review notes
 
@@ -115,9 +123,10 @@ thing a visual check catches.
 
 ## What is intentionally not here
 
-- Real-time co-writing, presence, or a shared review server. The request says
-  collaboration will be important *eventually*, so comments, authors and
-  bundles are the foundation and the network layer is a later milestone.
+- Collaboration in any form: no real-time co-writing, presence, accounts,
+  shared review server, comments or network transport. The app is local-only;
+  a future version could add file-based comments through version control, but
+  nothing here depends on a server.
 - Drag-and-drop binder reordering. The command (`document.move`) should exist
   before the gesture, so agents and the UI share behaviour.
 - Tracked changes and a visual diff between two snapshots. Restore exists;
@@ -129,11 +138,9 @@ thing a visual check catches.
 
 ## Open questions for the next conversation
 
-1. Which collaboration shape comes first: shared review comments, or live
-   co-editing? They need very different infrastructure.
-2. Should compile use the built-in PDF typesetter longer, or delegate to
+1. Should compile use the built-in PDF typesetter longer, or delegate to
    LaTeX/HTML-to-PDF for professional book interior layout?
-3. Which import formats matter most: Word manuscripts, Final Draft files,
+2. Which import formats matter most: Word manuscripts, Final Draft files,
    Fountain, or Scrivener projects?
-4. Does the person want the version history to stay snapshot-based, or move to
+3. Does the person want the version history to stay snapshot-based, or move to
    an automatic change log with diffs and branching?

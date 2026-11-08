@@ -2,7 +2,7 @@
 //!
 //! One manuscript model, many finish lines: print-ready PDF, reflowable EPUB,
 //! editor-friendly DOCX, Final Draft FDX, Fountain, HTML, Markdown, RTF and
-//! plain text — plus a project bundle for archiving and collaboration.
+//! plain text — plus a project bundle for local archiving and backup.
 
 use std::fs;
 use std::io::Write;

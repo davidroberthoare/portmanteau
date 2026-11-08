@@ -90,7 +90,6 @@ pub enum InspectorTab {
     Document,
     Notes,
     History,
-    Comments,
 }
 
 pub struct Toast {
@@ -126,7 +125,6 @@ pub struct ScriptoriumApp {
     pub focus_mode: bool,
     pub snapshot_name: String,
     pub checkpoint_label: String,
-    pub comment_draft: String,
     pub selected_research: Option<String>,
     pub selected_idea: Option<String>,
     pub selected_character: Option<String>,
@@ -189,7 +187,6 @@ impl ScriptoriumApp {
             focus_mode: false,
             snapshot_name: String::new(),
             checkpoint_label: String::new(),
-            comment_draft: String::new(),
             selected_research,
             selected_idea: None,
             selected_character,
@@ -463,10 +460,6 @@ impl ScriptoriumApp {
             }
             if ui.button("Take snapshot").clicked() {
                 self.take_snapshot();
-                ui.close_menu();
-            }
-            if ui.button("Add comment").clicked() {
-                self.inspector_tab = InspectorTab::Comments;
                 ui.close_menu();
             }
         });

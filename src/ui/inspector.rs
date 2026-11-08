@@ -1,7 +1,7 @@
-//! The inspector: metadata, notes, versions and review comments for the open document.
+//! The inspector: metadata, notes and versions for the open document.
 
 use eframe::egui::{
-    self, Align, Color32, ComboBox, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea,
+    self, Align, ComboBox, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea,
     Stroke, TextEdit, Vec2,
 };
 use msc_core::Medium;
@@ -15,7 +15,6 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
             (InspectorTab::Document, "Document"),
             (InspectorTab::Notes, "Notes"),
             (InspectorTab::History, "Versions"),
-            (InspectorTab::Comments, "Comments"),
         ] {
             let active = app.inspector_tab == tab;
             let resp = ui.add(
@@ -63,7 +62,6 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
                 InspectorTab::Document => document_tab(app, ui, &doc_id),
                 InspectorTab::Notes => notes_tab(app, ui, &doc_id),
                 InspectorTab::History => history_tab(app, ui, &doc_id),
-                InspectorTab::Comments => comments_tab(app, ui, &doc_id),
             }
         });
 }
@@ -393,109 +391,6 @@ fn history_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
             }
         }
     }
-}
-
-fn comments_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
-    let Some(doc) = app.ws.project.document(doc_id) else { return };
-    let unresolved = doc.comments.iter().filter(|c| !c.resolved).count();
-    section_label(ui, "Review comments");
-    ui.add_space(2.0);
-    ui.label(
-        RichText::new(format!("{unresolved} open · {} total", doc.comments.len()))
-            .font(sans(9.5))
-            .color(FAINT),
-    );
-    ui.add_space(8.0);
-    ui.add(
-        TextEdit::multiline(&mut app.comment_draft)
-            .hint_text("Leave a note for yourself or an editor…")
-            .desired_rows(3)
-            .desired_width(f32::INFINITY)
-            .font(sans(11.0)),
-    );
-    ui.add_space(4.0);
-    let btn = egui::Button::new(RichText::new("Add comment").font(sans(10.5)).color(Color32::from_rgb(28, 24, 17)))
-        .fill(ACCENT)
-        .corner_radius(CornerRadius::same(5))
-        .min_size(Vec2::new(ui.available_width(), 27.0));
-    let add = ui.add_enabled(!app.comment_draft.trim().is_empty(), btn).clicked();
-    if add {
-        let body = app.comment_draft.trim().to_string();
-        app.ws.project.add_comment(doc_id, "You", &body);
-        app.comment_draft.clear();
-        app.ws.dirty = true;
-        app.toast("Comment added", "Stored with this document and its bundle", ToastKind::Ok);
-    }
-
-    ui.add_space(10.0);
-    let comments = app
-        .ws
-        .project
-        .document(doc_id)
-        .map(|d| d.comments.clone())
-        .unwrap_or_default();
-    let mut toggle: Option<String> = None;
-    for c in comments {
-        Frame::new()
-            .fill(PANEL_2)
-            .corner_radius(CornerRadius::same(7))
-            .inner_margin(Margin::same(8))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let (av, _) = ui.allocate_exact_size(Vec2::new(20.0, 20.0), egui::Sense::hover());
-                    ui.painter().circle_filled(
-                        av.center(),
-                        10.0,
-                        if c.author == "Editor" { SAGE_SOFT } else { ACCENT_SOFT },
-                    );
-                    ui.painter().text(
-                        av.center(),
-                        egui::Align2::CENTER_CENTER,
-                        c.author.chars().next().unwrap_or('?').to_string(),
-                        sans(9.0),
-                        if c.author == "Editor" { SAGE } else { ACCENT },
-                    );
-                    ui.label(RichText::new(&c.author).font(sans(10.0)).color(TEXT));
-                    ui.label(RichText::new(&c.created).font(sans(8.5)).color(FAINT));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let text = if c.resolved { "Reopen" } else { "Resolve" };
-                        if ui.small_button(text).clicked() {
-                            toggle = Some(c.id.clone());
-                        }
-                        if c.resolved {
-                            dot(ui, SAGE);
-                        }
-                    });
-                });
-                ui.add_space(3.0);
-                ui.label(
-                    RichText::new(&c.body)
-                        .font(sans(10.5))
-                        .color(if c.resolved { FAINT } else { MUTED }),
-                );
-            });
-        ui.add_space(4.0);
-    }
-    if let Some(comment_id) = toggle {
-        if let Some(doc) = app.ws.project.document_mut(doc_id) {
-            if let Some(c) = doc.comments.iter_mut().find(|c| c.id == comment_id) {
-                c.resolved = !c.resolved;
-                app.ws.dirty = true;
-            }
-        }
-    }
-    ui.add_space(10.0);
-    Frame::new()
-        .fill(SAGE_SOFT)
-        .corner_radius(CornerRadius::same(6))
-        .inner_margin(Margin::same(8))
-        .show(ui, |ui| {
-            ui.label(
-                RichText::new("Collaboration-ready: comments live in the project file and travel in the project bundle. A shared review server is the next step.")
-                    .font(sans(9.3))
-                    .color(SAGE),
-            );
-        });
 }
 
 fn stat_cell(ui: &mut egui::Ui, value: &str, label: &str) {

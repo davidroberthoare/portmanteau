@@ -342,32 +342,6 @@ impl Workspace {
                     None => ApiResponse::err(command, "Document not found"),
                 }
             }
-            "comment.add" => {
-                let doc_id = str_arg(&payload, "document_id").unwrap_or_default();
-                let author = str_arg(&payload, "author").unwrap_or_else(|| "You".into());
-                let body = str_arg(&payload, "body").unwrap_or_default();
-                if body.trim().is_empty() {
-                    return ApiResponse::err(command, "Comment is empty");
-                }
-                if self.project.add_comment(&doc_id, &author, &body) {
-                    self.dirty = true;
-                    ApiResponse::ok(command, "Comment added", json!({"document_id": doc_id}))
-                } else {
-                    ApiResponse::err(command, "Document not found")
-                }
-            }
-            "comment.resolve" => {
-                let doc_id = str_arg(&payload, "document_id").unwrap_or_default();
-                let comment_id = str_arg(&payload, "comment_id").unwrap_or_default();
-                if let Some(doc) = self.project.document_mut(&doc_id) {
-                    if let Some(c) = doc.comments.iter_mut().find(|c| c.id == comment_id) {
-                        c.resolved = !c.resolved;
-                        self.dirty = true;
-                        return ApiResponse::ok(command, "Comment updated", json!({"resolved": c.resolved}));
-                    }
-                }
-                ApiResponse::err(command, "Comment not found")
-            }
             "character.add" => {
                 let name = str_arg(&payload, "name").unwrap_or_else(|| "New character".into());
                 let role = str_arg(&payload, "role").unwrap_or_default();
@@ -760,7 +734,6 @@ pub fn command_catalogue() -> Vec<Value> {
         ("document.delete", "Delete a document and its children", r#"{"id":"doc-..."}"#),
         ("document.snapshot", "Snapshot a document", r#"{"id":"doc-...","name":"..."}"#),
         ("snapshot.restore", "Restore a document snapshot", r#"{"document_id":"...","id":"snap-..."}"#),
-        ("comment.add", "Leave a review comment", r#"{"document_id":"...","body":"..."}"#),
         ("character.add", "Add a character", r#"{"name":"...","role":"..."}"#),
         ("research.add", "Add a research note", r#"{"title":"...","body":"..."}"#),
         ("idea.add", "Add an idea card", r#"{"title":"...","body":"..."}"#),
