@@ -1,0 +1,11 @@
+[package]
+name = "msc-export"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+msc-core = { path = "../msc-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
+chrono = { version = "0.4", features = ["serde"] }

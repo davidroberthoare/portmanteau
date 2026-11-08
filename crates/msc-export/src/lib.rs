@@ -1,0 +1,1518 @@
+//! Compilation and export.
+//!
+//! One manuscript model, many finish lines: print-ready PDF, reflowable EPUB,
+//! editor-friendly DOCX, Final Draft FDX, Fountain, HTML, Markdown, RTF and
+//! plain text — plus a project bundle for archiving and collaboration.
+
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+use msc_core::script;
+use msc_core::*;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ExportInfo {
+    pub path: String,
+    pub bytes: usize,
+    pub words: u32,
+    pub format: String,
+    pub message: String,
+}
+
+/// One exportable section of the manuscript.
+struct Section<'a> {
+    doc: &'a Document,
+    heading: String,
+}
+
+pub fn default_filename(project: &Project, kind: ExportKind) -> String {
+    let base: String = project
+        .title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    let base = if base.is_empty() { "manuscript" } else { &base };
+    format!("{}.{}", base, kind.extension())
+}
+
+pub fn export(
+    project: &Project,
+    settings: &ExportSettings,
+    output: Option<&Path>,
+) -> Result<ExportInfo, String> {
+    let path: PathBuf = match output {
+        Some(p) => p.to_path_buf(),
+        None => {
+            let name = default_filename(project, settings.kind);
+            if settings.output_path.trim().is_empty() {
+                PathBuf::from("exports").join(name)
+            } else {
+                PathBuf::from(settings.output_path.trim()).join(name)
+            }
+        }
+    };
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|e| format!("Could not make folder: {e}"))?;
+        }
+    }
+
+    let bytes: Vec<u8> = match settings.kind {
+        ExportKind::Pdf => pdf_manuscript(project, settings),
+        ExportKind::Epub => epub_manuscript(project, settings),
+        ExportKind::Docx => docx_manuscript(project, settings),
+        ExportKind::Fdx => fdx_manuscript(project, settings).into_bytes(),
+        ExportKind::Fountain => fountain_manuscript(project, settings).into_bytes(),
+        ExportKind::Html => html_manuscript(project, settings).into_bytes(),
+        ExportKind::Markdown => markdown_manuscript(project, settings).into_bytes(),
+        ExportKind::Rtf => rtf_manuscript(project, settings).into_bytes(),
+        ExportKind::Txt => txt_manuscript(project, settings).into_bytes(),
+        ExportKind::Bundle => bundle_manuscript(project)?,
+    };
+
+    fs::write(&path, &bytes).map_err(|e| format!("Could not write {}: {e}", path.display()))?;
+    Ok(ExportInfo {
+        path: path.display().to_string(),
+        bytes: bytes.len(),
+        words: project.words(),
+        format: settings.kind.label().to_string(),
+        message: format!(
+            "{} exported · {} pages estimated",
+            settings.kind.label(),
+            project
+                .manuscript_documents()
+                .iter()
+                .map(|d| d.pages())
+                .sum::<u32>()
+        ),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Shared manuscript assembly
+// ---------------------------------------------------------------------------
+
+fn manuscript_sections(project: &Project) -> Vec<Section<'_>> {
+    project
+        .manuscript_documents()
+        .into_iter()
+        .filter(|d| !matches!(d.kind, DocKind::FrontMatter | DocKind::BackMatter))
+        .map(|doc| Section {
+            heading: doc.title.clone(),
+            doc,
+        })
+        .collect()
+}
+
+fn front_matter<'a>(project: &'a Project, settings: &ExportSettings) -> Vec<&'a Document> {
+    let mut out = Vec::new();
+    for doc in project.ordered_documents() {
+        if doc.kind != DocKind::FrontMatter {
+            continue;
+        }
+        let t = doc.title.to_lowercase();
+        let include = if t.contains("copyright") {
+            settings.include_copyright
+        } else if t.contains("dedication") {
+            settings.include_dedication
+        } else if t.contains("note") || t.contains("preface") || t.contains("introduction") {
+            settings.include_preface
+        } else if t.contains("title") {
+            false
+        } else {
+            true
+        };
+        if include {
+            out.push(doc);
+        }
+    }
+    out
+}
+
+fn back_matter<'a>(project: &'a Project, settings: &ExportSettings) -> Vec<&'a Document> {
+    let mut out = Vec::new();
+    for doc in project.ordered_documents() {
+        if doc.kind != DocKind::BackMatter {
+            continue;
+        }
+        let t = doc.title.to_lowercase();
+        let include = if t.contains("about") {
+            settings.include_author_bio
+        } else if t.contains("acknowledg") {
+            settings.include_acknowledgements
+        } else {
+            true
+        };
+        if include {
+            out.push(doc);
+        }
+    }
+    out
+}
+
+fn is_screenplay(project: &Project) -> bool {
+    matches!(
+        project.kind,
+        ProjectKind::Film | ProjectKind::Television | ProjectKind::Theatre
+    )
+}
+
+fn section_title(_project: &Project, doc: &Document, index: usize, settings: &ExportSettings) -> String {
+    if !settings.include_chapter_numbers {
+        return doc.title.clone();
+    }
+    if doc.kind == DocKind::Chapter {
+        format!("Chapter {}", index + 1)
+    } else if doc.kind == DocKind::Scene {
+        doc.title.clone()
+    } else {
+        doc.title.clone()
+    }
+}
+
+fn paragraphs(text: &str) -> Vec<String> {
+    text.split("\n\n")
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .map(|p| p.replace('\n', " "))
+        .collect()
+}
+
+fn slugify(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        if c.is_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    out.trim_matches('-').to_string()
+}
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+// ---------------------------------------------------------------------------
+// PDF
+// ---------------------------------------------------------------------------
+
+struct PdfLine {
+    text: String,
+    x: f32,
+    y: f32,
+    size: f32,
+    bold: bool,
+}
+
+struct PdfPage {
+    lines: Vec<PdfLine>,
+}
+
+impl PdfPage {
+    fn new() -> Self {
+        Self { lines: Vec::new() }
+    }
+}
+
+fn wrap_text(text: &str, width_chars: usize) -> Vec<String> {
+    if width_chars == 0 {
+        return vec![text.to_string()];
+    }
+    let mut out = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        if line.is_empty() {
+            line.push_str(word);
+        } else if line.chars().count() + 1 + word.chars().count() <= width_chars {
+            line.push(' ');
+            line.push_str(word);
+        } else {
+            out.push(line);
+            line = word.to_string();
+        }
+    }
+    if !line.is_empty() {
+        out.push(line);
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
+fn pdf_text(s: &str) -> String {
+    // The built-in PDF fonts use WinAnsi; keep the stream ASCII-clean and map
+    // the typography a writer is most likely to use.
+    let mut out = String::new();
+    for c in s.chars() {
+        let mapped: String = match c {
+            '(' => "\\(".into(),
+            ')' => "\\)".into(),
+            '\\' => "\\\\".into(),
+            '“' | '”' => "\"".into(),
+            '‘' | '’' => "'".into(),
+            '–' | '—' => "-".into(),
+            '…' => "...".into(),
+            '·' => "-".into(),
+            '©' => "(c)".into(),
+            '®' => "(R)".into(),
+            'é' => "e".into(),
+            'è' => "e".into(),
+            'ê' => "e".into(),
+            'à' => "a".into(),
+            'ç' => "c".into(),
+            'ó' => "o".into(),
+            'ü' => "u".into(),
+            c if c.is_ascii() => c.to_string(),
+            _ => "?".into(),
+        };
+        out.push_str(&mapped);
+    }
+    out
+}
+
+fn build_pdf(title: &str, author: &str, pages: &[PdfPage], width_pt: f32, height_pt: f32, footer: bool) -> Vec<u8> {
+    let mut objects: Vec<Vec<u8>> = Vec::new();
+    // Fonts are objects 1 and 2, catalog 3, pages 4; page objects follow.
+    objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>".to_vec());
+    objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>".to_vec());
+    objects.push(Vec::new()); // catalog, filled later
+    objects.push(Vec::new()); // pages, filled later
+
+    let first_page_obj = 5usize;
+    let mut page_objs = Vec::new();
+    for (i, page) in pages.iter().enumerate() {
+        let mut content = String::new();
+        for line in &page.lines {
+            let y = line.y;
+            content.push_str("BT\n");
+            content.push_str(&format!(
+                "/{} {} Tf\n",
+                if line.bold { "F2" } else { "F1" },
+                line.size
+            ));
+            content.push_str(&format!("1 0 0 1 {:.2} {:.2} Tm\n", line.x, y));
+            content.push_str(&format!("({}) Tj\nET\n", pdf_text(&line.text)));
+        }
+        if footer && i > 0 {
+            content.push_str("BT\n/F1 9 Tf\n");
+            content.push_str(&format!(
+                "1 0 0 1 {:.2} 36 Tm\n({}) Tj\nET\n",
+                width_pt / 2.0 - 5.0,
+                i + 1
+            ));
+        }
+        let mut obj = Vec::new();
+        obj.extend_from_slice(
+            format!(
+                "<< /Type /Page /Parent {} 0 R /MediaBox [0 0 {:.2} {:.2}] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents {} 0 R >>",
+                first_page_obj + pages.len(),
+                width_pt,
+                height_pt,
+                first_page_obj + pages.len() + 1 + i
+            )
+            .as_bytes(),
+        );
+        page_objs.push(obj);
+    }
+    // Fix: page object numbers need to be known before contents. Rebuild with
+    // a clean layout: 5..(5+n-1) pages, (5+n).. contents.
+    let n = pages.len();
+    page_objs.clear();
+    for i in 0..n {
+        let page_num = first_page_obj + i;
+        let content_num = first_page_obj + n + i;
+        let mut content = String::new();
+        for line in &pages[i].lines {
+            let y = line.y;
+            content.push_str("BT\n");
+            content.push_str(&format!(
+                "/{} {} Tf\n",
+                if line.bold { "F2" } else { "F1" },
+                line.size
+            ));
+            content.push_str(&format!("1 0 0 1 {:.2} {:.2} Tm\n", line.x, y));
+            content.push_str(&format!("({}) Tj\nET\n", pdf_text(&line.text)));
+        }
+        if footer && i > 0 {
+            content.push_str("BT\n/F1 9 Tf\n");
+            content.push_str(&format!(
+                "1 0 0 1 {:.2} 30 Tm\n({}) Tj\nET\n",
+                width_pt / 2.0 - 3.0,
+                i + 1
+            ));
+        }
+        let page_obj = format!(
+            "<< /Type /Page /Parent 4 0 R /MediaBox [0 0 {:.2} {:.2}] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents {} 0 R >>",
+            width_pt, height_pt, content_num
+        );
+        objects.push(page_obj.into_bytes());
+        objects.push(
+            format!(
+                "<< /Length {} >>\nstream\n{}endstream",
+                content.len(),
+                content
+            )
+            .into_bytes(),
+        );
+        let _ = page_num;
+    }
+    // Catalog and Pages.
+    objects[2] = format!("<< /Type /Catalog /Pages 4 0 R >>").into_bytes();
+    let kids: Vec<String> = (0..n)
+        .map(|i| format!("{} 0 R", first_page_obj + i))
+        .collect();
+    objects[3] = format!(
+        "<< /Type /Pages /Kids [{}] /Count {} >>",
+        kids.join(" "),
+        n
+    )
+    .into_bytes();
+
+    // Info object.
+    let info_num = objects.len() + 1;
+    objects.push(
+        format!(
+            "<< /Title ({}) /Author ({}) /Producer (Scriptorium) /Creator (Scriptorium) >>",
+            pdf_text(title),
+            pdf_text(author)
+        )
+        .into_bytes(),
+    );
+
+    let mut pdf: Vec<u8> = Vec::new();
+    pdf.extend_from_slice(b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+    let mut offsets = Vec::new();
+    for (i, obj) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+        pdf.extend_from_slice(obj);
+        pdf.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = pdf.len();
+    pdf.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
+    pdf.extend_from_slice(b"0000000000 65535 f \n");
+    for off in &offsets {
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", off).as_bytes());
+    }
+    let catalog = 3usize;
+    pdf.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root {} 0 R /Info {} 0 R >>\nstartxref\n{}\n%%EOF\n",
+            objects.len() + 1,
+            catalog,
+            info_num,
+            xref
+        )
+        .as_bytes(),
+    );
+    pdf
+}
+
+struct PdfFlow {
+    pages: Vec<PdfPage>,
+    y: f32,
+    top: f32,
+    bottom: f32,
+    page_height: f32,
+    line_gap: f32,
+    current: PdfPage,
+}
+
+impl PdfFlow {
+    fn new(page_height: f32, top_margin: f32, bottom_margin: f32, line_gap: f32) -> Self {
+        Self {
+            pages: Vec::new(),
+            y: page_height - top_margin,
+            top: top_margin,
+            bottom: bottom_margin,
+            page_height,
+            line_gap,
+            current: PdfPage::new(),
+        }
+    }
+
+    fn finish(mut self) -> Vec<PdfPage> {
+        if !self.current.lines.is_empty() {
+            self.pages.push(self.current);
+        }
+        self.pages
+    }
+
+    fn ensure(&mut self, needed: f32) {
+        if self.y - needed < self.bottom {
+            self.pages.push(std::mem::replace(&mut self.current, PdfPage::new()));
+            self.y = self.page_height - self.top;
+        }
+    }
+
+    fn line(&mut self, text: String, x: f32, size: f32, bold: bool, gap_before: f32) {
+        let advance = self.line_gap.max(size + 3.0);
+        self.ensure(advance + gap_before);
+        self.y -= gap_before;
+        self.y -= advance;
+        self.current.lines.push(PdfLine {
+            text,
+            x,
+            y: self.y,
+            size,
+            bold,
+        });
+    }
+
+    fn page_break(&mut self) {
+        if !self.current.lines.is_empty() {
+            self.pages.push(std::mem::replace(&mut self.current, PdfPage::new()));
+        }
+        self.y = self.page_height - self.top;
+    }
+}
+
+fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
+    let (w_mm, h_mm) = settings.paper.mm();
+    let w = w_mm * 2.834645;
+    let h = h_mm * 2.834645;
+    let screenplay = is_screenplay(project);
+    let margin = 20.0 * 2.834645;
+    let top = 22.0 * 2.834645;
+    let bottom = 22.0 * 2.834645;
+    let size = if screenplay { 12.0 } else { settings.font_size.max(8.0) };
+    let gap = if screenplay {
+        13.0
+    } else {
+        size * settings.line_spacing.max(1.0)
+    };
+    let mut flow = PdfFlow::new(h, top, bottom, gap);
+    let mut pages: Vec<PdfPage> = Vec::new();
+    let content_width = w - margin * 2.0;
+
+    if settings.include_title_page {
+        let title_size = if screenplay { 16.0 } else { 24.0 };
+        let mut page = PdfPage::new();
+        let mut y = h * 0.62;
+        for (i, line) in wrap_text(&project.title, 34).iter().enumerate() {
+            page.lines.push(PdfLine {
+                text: line.clone(),
+                x: w / 2.0 - line.chars().count() as f32 * title_size * 0.28,
+                y: y - i as f32 * 32.0,
+                size: title_size,
+                bold: true,
+            });
+        }
+        y += 70.0;
+        if !project.subtitle.is_empty() {
+            page.lines.push(PdfLine {
+                text: project.subtitle.clone(),
+                x: w / 2.0 - project.subtitle.chars().count() as f32 * 5.5,
+                y: y - 70.0,
+                size: 12.0,
+                bold: false,
+            });
+            y += 26.0;
+        }
+        page.lines.push(PdfLine {
+            text: format!("by {}", project.author),
+            x: w / 2.0 - (project.author.chars().count() as f32 + 3.0) * 5.5,
+            y: y - 110.0,
+            size: 12.0,
+            bold: false,
+        });
+        let footer = if screenplay {
+            "Scriptorium · screenplay".to_string()
+        } else {
+            format!("{} · {}", project.genre, chrono::Local::now().format("%Y"))
+        };
+        page.lines.push(PdfLine {
+            text: footer,
+            x: w / 2.0 - 40.0,
+            y: 70.0,
+            size: 9.0,
+            bold: false,
+        });
+        pages.push(page);
+    }
+
+    if screenplay {
+        // Screenplay layout: Courier-like fixed columns, scene numbers optional.
+        let mut page = PdfPage::new();
+        let mut line_index = 0usize;
+        let mut scene_number = 1usize;
+        let max_lines = ((h - top - bottom) / 13.0) as usize;
+        let char_w = 7.2; // 12pt Courier at 0.6em
+        fn push_line(
+            page: &mut PdfPage,
+            line_index: &mut usize,
+            h: f32,
+            top: f32,
+            margin: f32,
+            text: String,
+            x_mm: f32,
+            bold: bool,
+        ) {
+            let y = h - top - (*line_index as f32) * 13.0;
+            page.lines.push(PdfLine {
+                text,
+                x: x_mm * 2.834645 + margin,
+                y,
+                size: 12.0,
+                bold,
+            });
+            *line_index += 1;
+        }
+        for section in manuscript_sections(project) {
+            let doc = section.doc;
+            if doc.medium.is_script() {
+                let heading = format!("{}.", section.heading.to_uppercase());
+                for line in wrap_text(&heading, 60) {
+                    push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, true);
+                }
+                push_line(&mut page, &mut line_index, h, top, margin, String::new(), 0.0, false);
+                for block in &doc.blocks {
+                    let (indent_mm, width_chars) = match block.kind {
+                        ElementKind::SceneHeading | ElementKind::Action | ElementKind::Shot => (0.0, 60),
+                        ElementKind::Character => (22.0, 35),
+                        ElementKind::Parenthetical => (15.0, 30),
+                        ElementKind::Dialogue => (9.0, 35),
+                        ElementKind::Transition => (42.0, 22),
+                        _ => (0.0, 60),
+                    };
+                    let text = if block.kind.is_uppercase() {
+                        block.text.to_uppercase()
+                    } else {
+                        block.text.clone()
+                    };
+                    if block.kind == ElementKind::SceneHeading && settings.include_scene_numbers {
+                        push_line(
+                            &mut page,
+                            &mut line_index,
+                            h,
+                            top,
+                            margin,
+                            format!("{}   {}", scene_number, text),
+                            0.0,
+                            false,
+                        );
+                        scene_number += 1;
+                    } else {
+                        for wrapped in wrap_text(&text, width_chars) {
+                            push_line(&mut page, &mut line_index, h, top, margin, wrapped, indent_mm, false);
+                        }
+                    }
+                    if !block.kind.is_dialogue() {
+                        push_line(&mut page, &mut line_index, h, top, margin, String::new(), 0.0, false);
+                    }
+                    if line_index >= max_lines {
+                        pages.push(std::mem::replace(&mut page, PdfPage::new()));
+                        line_index = 0;
+                    }
+                }
+            } else {
+                for line in wrap_text(&section.heading.to_uppercase(), 60) {
+                    push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, true);
+                }
+                push_line(&mut page, &mut line_index, h, top, margin, String::new(), 0.0, false);
+                for para in paragraphs(&doc.body_text()) {
+                    for line in wrap_text(&para, 60) {
+                        push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, false);
+                    }
+                    push_line(&mut page, &mut line_index, h, top, margin, String::new(), 0.0, false);
+                }
+            }
+            if line_index >= max_lines - 3 {
+                pages.push(std::mem::replace(&mut page, PdfPage::new()));
+                line_index = 0;
+            }
+        }
+        if !page.lines.is_empty() {
+            pages.push(page);
+        }
+        let _ = char_w;
+        return build_pdf(&project.title, &project.author, &pages, w, h, true);
+    }
+
+    // Prose: flowing layout with chapter headings and optional front matter.
+    let chars_per_line = (content_width / (size * 0.3528 * 0.48)).max(30.0) as usize;
+    let mut headings: Vec<(String, usize)> = Vec::new();
+    let mut page_titles: Vec<(String, usize)> = Vec::new();
+    let add_para = |flow: &mut PdfFlow, text: &str, bold: bool, indent: f32| {
+        for part in wrap_text(text, chars_per_line) {
+            flow.line(part, margin + indent, size, bold, 0.0);
+        }
+    };
+
+    for doc in front_matter(project, settings) {
+        flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
+        for para in paragraphs(&doc.body_text()) {
+            add_para(&mut flow, &para, false, 0.0);
+            flow.line(String::new(), margin, size, false, 0.0);
+        }
+        flow.page_break();
+    }
+
+    let sections = manuscript_sections(project);
+    for (i, section) in sections.iter().enumerate() {
+        flow.page_break();
+        let page_no = flow.pages.len() + 1;
+        let title = section_title(project, section.doc, i, settings);
+        headings.push((title.clone(), page_no));
+        page_titles.push((title.clone(), page_no));
+        let head_size = size + 5.0;
+        for part in wrap_text(&title, chars_per_line) {
+            flow.line(part, margin, head_size, true, 8.0);
+        }
+        flow.line(String::new(), margin, size, false, 0.0);
+        if settings.include_synopsis && !section.doc.synopsis.is_empty() {
+            for part in wrap_text(&format!("Synopsis · {}", section.doc.synopsis), chars_per_line) {
+                flow.line(part, margin, size - 1.0, false, 0.0);
+            }
+            flow.line(String::new(), margin, size, false, 0.0);
+        }
+        for para in paragraphs(&section.doc.body_text()) {
+            add_para(&mut flow, &para, false, 0.0);
+            flow.line(String::new(), margin, size, false, 0.0);
+        }
+        if settings.include_notes && !section.doc.notes.is_empty() {
+            for part in wrap_text(&format!("Author's note · {}", section.doc.notes), chars_per_line) {
+                flow.line(part, margin, size - 1.0, false, 0.0);
+            }
+        }
+    }
+    for doc in back_matter(project, settings) {
+        flow.page_break();
+        flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
+        for para in paragraphs(&doc.body_text()) {
+            add_para(&mut flow, &para, false, 0.0);
+            flow.line(String::new(), margin, size, false, 0.0);
+        }
+    }
+    pages.extend(flow.finish());
+
+    if settings.include_toc && !headings.is_empty() {
+        let mut toc = PdfPage::new();
+        toc.lines.push(PdfLine {
+            text: "Contents".into(),
+            x: margin,
+            y: h - top - 20.0,
+            size: size + 6.0,
+            bold: true,
+        });
+        let mut y = top + 50.0;
+        for (title, page) in &headings {
+            toc.lines.push(PdfLine {
+                text: title.clone(),
+                x: margin,
+                y: h - y,
+                size,
+                bold: false,
+            });
+            toc.lines.push(PdfLine {
+                text: page.to_string(),
+                x: w - margin - 20.0,
+                y: h - y,
+                size,
+                bold: false,
+            });
+            y += size * 1.8;
+        }
+        pages.insert(1.min(pages.len()), toc);
+    }
+
+    build_pdf(&project.title, &project.author, &pages, w, h, true)
+}
+
+// ---------------------------------------------------------------------------
+// EPUB
+// ---------------------------------------------------------------------------
+
+fn epub_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
+    let mut buf = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut buf);
+        let mut zip = ZipWriter::new(cursor);
+        let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+        zip.start_file("mimetype", stored).unwrap();
+        zip.write_all(b"application/epub+zip").unwrap();
+
+        zip.start_file("META-INF/container.xml", deflated).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"#,
+        )
+        .unwrap();
+
+        zip.start_file("OEBPS/style.css", deflated).unwrap();
+        zip.write_all(
+            br#"body { font-family: Georgia, "Liberation Serif", serif; line-height: 1.6; margin: 5%; color: #1b1b1b; }
+h1 { font-size: 1.6em; margin: 2em 0 1em; page-break-before: always; }
+h2 { font-size: 1.25em; margin: 1.5em 0 .8em; }
+p { margin: 0 0 0 .2em; text-indent: 1.4em; text-align: justify; }
+p.first, .front p { text-indent: 0; }
+.center { text-align: center; text-indent: 0; }
+.scene { font-family: "Courier New", monospace; text-transform: uppercase; font-weight: bold; margin-top: 1.5em; text-indent: 0; }
+.action { font-family: "Courier New", monospace; margin: .5em 0 .8em; text-indent: 0; }
+.character { font-family: "Courier New", monospace; margin: 1em 0 0 32%; text-indent: 0; text-transform: uppercase; }
+.parenthetical { font-family: "Courier New", monospace; margin: 0 0 0 26%; text-indent: 0; }
+.dialogue { font-family: "Courier New", monospace; margin: 0 10% .7em 18%; text-indent: 0; }
+.transition { font-family: "Courier New", monospace; text-align: right; text-indent: 0; }
+.title-page { text-align: center; margin-top: 26%; }
+.title-page h1 { page-break-before: avoid; font-size: 2.2em; }
+.byline { font-size: 1.1em; margin-top: 1.5em; }
+.imprint { margin-top: 4em; font-size: .85em; color: #555; }
+"#,
+        )
+        .unwrap();
+
+        let mut manifest = String::new();
+        let mut spine = String::new();
+        let mut toc_entries = String::new();
+        let mut files: Vec<(String, String, String)> = Vec::new();
+
+        if settings.include_title_page {
+            let body = format!(
+                "<div class=\"title-page\"><h1>{}</h1><p class=\"center\">{}</p><p class=\"byline\">by {}</p><p class=\"imprint\">{}</p></div>",
+                xml_escape(&project.title),
+                xml_escape(&project.subtitle),
+                xml_escape(&project.author),
+                xml_escape(&project.genre)
+            );
+            files.push(("titlepage.xhtml".into(), "Title page".into(), body));
+        }
+
+        let mut chapter_no = 0usize;
+        for doc in front_matter(project, settings) {
+            files.push((
+                format!("front-{}.xhtml", slugify(&doc.title)),
+                doc.title.clone(),
+                xhtml_body(doc, None),
+            ));
+        }
+        for (i, section) in manuscript_sections(project).iter().enumerate() {
+            chapter_no += 1;
+            let title = section_title(project, section.doc, i, settings);
+            files.push((
+                format!("chapter-{:03}.xhtml", chapter_no),
+                title.clone(),
+                xhtml_body(section.doc, Some(&title)),
+            ));
+        }
+        for doc in back_matter(project, settings) {
+            files.push((
+                format!("back-{}.xhtml", slugify(&doc.title)),
+                doc.title.clone(),
+                xhtml_body(doc, None),
+            ));
+        }
+
+        for (i, (file, title, body)) in files.iter().enumerate() {
+            zip.start_file(format!("OEBPS/{}", file), deflated).unwrap();
+            let xhtml = format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\">\n<head><title>{}</title><link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\"/></head>\n<body class=\"front\">\n{}\n</body>\n</html>\n",
+                xml_escape(title),
+                body
+            );
+            zip.write_all(xhtml.as_bytes()).unwrap();
+            manifest.push_str(&format!(
+                "<item id=\"f{}\" href=\"{}\" media-type=\"application/xhtml+xml\"/>\n",
+                i, file
+            ));
+            spine.push_str(&format!("<itemref idref=\"f{}\"/>\n", i));
+            if i > 0 {
+                toc_entries.push_str(&format!(
+                    "<li><a href=\"{}\">{}</a></li>\n",
+                    file,
+                    xml_escape(title)
+                ));
+            }
+        }
+
+        // Navigation document.
+        let nav = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n<head><title>Contents</title></head><body>\n<nav epub:type=\"toc\" id=\"toc\"><h1>Contents</h1><ol>{}</ol></nav>\n</body></html>",
+            toc_entries
+        );
+        zip.start_file("OEBPS/nav.xhtml", deflated).unwrap();
+        zip.write_all(nav.as_bytes()).unwrap();
+        manifest.push_str("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>\n");
+        manifest.push_str("<item id=\"css\" href=\"style.css\" media-type=\"text/css\"/>\n");
+
+        let modified = chrono::Local::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let opf = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"bookid\">\n<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n<dc:identifier id=\"bookid\">{}</dc:identifier>\n<dc:title>{}</dc:title>\n<dc:creator>{}</dc:creator>\n<dc:language>en</dc:language>\n<dc:description>{}</dc:description>\n<meta property=\"dcterms:modified\">{}</meta>\n</metadata>\n<manifest>\n{}</manifest>\n<spine>\n{}</spine>\n</package>\n",
+            xml_escape(&project.id),
+            xml_escape(&project.title),
+            xml_escape(&project.author),
+            xml_escape(&project.logline),
+            modified,
+            manifest,
+            spine
+        );
+        zip.start_file("OEBPS/content.opf", deflated).unwrap();
+        zip.write_all(opf.as_bytes()).unwrap();
+        zip.finish().unwrap();
+    }
+    buf
+}
+
+fn xhtml_body(doc: &Document, heading: Option<&str>) -> String {
+    let mut out = String::new();
+    if let Some(h) = heading {
+        out.push_str(&format!("<h1>{}</h1>\n", xml_escape(h)));
+    } else {
+        out.push_str(&format!("<h2>{}</h2>\n", xml_escape(&doc.title)));
+    }
+    if doc.medium.is_script() {
+        for block in &doc.blocks {
+            let class = match block.kind {
+                ElementKind::SceneHeading => "scene",
+                ElementKind::Action | ElementKind::Shot => "action",
+                ElementKind::Character => "character",
+                ElementKind::Parenthetical => "parenthetical",
+                ElementKind::Dialogue => "dialogue",
+                ElementKind::Transition => "transition",
+                ElementKind::Act => "scene",
+                ElementKind::Scene => "scene",
+                ElementKind::StageDirection => "action",
+                ElementKind::Lyric => "dialogue",
+                ElementKind::General => "action",
+            };
+            let text = if block.kind.is_uppercase() {
+                block.text.to_uppercase()
+            } else {
+                block.text.clone()
+            };
+            out.push_str(&format!(
+                "<p class=\"{}\">{}</p>\n",
+                class,
+                html_escape(&text)
+            ));
+        }
+    } else {
+        for (i, para) in paragraphs(&doc.body_text()).iter().enumerate() {
+            out.push_str(&format!(
+                "<p class=\"{}\">{}</p>\n",
+                if i == 0 { "first" } else { "" },
+                html_escape(para)
+            ));
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// DOCX
+// ---------------------------------------------------------------------------
+
+fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
+    let mut body = String::new();
+    let mut add_para = |text: &str, style: &str, bold: bool, center: bool, mono: bool, indent: i32| {
+        let jc = if center { "<w:jc w:val=\"center\"/>" } else { "" };
+        let fonts = if mono {
+            "<w:rFonts w:ascii=\"Courier New\" w:hAnsi=\"Courier New\"/>"
+        } else {
+            "<w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\"/>"
+        };
+        body.push_str(&format!(
+            "<w:p><w:pPr><w:pStyle w:val=\"{}\"/>{}{}<w:ind w:left=\"{}\"/></w:pPr><w:r><w:rPr>{}{}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",
+            style,
+            jc,
+            if bold { "<w:b/>" } else { "" },
+            indent,
+            fonts,
+            if bold { "<w:b/>" } else { "" },
+            xml_escape(text)
+        ));
+    };
+
+    if settings.include_title_page {
+        add_para(&project.title, "Title", true, true, false, 0);
+        if !project.subtitle.is_empty() {
+            add_para(&project.subtitle, "Subtitle", false, true, false, 0);
+        }
+        add_para(&format!("by {}", project.author), "Normal", false, true, false, 0);
+        add_para("", "Normal", false, false, false, 0);
+    }
+    for doc in front_matter(project, settings) {
+        add_para(&doc.title, "Heading1", true, false, false, 0);
+        for para in paragraphs(&doc.body_text()) {
+            add_para(&para, "Normal", false, false, false, 0);
+        }
+    }
+    for (i, section) in manuscript_sections(project).iter().enumerate() {
+        let title = section_title(project, section.doc, i, settings);
+        add_para(&title, "Heading1", true, false, false, 0);
+        if section.doc.medium.is_script() {
+            for block in &section.doc.blocks {
+                let (indent, mono, bold) = match block.kind {
+                    ElementKind::Character => (4320, true, false),
+                    ElementKind::Parenthetical => (3240, true, false),
+                    ElementKind::Dialogue => (2160, true, false),
+                    ElementKind::SceneHeading => (0, true, false),
+                    _ => (0, true, false),
+                };
+                let text = if block.kind.is_uppercase() {
+                    block.text.to_uppercase()
+                } else {
+                    block.text.clone()
+                };
+                add_para(
+                    &text,
+                    if block.kind == ElementKind::SceneHeading { "Heading2" } else { "Normal" },
+                    bold,
+                    block.kind == ElementKind::Transition,
+                    mono,
+                    indent,
+                );
+            }
+        } else {
+            for para in paragraphs(&section.doc.body_text()) {
+                add_para(&para, "Normal", false, false, false, 0);
+            }
+        }
+    }
+    for doc in back_matter(project, settings) {
+        add_para(&doc.title, "Heading1", true, false, false, 0);
+        for para in paragraphs(&doc.body_text()) {
+            add_para(&para, "Normal", false, false, false, 0);
+        }
+    }
+
+    let document = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>{}\n<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\"/></w:sectPr></w:body></w:document>",
+        body
+    );
+    let styles = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+ <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="24"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="360" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+ <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+ <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="2400" w:after="240"/></w:pPr><w:rPr><w:sz w:val="52"/></w:rPr></w:style>
+ <w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:sz w:val="26"/><w:i/></w:rPr></w:style>
+ <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:pageBreakBefore/><w:spacing w:before="720" w:after="360"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="36"/></w:rPr></w:style>
+ <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr><w:rPr><w:b/></w:rPr></w:style>
+</w:styles>"#;
+    let content_types = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+</Types>"#;
+    let rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+</Relationships>"#;
+    let doc_rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>"#;
+    let core = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>{}</dc:title><dc:creator>{}</dc:creator></cp:coreProperties>",
+        xml_escape(&project.title),
+        xml_escape(&project.author)
+    );
+
+    let mut buf = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut buf);
+        let mut zip = ZipWriter::new(cursor);
+        let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        for (name, data) in [
+            ("[Content_Types].xml", content_types),
+            ("_rels/.rels", rels),
+            ("word/document.xml", &document),
+            ("word/styles.xml", styles),
+            ("word/_rels/document.xml.rels", doc_rels),
+            ("docProps/core.xml", &core),
+        ] {
+            zip.start_file(name, opts).unwrap();
+            zip.write_all(data.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+    buf
+}
+
+// ---------------------------------------------------------------------------
+// Final Draft, Fountain and web/text formats
+// ---------------------------------------------------------------------------
+
+fn fdx_type(kind: ElementKind) -> &'static str {
+    match kind {
+        ElementKind::SceneHeading => "Scene Heading",
+        ElementKind::Action => "Action",
+        ElementKind::Character => "Character",
+        ElementKind::Parenthetical => "Parenthetical",
+        ElementKind::Dialogue => "Dialogue",
+        ElementKind::Transition => "Transition",
+        ElementKind::Shot => "Shot",
+        ElementKind::Act => "General",
+        ElementKind::Scene => "General",
+        ElementKind::StageDirection => "Action",
+        ElementKind::Lyric => "Lyric",
+        ElementKind::General => "General",
+    }
+}
+
+fn fdx_manuscript(project: &Project, settings: &ExportSettings) -> String {
+    let mut out = String::new();
+    out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n");
+    out.push_str("<FinalDraft DocumentType=\"Script\" Template=\"No\" Version=\"5\">\n");
+    if settings.include_title_page {
+        out.push_str("  <TitlePage><Content>\n");
+        out.push_str(&format!(
+            "    <Paragraph Type=\"Title\"><Text>{}</Text></Paragraph>\n",
+            xml_escape(&project.title)
+        ));
+        if !project.subtitle.is_empty() {
+            out.push_str(&format!(
+                "    <Paragraph Type=\"Subtitle\"><Text>{}</Text></Paragraph>\n",
+                xml_escape(&project.subtitle)
+            ));
+        }
+        out.push_str(&format!(
+            "    <Paragraph Type=\"Author\"><Text>{}</Text></Paragraph>\n",
+            xml_escape(&project.author)
+        ));
+        out.push_str("  </Content></TitlePage>\n");
+    }
+    out.push_str("  <Content>\n");
+    for section in manuscript_sections(project) {
+        if section.doc.medium.is_script() {
+            for block in &section.doc.blocks {
+                let text = if block.kind.is_uppercase() {
+                    block.text.to_uppercase()
+                } else {
+                    block.text.clone()
+                };
+                out.push_str(&format!(
+                    "    <Paragraph Type=\"{}\"><Text>{}</Text></Paragraph>\n",
+                    fdx_type(block.kind),
+                    xml_escape(&text)
+                ));
+            }
+        } else {
+            out.push_str(&format!(
+                "    <Paragraph Type=\"General\"><Text>{}</Text></Paragraph>\n",
+                xml_escape(&section.heading)
+            ));
+            for para in paragraphs(&section.doc.body_text()) {
+                out.push_str(&format!(
+                    "    <Paragraph Type=\"Action\"><Text>{}</Text></Paragraph>\n",
+                    xml_escape(&para)
+                ));
+            }
+        }
+    }
+    out.push_str("  </Content>\n</FinalDraft>\n");
+    out
+}
+
+fn fountain_manuscript(project: &Project, settings: &ExportSettings) -> String {
+    let mut out = String::new();
+    if settings.include_title_page {
+        out.push_str(&script::fountain_title_page(project));
+    }
+    for section in manuscript_sections(project) {
+        if section.doc.medium.is_script() {
+            out.push_str(&format!("# {}\n\n", section.heading));
+            out.push_str(&script::to_fountain(&section.doc.blocks, section.doc.medium));
+            out.push('\n');
+        } else {
+            out.push_str(&format!("# {}\n\n", section.heading));
+            for para in paragraphs(&section.doc.body_text()) {
+                out.push_str(&para);
+                out.push_str("\n\n");
+            }
+        }
+    }
+    out
+}
+
+fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
+    let mut body = String::new();
+    if settings.include_title_page {
+        body.push_str(&format!(
+            "<header class=\"titlepage\"><h1>{}</h1><p class=\"sub\">{}</p><p>by {}</p></header>\n",
+            html_escape(&project.title),
+            html_escape(&project.subtitle),
+            html_escape(&project.author)
+        ));
+    }
+    if settings.include_toc {
+        body.push_str("<nav class=\"toc\"><h2>Contents</h2><ol>\n");
+        for (i, section) in manuscript_sections(project).iter().enumerate() {
+            let title = section_title(project, section.doc, i, settings);
+            body.push_str(&format!(
+                "<li><a href=\"#s{}\">{}</a></li>\n",
+                i,
+                html_escape(&title)
+            ));
+        }
+        body.push_str("</ol></nav>\n");
+    }
+    for doc in front_matter(project, settings) {
+        body.push_str(&format!(
+            "<section class=\"frontmatter\"><h2>{}</h2>\n",
+            html_escape(&doc.title)
+        ));
+        for para in paragraphs(&doc.body_text()) {
+            body.push_str(&format!("<p>{}</p>\n", html_escape(&para)));
+        }
+        body.push_str("</section>\n");
+    }
+    for (i, section) in manuscript_sections(project).iter().enumerate() {
+        let title = section_title(project, section.doc, i, settings);
+        body.push_str(&format!(
+            "<section id=\"s{}\" class=\"chapter\"><h2>{}</h2>\n",
+            i,
+            html_escape(&title)
+        ));
+        if section.doc.medium.is_script() {
+            body.push_str("<div class=\"script\">\n");
+            for block in &section.doc.blocks {
+                let class = match block.kind {
+                    ElementKind::SceneHeading => "scene",
+                    ElementKind::Character => "character",
+                    ElementKind::Parenthetical => "paren",
+                    ElementKind::Dialogue => "dialogue",
+                    ElementKind::Transition => "trans",
+                    _ => "action",
+                };
+                let text = if block.kind.is_uppercase() {
+                    block.text.to_uppercase()
+                } else {
+                    block.text.clone()
+                };
+                body.push_str(&format!(
+                    "<p class=\"{}\">{}</p>\n",
+                    class,
+                    html_escape(&text)
+                ));
+            }
+            body.push_str("</div>\n");
+        } else {
+            for (j, para) in paragraphs(&section.doc.body_text()).iter().enumerate() {
+                body.push_str(&format!(
+                    "<p class=\"{}\">{}</p>\n",
+                    if j == 0 { "first" } else { "" },
+                    html_escape(para)
+                ));
+            }
+        }
+        body.push_str("</section>\n");
+    }
+    for doc in back_matter(project, settings) {
+        body.push_str(&format!(
+            "<section class=\"backmatter\"><h2>{}</h2>\n",
+            html_escape(&doc.title)
+        ));
+        for para in paragraphs(&doc.body_text()) {
+            body.push_str(&format!("<p>{}</p>\n", html_escape(&para)));
+        }
+        body.push_str("</section>\n");
+    }
+    format!(
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n<title>{}</title>\n<style>\nbody{{max-width:42rem;margin:4rem auto;padding:0 1.5rem;font-family:Georgia,'Liberation Serif',serif;line-height:1.7;color:#1e1c19;background:#fbf8f1}}\nh1{{font-size:2.4rem;line-height:1.1}}h2{{margin-top:3rem;border-bottom:1px solid #d8d0c0;padding-bottom:.4rem}}\np{{margin:0 0 .9rem;text-indent:1.4rem;text-align:justify}}p.first{{text-indent:0}}\n.titlepage{{text-align:center;margin:18vh 0 22vh}}.titlepage h1{{margin-bottom:.3em}}.titlepage p{{text-indent:0}}.sub{{font-style:italic;color:#665f54}}\n.toc ol{{line-height:2}}.toc a{{color:#2f5d50;text-decoration:none}}\n.script{{font-family:'Courier New',monospace;font-size:.92rem}}.script p{{text-indent:0;margin:.4rem 0;text-align:left}}\n.scene{{text-transform:uppercase;font-weight:bold;margin-top:1.6rem!important}}.character{{margin-left:32%!important;text-transform:uppercase;margin-top:1rem!important}}.paren{{margin-left:24%!important}}.dialogue{{margin-left:16%!important;margin-right:12%!important}}.trans{{text-align:right!important}}\n.frontmatter,.backmatter{{margin-top:4rem}}\n</style>\n</head>\n<body>\n{}\n</body>\n</html>\n",
+        html_escape(&project.title),
+        body
+    )
+}
+
+fn markdown_manuscript(project: &Project, settings: &ExportSettings) -> String {
+    let mut out = String::new();
+    if settings.include_title_page {
+        out.push_str(&format!("# {}\n\n", project.title));
+        if !project.subtitle.is_empty() {
+            out.push_str(&format!("*{}*\n\n", project.subtitle));
+        }
+        out.push_str(&format!("by {}\n\n---\n\n", project.author));
+    }
+    if settings.include_toc {
+        out.push_str("## Contents\n\n");
+        for (i, section) in manuscript_sections(project).iter().enumerate() {
+            let title = section_title(project, section.doc, i, settings);
+            out.push_str(&format!("{}. {}\n", i + 1, title));
+        }
+        out.push('\n');
+    }
+    for doc in front_matter(project, settings) {
+        out.push_str(&format!("## {}\n\n", doc.title));
+        for para in paragraphs(&doc.body_text()) {
+            out.push_str(&para);
+            out.push_str("\n\n");
+        }
+    }
+    for (i, section) in manuscript_sections(project).iter().enumerate() {
+        let title = section_title(project, section.doc, i, settings);
+        out.push_str(&format!("## {}\n\n", title));
+        if section.doc.medium.is_script() {
+            out.push_str("```fountain\n");
+            out.push_str(&script::to_fountain(&section.doc.blocks, section.doc.medium));
+            out.push_str("```\n\n");
+        } else {
+            for para in paragraphs(&section.doc.body_text()) {
+                out.push_str(&para);
+                out.push_str("\n\n");
+            }
+        }
+    }
+    for doc in back_matter(project, settings) {
+        out.push_str(&format!("## {}\n\n", doc.title));
+        for para in paragraphs(&doc.body_text()) {
+            out.push_str(&para);
+            out.push_str("\n\n");
+        }
+    }
+    out
+}
+
+fn rtf_escape(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '{' => out.push_str("\\{"),
+            '}' => out.push_str("\\}"),
+            '\n' => out.push_str("\\line "),
+            c if c.is_ascii() => out.push(c),
+            c => out.push_str(&format!("\\u{}?", c as i32)),
+        }
+    }
+    out
+}
+
+fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
+    let mut out = String::new();
+    out.push_str("{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Times New Roman;}{\\f1 Courier New;}}\n");
+    out.push_str("\\paperw11906\\paperh16838\\margl1440\\margr1440\\margt1440\\margb1440\n");
+    if settings.include_title_page {
+        out.push_str("\\qc\\f0\\fs52 ");
+        out.push_str(&rtf_escape(&project.title));
+        out.push_str("\\par\\fs24\\par ");
+        out.push_str(&rtf_escape(&project.author));
+        out.push_str("\\par\\page\n");
+    }
+    for doc in front_matter(project, settings) {
+        out.push_str(&format!(
+            "\\f0\\fs32\\b {}\\b0\\fs24\\par\n",
+            rtf_escape(&doc.title)
+        ));
+        for para in paragraphs(&doc.body_text()) {
+            out.push_str(&format!("{}\\par\n", rtf_escape(&para)));
+        }
+    }
+    for (i, section) in manuscript_sections(project).iter().enumerate() {
+        let title = section_title(project, section.doc, i, settings);
+        out.push_str(&format!(
+            "\\page\\f0\\fs36\\b {}\\b0\\fs24\\par\n",
+            rtf_escape(&title)
+        ));
+        if section.doc.medium.is_script() {
+            for block in &section.doc.blocks {
+                let indent = match block.kind {
+                    ElementKind::Character => 4400,
+                    ElementKind::Parenthetical => 3200,
+                    ElementKind::Dialogue => 2000,
+                    _ => 0,
+                };
+                let text = if block.kind.is_uppercase() {
+                    block.text.to_uppercase()
+                } else {
+                    block.text.clone()
+                };
+                out.push_str(&format!(
+                    "\\f1\\fs24\\li{}\\ri0 {}\\par\n",
+                    indent,
+                    rtf_escape(&text)
+                ));
+            }
+        } else {
+            for para in paragraphs(&section.doc.body_text()) {
+                out.push_str(&format!("{}\\par\n", rtf_escape(&para)));
+            }
+        }
+    }
+    for doc in back_matter(project, settings) {
+        out.push_str(&format!(
+            "\\page\\f0\\fs32\\b {}\\b0\\fs24\\par\n",
+            rtf_escape(&doc.title)
+        ));
+        for para in paragraphs(&doc.body_text()) {
+            out.push_str(&format!("{}\\par\n", rtf_escape(&para)));
+        }
+    }
+    out.push_str("}\n");
+    out
+}
+
+fn txt_manuscript(project: &Project, settings: &ExportSettings) -> String {
+    let mut out = String::new();
+    if settings.include_title_page {
+        out.push_str(&format!("{}\n", project.title.to_uppercase()));
+        if !project.subtitle.is_empty() {
+            out.push_str(&format!("{}\n", project.subtitle));
+        }
+        out.push_str(&format!("\nby {}\n\n", project.author));
+        out.push_str(&"-".repeat(40));
+        out.push_str("\n\n");
+    }
+    for doc in front_matter(project, settings) {
+        out.push_str(&format!("{}\n\n", doc.title.to_uppercase()));
+        for para in paragraphs(&doc.body_text()) {
+            out.push_str(&format!("{}\n\n", para));
+        }
+    }
+    for (i, section) in manuscript_sections(project).iter().enumerate() {
+        let title = section_title(project, section.doc, i, settings);
+        out.push_str(&format!("\n{}\n{}\n\n", title.to_uppercase(), "-".repeat(title.len())));
+        if section.doc.medium.is_script() {
+            for block in &section.doc.blocks {
+                out.push_str(&script::block_to_plain(block));
+                out.push_str("\n\n");
+            }
+        } else {
+            for para in paragraphs(&section.doc.body_text()) {
+                out.push_str(&format!("{}\n\n", para));
+            }
+        }
+    }
+    for doc in back_matter(project, settings) {
+        out.push_str(&format!("\n{}\n\n", doc.title.to_uppercase()));
+        for para in paragraphs(&doc.body_text()) {
+            out.push_str(&format!("{}\n\n", para));
+        }
+    }
+    out
+}
+
+fn bundle_manuscript(project: &Project) -> Result<Vec<u8>, String> {
+    let mut buf = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut buf);
+        let mut zip = ZipWriter::new(cursor);
+        let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        let json = serde_json::to_string_pretty(project).map_err(|e| e.to_string())?;
+        zip.start_file("project.json", opts).unwrap();
+        zip.write_all(json.as_bytes()).unwrap();
+        zip.start_file("manuscript.md", opts).unwrap();
+        zip.write_all(markdown_manuscript(project, &project.export).as_bytes())
+            .unwrap();
+        zip.start_file("screenplay.fountain", opts).unwrap();
+        zip.write_all(fountain_manuscript(project, &project.export).as_bytes())
+            .unwrap();
+        let mut notes = String::new();
+        for doc in &project.documents {
+            if !doc.snapshots.is_empty() {
+                notes.push_str(&format!(
+                    "# {}\n\n{} snapshots\n\n",
+                    doc.title,
+                    doc.snapshots.len()
+                ));
+                for snap in &doc.snapshots {
+                    notes.push_str(&format!("- {} · {} words · {}\n", snap.name, snap.words, snap.created));
+                }
+            }
+        }
+        zip.start_file("version-notes.md", opts).unwrap();
+        zip.write_all(notes.as_bytes()).unwrap();
+        zip.start_file("README.txt", opts).unwrap();
+        zip.write_all(
+            format!(
+                "{} by {}\n\nThis bundle contains the project file, a Markdown manuscript, a Fountain screenplay, and version notes.\nOpen project.json with Scriptorium to continue writing.\n",
+                project.title, project.author
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        zip.finish().unwrap();
+    }
+    Ok(buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn demo() -> Project {
+        msc_core::sample::demo()
+    }
+
+    #[test]
+    fn pdf_has_signature_and_pages() {
+        let p = demo();
+        let mut s = p.export.clone();
+        s.kind = ExportKind::Pdf;
+        let bytes = pdf_manuscript(&p, &s);
+        assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert!(String::from_utf8_lossy(&bytes).contains("/Type /Page"));
+        assert!(String::from_utf8_lossy(&bytes).contains("The Salt Road"));
+    }
+
+    #[test]
+    fn epub_has_mimetype_first() {
+        let p = demo();
+        let bytes = epub_manuscript(&p, &p.export);
+        assert!(bytes.starts_with(b"PK"));
+        assert!(bytes.windows(8).any(|w| w == b"mimetype"));
+    }
+
+    #[test]
+    fn docx_is_a_zip() {
+        let p = demo();
+        let bytes = docx_manuscript(&p, &p.export);
+        assert!(bytes.starts_with(b"PK"));
+    }
+
+    #[test]
+    fn fdx_is_wellformed_ish() {
+        let p = demo();
+        let fdx = fdx_manuscript(&p, &p.export);
+        assert!(fdx.contains("<FinalDraft"));
+        assert!(fdx.contains("Scene Heading"));
+    }
+
+    #[test]
+    fn every_format_exports_to_disk() {
+        let p = demo();
+        let dir = std::env::temp_dir().join(format!("scriptorium-test-{}", msc_core::new_id("t")));
+        for kind in ExportKind::all() {
+            let mut s = p.export.clone();
+            s.kind = kind;
+            let path = dir.join(default_filename(&p, kind));
+            let info = export(&p, &s, Some(&path)).unwrap();
+            assert!(info.bytes > 100, "{:?} too small", kind);
+            assert!(path.exists());
+        }
+        let _ = fs::remove_dir_all(dir);
+    }
+}

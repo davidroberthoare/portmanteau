@@ -1,0 +1,6 @@
+/target
+/shots
+/export
+/exports
+*.scriptorium.json
+.DS_Store
