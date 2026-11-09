@@ -30,3 +30,12 @@
 - Note: a concurrent process committed unrelated PDF/binder fixes (d7d8f33..c03c578) during the round; no overlap with Round 1 files, build still green.
 - Learned: subagents lack `git commit` permission; the Conductor must commit.
 - Gate 1 (tester): PASS — 14 independent integration tests; they exposed storage ambiguities for ALL-CAPS Action, custom scene headings and lone Dialogue. Fixed in 7e812b5; full workspace now passes 49 tests.
+
+## Round 1 — Gate 1 (tester) verdict: PASS (at 7e812b5)
+
+- Tester added `crates/msc-api/tests/round1_verification.rs` (14 tests) and verified all 5 criteria.
+- Tester (and a concurrent fix) caught a real lossless-round-trip bug at 955d540: SceneHeading
+  without INT./EXT. and ALL-CAPS Action were misread as Character. Fixed in 7e812b5 by emitting
+  explicit boneyard markers for ambiguous kinds. Accepted baseline is 7e812b5 (49 tests green).
+- Open follow-ups folded into Round 2: (RISK3) msc-mcp project_save description + missing
+  project_open tool; (RISK4) Save-As still defaults extensionless paths to legacy .json.
