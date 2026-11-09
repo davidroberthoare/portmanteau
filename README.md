@@ -157,23 +157,28 @@ cargo run -p msc-cli -- stats
 cargo run -p msc-cli -- export.run '{"format":"EPUB","path":"exports"}'
 cargo run -p msc-cli -- document.create '{"title":"New scene","kind":"Scene","medium":"Screenplay"}'
 cargo run -p msc-cli -- document.move '{"id":"doc-…","direction":"up"}' \
-  --project book.scriptorium.json --save
+  --project book.scriptorium --save
 ```
 
 The CLI is one command per process. Add `--save` to write a mutating command
-back to the project file; otherwise it runs against an in-memory copy.
+back to the project; otherwise it runs against an in-memory copy.
 
-Project files are JSON with the extension `.scriptorium.json`. Saving without a
-path uses `~/Scriptorium/the-salt-road.scriptorium.json`. The File menu has
-Open, Save and Save As, with `Ctrl/Cmd+O` and `Ctrl/Cmd+Shift+S` shortcuts.
+Projects are folder packages with the extension `.scriptorium`. `project.json`
+is the manifest — binder structure and short metadata — and each document body
+is a Markdown or Fountain file in `documents/`, so the writing stays readable
+and diffable outside Scriptorium. Saving without a path uses
+`~/Scriptorium/the-salt-road.scriptorium/`. Opening a legacy
+`.scriptorium.json` file still works, and saving to a `.json` path keeps that
+single-file form. The File menu has Open, Save and Save As, with `Ctrl/Cmd+O`
+and `Ctrl/Cmd+Shift+S` shortcuts.
 
 ## Local-only, deliberately
 
 Scriptorium has no accounts, network code, shared review server or sync layer.
-Everything lives in a plain `.scriptorium.json` project file on the writer's
-own disk, and the project bundle is a local archive rather than a collaboration
-format. Any future commenting should be built on versioned files in the
-writer's own repository, not on a hosted service.
+Everything lives in a project folder on the writer's own disk, and the project
+bundle is a local archive rather than a collaboration format. Any future
+commenting should be built on versioned files in the writer's own repository,
+not on a hosted service.
 
 ## Known limits and next steps
 

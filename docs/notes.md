@@ -131,6 +131,31 @@ thing a visual check catches.
     diff screen was reviewed directly with `SCRIPTORIUM_DIFF=1`. Export paths
     were exercised again through `msc-cli`.
 
+21. **Moved projects to a folder package.** A project is now a `.scriptorium`
+    directory instead of one JSON blob: `project.json` holds the binder
+    structure and short metadata, and every long body is externalised.
+    Documents are `documents/<nn>-<slug>-<id8>.md` (prose, verbatim) or
+    `.fountain` (scripts); research lives in `research/`, named snapshots in
+    `snapshots/<docid8>/`, checkpoint payloads in `checkpoints/<id>.json`, and
+    `assets/` is reserved for future binaries. Filenames are derived from the
+    record, never stored, so `msc-core` stays free of filesystem knowledge.
+    The `<id8>` suffix is the lookup key; the number and title slug are there
+    for humans. Saves clear and rewrite the managed directories, so renaming
+    or moving a document cannot leave an orphan file behind.
+    Checkpoint *ordering* comes from the manifest array: the manifest keeps
+    each checkpoint's id/label/created/kind/words with its payload emptied, and
+    the full JSON (including payload) is read from `checkpoints/<id>.json` on
+    load.
+    Old `.scriptorium.json` files still open and still save as single files;
+    new saves default to `~/Scriptorium/<slug>.scriptorium/`.
+    Script bodies stay human-readable Fountain. The three kinds Fountain cannot
+    express directly — shot, stage direction and general — carry a boneyard
+    comment (`/* @shot */`, `/* @stage */`, `/* @general */`) on the line
+    before the block; boneyard is ignored by standard Fountain readers. A
+    dialogue block with no preceding character or parenthetical cue carries
+    `/* @dialogue */` for the same reason, so even a lone dialogue block
+    round-trips without loss.
+
 ## Screen review notes
 
 - The writing screen reads as a book page rather than a form. The paper surface,

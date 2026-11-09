@@ -494,7 +494,7 @@ impl ScriptoriumApp {
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|| {
                         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-                        format!("{home}/Scriptorium/{}.scriptorium.json", slug(&self.ws.project.title))
+                        format!("{home}/Scriptorium/{}.scriptorium/", slug(&self.ws.project.title))
                     });
                 ui.close_menu();
             }
@@ -1091,12 +1091,12 @@ impl ScriptoriumApp {
             PathDialog::Open => (
                 "Open project",
                 "Open",
-                "Path to a .scriptorium.json project",
+                "Path to a .scriptorium project folder (or a legacy .json file)",
             ),
             PathDialog::SaveAs => (
                 "Save project as",
                 "Save",
-                "Where the project file should live",
+                "Where the project folder should live (or a legacy .json file)",
             ),
         };
         egui::Window::new(title)
@@ -1107,7 +1107,7 @@ impl ScriptoriumApp {
             .min_width(520.0)
             .show(ctx, |ui| {
                 ui.add_space(4.0);
-                section_label(ui, "Project file");
+                section_label(ui, "Project folder or file");
                 ui.add_space(3.0);
                 let resp = ui.add(
                     TextEdit::singleline(&mut self.path_draft)
@@ -1275,7 +1275,7 @@ impl ScriptoriumApp {
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| {
                     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-                    format!("{home}/Scriptorium/{}.scriptorium.json", slug(&self.ws.project.title))
+                    format!("{home}/Scriptorium/{}.scriptorium/", slug(&self.ws.project.title))
                 });
         }
         if open {

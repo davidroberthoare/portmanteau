@@ -6,6 +6,8 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod storage;
+
 use msc_core::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -78,9 +80,15 @@ impl Workspace {
     }
 
     pub fn open(path: &Path) -> Result<Self, String> {
-        let text = std::fs::read_to_string(path).map_err(|e| format!("Could not read: {e}"))?;
-        let project: Project =
-            serde_json::from_str(&text).map_err(|e| format!("Not a Scriptorium project: {e}"))?;
+        let project = if path.is_dir() {
+            storage::load_folder(path)?
+        } else if is_legacy_json(path) {
+            let text = std::fs::read_to_string(path).map_err(|e| format!("Could not read: {e}"))?;
+            serde_json::from_str(&text)
+                .map_err(|e| format!("Not a Scriptorium project: {e}"))?
+        } else {
+            return Err("Not a Scriptorium project".into());
+        };
         Ok(Self {
             project,
             path: Some(path.to_path_buf()),
@@ -92,12 +100,21 @@ impl Workspace {
     }
 
     pub fn save(&mut self, path: Option<PathBuf>) -> Result<String, String> {
-        let target = path.or_else(|| self.path.clone()).unwrap_or_else(default_save_path);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let target = path
+            .or_else(|| self.path.clone())
+            .unwrap_or_else(|| default_save_path(&self.project));
+        if is_legacy_json(&target) {
+            if let Some(parent) = target.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+            }
+            let text = serde_json::to_string_pretty(&self.project).map_err(|e| e.to_string())?;
+            std::fs::write(&target, text).map_err(|e| e.to_string())?;
+        } else {
+            std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+            storage::save_folder(&self.project, &target)?;
         }
-        let text = serde_json::to_string_pretty(&self.project).map_err(|e| e.to_string())?;
-        std::fs::write(&target, text).map_err(|e| e.to_string())?;
         self.path = Some(target.clone());
         self.dirty = false;
         let msg = format!("Saved {}", target.display());
@@ -733,11 +750,15 @@ impl Workspace {
     }
 }
 
-pub fn default_save_path() -> PathBuf {
+pub fn default_save_path(project: &Project) -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     PathBuf::from(home)
         .join("Scriptorium")
-        .join("the-salt-road.scriptorium.json")
+        .join(format!("{}.scriptorium", storage::slugify(&project.title)))
+}
+
+fn is_legacy_json(path: &Path) -> bool {
+    path.to_string_lossy().to_ascii_lowercase().ends_with(".json")
 }
 
 fn str_arg(value: &Value, key: &str) -> Option<String> {
@@ -790,8 +811,8 @@ pub fn command_catalogue() -> Vec<Value> {
     let entries = [
         ("project.info", "Summarise the open project", "{}"),
         ("project.new", "Create a project", r#"{"title":"...","kind":"Novel"}"#),
-        ("project.open", "Open a .scriptorium.json project", r#"{"path":"..."}"#),
-        ("project.save", "Save the project", r#"{"path":"..."}"#),
+        ("project.open", "Open a project folder or legacy .json file", r#"{"path":"..."}"#),
+        ("project.save", "Save the project to a folder or legacy .json file", r#"{"path":"..."}"#),
         ("project.checkpoint", "Save a full version checkpoint", r#"{"label":"..."}"#),
         ("project.restore_checkpoint", "Restore a checkpoint", r#"{"id":"cp-..."}"#),
         ("project.snapshots", "List document snapshots", "{}"),
@@ -910,6 +931,35 @@ mod tests {
         );
         assert!(res.ok, "{}", res.message);
         assert!(ws.last_export.is_some());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn folder_roundtrip_preserves_project() {
+        let ws = Workspace::demo();
+        let dir = std::env::temp_dir().join(msc_core::new_id("api-folder"));
+        storage::save_folder(&ws.project, &dir).expect("save folder");
+        assert!(dir.join("project.json").is_file());
+        assert!(dir.join("assets").is_dir());
+        let reloaded = storage::load_folder(&dir).expect("load folder");
+        assert_eq!(
+            serde_json::to_string(&ws.project).unwrap(),
+            serde_json::to_string(&reloaded).unwrap()
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn workspace_saves_and_opens_a_folder() {
+        let mut ws = Workspace::demo();
+        let dir = std::env::temp_dir().join(msc_core::new_id("api-ws-folder"));
+        ws.save(Some(dir.clone())).expect("save workspace");
+        assert!(dir.is_dir());
+        let reopened = Workspace::open(&dir).expect("open workspace");
+        assert_eq!(
+            serde_json::to_string(&ws.project).unwrap(),
+            serde_json::to_string(&reopened.project).unwrap()
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }

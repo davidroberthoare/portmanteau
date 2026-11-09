@@ -254,6 +254,146 @@ pub fn to_fountain(blocks: &[Block], medium: crate::Medium) -> String {
     out.trim().to_string() + "\n"
 }
 
+fn boneyard_marker(kind: ElementKind) -> Option<&'static str> {
+    match kind {
+        ElementKind::Shot => Some("/* @shot */"),
+        ElementKind::StageDirection => Some("/* @stage */"),
+        ElementKind::General => Some("/* @general */"),
+        ElementKind::Dialogue => Some("/* @dialogue */"),
+        _ => None,
+    }
+}
+
+fn marker_kind(line: &str) -> Option<ElementKind> {
+    match line {
+        "/* @shot */" => Some(ElementKind::Shot),
+        "/* @stage */" => Some(ElementKind::StageDirection),
+        "/* @general */" => Some(ElementKind::General),
+        "/* @dialogue */" => Some(ElementKind::Dialogue),
+        _ => None,
+    }
+}
+
+/// Render blocks for on-disk storage.
+///
+/// This is Fountain, but the kinds Fountain cannot express directly carry a
+/// boneyard comment on the line before the block so that a round trip loses
+/// nothing. Standard Fountain readers ignore boneyard comments. A dialogue
+/// block with no character or parenthetical cue before it carries the same
+/// marker, so a single dialogue block can round-trip on its own.
+pub fn to_storage_fountain(blocks: &[Block], medium: crate::Medium) -> String {
+    let mut out = String::new();
+    let mut previous: Option<ElementKind> = None;
+    for (i, b) in blocks.iter().enumerate() {
+        if i > 0 {
+            out.push_str("\n\n");
+        }
+        let marker = match b.kind {
+            ElementKind::Dialogue
+                if matches!(
+                    previous,
+                    Some(ElementKind::Character) | Some(ElementKind::Parenthetical)
+                ) =>
+            {
+                None
+            }
+            kind => boneyard_marker(kind),
+        };
+        if let Some(marker) = marker {
+            out.push_str(marker);
+            out.push('\n');
+        }
+        out.push_str(block_to_fountain(b, medium).trim_start_matches('\n'));
+        previous = Some(b.kind);
+    }
+    out.trim().to_string() + "\n"
+}
+
+fn is_scene_heading(upper: &str) -> bool {
+    upper.starts_with("INT.")
+        || upper.starts_with("EXT.")
+        || upper.starts_with("INT-EXT")
+        || upper.starts_with("I-E")
+        || upper.starts_with("I/E")
+        || upper.starts_with("INT/EXT")
+        || upper.starts_with("EST.")
+}
+
+/// Classify one Fountain line, if it carries explicit Fountain syntax.
+fn fountain_syntax(line: &str) -> Option<ElementKind> {
+    if line.starts_with("## ") {
+        return Some(ElementKind::Scene);
+    }
+    if line.starts_with("# ") {
+        return Some(ElementKind::Act);
+    }
+    if line.starts_with("> ") {
+        return Some(ElementKind::Transition);
+    }
+    if line.starts_with('~') {
+        return Some(ElementKind::Lyric);
+    }
+    if line.starts_with('(') {
+        return Some(ElementKind::Parenthetical);
+    }
+    if is_scene_heading(&line.to_uppercase()) {
+        return Some(ElementKind::SceneHeading);
+    }
+    if is_all_caps(line) && line.chars().count() <= 45 {
+        return Some(ElementKind::Character);
+    }
+    None
+}
+
+/// Rebuild typed blocks from storage Fountain. This is the inverse of
+/// `to_storage_fountain`.
+pub fn parse_fountain(text: &str, medium: crate::Medium) -> Vec<Block> {
+    let _ = medium;
+    let mut blocks = Vec::new();
+    let mut pending: Option<ElementKind> = None;
+    let mut expect_dialogue = false;
+    for raw in text.split('\n') {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(kind) = marker_kind(line) {
+            pending = Some(kind);
+            continue;
+        }
+        // Ignore any other boneyard comment rather than turning it into prose.
+        if line.starts_with("/*") && line.ends_with("*/") {
+            continue;
+        }
+        let kind = if let Some(kind) = pending.take() {
+            kind
+        } else if let Some(kind) = fountain_syntax(line) {
+            kind
+        } else if expect_dialogue {
+            ElementKind::Dialogue
+        } else {
+            ElementKind::Action
+        };
+        let body = match kind {
+            ElementKind::Act => line.strip_prefix("# ").unwrap_or(line).trim(),
+            ElementKind::Scene => line.strip_prefix("## ").unwrap_or(line).trim(),
+            ElementKind::Transition => line.strip_prefix("> ").unwrap_or(line).trim(),
+            ElementKind::Lyric => line.strip_prefix('~').unwrap_or(line).trim(),
+            _ => line,
+        };
+        expect_dialogue = match kind {
+            ElementKind::Character => true,
+            ElementKind::Parenthetical => expect_dialogue,
+            _ => false,
+        };
+        blocks.push(Block {
+            kind,
+            text: body.to_string(),
+        });
+    }
+    blocks
+}
+
 /// Render a block as aligned plain text for screenplay PDFs and .txt.
 pub fn block_to_plain(block: &Block) -> String {
     let text = if block.kind.is_uppercase() {
@@ -321,5 +461,50 @@ mod tests {
         }];
         let fountain = to_fountain(&blocks, crate::Medium::Screenplay);
         assert!(fountain.contains("INT. BOAT - NIGHT"));
+    }
+
+    #[test]
+    fn storage_fountain_roundtrips_every_kind() {
+        let medium = crate::Medium::Screenplay;
+        let cases = [
+            (ElementKind::SceneHeading, "INT. HARBOUR OFFICE - NIGHT"),
+            (ElementKind::Action, "The tide went out that morning."),
+            (ElementKind::Character, "MARA"),
+            (ElementKind::Parenthetical, "(to herself)"),
+            (ElementKind::Dialogue, "We should go."),
+            (ElementKind::Transition, "CUT TO:"),
+            (ElementKind::Shot, "CLOSE ON THE COMPASS"),
+            (ElementKind::Act, "ACT ONE"),
+            (ElementKind::Scene, "The lamp room. Night."),
+            (ElementKind::StageDirection, "Nell winds the mechanism."),
+            (ElementKind::Lyric, "The sea remembers."),
+            (ElementKind::General, "A note to the director."),
+        ];
+        for (kind, text) in cases {
+            let original = Block {
+                kind,
+                text: text.into(),
+            };
+            let storage = to_storage_fountain(std::slice::from_ref(&original), medium);
+            let parsed = parse_fountain(&storage, medium);
+            assert_eq!(parsed.len(), 1, "{kind:?}: {storage:?}");
+            assert_eq!(parsed[0].kind, kind, "{kind:?}: {storage:?}");
+            assert_eq!(
+                parsed[0].text,
+                original.text.trim(),
+                "{kind:?}: {storage:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn storage_fountain_keeps_dialogue_after_character() {
+        let blocks = vec![
+            Block::new(ElementKind::Character, "MARA"),
+            Block::new(ElementKind::Parenthetical, "(quietly)"),
+            Block::new(ElementKind::Dialogue, "The chart is wrong."),
+        ];
+        let storage = to_storage_fountain(&blocks, crate::Medium::Screenplay);
+        assert_eq!(parse_fountain(&storage, crate::Medium::Screenplay), blocks);
     }
 }

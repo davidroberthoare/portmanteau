@@ -75,9 +75,13 @@ are deliberately coarse and intention-revealing (`document.snapshot`,
 - the MCP tool environment's examples,
 - documentation and future client generation.
 
-Persistence is plain JSON. A project is portable, diffable and easy to inspect.
-That is a deliberate trade for a first version; a transactional store can sit
-behind the same commands later.
+Persistence is a folder package. `project.json` is the manifest — binder
+structure and short metadata — and each document body sits beside it as a
+Markdown or lossless-Fountain file, with snapshots and checkpoint payloads in
+their own directories. A project stays portable, diffable and easy to inspect;
+a writer can read the manuscript in any text editor. Legacy single-file
+`.scriptorium.json` projects still open and save, while new saves use the
+folder form. A transactional store can sit behind the same commands later.
 
 ### `msc-mcp` and `msc-cli`
 
