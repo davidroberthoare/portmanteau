@@ -272,6 +272,15 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
                 if !row.include {
                     title.push_str("  (excluded)");
                 }
+                // The painter clips without an ellipsis, which hid the end of a
+                // long chapter name. Truncate to the available width so a writer
+                // can see that the row continues.
+                let max_chars = ((title_rect.width() / 5.9).floor() as usize).max(4);
+                if title.chars().count() > max_chars {
+                    let mut cut: String = title.chars().take(max_chars.saturating_sub(1)).collect();
+                    cut.push('…');
+                    title = cut;
+                }
                 painter.text(
                     title_rect.left_center(),
                     egui::Align2::LEFT_CENTER,
