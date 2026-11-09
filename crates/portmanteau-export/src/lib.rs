@@ -353,6 +353,46 @@ fn element_css_indent(style: &ElementStyle, fallback: &str) -> String {
     }
 }
 
+/// CSS keyword for an element's paragraph alignment.
+fn css_align(align: Alignment) -> &'static str {
+    match align {
+        Alignment::Left => "left",
+        Alignment::Center => "center",
+        Alignment::Right => "right",
+        Alignment::Justify => "justify",
+    }
+}
+
+/// CSS declarations for left/right indents, empty when both are zero.
+fn css_indent_margins(style: &ElementStyle) -> String {
+    let mut out = String::new();
+    if style.indent > 0.0 {
+        out.push_str(&format!("margin-left: {:.2}pt; ", style.indent));
+    }
+    if style.right_indent > 0.0 {
+        out.push_str(&format!("margin-right: {:.2}pt; ", style.right_indent));
+    }
+    out
+}
+
+/// Approximate advance width of a line in the PDF prose face (Times).
+fn pdf_text_width(text: &str, size: f32) -> f32 {
+    text.chars().count() as f32 * size * 0.5
+}
+
+/// The left edge for one prose line inside `left..right`, honouring Paragraph
+/// alignment. Justified text is laid out from the left edge, as the built-in
+/// writer does not stretch inter-word spaces.
+fn aligned_x(text: &str, align: Alignment, left: f32, right: f32, size: f32) -> f32 {
+    let width = (right - left).max(1.0);
+    let text_width = pdf_text_width(text, size).min(width);
+    match align {
+        Alignment::Center => left + (width - text_width) / 2.0,
+        Alignment::Right => right - text_width,
+        Alignment::Left | Alignment::Justify => left,
+    }
+}
+
 fn build_pdf(
     title: &str,
     author: &str,
@@ -838,18 +878,31 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     // Prose: flowing layout with chapter headings and optional front matter.
     // Times-Roman averages roughly half an em per character. The old formula
     // mixed millimetres and points and let lines run past the page edge.
-    let chars_per_line = (content_width / (size * 0.50)).max(30.0) as usize;
+    let body_style = &settings.styles.body;
+    let prose_left = margin + body_style.indent;
+    let prose_right = (w - margin - body_style.right_indent).max(prose_left + 60.0);
+    let chars_per_line = ((prose_right - prose_left) / (size * 0.50)).max(30.0) as usize;
     let mut headings: Vec<(String, usize)> = Vec::new();
-    let add_para = |flow: &mut PdfFlow, text: &str, bold: bool, indent: f32| {
-        for part in wrap_text(text, chars_per_line) {
-            flow.line(part, margin + indent, size, bold, 0.0);
+    let add_para = |flow: &mut PdfFlow, text: &str, bold: bool| {
+        for (i, part) in wrap_text(text, chars_per_line).iter().enumerate() {
+            let mut x = aligned_x(
+                part,
+                body_style.align,
+                prose_left,
+                prose_right,
+                size,
+            );
+            if i == 0 {
+                x += body_style.first_line_indent;
+            }
+            flow.line(part.clone(), x, size, bold, 0.0);
         }
     };
 
     for doc in front_matter(project, settings) {
         flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
         for para in paragraphs(&doc.body_text()) {
-            add_para(&mut flow, &para, false, 0.0);
+            add_para(&mut flow, &para, false);
             flow.line(String::new(), margin, size, false, 0.0);
         }
         flow.page_break();
@@ -860,15 +913,20 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         flow.page_break();
         let title = section_title(project, section.doc, i, settings);
         headings.push((title.clone(), flow.pages.len() + 1));
-        let head_size = settings.styles.chapter_heading.size.max(size);
+        let head_style = &settings.styles.chapter_heading;
+        let head_size = head_style.size.max(size);
+        let head_left = margin + head_style.indent;
+        let head_right = (w - margin - head_style.right_indent).max(head_left + 40.0);
+        let head_chars = ((head_right - head_left) / (head_size * 0.50)).max(12.0) as usize;
         let mut first_heading_line = true;
-        for part in wrap_text(&title, chars_per_line) {
+        for part in wrap_text(&title, head_chars) {
             let gap_before = if first_heading_line {
-                settings.styles.chapter_heading.before
+                head_style.before
             } else {
                 0.0
             };
-            flow.line(part, margin, head_size, true, gap_before);
+            let x = aligned_x(&part, head_style.align, head_left, head_right, head_size);
+            flow.line(part, x, head_size, true, gap_before);
             first_heading_line = false;
         }
         flow.line(
@@ -935,7 +993,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             }
         } else {
             for para in paragraphs(&section.doc.body_text()) {
-                add_para(&mut flow, &para, false, 0.0);
+                add_para(&mut flow, &para, false);
                 flow.line(String::new(), margin, size, false, 0.0);
             }
         }
@@ -949,7 +1007,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         flow.page_break();
         flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
         for para in paragraphs(&doc.body_text()) {
-            add_para(&mut flow, &para, false, 0.0);
+            add_para(&mut flow, &para, false);
             flow.line(String::new(), margin, size, false, 0.0);
         }
     }
@@ -1072,12 +1130,20 @@ fn epub_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         let character_indent = element_css_indent(&st.character, "32%");
         let parenthetical_indent = element_css_indent(&st.parenthetical, "26%");
         let dialogue_indent = element_css_indent(&st.dialogue, "18%");
+        let body_align = css_align(st.body.align);
+        let heading_align = css_align(st.chapter_heading.align);
+        let body_margins = css_indent_margins(&st.body);
+        let heading_margins = css_indent_margins(&st.chapter_heading);
+        let title_align = css_align(st.title_page_title.align);
+        let subtitle_align = css_align(st.title_page_subtitle.align);
+        let author_align = css_align(st.title_page_author.align);
+        let body_first_indent = st.body.first_line_indent.max(0.0);
         let css = format!(
-            r#"body {{ font-family: {body_font}; line-height: {body_leading:.2}; margin: 5%; color: #1b1b1b; }}
-h1 {{ font-size: {chapter_size:.1}pt; margin: 2em 0 1em; page-break-before: always; }}
-h2 {{ font-size: 1.25em; margin: 1.5em 0 .8em; }}
-p {{ margin: 0 0 0 .2em; text-indent: 1.4em; text-align: justify; }}
-p.first, .front p {{ text-indent: 0; }}
+            r#"body {{ font-family: {body_font}; line-height: {body_leading:.2}; margin: 5%; {body_margins}text-align: {body_align}; color: #1b1b1b; }}
+h1 {{ font-size: {chapter_size:.1}pt; margin: 2em 0 1em; page-break-before: always; text-align: {heading_align}; {heading_margins}}}
+h2 {{ font-size: 1.25em; margin: 1.5em 0 .8em; text-align: {heading_align}; }}
+p {{ margin: 0 0 0 .2em; text-indent: {body_first_indent:.2}pt; text-align: {body_align}; }}
+p.first {{ text-indent: 0; }}
 .center {{ text-align: center; text-indent: 0; }}
 .scene {{ font-family: {scene_font}; font-size: {scene_size:.1}pt; text-transform: uppercase; font-weight: bold; margin-top: 1.5em; text-indent: 0; }}
 .action {{ font-family: {action_font}; font-size: {action_size:.1}pt; margin: .5em 0 .8em; text-indent: 0; }}
@@ -1086,15 +1152,23 @@ p.first, .front p {{ text-indent: 0; }}
 .dialogue {{ font-family: {dialogue_font}; font-size: {dialogue_size:.1}pt; margin: 0 10% .7em {dialogue_indent}; text-indent: 0; }}
 .transition {{ font-family: {transition_font}; font-size: {transition_size:.1}pt; text-align: right; text-indent: 0; }}
 .title-page {{ text-align: center; margin-top: 26%; }}
-.title-page h1 {{ page-break-before: avoid; font-size: {title_size:.1}pt; }}
-.title-page .subtitle {{ font-size: {subtitle_size:.1}pt; }}
-.byline {{ font-size: {author_size:.1}pt; margin-top: 1.5em; }}
+.title-page h1 {{ page-break-before: avoid; font-size: {title_size:.1}pt; text-align: {title_align}; }}
+.title-page .subtitle {{ font-size: {subtitle_size:.1}pt; text-align: {subtitle_align}; }}
+.byline {{ font-size: {author_size:.1}pt; margin-top: 1.5em; text-align: {author_align}; }}
 .imprint {{ margin-top: 4em; font-size: .85em; color: #555; }}
 .cover {{ text-align: center; margin: 0; padding: 0; }}
 .cover img {{ max-width: 100%; }}
 "#,
             body_font = body_font,
             body_leading = st.body.leading.max(1.0),
+            body_align = body_align,
+            body_margins = body_margins,
+            body_first_indent = body_first_indent,
+            heading_align = heading_align,
+            heading_margins = heading_margins,
+            title_align = title_align,
+            subtitle_align = subtitle_align,
+            author_align = author_align,
             chapter_size = st.chapter_heading.size.max(8.0),
             scene_font = scene_font,
             scene_size = st.scene_heading.size.max(8.0),
@@ -1599,11 +1673,21 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
     let body_font = element_css_font(&st.body, "Liberation Serif");
     let script_font = element_css_font(&st.action, "Courier New");
     let chapter_size = st.chapter_heading.size.max(8.0);
+    let body_align = css_align(st.body.align);
+    let heading_align = css_align(st.chapter_heading.align);
+    let body_indent_margins = css_indent_margins(&st.body);
+    let body_first_indent = st.body.first_line_indent.max(0.0);
+    let title_align = css_align(st.title_page_title.align);
     format!(
-        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n<title>{title}</title>\n<style>\nbody{{max-width:42rem;margin:4rem auto;padding:0 1.5rem;font-family:{body_font};line-height:{body_leading:.2};color:#1e1c19;background:#fbf8f1}}\nh1{{font-size:{h1_size:.1}pt;line-height:1.1}}h2{{font-size:{chapter_size:.1}pt;margin-top:3rem;border-bottom:1px solid #d8d0c0;padding-bottom:.4rem}}\np{{margin:0 0 .9rem;text-indent:1.4rem;text-align:justify}}p.first{{text-indent:0}}\n.titlepage{{text-align:center;margin:18vh 0 22vh}}.titlepage h1{{font-size:{title_size:.1}pt;margin-bottom:.3em}}.titlepage p{{text-indent:0}}.sub{{font-style:italic;color:#665f54}}\n.toc ol{{line-height:2}}.toc a{{color:#2f5d50;text-decoration:none}}\n.script{{font-family:{script_font};font-size:{script_size:.1}pt}}.script p{{text-indent:0;margin:.4rem 0;text-align:left}}\n.scene{{text-transform:uppercase;font-weight:bold;margin-top:1.6rem!important}}.character{{margin-left:32%!important;text-transform:uppercase;margin-top:1rem!important}}.paren{{margin-left:24%!important}}.dialogue{{margin-left:16%!important;margin-right:12%!important}}.trans{{text-align:right!important}}\n.frontmatter,.backmatter{{margin-top:4rem}}\n</style>\n</head>\n<body>\n{body}\n</body>\n</html>\n",
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n<title>{title}</title>\n<style>\nbody{{max-width:42rem;margin:4rem auto;padding:0 1.5rem;font-family:{body_font};line-height:{body_leading:.2};text-align:{body_align};color:#1e1c19;background:#fbf8f1}}\nh1{{font-size:{h1_size:.1}pt;line-height:1.1;text-align:{heading_align}}}h2{{font-size:{chapter_size:.1}pt;margin-top:3rem;border-bottom:1px solid #d8d0c0;padding-bottom:.4rem;text-align:{heading_align}}}\np{{margin:0 0 .9rem;{body_indent_margins}text-indent:{body_first_indent:.1}pt;text-align:{body_align}}}p.first{{text-indent:0}}\n.titlepage{{text-align:center;margin:18vh 0 22vh}}.titlepage h1{{font-size:{title_size:.1}pt;margin-bottom:.3em;text-align:{title_align}}}.titlepage p{{text-indent:0}}.sub{{font-style:italic;color:#665f54}}\n.toc ol{{line-height:2}}.toc a{{color:#2f5d50;text-decoration:none}}\n.script{{font-family:{script_font};font-size:{script_size:.1}pt}}.script p{{text-indent:0;margin:.4rem 0;text-align:left}}\n.scene{{text-transform:uppercase;font-weight:bold;margin-top:1.6rem!important}}.character{{margin-left:32%!important;text-transform:uppercase;margin-top:1rem!important}}.paren{{margin-left:24%!important}}.dialogue{{margin-left:16%!important;margin-right:12%!important}}.trans{{text-align:right!important}}\n.frontmatter,.backmatter{{margin-top:4rem}}\n</style>\n</head>\n<body>\n{body}\n</body>\n</html>\n",
         title = html_escape(&project.title),
         body_font = body_font,
         body_leading = st.body.leading.max(1.0),
+        body_align = body_align,
+        body_indent_margins = body_indent_margins,
+        body_first_indent = body_first_indent,
+        heading_align = heading_align,
+        title_align = title_align,
         h1_size = chapter_size * 1.5,
         chapter_size = chapter_size,
         title_size = st.title_page_title.size.max(8.0),
@@ -1966,6 +2050,66 @@ mod tests {
         s.styles.body.font = "SomeTestFont".into();
         let html = html_manuscript(&p, &s);
         assert!(html.contains("SomeTestFont"), "HTML should carry the font family");
+    }
+
+    fn max_pdf_x(bytes: &[u8]) -> f32 {
+        String::from_utf8_lossy(bytes)
+            .lines()
+            .filter(|line| line.ends_with(" Tm"))
+            .filter_map(|line| line.split_whitespace().nth(4))
+            .filter_map(|x| x.parse::<f32>().ok())
+            .fold(0.0_f32, f32::max)
+    }
+
+    #[test]
+    fn pdf_centered_chapter_heading_shifts_toward_the_middle() {
+        let mut p = Project::new("Heading Test", ProjectKind::Novel);
+        let parent = p.folder_id("Draft");
+        p.add_document(parent, "One", DocKind::Chapter, Medium::Prose);
+        let mut s = p.settings_for(ExportKind::Pdf);
+        // Strip the other centred elements so the heading is the only source of
+        // a mid-page start position.
+        s.include_title_page = false;
+        s.include_toc = false;
+        s.include_page_numbers = false;
+        s.include_running_headers = false;
+
+        s.styles.chapter_heading.align = Alignment::Left;
+        let left = max_pdf_x(&pdf_manuscript(&p, &s));
+        s.styles.chapter_heading.align = Alignment::Center;
+        let centered = max_pdf_x(&pdf_manuscript(&p, &s));
+        assert!(
+            centered > left + 40.0,
+            "centred heading should move right: left x {left}, centred x {centered}"
+        );
+    }
+
+    #[test]
+    fn epub_css_honours_body_alignment_and_first_line_indent() {
+        let p = demo();
+        let mut s = p.settings_for(ExportKind::Epub);
+        s.styles.body.align = Alignment::Center;
+        s.styles.body.first_line_indent = 21.0;
+        s.styles.chapter_heading.align = Alignment::Right;
+        let bytes = epub_manuscript(&p, &s);
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut css = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("OEBPS/style.css").unwrap(), &mut css)
+            .unwrap();
+        assert!(css.contains("text-indent: 21.00pt"), "EPUB CSS: {css}");
+        assert!(css.contains("text-align: center"), "EPUB CSS: {css}");
+        assert!(css.contains("text-align: right"), "EPUB CSS: {css}");
+    }
+
+    #[test]
+    fn html_css_honours_body_alignment_and_first_line_indent() {
+        let p = demo();
+        let mut s = p.settings_for(ExportKind::Html);
+        s.styles.body.align = Alignment::Justify;
+        s.styles.body.first_line_indent = 17.0;
+        let html = html_manuscript(&p, &s);
+        assert!(html.contains("text-indent:17.0pt"), "HTML CSS: {html}");
+        assert!(html.contains("text-align:justify"), "HTML CSS: {html}");
     }
 
     #[test]

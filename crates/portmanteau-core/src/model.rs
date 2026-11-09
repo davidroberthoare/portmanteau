@@ -536,6 +536,43 @@ impl PaperSize {
     }
 }
 
+/// Horizontal alignment for a paragraph, modelled after a word processor's
+/// paragraph dialog. Serialises as `"Left"`, `"Center"`, `"Right"` or
+/// `"Justify"`.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Alignment {
+    Left,
+    Center,
+    Right,
+    Justify,
+}
+
+impl Alignment {
+    pub fn label(self) -> &'static str {
+        match self {
+            Alignment::Left => "Left",
+            Alignment::Center => "Center",
+            Alignment::Right => "Right",
+            Alignment::Justify => "Justify",
+        }
+    }
+
+    pub fn all() -> [Alignment; 4] {
+        [
+            Alignment::Left,
+            Alignment::Center,
+            Alignment::Right,
+            Alignment::Justify,
+        ]
+    }
+}
+
+impl Default for Alignment {
+    fn default() -> Self {
+        Alignment::Left
+    }
+}
+
 /// Type for one kind of manuscript element. Every output format starts from
 /// the project's element styles when it has no saved settings of its own.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -544,8 +581,14 @@ pub struct ElementStyle {
     pub size: f32,        // points
     pub leading: f32,     // line-height multiple
     pub indent: f32,      // left indent, points
+    #[serde(default)]
+    pub first_line_indent: f32, // first-line indent, points
+    #[serde(default)]
+    pub right_indent: f32, // right indent, points
     pub before: f32,      // space before, points
     pub after: f32,       // space after, points
+    #[serde(default)]
+    pub align: Alignment,
 }
 
 impl Default for ElementStyle {
@@ -555,8 +598,11 @@ impl Default for ElementStyle {
             size: 11.0,
             leading: 1.4,
             indent: 0.0,
+            first_line_indent: 0.0,
+            right_indent: 0.0,
             before: 0.0,
             after: 0.0,
+            align: Alignment::Left,
         }
     }
 }
@@ -568,6 +614,15 @@ fn base_element(font: &str, size: f32, leading: f32) -> ElementStyle {
         leading,
         ..ElementStyle::default()
     }
+}
+
+/// A writer-defined element type stored beside the built-in ones. The name is
+/// shown in the style editor and the preview picker; the style is the same
+/// structure every built-in element uses.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct CustomStyle {
+    pub name: String,
+    pub style: ElementStyle,
 }
 
 /// The project-wide base type for every kind of manuscript element. Formats
@@ -590,6 +645,11 @@ pub struct ElementStyles {
     pub scene: ElementStyle,
     pub stage_direction: ElementStyle,
     pub general: ElementStyle,
+    /// Writer-defined styles ("Epigraph", "Pull quote", …). Stored with the
+    /// built-ins so they persist in global settings, the project and each
+    /// format's settings through serde.
+    #[serde(default)]
+    pub custom: Vec<CustomStyle>,
 }
 
 impl Default for ElementStyles {
@@ -605,7 +665,10 @@ impl Default for ElementStyles {
                 after: 8.0,
                 ..base_element(serif, 16.0, 1.2)
             },
-            body: base_element(serif, 11.0, 1.4),
+            body: ElementStyle {
+                first_line_indent: 14.0,
+                ..base_element(serif, 11.0, 1.4)
+            },
             scene_heading: base_element(mono, 12.0, 1.0),
             action: base_element(mono, 12.0, 1.0),
             character: ElementStyle {
@@ -625,11 +688,39 @@ impl Default for ElementStyles {
             scene: base_element(mono, 12.0, 1.0),
             stage_direction: base_element(mono, 12.0, 1.0),
             general: base_element(mono, 12.0, 1.0),
+            custom: Vec::new(),
         }
     }
 }
 
 impl ElementStyles {
+    /// Look up a built-in element by its JSON/model name.
+    pub fn element(&self, name: &str) -> Option<&ElementStyle> {
+        Some(match name {
+            "title_page_title" => &self.title_page_title,
+            "title_page_subtitle" => &self.title_page_subtitle,
+            "title_page_author" => &self.title_page_author,
+            "chapter_heading" => &self.chapter_heading,
+            "body" => &self.body,
+            "scene_heading" => &self.scene_heading,
+            "action" => &self.action,
+            "character" => &self.character,
+            "parenthetical" => &self.parenthetical,
+            "dialogue" => &self.dialogue,
+            "transition" => &self.transition,
+            "act" => &self.act,
+            "scene" => &self.scene,
+            "stage_direction" => &self.stage_direction,
+            "general" => &self.general,
+            _ => return None,
+        })
+    }
+
+    /// Look up a writer-defined style by its display name.
+    pub fn custom_named(&self, name: &str) -> Option<&CustomStyle> {
+        self.custom.iter().find(|style| style.name == name)
+    }
+
     /// Look up one element by its JSON/model name.
     pub fn element_mut(&mut self, name: &str) -> Option<&mut ElementStyle> {
         Some(match name {
@@ -1210,6 +1301,8 @@ mod tests {
         assert_eq!(styles.body.font, "Liberation Serif");
         assert_eq!(styles.body.size, 11.0);
         assert_eq!(styles.body.leading, 1.4);
+        assert_eq!(styles.body.first_line_indent, 14.0);
+        assert_eq!(styles.body.align, Alignment::Left);
         assert_eq!(styles.chapter_heading.size, 16.0);
         assert_eq!(styles.chapter_heading.before, 12.0);
         assert_eq!(styles.chapter_heading.after, 8.0);
@@ -1219,6 +1312,33 @@ mod tests {
         assert_eq!(styles.character.indent, 158.4);
         assert_eq!(styles.parenthetical.indent, 115.2);
         assert_eq!(styles.dialogue.indent, 72.0);
+    }
+
+    #[test]
+    fn element_style_alignment_and_indents_round_trip() {
+        let mut style = ElementStyle::default();
+        style.align = Alignment::Center;
+        style.first_line_indent = 18.0;
+        style.right_indent = 6.0;
+
+        let json = serde_json::to_string(&style).unwrap();
+        let restored: ElementStyle = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, style);
+        assert_eq!(restored.align, Alignment::Center);
+        assert_eq!(restored.first_line_indent, 18.0);
+        assert_eq!(restored.right_indent, 6.0);
+
+        // A style saved before these fields existed must still load with the
+        // documented defaults.
+        let mut value = serde_json::to_value(&style).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("align");
+        object.remove("first_line_indent");
+        object.remove("right_indent");
+        let old: ElementStyle = serde_json::from_value(value).unwrap();
+        assert_eq!(old.align, Alignment::Left);
+        assert_eq!(old.first_line_indent, 0.0);
+        assert_eq!(old.right_indent, 0.0);
     }
 
     #[test]
@@ -1278,5 +1398,34 @@ mod tests {
         assert!(restored.export.include_page_numbers);
         assert!(!restored.export.include_running_headers);
         assert_eq!(restored.export.cover_image, "");
+    }
+
+    #[test]
+    fn custom_styles_round_trip_and_lookup() {
+        let mut styles = ElementStyles::default();
+        assert!(styles.custom.is_empty());
+        assert!(styles.custom_named("Epigraph").is_none());
+
+        let mut style = ElementStyle::default();
+        style.font = "Liberation Serif".into();
+        style.size = 10.0;
+        style.align = Alignment::Center;
+        styles.custom.push(CustomStyle {
+            name: "Epigraph".into(),
+            style,
+        });
+
+        let json = serde_json::to_string(&styles).unwrap();
+        let restored: ElementStyles = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, styles);
+        let epigraph = restored.custom_named("Epigraph").unwrap();
+        assert_eq!(epigraph.style.size, 10.0);
+        assert_eq!(epigraph.style.align, Alignment::Center);
+
+        // Projects saved before custom styles existed still load.
+        let mut value = serde_json::to_value(&styles).unwrap();
+        value.as_object_mut().unwrap().remove("custom");
+        let old: ElementStyles = serde_json::from_value(value).unwrap();
+        assert!(old.custom.is_empty());
     }
 }

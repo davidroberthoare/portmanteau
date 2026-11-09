@@ -833,10 +833,20 @@ fn apply_style_overrides(styles: &mut ElementStyles, payload: &Value) -> Result<
         if let Some(v) = fields.get("font").and_then(|v| v.as_str()) {
             element.font = v.into();
         }
+        if let Some(v) = fields.get("align").and_then(|v| v.as_str()) {
+            element.align = Alignment::all()
+                .into_iter()
+                .find(|a| format!("{a:?}").eq_ignore_ascii_case(v) || a.label().eq_ignore_ascii_case(v))
+                .ok_or_else(|| {
+                    format!("align must be Left, Center, Right or Justify (got {v:?})")
+                })?;
+        }
         for (field, value, min, max) in [
             ("size", fields.get("size"), 4.0, 72.0),
             ("leading", fields.get("leading"), 0.5, 3.0),
             ("indent", fields.get("indent"), 0.0, 800.0),
+            ("first_line_indent", fields.get("first_line_indent"), 0.0, 800.0),
+            ("right_indent", fields.get("right_indent"), 0.0, 800.0),
             ("before", fields.get("before"), 0.0, 800.0),
             ("after", fields.get("after"), 0.0, 800.0),
         ] {
@@ -846,6 +856,8 @@ fn apply_style_overrides(styles: &mut ElementStyles, payload: &Value) -> Result<
                 "size" => element.size = parsed,
                 "leading" => element.leading = parsed,
                 "indent" => element.indent = parsed,
+                "first_line_indent" => element.first_line_indent = parsed,
+                "right_indent" => element.right_indent = parsed,
                 "before" => element.before = parsed,
                 "after" => element.after = parsed,
                 _ => {}
@@ -1165,6 +1177,37 @@ mod tests {
         let mut ws = Workspace::demo();
         assert!(!ws.execute("export.settings.get", json!({})).ok);
         assert!(!ws.execute("export.settings.update", json!({})).ok);
+    }
+
+    #[test]
+    fn style_update_accepts_alignment_and_paragraph_indents() {
+        let mut ws = Workspace::demo();
+        let updated = ws.execute(
+            "style.update",
+            json!({
+                "body":{"align":"justify","first_line_indent":18,"right_indent":6.5}
+            }),
+        );
+        assert!(updated.ok, "{}", updated.message);
+        assert_eq!(updated.data["body"]["align"], "Justify");
+        assert_eq!(
+            updated.data["body"]["first_line_indent"].as_f64().unwrap(),
+            18.0
+        );
+        assert_eq!(
+            updated.data["body"]["right_indent"].as_f64().unwrap(),
+            6.5
+        );
+        assert_eq!(ws.project.styles.body.align, Alignment::Justify);
+
+        let bad = ws.execute("style.update", json!({"body":{"align":"Sideways"}}));
+        assert!(!bad.ok);
+        assert!(bad.message.to_lowercase().contains("align"), "{}", bad.message);
+        assert_eq!(
+            ws.project.styles.body.align,
+            Alignment::Justify,
+            "a rejected update must not change the style"
+        );
     }
 
     #[test]

@@ -489,3 +489,62 @@ Two smaller guards came with it: the binder no longer paints a word count on a
 folder row (its kind glyph already says what it is), and "Take snapshot" is
 absent from a folder's row context menu. The binder action handler also refuses
 a folder snapshot defensively. No domain or command changes were needed.
+
+## Round 14 — Word-like paragraph styles and a compact style editor
+
+`ElementStyle` gained `first_line_indent`, `right_indent` and `align` (Left,
+Center, Right, Justify). All three use `#[serde(default)]`, so projects saved
+before the change still load: the first two default to 0 pt and alignment to
+Left. The built-in body style now carries a 14 pt first-line indent, the usual
+novel convention. `style.update` and `export.settings.update` accept the new
+fields; `align` is parsed case-insensitively and an unknown word returns a clear
+error instead of silently changing the style.
+
+The PDF prose path now lays each line out inside the left indent/right indent
+box: Left and Justify start at the left edge, Center is centred and Right ends at
+the right edge. The first line of every paragraph adds `first_line_indent`, and
+chapter headings honour their own alignment, so a centred heading is possible.
+Script elements keep their fixed columns. EPUB and HTML CSS emit the same values
+as `text-align` and `text-indent: <n>pt`, plus `margin-left`/`margin-right` from
+the left and right indents. The old `.front p { text-indent: 0 }` rule was
+removed because every XHTML body carries the `front` class, which would have
+cancelled the new indent for all prose; only `p.first` opts out now.
+
+The shared Compile/Settings editor is grouped into three collapsible sections
+(Title page, Prose, Script). Each header carries a one-line summary such as
+"Body — Liberation Serif · 11 pt · 1.4×". Font is a dropdown of bundled and
+common families with the current custom value kept visible; each row shows size,
+leading and alignment on the first line and the five spacing/indent values on
+the second. Rows still edit an owned clone and write back after the draw pass.
+
+## Round 15 — live formatting preview and custom styles
+
+The Settings screen now opens with a **Live preview** panel. A dropdown picks
+any built-in element or a writer-defined custom style, and the paper-coloured
+frame below shows the standard sample copy in that element's current style.
+The preview applies the chosen family through `family_for_font` (mono, sans or
+serif based on the name), the point size, line spacing from `leading`, paragraph
+alignment (Justify is drawn as Left), left and first-line indentation (the first
+line of each paragraph gets the extra offset), right indentation, and the
+before/after spacing. Spacing values are rounded to whole pixels so egui's
+debug build does not paint its fractional-coordinate warning. The caption says
+plainly that this is an on-screen approximation: the compiled page is the
+source of truth and line breaking or page margins may differ.
+
+`ElementStyles` gained a `custom: Vec<CustomStyle>` field, where each
+`CustomStyle` holds a display name and an ordinary `ElementStyle`. The field is
+`#[serde(default)]`, so global config files, project manifests and per-format
+settings written before this round still load with an empty list. Because
+`ElementStyles` is embedded in all three places, custom styles persist
+everywhere and "Apply to current project" copies them with the rest of the
+style data; `ElementStyles::custom_named` looks one up by name.
+
+Settings shows a **Custom styles** collapsing section below the built-in
+sections, inside its own small scroll region so the Add button stays visible.
+Each row has an editable name, a Remove button and the same compact type and
+paragraph controls as the built-ins. "Add custom style" creates "New style",
+suffixing a number if that name already exists (or collides with a built-in).
+Rows edit an owned clone and write back after the draw pass; add and remove are
+applied after the list has finished drawing. Applying a custom style to a
+particular manuscript paragraph is deliberately out of scope for this round: it
+needs per-paragraph prose structure rather than the current per-document text.

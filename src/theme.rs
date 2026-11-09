@@ -39,6 +39,23 @@ pub fn mono(size: f32) -> FontId {
     FontId::new(size, FontFamily::Monospace)
 }
 
+/// Map a style's font-family name to one of the bundled egui families. Used by
+/// the Settings preview, which approximates the compiled page on screen.
+pub fn family_for_font(font: &str) -> FontFamily {
+    let name = font.to_lowercase();
+    if name.contains("mono") || name.contains("courier") {
+        FontFamily::Monospace
+    } else if name.contains("sans")
+        || name.contains("helvetica")
+        || name.contains("arial")
+        || name.contains("dejavu")
+    {
+        FontFamily::Name("portmanteau-sans".into())
+    } else {
+        FontFamily::Name("portmanteau-serif".into())
+    }
+}
+
 pub fn install(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
@@ -229,5 +246,26 @@ pub fn status_color(status: &str) -> Color32 {
         "Draft" | "In progress" => ACCENT,
         "To do" | "Outline" => FAINT,
         _ => MUTED,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn family_for_font_picks_bundled_families() {
+        let sans = FontFamily::Name("portmanteau-sans".into());
+        let serif = FontFamily::Name("portmanteau-serif".into());
+        assert_eq!(family_for_font("Liberation Mono"), FontFamily::Monospace);
+        assert_eq!(family_for_font("Courier New"), FontFamily::Monospace);
+        assert_eq!(family_for_font("Liberation Sans"), sans);
+        assert_eq!(family_for_font("Helvetica"), sans);
+        assert_eq!(family_for_font("Arial"), sans);
+        assert_eq!(family_for_font("DejaVu Sans"), sans);
+        assert_eq!(family_for_font("Liberation Serif"), serif);
+        assert_eq!(family_for_font("Times New Roman"), serif);
+        assert_eq!(family_for_font("Georgia"), serif);
+        assert_eq!(family_for_font(""), serif);
     }
 }
