@@ -298,7 +298,15 @@ fn pdf_text(s: &str) -> String {
     out
 }
 
-fn build_pdf(title: &str, author: &str, pages: &[PdfPage], width_pt: f32, height_pt: f32, footer: bool) -> Vec<u8> {
+fn build_pdf(
+    title: &str,
+    author: &str,
+    pages: &[PdfPage],
+    width_pt: f32,
+    height_pt: f32,
+    footer: bool,
+    header: bool,
+) -> Vec<u8> {
     // Stable object plan. A PDF page is a dictionary, and its content stream is
     // a *separate* object; mixing the two up makes readers treat a stream as a
     // page and silently drop text. Keep the numbering explicit:
@@ -339,6 +347,19 @@ fn build_pdf(title: &str, author: &str, pages: &[PdfPage], width_pt: f32, height
                 "1 0 0 1 {:.2} 30 Tm\n({}) Tj\nET\n",
                 width_pt / 2.0 - 3.0,
                 i + 1
+            ));
+        }
+        if header && i > 0 {
+            // A quiet running head in the top margin. It is drawn in the same
+            // content stream as the page, so the object plan stays untouched.
+            let head = pdf_text(title);
+            let x = ((width_pt - head.chars().count() as f32 * 4.5) / 2.0).max(20.0);
+            content.push_str("BT\n/F1 9 Tf\n");
+            content.push_str(&format!(
+                "1 0 0 1 {:.2} {:.2} Tm\n({}) Tj\nET\n",
+                x,
+                height_pt - 30.0,
+                head
             ));
         }
 
@@ -666,7 +687,15 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             pages.push(page);
         }
         let _ = char_w;
-        return build_pdf(&project.title, &project.author, &pages, w, h, true);
+        return build_pdf(
+            &project.title,
+            &project.author,
+            &pages,
+            w,
+            h,
+            settings.include_page_numbers,
+            settings.include_running_headers,
+        );
     }
 
     // Prose: flowing layout with chapter headings and optional front matter.
@@ -822,15 +851,42 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         pages.insert(insert_at.min(pages.len()), toc);
     }
 
-    build_pdf(&project.title, &project.author, &pages, w, h, true)
+    build_pdf(
+        &project.title,
+        &project.author,
+        &pages,
+        w,
+        h,
+        settings.include_page_numbers,
+        settings.include_running_headers,
+    )
 }
 
 // ---------------------------------------------------------------------------
 // EPUB
 // ---------------------------------------------------------------------------
 
+/// Resolve an optional EPUB cover. A missing or unreadable file is not an
+/// export error: the book is still valid without its cover.
+fn cover_image(settings: &ExportSettings) -> Option<(String, &'static str, Vec<u8>)> {
+    let raw = settings.cover_image.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let path = Path::new(raw);
+    let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    let media = match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        _ => return None,
+    };
+    let bytes = fs::read(path).ok()?;
+    Some((ext, media, bytes))
+}
+
 fn epub_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let mut buf = Vec::new();
+    let cover = cover_image(settings);
     {
         let cursor = std::io::Cursor::new(&mut buf);
         let mut zip = ZipWriter::new(cursor);
@@ -839,6 +895,12 @@ fn epub_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
 
         zip.start_file("mimetype", stored).unwrap();
         zip.write_all(b"application/epub+zip").unwrap();
+
+        if let Some((ext, _, bytes)) = &cover {
+            zip.start_file(format!("OEBPS/cover-image/cover.{}", ext), deflated)
+                .unwrap();
+            zip.write_all(bytes).unwrap();
+        }
 
         zip.start_file("META-INF/container.xml", deflated).unwrap();
         zip.write_all(
@@ -867,6 +929,8 @@ p.first, .front p { text-indent: 0; }
 .title-page h1 { page-break-before: avoid; font-size: 2.2em; }
 .byline { font-size: 1.1em; margin-top: 1.5em; }
 .imprint { margin-top: 4em; font-size: .85em; color: #555; }
+.cover { text-align: center; margin: 0; padding: 0; }
+.cover img { max-width: 100%; }
 "#,
         )
         .unwrap();
@@ -874,7 +938,30 @@ p.first, .front p { text-indent: 0; }
         let mut manifest = String::new();
         let mut spine = String::new();
         let mut toc_entries = String::new();
+        let mut metadata_extra = String::new();
         let mut files: Vec<(String, String, String)> = Vec::new();
+
+        if let Some((ext, media, _)) = &cover {
+            let body = format!(
+                "<div class=\"cover\"><img src=\"cover-image/cover.{}\" alt=\"cover\"/></div>",
+                ext
+            );
+            let xhtml = format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\">\n<head><title>Cover</title><link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\"/></head>\n<body class=\"front\">\n{}\n</body>\n</html>\n",
+                body
+            );
+            zip.start_file("OEBPS/cover.xhtml", deflated).unwrap();
+            zip.write_all(xhtml.as_bytes()).unwrap();
+            manifest.push_str(
+                "<item id=\"cover\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n",
+            );
+            manifest.push_str(&format!(
+                "<item id=\"cover-img\" href=\"cover-image/cover.{}\" media-type=\"{}\" properties=\"cover-image\"/>\n",
+                ext, media
+            ));
+            spine.push_str("<itemref idref=\"cover\"/>\n");
+            metadata_extra.push_str("<meta name=\"cover\" content=\"cover-img\"/>\n");
+        }
 
         if settings.include_title_page {
             let body = format!(
@@ -946,12 +1033,13 @@ p.first, .front p { text-indent: 0; }
 
         let modified = chrono::Local::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let opf = format!(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"bookid\">\n<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n<dc:identifier id=\"bookid\">{}</dc:identifier>\n<dc:title>{}</dc:title>\n<dc:creator>{}</dc:creator>\n<dc:language>en</dc:language>\n<dc:description>{}</dc:description>\n<meta property=\"dcterms:modified\">{}</meta>\n</metadata>\n<manifest>\n{}</manifest>\n<spine>\n{}</spine>\n</package>\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"bookid\">\n<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n<dc:identifier id=\"bookid\">{}</dc:identifier>\n<dc:title>{}</dc:title>\n<dc:creator>{}</dc:creator>\n<dc:language>en</dc:language>\n<dc:description>{}</dc:description>\n<meta property=\"dcterms:modified\">{}</meta>\n{}</metadata>\n<manifest>\n{}</manifest>\n<spine>\n{}</spine>\n</package>\n",
             xml_escape(&project.id),
             xml_escape(&project.title),
             xml_escape(&project.author),
             xml_escape(&project.logline),
             modified,
+            metadata_extra,
             manifest,
             spine
         );
@@ -1646,6 +1734,83 @@ mod tests {
         let fdx = fdx_manuscript(&p, &p.export);
         assert!(fdx.contains("<FinalDraft"));
         assert!(fdx.contains("Scene Heading"));
+    }
+
+    #[test]
+    fn pdf_page_numbers_follow_the_setting() {
+        let p = demo();
+        let mut on = p.settings_for(ExportKind::Pdf);
+        on.include_page_numbers = true;
+        on.include_running_headers = false;
+        let mut off = on.clone();
+        off.include_page_numbers = false;
+
+        let with_numbers = String::from_utf8_lossy(&pdf_manuscript(&p, &on)).into_owned();
+        let without_numbers = String::from_utf8_lossy(&pdf_manuscript(&p, &off)).into_owned();
+        assert!(with_numbers.contains(" 30 Tm"), "footer page number missing");
+        assert!(
+            !without_numbers.contains(" 30 Tm"),
+            "footer page number should be omitted"
+        );
+        assert_ne!(with_numbers, without_numbers);
+    }
+
+    #[test]
+    fn pdf_running_headers_are_optional() {
+        let mut p = demo();
+        p.title = "Header Probe".into();
+        let mut off = p.settings_for(ExportKind::Pdf);
+        off.include_running_headers = false;
+        let mut on = off.clone();
+        on.include_running_headers = true;
+
+        let without = String::from_utf8_lossy(&pdf_manuscript(&p, &off)).into_owned();
+        let with = String::from_utf8_lossy(&pdf_manuscript(&p, &on)).into_owned();
+        assert!(
+            with.matches("Header Probe").count() > without.matches("Header Probe").count(),
+            "running headers should repeat the title on body pages"
+        );
+    }
+
+    const TINY_PNG: [u8; 67] = [
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+        0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+        0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78,
+        0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+        0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    #[test]
+    fn epub_embeds_a_cover_only_when_the_file_exists() {
+        let p = demo();
+        let dir = std::env::temp_dir().join(msc_core::new_id("epub-cover"));
+        fs::create_dir_all(&dir).unwrap();
+        let png = dir.join("cover.png");
+        fs::write(&png, TINY_PNG).unwrap();
+
+        let mut with_cover = p.settings_for(ExportKind::Epub);
+        with_cover.cover_image = png.display().to_string();
+        let bytes = epub_manuscript(&p, &with_cover);
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let names: Vec<String> = (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .collect();
+        assert!(names.iter().any(|n| n == "OEBPS/cover-image/cover.png"));
+        assert!(names.iter().any(|n| n == "OEBPS/cover.xhtml"));
+        let mut opf = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("OEBPS/content.opf").unwrap(), &mut opf)
+            .unwrap();
+        assert!(opf.contains("properties=\"cover-image\""));
+        assert!(opf.contains("<meta name=\"cover\" content=\"cover-img\"/>"));
+
+        let bytes = epub_manuscript(&p, &p.settings_for(ExportKind::Epub));
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let names: Vec<String> = (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .collect();
+        assert!(!names.iter().any(|n| n.contains("cover")));
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

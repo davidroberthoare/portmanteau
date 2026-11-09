@@ -433,6 +433,31 @@ pub fn demo() -> Project {
         },
     ];
 
+    // ---- Per-format compile settings -------------------------------------
+    // The same manuscript finishes differently as a book and as an ebook, so
+    // the demonstration project ships with each target already customised.
+    let mut pdf = p.settings_for(ExportKind::Pdf);
+    pdf.paper = PaperSize::A5;
+    pdf.font_size = 11.0;
+    pdf.line_spacing = 1.45;
+    pdf.include_page_numbers = true;
+    pdf.include_running_headers = false;
+    p.set_settings(pdf.clone());
+    p.export = pdf;
+
+    let mut epub = p.settings_for(ExportKind::Epub);
+    epub.font_size = 12.0;
+    epub.line_spacing = 1.6;
+    epub.include_page_numbers = false;
+    epub.include_running_headers = false;
+    p.set_settings(epub);
+
+    let mut fdx = p.settings_for(ExportKind::Fdx);
+    fdx.include_title_page = true;
+    fdx.include_toc = false;
+    fdx.include_chapter_numbers = false;
+    p.set_settings(fdx);
+
     p.checkpoint("First draft checkpoint", "milestone");
     p
 }

@@ -62,6 +62,15 @@ into prose.
 extension) the caller joins the standard filename; the API does this so a person
 can type a folder in the Compile screen.
 
+Compile settings are per output format, not global. `Project::settings_for(kind)`
+returns the format's stored `ExportSettings` or seeds a new one from the
+project-wide `ProjectStyle` (prose and script font, size and leading);
+`set_settings(kind, settings)` upserts it. This is why moving from PDF to EPUB in
+the Compile screen swaps the whole draft: the book interior and the reflowable
+ebook genuinely have different paper, type and matter choices. `export.run`
+resolves the same per-format settings before applying payload overrides, so the
+UI, the CLI and MCP all compile through one path.
+
 ### `msc-api` — the command bus and persistence
 
 `Workspace` owns the `Project`, the open path, a dirty flag and a short log.

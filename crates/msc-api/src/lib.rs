@@ -620,49 +620,10 @@ impl Workspace {
                     .and_then(|v| v.as_str())
                     .and_then(parse_export_kind)
                     .unwrap_or(self.project.export.kind);
-                let mut settings = self.project.export.clone();
+                let mut settings = self.project.settings_for(kind);
                 settings.kind = kind;
-                if let Some(v) = payload.get("path").and_then(|v| v.as_str()) {
-                    settings.output_path = v.into();
-                }
-                if let Some(v) = payload.get("paper").and_then(|v| v.as_str()) {
-                    if let Some(p) = parse_paper(v) {
-                        settings.paper = p;
-                    }
-                }
-                if let Some(v) = payload.get("include_toc").and_then(|v| v.as_bool()) {
-                    settings.include_toc = v;
-                }
-                if let Some(v) = payload.get("include_title_page").and_then(|v| v.as_bool()) {
-                    settings.include_title_page = v;
-                }
-                if let Some(v) = payload.get("include_copyright").and_then(|v| v.as_bool()) {
-                    settings.include_copyright = v;
-                }
-                if let Some(v) = payload.get("include_dedication").and_then(|v| v.as_bool()) {
-                    settings.include_dedication = v;
-                }
-                if let Some(v) = payload.get("include_preface").and_then(|v| v.as_bool()) {
-                    settings.include_preface = v;
-                }
-                if let Some(v) = payload.get("include_chapter_numbers").and_then(|v| v.as_bool()) {
-                    settings.include_chapter_numbers = v;
-                }
-                if let Some(v) = payload.get("include_acknowledgements").and_then(|v| v.as_bool()) {
-                    settings.include_acknowledgements = v;
-                }
-                if let Some(v) = payload.get("include_author_bio").and_then(|v| v.as_bool()) {
-                    settings.include_author_bio = v;
-                }
-                if let Some(v) = payload.get("include_scene_numbers").and_then(|v| v.as_bool()) {
-                    settings.include_scene_numbers = v;
-                }
-                if let Some(v) = payload.get("include_synopsis").and_then(|v| v.as_bool()) {
-                    settings.include_synopsis = v;
-                }
-                if let Some(v) = payload.get("include_notes").and_then(|v| v.as_bool()) {
-                    settings.include_notes = v;
-                }
+                apply_settings_overrides(&mut settings, &payload);
+                self.project.set_settings(settings.clone());
                 self.project.export = settings.clone();
                 let target = if settings.output_path.trim().is_empty() {
                     None
@@ -694,6 +655,67 @@ impl Workspace {
                     }
                     Err(e) => ApiResponse::err(command, e),
                 }
+            }
+            "export.settings.get" => {
+                let kind = payload
+                    .get("format")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_export_kind)
+                    .unwrap_or(self.project.export.kind);
+                let settings = self.project.settings_for(kind);
+                ApiResponse::ok(
+                    command,
+                    "Export settings",
+                    serde_json::to_value(settings).unwrap_or(Value::Null),
+                )
+            }
+            "export.settings.update" => {
+                let kind = payload
+                    .get("format")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_export_kind)
+                    .unwrap_or(self.project.export.kind);
+                let mut settings = self.project.settings_for(kind);
+                settings.kind = kind;
+                apply_settings_overrides(&mut settings, &payload);
+                self.project.set_settings(settings.clone());
+                self.dirty = true;
+                ApiResponse::ok(
+                    command,
+                    "Export settings updated",
+                    serde_json::to_value(settings).unwrap_or(Value::Null),
+                )
+            }
+            "style.get" => ApiResponse::ok(
+                command,
+                "Project style",
+                serde_json::to_value(&self.project.style).unwrap_or(Value::Null),
+            ),
+            "style.update" => {
+                if let Some(v) = payload.get("prose_font").and_then(|v| v.as_str()) {
+                    self.project.style.prose_font = v.into();
+                }
+                if let Some(v) = payload.get("prose_size").and_then(|v| v.as_f64()) {
+                    self.project.style.prose_size = v as f32;
+                }
+                if let Some(v) = payload.get("prose_leading").and_then(|v| v.as_f64()) {
+                    self.project.style.prose_leading = v as f32;
+                }
+                if let Some(v) = payload.get("script_font").and_then(|v| v.as_str()) {
+                    self.project.style.script_font = v.into();
+                }
+                if let Some(v) = payload.get("script_size").and_then(|v| v.as_f64()) {
+                    self.project.style.script_size = v as f32;
+                }
+                if let Some(v) = payload.get("script_leading").and_then(|v| v.as_f64()) {
+                    self.project.style.script_leading = v as f32;
+                }
+                self.dirty = true;
+                ApiResponse::ok(
+                    command,
+                    "Project style updated",
+                    serde_json::to_value(&self.project.style).unwrap_or(Value::Null),
+                )
             }
             "commands" => ApiResponse::ok(command, "Command catalogue", json!(command_catalogue())),
             _ => ApiResponse::err(command, format!("Unknown command: {command}")),
@@ -765,6 +787,53 @@ fn str_arg(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
 }
 
+/// Merge the settings fields a caller may supply on top of a resolved set.
+/// Unknown keys are ignored, so a newer client can send extra fields safely.
+fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) {
+    if let Some(v) = payload.get("path").and_then(|v| v.as_str()) {
+        settings.output_path = v.into();
+    }
+    if let Some(v) = payload.get("output_path").and_then(|v| v.as_str()) {
+        settings.output_path = v.into();
+    }
+    if let Some(v) = payload.get("paper").and_then(|v| v.as_str()) {
+        if let Some(p) = parse_paper(v) {
+            settings.paper = p;
+        }
+    }
+    if let Some(v) = payload.get("font").and_then(|v| v.as_str()) {
+        settings.font = v.into();
+    }
+    if let Some(v) = payload.get("font_size").and_then(|v| v.as_f64()) {
+        settings.font_size = v as f32;
+    }
+    if let Some(v) = payload.get("line_spacing").and_then(|v| v.as_f64()) {
+        settings.line_spacing = v as f32;
+    }
+    if let Some(v) = payload.get("cover_image").and_then(|v| v.as_str()) {
+        settings.cover_image = v.into();
+    }
+    for (key, field) in [
+        ("include_page_numbers", &mut settings.include_page_numbers),
+        ("include_running_headers", &mut settings.include_running_headers),
+        ("include_title_page", &mut settings.include_title_page),
+        ("include_copyright", &mut settings.include_copyright),
+        ("include_dedication", &mut settings.include_dedication),
+        ("include_acknowledgements", &mut settings.include_acknowledgements),
+        ("include_preface", &mut settings.include_preface),
+        ("include_toc", &mut settings.include_toc),
+        ("include_chapter_numbers", &mut settings.include_chapter_numbers),
+        ("include_scene_numbers", &mut settings.include_scene_numbers),
+        ("include_synopsis", &mut settings.include_synopsis),
+        ("include_notes", &mut settings.include_notes),
+        ("include_author_bio", &mut settings.include_author_bio),
+    ] {
+        if let Some(v) = payload.get(key).and_then(|v| v.as_bool()) {
+            *field = v;
+        }
+    }
+}
+
 fn parse_project_kind(s: &str) -> Option<ProjectKind> {
     ProjectKind::all()
         .into_iter()
@@ -834,6 +903,10 @@ pub fn command_catalogue() -> Vec<Value> {
         ("script.parse", "Parse plain text into script blocks", r#"{"text":"INT. ..."}"#),
         ("export.preview", "Preview the compiled manuscript", "{}"),
         ("export.formats", "List supported output formats", "{}"),
+        ("export.settings.get", "Read the settings for one output format", r#"{"format":"PDF"}"#),
+        ("export.settings.update", "Change the settings for one output format", r#"{"format":"PDF","font_size":11.5}"#),
+        ("style.get", "Read the project's base prose and script style", "{}"),
+        ("style.update", "Change the project's base style", r#"{"prose_font":"Georgia","prose_size":12.0}"#),
         ("export.run", "Export the manuscript", r#"{"format":"PDF","path":"exports"}"#),
         ("commands", "This catalogue", "{}"),
     ];
@@ -932,6 +1005,66 @@ mod tests {
         assert!(res.ok, "{}", res.message);
         assert!(ws.last_export.is_some());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn export_settings_are_per_format_and_round_trip() {
+        let mut ws = Workspace::demo();
+        let epub_before = ws.execute("export.settings.get", json!({"format":"EPUB"}));
+        assert!(epub_before.ok, "{}", epub_before.message);
+        assert_eq!(epub_before.data["kind"], "Epub");
+        assert_eq!(epub_before.data["font_size"].as_f64().unwrap(), 12.0);
+
+        let updated = ws.execute(
+            "export.settings.update",
+            json!({
+                "format":"PDF",
+                "font_size":15.5,
+                "line_spacing":1.9,
+                "include_page_numbers":false,
+                "include_running_headers":true,
+                "cover_image":"assets/cover.png"
+            }),
+        );
+        assert!(updated.ok, "{}", updated.message);
+        assert_eq!(updated.data["font_size"].as_f64().unwrap(), 15.5);
+        assert_eq!(updated.data["include_page_numbers"], false);
+
+        assert_eq!(ws.project.settings_for(ExportKind::Pdf).font_size, 15.5);
+        assert_eq!(ws.project.settings_for(ExportKind::Pdf).line_spacing, 1.9);
+        assert!(ws.project.settings_for(ExportKind::Pdf).include_running_headers);
+        assert_eq!(ws.project.settings_for(ExportKind::Pdf).cover_image, "assets/cover.png");
+
+        let epub_after = ws.execute("export.settings.get", json!({"format":"EPUB"}));
+        assert_eq!(epub_after.data, epub_before.data);
+        assert_eq!(ws.project.settings_for(ExportKind::Epub).font_size, 12.0);
+    }
+
+    #[test]
+    fn style_get_and_update_round_trip() {
+        let mut ws = Workspace::demo();
+        let before = ws.execute("style.get", json!({}));
+        assert!(before.ok);
+        assert_eq!(before.data["prose_font"], "Liberation Serif");
+
+        let updated = ws.execute(
+            "style.update",
+            json!({
+                "prose_font":"Georgia",
+                "prose_size":12.5,
+                "prose_leading":1.6,
+                "script_font":"Courier Prime",
+                "script_size":11.5,
+                "script_leading":1.1
+            }),
+        );
+        assert!(updated.ok, "{}", updated.message);
+        assert_eq!(updated.data["prose_font"], "Georgia");
+        assert_eq!(updated.data["script_size"].as_f64().unwrap(), 11.5);
+        assert_eq!(ws.project.style.prose_size, 12.5);
+
+        let again = ws.execute("style.get", json!({}));
+        assert_eq!(again.data, updated.data);
     }
 
     #[test]

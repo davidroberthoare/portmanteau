@@ -1176,7 +1176,9 @@ impl ScriptoriumApp {
                 PathDialog::SaveAs => {
                     let mut path = PathBuf::from(self.path_draft.trim());
                     if path.extension().is_none() {
-                        path.set_extension("scriptorium.json");
+                        // A bare name means a folder package, not a legacy
+                        // single-file project: "MyBook" -> "MyBook.scriptorium/".
+                        path.set_extension("scriptorium");
                     }
                     match self.ws.save(Some(path.clone())) {
                         Ok(msg) => {

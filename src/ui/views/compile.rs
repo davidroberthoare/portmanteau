@@ -6,7 +6,9 @@ use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense,
     Stroke, TextEdit, Vec2,
 };
-use msc_core::{DocKind, ExportKind, PaperSize};
+use msc_core::{
+    DocKind, ExportKind, ExportSettings, PaperSize, ProjectKind, ProjectStyle,
+};
 
 use crate::app::{ScriptoriumApp, ToastKind};
 use crate::theme::*;
@@ -30,7 +32,11 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
         },
     );
 
-    let mut settings = app.ws.project.export.clone();
+    let mut settings = app
+        .ws
+        .project
+        .settings_for(app.ws.project.export.kind);
+    let style_before = app.ws.project.style.clone();
     let mut compile = false;
 
     content_frame().show(ui, |ui| {
@@ -83,7 +89,12 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
                         .max_height(height - 26.0)
                         .show(ui, |ui| {
                             for kind in ExportKind::all() {
-                                format_card(ui, kind, &mut settings);
+                                if format_card(ui, kind, settings.kind) {
+                                    // Switching format switches the whole draft:
+                                    // PDF and EPUB must not share one blob.
+                                    settings = app.ws.project.settings_for(kind);
+                                    app.ws.project.export = settings.clone();
+                                }
                                 ui.add_space(4.0);
                             }
                         });
@@ -99,6 +110,21 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         output_panel(app, ui, &mut settings);
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            if quiet_button(ui, "Reset this format to base style").clicked() {
+                                settings = seeded_settings(
+                                    &app.ws.project.style,
+                                    app.ws.project.kind,
+                                    settings.kind,
+                                );
+                            }
+                            ui.label(
+                                RichText::new("Seeds from the project base style below.")
+                                    .font(sans(9.0))
+                                    .color(FAINT),
+                            );
+                        });
                         ui.add_space(10.0);
                         ui.columns(2, |cols| {
                             page_panel(&mut cols[0], &mut settings);
@@ -206,6 +232,8 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
                                     });
                                 }
                             });
+                        ui.add_space(12.0);
+                        style_panel(ui, &mut app.ws.project.style);
                         ui.add_space(14.0);
                         preview_panel(app, ui);
                     });
@@ -213,9 +241,10 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
         });
     });
 
-    let before = app.ws.project.export.clone();
+    let before = app.ws.project.settings_for(settings.kind);
+    app.ws.project.set_settings(settings.clone());
     app.ws.project.export = settings.clone();
-    if before != settings {
+    if before != settings || app.ws.project.style != style_before {
         app.ws.dirty = true;
     }
     if compile {
@@ -223,8 +252,8 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
     }
 }
 
-fn format_card(ui: &mut egui::Ui, kind: ExportKind, settings: &mut msc_core::ExportSettings) {
-    let selected = settings.kind == kind;
+fn format_card(ui: &mut egui::Ui, kind: ExportKind, selected_kind: ExportKind) -> bool {
+    let selected = selected_kind == kind;
     let (rect, resp) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::click());
     let color = format_color(kind);
@@ -270,8 +299,30 @@ fn format_card(ui: &mut egui::Ui, kind: ExportKind, settings: &mut msc_core::Exp
         color,
     );
     if resp.clicked() {
-        settings.kind = kind;
+        return true;
     }
+    false
+}
+
+fn seeded_settings(
+    style: &ProjectStyle,
+    project_kind: ProjectKind,
+    kind: ExportKind,
+) -> ExportSettings {
+    let mut settings = ExportSettings {
+        kind,
+        ..ExportSettings::default()
+    };
+    if project_kind.default_medium().is_script() {
+        settings.font = style.script_font.clone();
+        settings.font_size = style.script_size;
+        settings.line_spacing = style.script_leading;
+    } else {
+        settings.font = style.prose_font.clone();
+        settings.font_size = style.prose_size;
+        settings.line_spacing = style.prose_leading;
+    }
+    settings
 }
 
 fn format_color(kind: ExportKind) -> Color32 {
@@ -374,6 +425,31 @@ fn page_panel(ui: &mut egui::Ui, settings: &mut msc_core::ExportSettings) {
                 );
             });
             ui.add_space(7.0);
+            check(
+                ui,
+                settings,
+                |s| &mut s.include_page_numbers,
+                "Page numbers · PDF",
+            );
+            check(
+                ui,
+                settings,
+                |s| &mut s.include_running_headers,
+                "Running headers · PDF",
+            );
+            ui.add_space(5.0);
+            ui.label(
+                RichText::new("Cover image · EPUB")
+                    .font(sans(9.5))
+                    .color(MUTED),
+            );
+            ui.add(
+                TextEdit::singleline(&mut settings.cover_image)
+                    .hint_text("Path to a .jpg or .png")
+                    .font(mono(9.0))
+                    .desired_width(f32::INFINITY),
+            );
+            ui.add_space(7.0);
             hairline(ui);
             ui.add_space(7.0);
             section_label(ui, "Front matter");
@@ -416,6 +492,73 @@ fn body_panel(ui: &mut egui::Ui, settings: &mut msc_core::ExportSettings) {
                 .font(sans(9.0))
                 .color(FAINT),
             );
+        });
+}
+
+fn style_panel(ui: &mut egui::Ui, style: &mut ProjectStyle) {
+    Frame::new()
+        .fill(PANEL)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::symmetric(14, 11))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            section_label(ui, "Base style");
+            ui.label(
+                RichText::new(
+                    "The project-wide starting point for new output formats. Formats that already have settings keep their own.",
+                )
+                .font(sans(9.0))
+                .color(FAINT),
+            );
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Prose font").font(sans(9.5)).color(MUTED));
+                ui.add(
+                    TextEdit::singleline(&mut style.prose_font)
+                        .font(mono(9.5))
+                        .desired_width(190.0),
+                );
+                ui.add_space(6.0);
+                ui.label(RichText::new("Size").font(sans(9.5)).color(MUTED));
+                ui.add(
+                    egui::DragValue::new(&mut style.prose_size)
+                        .speed(0.1)
+                        .range(6.0..=30.0)
+                        .suffix(" pt"),
+                );
+                ui.label(RichText::new("Leading").font(sans(9.5)).color(MUTED));
+                ui.add(
+                    egui::DragValue::new(&mut style.prose_leading)
+                        .speed(0.02)
+                        .range(0.8..=3.0)
+                        .suffix("×"),
+                );
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Script font").font(sans(9.5)).color(MUTED));
+                ui.add(
+                    TextEdit::singleline(&mut style.script_font)
+                        .font(mono(9.5))
+                        .desired_width(190.0),
+                );
+                ui.add_space(6.0);
+                ui.label(RichText::new("Size").font(sans(9.5)).color(MUTED));
+                ui.add(
+                    egui::DragValue::new(&mut style.script_size)
+                        .speed(0.1)
+                        .range(6.0..=30.0)
+                        .suffix(" pt"),
+                );
+                ui.label(RichText::new("Leading").font(sans(9.5)).color(MUTED));
+                ui.add(
+                    egui::DragValue::new(&mut style.script_leading)
+                        .speed(0.02)
+                        .range(0.8..=3.0)
+                        .suffix("×"),
+                );
+            });
         });
 }
 
@@ -490,6 +633,12 @@ fn run_export(app: &mut ScriptoriumApp, settings: &msc_core::ExportSettings) {
         "format": settings.kind.label(),
         "path": settings.output_path,
         "paper": settings.paper.label(),
+        "font": settings.font,
+        "font_size": settings.font_size,
+        "line_spacing": settings.line_spacing,
+        "include_page_numbers": settings.include_page_numbers,
+        "include_running_headers": settings.include_running_headers,
+        "cover_image": settings.cover_image,
         "include_title_page": settings.include_title_page,
         "include_copyright": settings.include_copyright,
         "include_dedication": settings.include_dedication,

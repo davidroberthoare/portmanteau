@@ -234,3 +234,40 @@ The screenplay branch does the same for a pure film, TV or theatre project.
    Fountain, or Scrivener projects?
 3. Does the person want the version history to stay snapshot-based, or move to
    an automatic change log with diffs and branching?
+
+## Round 2 — per-target compile settings and a base style
+
+The first version had one `ExportSettings` shared by all ten formats, which
+meant changing the EPUB type size silently restyled the PDF. Round 2 splits it:
+
+- `Project.formats` is a small list of `ExportSettings`, keyed by `ExportKind`.
+  `settings_for(kind)` returns the stored entry or seeds a new one;
+  `set_settings(settings)` replaces or appends. Nothing is filled eagerly, so
+  old manifests load with an empty list and old single-file `.json` projects
+  still deserialise (the three new fields carry serde defaults).
+- `Project.style` (`ProjectStyle`) is the project-wide base: separate prose and
+  script font, size and leading. A novel seeds prose type; a film, TV or theatre
+  project seeds script type. New formats start here, then diverge.
+- The demonstration project now ships PDF, EPUB and FDX entries that differ, so
+  the Compile screen has something real to switch between.
+
+In the export engine, PDF honours `include_page_numbers` (footer) and
+`include_running_headers` (a quiet 9pt title line in the top margin, drawn in
+the same content stream so the page-object plan is unchanged). EPUB honours
+`cover_image`: a readable JPG/PNG is stored as `cover-image/cover.<ext>`,
+declared with `properties="cover-image"`, referenced by `<meta name="cover">`
+and shown by a first-in-spine `cover.xhtml`. A missing file is skipped rather
+than failing the export. The other writers treat the three new fields as
+no-ops.
+
+Four commands join the surface: `export.settings.get`,
+`export.settings.update`, `style.get` and `style.update`, with matching MCP
+tools `get_export_settings`, `update_export_settings`, `get_project_style` and
+`update_project_style`; `project_open` was added alongside the corrected
+folder-package description for `project_save`. The Compile screen now loads the
+selected format's settings, persists edits back to `formats`, and offers a
+"Reset this format to base style" button plus the base-style editor.
+
+Save As now treats an extensionless name as a folder package (`MyBook` becomes
+`MyBook.scriptorium/`) instead of inventing a legacy `.json` file. Opening and
+saving still round-trip through the Round 1 folder format.

@@ -536,6 +536,35 @@ impl PaperSize {
     }
 }
 
+/// Project-wide base type, split by medium. Every output format starts from
+/// this when it has no saved settings of its own.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct ProjectStyle {
+    pub prose_font: String,
+    pub prose_size: f32,
+    pub prose_leading: f32,
+    pub script_font: String,
+    pub script_size: f32,
+    pub script_leading: f32,
+}
+
+impl Default for ProjectStyle {
+    fn default() -> Self {
+        Self {
+            prose_font: "Liberation Serif".into(),
+            prose_size: 11.0,
+            prose_leading: 1.4,
+            script_font: "Courier New".into(),
+            script_size: 12.0,
+            script_leading: 1.0,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct ExportSettings {
     pub kind: ExportKind,
@@ -543,6 +572,12 @@ pub struct ExportSettings {
     pub font: String,
     pub font_size: f32,
     pub line_spacing: f32,
+    #[serde(default = "default_true")]
+    pub include_page_numbers: bool,
+    #[serde(default)]
+    pub include_running_headers: bool,
+    #[serde(default)]
+    pub cover_image: String,
     pub include_title_page: bool,
     pub include_copyright: bool,
     pub include_dedication: bool,
@@ -565,6 +600,9 @@ impl Default for ExportSettings {
             font: "Liberation Serif".into(),
             font_size: 11.0,
             line_spacing: 1.4,
+            include_page_numbers: true,
+            include_running_headers: false,
+            cover_image: String::new(),
             include_title_page: true,
             include_copyright: true,
             include_dedication: true,
@@ -614,6 +652,10 @@ pub struct Project {
     pub daily_target: u32,
     pub export: ExportSettings,
     pub presets: Vec<ExportPreset>,
+    #[serde(default)]
+    pub style: ProjectStyle,
+    #[serde(default)]
+    pub formats: Vec<ExportSettings>,
 }
 
 impl Project {
@@ -640,6 +682,8 @@ impl Project {
             daily_target: 1200,
             export: ExportSettings::default(),
             presets: Vec::new(),
+            style: ProjectStyle::default(),
+            formats: Vec::new(),
         };
         project.ensure_folders();
         project
@@ -651,6 +695,37 @@ impl Project {
             self.add_document(None, "Research", DocKind::Folder, Medium::Note);
             self.add_document(None, "Front Matter", DocKind::Folder, Medium::Prose);
             self.add_document(None, "Back Matter", DocKind::Folder, Medium::Prose);
+        }
+    }
+
+    /// Per-output-format settings. A format that has never been configured is
+    /// seeded from the project's base style rather than sharing one global blob.
+    pub fn settings_for(&self, kind: ExportKind) -> ExportSettings {
+        if let Some(settings) = self.formats.iter().find(|s| s.kind == kind) {
+            return settings.clone();
+        }
+        let mut settings = ExportSettings {
+            kind,
+            ..ExportSettings::default()
+        };
+        if self.kind.default_medium().is_script() {
+            settings.font = self.style.script_font.clone();
+            settings.font_size = self.style.script_size;
+            settings.line_spacing = self.style.script_leading;
+        } else {
+            settings.font = self.style.prose_font.clone();
+            settings.font_size = self.style.prose_size;
+            settings.line_spacing = self.style.prose_leading;
+        }
+        settings
+    }
+
+    /// Replace the settings for a format, or append them when it is new.
+    pub fn set_settings(&mut self, settings: ExportSettings) {
+        if let Some(slot) = self.formats.iter_mut().find(|s| s.kind == settings.kind) {
+            *slot = settings;
+        } else {
+            self.formats.push(settings);
         }
     }
 
@@ -1011,5 +1086,75 @@ mod tests {
         doc.blocks = vec![Block::new(ElementKind::Action, "The tide went out.")];
         doc.snapshot("First", "");
         assert_eq!(p.document(&id).unwrap().snapshots[0].body_text(), "The tide went out.");
+    }
+
+    #[test]
+    fn project_style_defaults_match_the_base_type() {
+        let style = ProjectStyle::default();
+        assert_eq!(style.prose_font, "Liberation Serif");
+        assert_eq!(style.prose_size, 11.0);
+        assert_eq!(style.prose_leading, 1.4);
+        assert_eq!(style.script_font, "Courier New");
+        assert_eq!(style.script_size, 12.0);
+        assert_eq!(style.script_leading, 1.0);
+    }
+
+    #[test]
+    fn settings_for_seeds_a_missing_format_from_style() {
+        let mut p = Project::new("Test", ProjectKind::Novel);
+        p.style.prose_font = "Georgia".into();
+        p.style.prose_size = 13.0;
+        assert!(p.formats.is_empty());
+        let seeded = p.settings_for(ExportKind::Pdf);
+        assert_eq!(seeded.kind, ExportKind::Pdf);
+        assert_eq!(seeded.font, "Georgia");
+        assert_eq!(seeded.font_size, 13.0);
+        assert!(p.formats.is_empty(), "seeding must not write through");
+
+        p.set_settings(seeded.clone());
+        let stored = p.settings_for(ExportKind::Pdf);
+        assert_eq!(stored, seeded);
+        assert_eq!(p.formats.len(), 1);
+    }
+
+    #[test]
+    fn set_settings_upserts_per_format() {
+        let mut p = Project::new("Test", ProjectKind::Novel);
+        let mut pdf = p.settings_for(ExportKind::Pdf);
+        p.set_settings(pdf.clone());
+        let mut epub = p.settings_for(ExportKind::Epub);
+        p.set_settings(epub.clone());
+        assert_eq!(p.formats.len(), 2);
+
+        pdf.font_size = 18.0;
+        p.set_settings(pdf.clone());
+        assert_eq!(p.formats.len(), 2, "same kind replaces, does not duplicate");
+        assert_eq!(p.settings_for(ExportKind::Pdf), pdf);
+        assert_eq!(p.settings_for(ExportKind::Epub), epub);
+
+        epub.font_size = 14.0;
+        p.set_settings(epub.clone());
+        assert_eq!(p.settings_for(ExportKind::Pdf), pdf);
+        assert_eq!(p.settings_for(ExportKind::Epub), epub);
+    }
+
+    #[test]
+    fn old_project_json_without_round_two_fields_still_loads() {
+        let p = Project::new("Legacy", ProjectKind::Novel);
+        let mut value = serde_json::to_value(&p).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("style");
+        object.remove("formats");
+        let export = object.get_mut("export").unwrap().as_object_mut().unwrap();
+        export.remove("include_page_numbers");
+        export.remove("include_running_headers");
+        export.remove("cover_image");
+
+        let restored: Project = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.style, ProjectStyle::default());
+        assert!(restored.formats.is_empty());
+        assert!(restored.export.include_page_numbers);
+        assert!(!restored.export.include_running_headers);
+        assert_eq!(restored.export.cover_image, "");
     }
 }

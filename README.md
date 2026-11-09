@@ -75,6 +75,10 @@ SCRIPTORIUM_DOC="Cold Harbor" ./target/debug/myscript --screenshot shots/script.
   acknowledgements, about the author.
 - Paper size and type-size/leading controls (applied where the format supports
   them), export presets, output folder and a compile preview.
+- Per-format settings: PDF, EPUB, DOCX and the rest each remember their own
+  paper, type and matter choices, seeded from a project-wide base style for
+  prose and script. Page numbers and running headers apply to PDF; an EPUB can
+  reference a JPG or PNG cover image.
 
 **Automation**
 - Every important action is a JSON command on a single workspace object.
@@ -147,6 +151,8 @@ A command always returns `{ ok, command, message, data }`.
 | `stats` | Words, pages, scenes, chapters, session log |
 | `script.parse` | Parse loose text into typed blocks and Fountain |
 | `export.preview` / `export.formats` | Compile preview and format list |
+| `export.settings.get` / `export.settings.update` | Read or change one format's compile settings |
+| `style.get` / `style.update` | Read or change the project base prose/script style |
 | `export.run` | Write a real export file |
 | `commands` | The catalogue the UI and MCP discovery read |
 
