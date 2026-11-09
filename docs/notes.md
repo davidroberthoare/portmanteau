@@ -548,3 +548,38 @@ Rows edit an owned clone and write back after the draw pass; add and remove are
 applied after the list has finished drawing. Applying a custom style to a
 particular manuscript paragraph is deliberately out of scope for this round: it
 needs per-paragraph prose structure rather than the current per-document text.
+
+## Round 16 — the corkboard becomes an editing surface
+
+Cards are no longer read-only thumbnails. Each one is a real `Frame` with a
+single-line title field (serif) and a multi-line synopsis field (sans), plus the
+same word count, status dot and label accent as before. Edits are made on the
+owned card copies the view already collects, then applied by id with
+`Project::document_mut` after the draw pass, so the project is never mutably
+borrowed while a card is painted. Each applied change touches the document and
+marks the workspace dirty.
+
+A single click now selects the card (and clicking into either text field selects
+it too). A double-click opens it in the Write editor, as does the small "Write"
+button on every card, which keeps the old click-to-write behaviour discoverable.
+Changing selection does not switch views.
+
+Cards are drag sources and drop targets using egui 0.31's payload API:
+`Response::dnd_set_drag_payload` on the card, `Response::dnd_hover_payload` for
+the hover highlight, and `Response::dnd_release_payload` for the drop. The card's
+click/drag interaction is registered before its text fields, so the fields keep
+their own clicks and drag-selection; dragging from the card's padding or footer
+still starts the card drag. Dropping card A onto card B calls the new
+`Project::move_after(A, B)`: A adopts B's parent, is removed from its old
+sibling list and is inserted directly after B, with the destination siblings
+renumbered 0, 1, 2… The move refuses self-drops, missing ids and moving a folder
+inside its own subtree. This gives both within-part reordering and cross-part
+reparenting without a separate gesture.
+
+"+ New card" now creates the chapter (or scene) and stays on the corkboard. The
+new card is selected, and a small piece of egui temporary memory asks the next
+frame to put keyboard focus in its title field so the writer can name it at
+once.
+
+The empty-synopsis placeholder is presentation only (TextEdit hint text) and is
+never written back, so blank synopses stay blank.

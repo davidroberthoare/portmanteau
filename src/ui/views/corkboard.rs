@@ -1,11 +1,15 @@
-//! Corkboard: the manuscript as index cards, grouped by part or chapter folder.
+//! Corkboard: the manuscript as editable index cards, grouped by part.
+//!
+//! Title and synopsis are edited in place. A single click selects a card, a
+//! double-click (or the small Write button) opens it in the editor, and cards
+//! can be dragged onto one another to reorder them within or across parts.
 
 use eframe::egui::{
-    self, CornerRadius, RichText, ScrollArea, Sense,
-    Stroke, Vec2,
+    self, Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke,
+    TextEdit, UiBuilder, Vec2,
 };
 
-use crate::app::{PortmanteauApp, View};
+use crate::app::PortmanteauApp;
 use crate::theme::*;
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button};
 
@@ -20,13 +24,20 @@ struct Card {
     group: String,
 }
 
+/// A pending title/synopsis change, applied after the draw pass.
+struct CardEdit {
+    id: String,
+    title: Option<String>,
+    synopsis: Option<String>,
+}
+
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut new_card = false;
     page_head(
         ui,
         "Structure",
         "Corkboard",
-        "Every chapter and scene as a card. Read the shape of the story before you write it.",
+        "Every chapter and scene as a card. Edit titles and synopses in place, then drag cards to reorder the story.",
         |ui| {
             if primary_button(ui, "+ New card").clicked() {
                 new_card = true;
@@ -36,7 +47,14 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         },
     );
 
-    let cards = collect(app);
+    let mut cards = collect(app);
+    let groups = group_ranges(&cards);
+    let selected = app.selected.clone();
+    let mut edits: Vec<CardEdit> = Vec::new();
+    let mut select: Option<String> = None;
+    let mut open: Option<String> = None;
+    let mut drop_after: Option<(String, String)> = None;
+
     content_frame().show(ui, |ui| {
         ScrollArea::vertical()
             .id_salt("corkboard_scroll")
@@ -45,7 +63,11 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 if cards.is_empty() {
                     ui.add_space(30.0);
                     ui.vertical_centered(|ui| {
-                        ui.label(RichText::new("The board is empty").font(serif(20.0)).color(MUTED));
+                        ui.label(
+                            RichText::new("The board is empty")
+                                .font(serif(20.0))
+                                .color(MUTED),
+                        );
                         ui.add_space(4.0);
                         ui.label(
                             RichText::new("Create a chapter to see it pinned here.")
@@ -56,60 +78,103 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     return;
                 }
 
-                let mut last_group = String::new();
                 let avail = ui.available_width();
                 let gap = 14.0;
                 let cols = ((avail / 285.0).floor() as usize).clamp(1, 4);
                 let card_w = (avail - gap * (cols.saturating_sub(1)) as f32) / cols as f32;
 
-                let mut index = 0;
-                while index < cards.len() {
-                    let group = &cards[index].group;
-                    if *group != last_group {
-                        ui.add_space(if last_group.is_empty() { 2.0 } else { 16.0 });
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new(group.to_uppercase())
-                                    .font(sans(9.0))
-                                    .color(FAINT)
-                                    .extra_letter_spacing(1.2),
-                            );
-                            let (line, _) = ui.allocate_exact_size(
-                                Vec2::new((ui.available_width() - 4.0).max(0.0), 1.0),
-                                Sense::hover(),
-                            );
-                            ui.painter().line_segment(
-                                [line.left_center(), line.right_center()],
-                                Stroke::new(1.0, BORDER_SOFT),
-                            );
-                        });
-                        ui.add_space(7.0);
-                        last_group = group.clone();
-                    }
-                    let end = cards[index..]
-                        .iter()
-                        .position(|c| &c.group != group)
-                        .map(|n| index + n)
-                        .unwrap_or(cards.len());
-                    let slice = &cards[index..end];
+                for (index, (group, start, end)) in groups.iter().enumerate() {
+                    ui.add_space(if index == 0 { 2.0 } else { 16.0 });
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(group.to_uppercase())
+                                .font(sans(9.0))
+                                .color(FAINT)
+                                .extra_letter_spacing(1.2),
+                        );
+                        let (line, _) = ui.allocate_exact_size(
+                            Vec2::new((ui.available_width() - 4.0).max(0.0), 1.0),
+                            Sense::hover(),
+                        );
+                        ui.painter().line_segment(
+                            [line.left_center(), line.right_center()],
+                            Stroke::new(1.0, BORDER_SOFT),
+                        );
+                    });
+                    ui.add_space(7.0);
 
-                    for row in slice.chunks(cols) {
+                    for row_start in (*start..*end).step_by(cols) {
+                        let row_end = (row_start + cols).min(*end);
                         ui.horizontal_top(|ui| {
-                            for card in row {
-                                card_ui(app, ui, card, card_w);
+                            for i in row_start..row_end {
+                                card_ui(
+                                    ui,
+                                    &mut cards[i],
+                                    card_w,
+                                    selected.as_deref(),
+                                    &mut edits,
+                                    &mut select,
+                                    &mut open,
+                                    &mut drop_after,
+                                );
                                 ui.add_space(gap);
                             }
                         });
                         ui.add_space(gap);
                     }
-                    index = end;
                 }
             });
     });
 
+    // Apply edits only after every card has finished drawing.
+    for edit in edits {
+        let mut changed = false;
+        {
+            if let Some(doc) = app.ws.project.document_mut(&edit.id) {
+                if let Some(title) = edit.title {
+                    if doc.title != title {
+                        doc.title = title;
+                        changed = true;
+                    }
+                }
+                if let Some(synopsis) = edit.synopsis {
+                    if doc.synopsis != synopsis {
+                        doc.synopsis = synopsis;
+                        changed = true;
+                    }
+                }
+                if changed {
+                    doc.touch();
+                }
+            }
+        }
+        if changed {
+            app.ws.project.touch();
+            app.ws.dirty = true;
+        }
+    }
+
+    // Reorder once the pointer is released, so no card is mutated mid-draw.
+    if let Some((dragged, target)) = drop_after {
+        if app.ws.project.move_after(&dragged, &target) {
+            app.ws.dirty = true;
+        }
+    }
+
+    if let Some(id) = select {
+        app.selected = Some(id);
+    }
+    if let Some(id) = open {
+        app.open_doc(id);
+    }
+
     if new_card {
         app.new_chapter_public();
-        app.view = View::Write;
+        // Stay on the corkboard. The new card is drawn next frame; ask that
+        // frame to put the caret in its title so the writer can type at once.
+        if let Some(id) = app.selected.clone() {
+            ui.ctx().data_mut(|d| d.insert_temp(pending_focus_id(), id));
+        }
     }
 }
 
@@ -118,7 +183,12 @@ fn card_count(app: &PortmanteauApp) -> usize {
         .project
         .documents
         .iter()
-        .filter(|d| matches!(d.kind, portmanteau_core::DocKind::Chapter | portmanteau_core::DocKind::Scene))
+        .filter(|d| {
+            matches!(
+                d.kind,
+                portmanteau_core::DocKind::Chapter | portmanteau_core::DocKind::Scene
+            )
+        })
         .count()
 }
 
@@ -130,7 +200,9 @@ fn collect(app: &PortmanteauApp) -> Vec<Card> {
         .filter(|d| {
             matches!(
                 d.kind,
-                portmanteau_core::DocKind::Chapter | portmanteau_core::DocKind::Scene | portmanteau_core::DocKind::Text
+                portmanteau_core::DocKind::Chapter
+                    | portmanteau_core::DocKind::Scene
+                    | portmanteau_core::DocKind::Text
             )
         })
         .map(|d| {
@@ -143,11 +215,7 @@ fn collect(app: &PortmanteauApp) -> Vec<Card> {
             Card {
                 id: d.id.clone(),
                 title: d.title.clone(),
-                synopsis: if d.synopsis.is_empty() {
-                    "No synopsis yet. Describe the turn this piece makes.".into()
-                } else {
-                    d.synopsis.clone()
-                },
+                synopsis: d.synopsis.clone(),
                 words: d.words(),
                 status: d.status.clone(),
                 label: d.label.clone(),
@@ -167,33 +235,183 @@ fn collect(app: &PortmanteauApp) -> Vec<Card> {
         .collect()
 }
 
-fn card_ui(app: &mut PortmanteauApp, ui: &mut egui::Ui, card: &Card, width: f32) {
-    let height = 176.0;
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
-    let selected = app.selected.as_deref() == Some(card.id.as_str());
+/// Contiguous runs of cards sharing a parent, as (group title, start, end).
+fn group_ranges(cards: &[Card]) -> Vec<(String, usize, usize)> {
+    let mut groups = Vec::new();
+    let mut start = 0;
+    while start < cards.len() {
+        let group = cards[start].group.clone();
+        let mut end = start;
+        while end < cards.len() && cards[end].group == group {
+            end += 1;
+        }
+        groups.push((group, start, end));
+        start = end;
+    }
+    groups
+}
+
+fn pending_focus_id() -> egui::Id {
+    egui::Id::new("corkboard_pending_focus")
+}
+
+fn title_edit_id(card_id: &str) -> egui::Id {
+    egui::Id::new(("corkboard_title", card_id))
+}
+
+fn synopsis_edit_id(card_id: &str) -> egui::Id {
+    egui::Id::new(("corkboard_synopsis", card_id))
+}
+
+fn record_edit(
+    edits: &mut Vec<CardEdit>,
+    id: &str,
+    title: Option<String>,
+    synopsis: Option<String>,
+) {
+    if let Some(entry) = edits.iter_mut().find(|e| e.id == id) {
+        if title.is_some() {
+            entry.title = title;
+        }
+        if synopsis.is_some() {
+            entry.synopsis = synopsis;
+        }
+    } else {
+        edits.push(CardEdit {
+            id: id.to_string(),
+            title,
+            synopsis,
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn card_ui(
+    ui: &mut egui::Ui,
+    card: &mut Card,
+    width: f32,
+    selected: Option<&str>,
+    edits: &mut Vec<CardEdit>,
+    select: &mut Option<String>,
+    open: &mut Option<String>,
+    drop_after: &mut Option<(String, String)>,
+) {
+    let height = 200.0;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+    let resp = ui.interact(
+        rect,
+        egui::Id::new(("corkboard_card", card.id.as_str())),
+        Sense::click_and_drag(),
+    );
+    let is_selected = selected == Some(card.id.as_str());
     let accent = label_color(&card.label);
-    let painter = ui.painter();
-    painter.rect_filled(
-        rect,
-        CornerRadius::same(8),
-        if resp.hovered() { PANEL_3 } else { PANEL_2 },
+    let pointer_over = ui.rect_contains_pointer(rect);
+    let is_drop_target = resp
+        .dnd_hover_payload::<String>()
+        .is_some_and(|payload| payload.as_str() != card.id.as_str());
+
+    let fill = if is_selected || pointer_over || is_drop_target {
+        PANEL_3
+    } else {
+        PANEL_2
+    };
+    let (stroke_width, stroke_color) = if is_drop_target {
+        (2.0, ACCENT)
+    } else if is_selected {
+        (1.4, ACCENT)
+    } else if pointer_over {
+        (1.0, BORDER)
+    } else {
+        (1.0, BORDER_SOFT)
+    };
+
+    // Frame supplies the rounded panel; interactions were registered first so
+    // the text fields inside keep their own clicks and drags.
+    let mut card_ui = ui.new_child(
+        UiBuilder::new()
+            .max_rect(rect)
+            .layout(Layout::top_down(Align::Min)),
     );
-    painter.rect_stroke(
-        rect,
-        CornerRadius::same(8),
-        Stroke::new(
-            if selected { 1.4 } else { 1.0 },
-            if selected {
-                ACCENT
-            } else if resp.hovered() {
-                BORDER
-            } else {
-                BORDER_SOFT
-            },
-        ),
-        egui::StrokeKind::Inside,
-    );
-    painter.rect_filled(
+    Frame::new()
+        .fill(fill)
+        .stroke(Stroke::new(stroke_width, stroke_color))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(13))
+        .show(&mut card_ui, |ui| {
+            ui.set_width((rect.width() - 26.0).max(0.0));
+            ui.set_min_height((rect.height() - 26.0).max(0.0));
+
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(card.kind.to_uppercase())
+                        .font(sans(8.0))
+                        .color(accent),
+                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui
+                        .add(
+                            egui::Button::new(RichText::new("Write").font(sans(8.5)).color(FAINT))
+                                .frame(false),
+                        )
+                        .on_hover_text("Open this card in the Write editor")
+                        .clicked()
+                    {
+                        *open = Some(card.id.clone());
+                    }
+                });
+            });
+            ui.add_space(3.0);
+
+            let title_id = title_edit_id(&card.id);
+            let want_focus = ui
+                .ctx()
+                .data(|d| d.get_temp::<String>(pending_focus_id()))
+                .as_deref()
+                == Some(card.id.as_str());
+            if want_focus {
+                ui.memory_mut(|m| m.request_focus(title_id));
+                ui.ctx()
+                    .data_mut(|d| d.remove_temp::<String>(pending_focus_id()));
+            }
+
+            let title_resp = ui.add(
+                TextEdit::singleline(&mut card.title)
+                    .id(title_id)
+                    .font(serif(15.0))
+                    .text_color(TEXT)
+                    .frame(false)
+                    .hint_text("Untitled")
+                    .desired_width(f32::INFINITY),
+            );
+            if title_resp.changed() {
+                record_edit(edits, &card.id, Some(card.title.clone()), None);
+            }
+            if title_resp.clicked() || title_resp.gained_focus() {
+                *select = Some(card.id.clone());
+            }
+            ui.add_space(2.0);
+
+            let synopsis_resp = ui.add_sized(
+                Vec2::new(ui.available_width(), 58.0),
+                TextEdit::multiline(&mut card.synopsis)
+                    .id(synopsis_edit_id(&card.id))
+                    .font(sans(10.0))
+                    .text_color(MUTED)
+                    .frame(false)
+                    .hint_text("Add a synopsis…")
+                    .desired_rows(3)
+                    .desired_width(f32::INFINITY),
+            );
+            if synopsis_resp.changed() {
+                record_edit(edits, &card.id, None, Some(card.synopsis.clone()));
+            }
+            if synopsis_resp.clicked() {
+                *select = Some(card.id.clone());
+            }
+        });
+
+    // Accent strip and footer sit on top of the frame, matching the old cards.
+    ui.painter().rect_filled(
         egui::Rect::from_min_size(rect.min + Vec2::new(1.0, 1.0), Vec2::new(width - 2.0, 4.0)),
         CornerRadius {
             nw: 7,
@@ -203,37 +421,6 @@ fn card_ui(app: &mut PortmanteauApp, ui: &mut egui::Ui, card: &Card, width: f32)
         },
         accent,
     );
-
-    ui.painter().text(
-        rect.left_top() + Vec2::new(13.0, 15.0),
-        egui::Align2::LEFT_TOP,
-        card.kind.to_uppercase(),
-        sans(8.0),
-        accent,
-    );
-    let title = ui.painter().layout(
-        card.title.clone(),
-        serif(15.0),
-        TEXT,
-        width - 26.0,
-    );
-    ui.painter()
-        .galley(rect.left_top() + Vec2::new(13.0, 32.0), title, TEXT);
-
-    let synopsis: String = if card.synopsis.chars().count() > 150 {
-        format!("{}…", card.synopsis.chars().take(147).collect::<String>())
-    } else {
-        card.synopsis.clone()
-    };
-    let body = ui.painter().layout(
-        synopsis,
-        sans(10.0),
-        MUTED,
-        width - 26.0,
-    );
-    ui.painter()
-        .galley(rect.left_top() + Vec2::new(13.0, 70.0), body, MUTED);
-
     ui.painter().line_segment(
         [
             egui::pos2(rect.left() + 13.0, rect.bottom() - 34.0),
@@ -248,15 +435,11 @@ fn card_ui(app: &mut PortmanteauApp, ui: &mut egui::Ui, card: &Card, width: f32)
         sans(9.0),
         FAINT,
     );
-    let (dot_rect, _) = (
-        egui::Rect::from_center_size(
-            egui::pos2(rect.right() - 62.0, rect.bottom() - 19.0),
-            Vec2::splat(6.0),
-        ),
-        (),
+    ui.painter().circle_filled(
+        egui::pos2(rect.right() - 62.0, rect.bottom() - 19.0),
+        2.6,
+        status_color(&card.status),
     );
-    ui.painter()
-        .circle_filled(dot_rect.center(), 2.6, status_color(&card.status));
     ui.painter().text(
         rect.right_bottom() + Vec2::new(-13.0, -19.0),
         egui::Align2::RIGHT_CENTER,
@@ -265,9 +448,23 @@ fn card_ui(app: &mut PortmanteauApp, ui: &mut egui::Ui, card: &Card, width: f32)
         status_color(&card.status),
     );
 
-    if resp.clicked() {
-        app.open_doc(card.id.clone());
-        app.view = View::Write;
+    // Drag-and-drop: this card is both a source and a drop target.
+    resp.dnd_set_drag_payload(card.id.clone());
+    if let Some(payload) = resp.dnd_release_payload::<String>() {
+        if payload.as_str() != card.id.as_str() {
+            *drop_after = Some((payload.as_str().to_string(), card.id.clone()));
+        }
     }
-    resp.on_hover_text("Open this card in the editor");
+
+    if resp.double_clicked() {
+        *open = Some(card.id.clone());
+    } else if resp.clicked() {
+        *select = Some(card.id.clone());
+    }
+
+    if pointer_over {
+        resp.clone().on_hover_text(
+            "Click to select · Double-click or Write to open · Drag onto another card to reorder",
+        );
+    }
 }

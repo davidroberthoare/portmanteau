@@ -1073,6 +1073,54 @@ impl Project {
         true
     }
 
+    /// Place `id` immediately AFTER `target` among the target's siblings,
+    /// adopting the target's parent. Used by the corkboard's drag-and-drop.
+    ///
+    /// Refuses when the two ids are the same, either document is missing, or
+    /// `id` is an ancestor of `target` (a folder cannot be dropped inside its
+    /// own subtree).
+    pub fn move_after(&mut self, id: &str, target: &str) -> bool {
+        if id == target {
+            return false;
+        }
+        let Some(new_parent) = self.document(target).map(|d| d.parent.clone()) else {
+            return false;
+        };
+        if self.document(id).is_none() {
+            return false;
+        }
+        if self.descendant_ids(id).iter().any(|d| d == target) {
+            return false;
+        }
+
+        // Build the destination sibling list without the moved document, so a
+        // same-parent move is a single reorder rather than a duplicate.
+        let mut siblings: Vec<String> = self
+            .children(new_parent.as_deref())
+            .iter()
+            .map(|d| d.id.clone())
+            .filter(|s| s != id)
+            .collect();
+        let Some(pos) = siblings.iter().position(|s| s == target) else {
+            return false;
+        };
+        siblings.insert(pos + 1, id.to_string());
+
+        if let Some(doc) = self.document_mut(id) {
+            doc.parent = new_parent;
+        }
+        for (index, sibling) in siblings.iter().enumerate() {
+            if let Some(doc) = self.document_mut(sibling) {
+                doc.order = index as i32;
+            }
+        }
+        if let Some(doc) = self.document_mut(id) {
+            doc.touch();
+        }
+        self.touch();
+        true
+    }
+
     pub fn descendant_ids(&self, id: &str) -> Vec<String> {
         let mut out = Vec::new();
         let mut stack = vec![id.to_string()];
@@ -1272,6 +1320,48 @@ mod tests {
         assert_eq!(order, vec!["Second", "First"]);
         assert!(!p.move_document(&second, -1));
         assert!(p.move_document(&first, -1));
+    }
+
+    #[test]
+    fn move_after_places_a_document_directly_after_its_target() {
+        let mut p = Project::new("Test", ProjectKind::Novel);
+        let draft = p.folder_id("Draft");
+        let a = p.add_document(draft.clone(), "A", DocKind::Chapter, Medium::Prose);
+        let b = p.add_document(draft.clone(), "B", DocKind::Chapter, Medium::Prose);
+        let c = p.add_document(draft.clone(), "C", DocKind::Chapter, Medium::Prose);
+
+        // Same parent: C after A leaves A, C, B.
+        assert!(p.move_after(&c, &a));
+        let order: Vec<String> = p
+            .children(draft.as_deref())
+            .iter()
+            .map(|d| d.title.clone())
+            .collect();
+        assert_eq!(order, vec!["A", "C", "B"]);
+
+        // Across parents: a new folder adopts the moved document.
+        let other = p.add_document(draft.clone(), "Other", DocKind::Folder, Medium::Prose);
+        let d = p.add_document(Some(other.clone()), "D", DocKind::Text, Medium::Prose);
+        let e = p.add_document(Some(other.clone()), "E", DocKind::Text, Medium::Prose);
+        assert!(p.move_after(&b, &d));
+        let moved: Vec<String> = p
+            .children(Some(&other))
+            .iter()
+            .map(|d| d.title.clone())
+            .collect();
+        assert_eq!(moved, vec!["D", "B", "E"]);
+        assert_eq!(p.document(&b).unwrap().parent.as_deref(), Some(other.as_str()));
+
+        // The moved order is contiguous, and invalid targets are refused.
+        assert!(p.move_after(&e, &a));
+        assert_eq!(
+            p.document(&e).unwrap().parent.as_deref(),
+            draft.as_deref()
+        );
+        assert!(!p.move_after(&a, &a));
+        assert!(!p.move_after(&a, "doc-missing"));
+        assert!(!p.move_after("doc-missing", &a));
+        assert!(!p.move_after(&other, &d));
     }
 
     #[test]
