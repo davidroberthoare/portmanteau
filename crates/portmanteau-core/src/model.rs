@@ -536,28 +536,120 @@ impl PaperSize {
     }
 }
 
-/// Project-wide base type, split by medium. Every output format starts from
-/// this when it has no saved settings of its own.
+/// Type for one kind of manuscript element. Every output format starts from
+/// the project's element styles when it has no saved settings of its own.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct ProjectStyle {
-    pub prose_font: String,
-    pub prose_size: f32,
-    pub prose_leading: f32,
-    pub script_font: String,
-    pub script_size: f32,
-    pub script_leading: f32,
+pub struct ElementStyle {
+    pub font: String,     // family name ("" means inherit/unset)
+    pub size: f32,        // points
+    pub leading: f32,     // line-height multiple
+    pub indent: f32,      // left indent, points
+    pub before: f32,      // space before, points
+    pub after: f32,       // space after, points
 }
 
-impl Default for ProjectStyle {
+impl Default for ElementStyle {
     fn default() -> Self {
         Self {
-            prose_font: "Liberation Serif".into(),
-            prose_size: 11.0,
-            prose_leading: 1.4,
-            script_font: "Courier New".into(),
-            script_size: 12.0,
-            script_leading: 1.0,
+            font: String::new(),
+            size: 11.0,
+            leading: 1.4,
+            indent: 0.0,
+            before: 0.0,
+            after: 0.0,
         }
+    }
+}
+
+fn base_element(font: &str, size: f32, leading: f32) -> ElementStyle {
+    ElementStyle {
+        font: font.into(),
+        size,
+        leading,
+        ..ElementStyle::default()
+    }
+}
+
+/// The project-wide base type for every kind of manuscript element. Formats
+/// that have no saved settings of their own are seeded from `body` (prose) or
+/// `action` (script).
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct ElementStyles {
+    pub title_page_title: ElementStyle,
+    pub title_page_subtitle: ElementStyle,
+    pub title_page_author: ElementStyle,
+    pub chapter_heading: ElementStyle,
+    pub body: ElementStyle,
+    pub scene_heading: ElementStyle,
+    pub action: ElementStyle,
+    pub character: ElementStyle,
+    pub parenthetical: ElementStyle,
+    pub dialogue: ElementStyle,
+    pub transition: ElementStyle,
+    pub act: ElementStyle,
+    pub scene: ElementStyle,
+    pub stage_direction: ElementStyle,
+    pub general: ElementStyle,
+}
+
+impl Default for ElementStyles {
+    fn default() -> Self {
+        let serif = "Liberation Serif";
+        let mono = "Courier New";
+        Self {
+            title_page_title: base_element(serif, 24.0, 1.2),
+            title_page_subtitle: base_element(serif, 14.0, 1.3),
+            title_page_author: base_element(serif, 12.0, 1.4),
+            chapter_heading: ElementStyle {
+                before: 12.0,
+                after: 8.0,
+                ..base_element(serif, 16.0, 1.2)
+            },
+            body: base_element(serif, 11.0, 1.4),
+            scene_heading: base_element(mono, 12.0, 1.0),
+            action: base_element(mono, 12.0, 1.0),
+            character: ElementStyle {
+                indent: 158.4,
+                ..base_element(mono, 12.0, 1.0)
+            },
+            parenthetical: ElementStyle {
+                indent: 115.2,
+                ..base_element(mono, 12.0, 1.0)
+            },
+            dialogue: ElementStyle {
+                indent: 72.0,
+                ..base_element(mono, 12.0, 1.0)
+            },
+            transition: base_element(mono, 12.0, 1.0),
+            act: base_element(mono, 12.0, 1.0),
+            scene: base_element(mono, 12.0, 1.0),
+            stage_direction: base_element(mono, 12.0, 1.0),
+            general: base_element(mono, 12.0, 1.0),
+        }
+    }
+}
+
+impl ElementStyles {
+    /// Look up one element by its JSON/model name.
+    pub fn element_mut(&mut self, name: &str) -> Option<&mut ElementStyle> {
+        Some(match name {
+            "title_page_title" => &mut self.title_page_title,
+            "title_page_subtitle" => &mut self.title_page_subtitle,
+            "title_page_author" => &mut self.title_page_author,
+            "chapter_heading" => &mut self.chapter_heading,
+            "body" => &mut self.body,
+            "scene_heading" => &mut self.scene_heading,
+            "action" => &mut self.action,
+            "character" => &mut self.character,
+            "parenthetical" => &mut self.parenthetical,
+            "dialogue" => &mut self.dialogue,
+            "transition" => &mut self.transition,
+            "act" => &mut self.act,
+            "scene" => &mut self.scene,
+            "stage_direction" => &mut self.stage_direction,
+            "general" => &mut self.general,
+            _ => return None,
+        })
     }
 }
 
@@ -653,7 +745,7 @@ pub struct Project {
     pub export: ExportSettings,
     pub presets: Vec<ExportPreset>,
     #[serde(default)]
-    pub style: ProjectStyle,
+    pub styles: ElementStyles,
     #[serde(default)]
     pub formats: Vec<ExportSettings>,
 }
@@ -682,7 +774,7 @@ impl Project {
             daily_target: 1200,
             export: ExportSettings::default(),
             presets: Vec::new(),
-            style: ProjectStyle::default(),
+            styles: ElementStyles::default(),
             formats: Vec::new(),
         };
         project.ensure_folders();
@@ -699,7 +791,7 @@ impl Project {
     }
 
     /// Per-output-format settings. A format that has never been configured is
-    /// seeded from the project's base style rather than sharing one global blob.
+    /// seeded from the project's element styles rather than sharing one global blob.
     pub fn settings_for(&self, kind: ExportKind) -> ExportSettings {
         if let Some(settings) = self.formats.iter().find(|s| s.kind == kind) {
             return settings.clone();
@@ -708,15 +800,14 @@ impl Project {
             kind,
             ..ExportSettings::default()
         };
-        if self.kind.default_medium().is_script() {
-            settings.font = self.style.script_font.clone();
-            settings.font_size = self.style.script_size;
-            settings.line_spacing = self.style.script_leading;
+        let base = if self.kind.default_medium().is_script() {
+            &self.styles.action
         } else {
-            settings.font = self.style.prose_font.clone();
-            settings.font_size = self.style.prose_size;
-            settings.line_spacing = self.style.prose_leading;
-        }
+            &self.styles.body
+        };
+        settings.font = base.font.clone();
+        settings.font_size = base.size;
+        settings.line_spacing = base.leading;
         settings
     }
 
@@ -1089,21 +1180,27 @@ mod tests {
     }
 
     #[test]
-    fn project_style_defaults_match_the_base_type() {
-        let style = ProjectStyle::default();
-        assert_eq!(style.prose_font, "Liberation Serif");
-        assert_eq!(style.prose_size, 11.0);
-        assert_eq!(style.prose_leading, 1.4);
-        assert_eq!(style.script_font, "Courier New");
-        assert_eq!(style.script_size, 12.0);
-        assert_eq!(style.script_leading, 1.0);
+    fn element_styles_defaults_match_the_base_type() {
+        let styles = ElementStyles::default();
+        assert_eq!(styles.body.font, "Liberation Serif");
+        assert_eq!(styles.body.size, 11.0);
+        assert_eq!(styles.body.leading, 1.4);
+        assert_eq!(styles.chapter_heading.size, 16.0);
+        assert_eq!(styles.chapter_heading.before, 12.0);
+        assert_eq!(styles.chapter_heading.after, 8.0);
+        assert_eq!(styles.character.font, "Courier New");
+        assert_eq!(styles.character.size, 12.0);
+        assert_eq!(styles.character.leading, 1.0);
+        assert_eq!(styles.character.indent, 158.4);
+        assert_eq!(styles.parenthetical.indent, 115.2);
+        assert_eq!(styles.dialogue.indent, 72.0);
     }
 
     #[test]
     fn settings_for_seeds_a_missing_format_from_style() {
         let mut p = Project::new("Test", ProjectKind::Novel);
-        p.style.prose_font = "Georgia".into();
-        p.style.prose_size = 13.0;
+        p.styles.body.font = "Georgia".into();
+        p.styles.body.size = 13.0;
         assert!(p.formats.is_empty());
         let seeded = p.settings_for(ExportKind::Pdf);
         assert_eq!(seeded.kind, ExportKind::Pdf);
@@ -1143,7 +1240,7 @@ mod tests {
         let p = Project::new("Legacy", ProjectKind::Novel);
         let mut value = serde_json::to_value(&p).unwrap();
         let object = value.as_object_mut().unwrap();
-        object.remove("style");
+        object.remove("styles");
         object.remove("formats");
         let export = object.get_mut("export").unwrap().as_object_mut().unwrap();
         export.remove("include_page_numbers");
@@ -1151,7 +1248,7 @@ mod tests {
         export.remove("cover_image");
 
         let restored: Project = serde_json::from_value(value).unwrap();
-        assert_eq!(restored.style, ProjectStyle::default());
+        assert_eq!(restored.styles, ElementStyles::default());
         assert!(restored.formats.is_empty());
         assert!(restored.export.include_page_numbers);
         assert!(!restored.export.include_running_headers);

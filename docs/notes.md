@@ -356,3 +356,21 @@ silently falling back to the project's current kind. `export.settings.get` and
 - **Script margin type labels removed.** The per-block gutter no longer draws
   the element short name or cycles its type on click. Scene numbers still show,
   and the element-kind button row above the script still sets the type.
+
+## Round 8 — per-element project styles
+
+- **One style per element.** `ProjectStyle` (prose/script font, size, leading)
+  is replaced by `ElementStyles`, fifteen `ElementStyle` records covering the
+  title page, chapter heading, body, and every screenplay element. Each record
+  carries `font`, `size`, `leading`, `indent`, `before` and `after`.
+- **Project field renamed.** `Project.style` is now `Project.styles`. It keeps
+  `#[serde(default)]`; older project folders that still carry the removed
+  `style` key load with default element styles because serde ignores the old
+  field.
+- **Nested command payloads.** `style.update` now takes nested objects:
+  `{"body":{"size":12,"font":"Georgia"},"dialogue":{"indent":80}}`. Numeric
+  values are still range-checked before anything is stored.
+- **Compile screen.** The old two-row base-style editor is now a scrollable
+  list of elements with font, size, leading and indent. “Reset this format to
+  base style” seeds from `body` for prose projects and `action` for script
+  projects, matching `settings_for`.

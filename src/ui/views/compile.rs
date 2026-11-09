@@ -7,7 +7,7 @@ use eframe::egui::{
     Stroke, TextEdit, Vec2,
 };
 use portmanteau_core::{
-    DocKind, ExportKind, ExportSettings, PaperSize, ProjectKind, ProjectStyle,
+    DocKind, ElementStyles, ExportKind, ExportSettings, PaperSize, ProjectKind,
 };
 
 use crate::app::{PortmanteauApp, ToastKind};
@@ -36,7 +36,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .ws
         .project
         .settings_for(app.ws.project.export.kind);
-    let style_before = app.ws.project.style.clone();
+    let mut styles = app.ws.project.styles.clone();
     let mut compile = false;
 
     content_frame().show(ui, |ui| {
@@ -109,13 +109,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         ui.horizontal(|ui| {
                             if quiet_button(ui, "Reset this format to base style").clicked() {
                                 settings = seeded_settings(
-                                    &app.ws.project.style,
+                                    &styles,
                                     app.ws.project.kind,
                                     settings.kind,
                                 );
                             }
                             ui.label(
-                                RichText::new("Seeds from the project base style below.")
+                                RichText::new("Seeds from the element styles below.")
                                     .font(sans(9.0))
                                     .color(FAINT),
                             );
@@ -228,7 +228,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 }
                             });
                         ui.add_space(12.0);
-                        style_panel(ui, &mut app.ws.project.style);
+                        style_panel(ui, &mut styles);
                         ui.add_space(14.0);
                         preview_panel(app, ui);
                     });
@@ -239,7 +239,9 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let before = app.ws.project.settings_for(settings.kind);
     app.ws.project.set_settings(settings.clone());
     app.ws.project.export = settings.clone();
-    if before != settings || app.ws.project.style != style_before {
+    let styles_changed = app.ws.project.styles != styles;
+    app.ws.project.styles = styles;
+    if before != settings || styles_changed {
         app.ws.dirty = true;
     }
     if compile {
@@ -300,7 +302,7 @@ fn format_card(ui: &mut egui::Ui, kind: ExportKind, selected_kind: ExportKind) -
 }
 
 fn seeded_settings(
-    style: &ProjectStyle,
+    styles: &ElementStyles,
     project_kind: ProjectKind,
     kind: ExportKind,
 ) -> ExportSettings {
@@ -308,15 +310,14 @@ fn seeded_settings(
         kind,
         ..ExportSettings::default()
     };
-    if project_kind.default_medium().is_script() {
-        settings.font = style.script_font.clone();
-        settings.font_size = style.script_size;
-        settings.line_spacing = style.script_leading;
+    let base = if project_kind.default_medium().is_script() {
+        &styles.action
     } else {
-        settings.font = style.prose_font.clone();
-        settings.font_size = style.prose_size;
-        settings.line_spacing = style.prose_leading;
-    }
+        &styles.body
+    };
+    settings.font = base.font.clone();
+    settings.font_size = base.size;
+    settings.line_spacing = base.leading;
     settings
 }
 
@@ -490,7 +491,25 @@ fn body_panel(ui: &mut egui::Ui, settings: &mut portmanteau_core::ExportSettings
         });
 }
 
-fn style_panel(ui: &mut egui::Ui, style: &mut ProjectStyle) {
+const ELEMENT_ROWS: [(&str, &str); 15] = [
+    ("Title page title", "title_page_title"),
+    ("Title page subtitle", "title_page_subtitle"),
+    ("Title page author", "title_page_author"),
+    ("Chapter heading", "chapter_heading"),
+    ("Body", "body"),
+    ("Scene heading", "scene_heading"),
+    ("Action", "action"),
+    ("Character", "character"),
+    ("Parenthetical", "parenthetical"),
+    ("Dialogue", "dialogue"),
+    ("Transition", "transition"),
+    ("Act", "act"),
+    ("Scene", "scene"),
+    ("Stage direction", "stage_direction"),
+    ("General", "general"),
+];
+
+fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles) {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -498,60 +517,76 @@ fn style_panel(ui: &mut egui::Ui, style: &mut ProjectStyle) {
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "Base style");
+            section_label(ui, "Element styles");
             ui.label(
                 RichText::new(
-                    "The project-wide starting point for new output formats. Formats that already have settings keep their own.",
+                    "Per-element type for the manuscript. New output formats start from these; formats that already have settings keep their own.",
                 )
                 .font(sans(9.0))
                 .color(FAINT),
             );
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Prose font").font(sans(9.5)).color(MUTED));
-                ui.add(
-                    TextEdit::singleline(&mut style.prose_font)
-                        .font(mono(9.5))
-                        .desired_width(190.0),
+            ScrollArea::vertical()
+                .id_salt("element_styles")
+                .auto_shrink([false, false])
+                .max_height(340.0)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    for (label, key) in ELEMENT_ROWS {
+                        if let Some(element) = styles.element_mut(key) {
+                            element_row(ui, label, element);
+                            ui.add_space(4.0);
+                        }
+                    }
+                });
+        });
+}
+
+fn element_row(ui: &mut egui::Ui, label: &str, element: &mut portmanteau_core::ElementStyle) {
+    Frame::new()
+        .fill(PANEL_2)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .corner_radius(CornerRadius::same(5))
+        .inner_margin(Margin::symmetric(10, 6))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_wrapped(|ui| {
+                ui.allocate_ui_with_layout(
+                    Vec2::new(118.0, 18.0),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        ui.label(RichText::new(label).font(sans(9.5)).color(TEXT));
+                    },
                 );
-                ui.add_space(6.0);
-                ui.label(RichText::new("Size").font(sans(9.5)).color(MUTED));
                 ui.add(
-                    egui::DragValue::new(&mut style.prose_size)
+                    TextEdit::singleline(&mut element.font)
+                        .hint_text("Font family")
+                        .font(mono(9.0))
+                        .desired_width(145.0),
+                );
+                ui.add_space(4.0);
+                ui.label(RichText::new("Size").font(sans(8.5)).color(FAINT));
+                ui.add(
+                    egui::DragValue::new(&mut element.size)
                         .speed(0.1)
-                        .range(6.0..=30.0)
+                        .range(4.0..=72.0)
                         .suffix(" pt"),
                 );
-                ui.label(RichText::new("Leading").font(sans(9.5)).color(MUTED));
+                ui.add_space(4.0);
+                ui.label(RichText::new("Leading").font(sans(8.5)).color(FAINT));
                 ui.add(
-                    egui::DragValue::new(&mut style.prose_leading)
+                    egui::DragValue::new(&mut element.leading)
                         .speed(0.02)
-                        .range(0.8..=3.0)
+                        .range(0.5..=3.0)
                         .suffix("×"),
                 );
-            });
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Script font").font(sans(9.5)).color(MUTED));
+                ui.add_space(4.0);
+                ui.label(RichText::new("Indent").font(sans(8.5)).color(FAINT));
                 ui.add(
-                    TextEdit::singleline(&mut style.script_font)
-                        .font(mono(9.5))
-                        .desired_width(190.0),
-                );
-                ui.add_space(6.0);
-                ui.label(RichText::new("Size").font(sans(9.5)).color(MUTED));
-                ui.add(
-                    egui::DragValue::new(&mut style.script_size)
-                        .speed(0.1)
-                        .range(6.0..=30.0)
+                    egui::DragValue::new(&mut element.indent)
+                        .speed(0.5)
+                        .range(0.0..=800.0)
                         .suffix(" pt"),
-                );
-                ui.label(RichText::new("Leading").font(sans(9.5)).color(MUTED));
-                ui.add(
-                    egui::DragValue::new(&mut style.script_leading)
-                        .speed(0.02)
-                        .range(0.8..=3.0)
-                        .suffix("×"),
                 );
             });
         });
