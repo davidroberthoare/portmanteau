@@ -227,6 +227,8 @@ struct PdfLine {
     y: f32,
     size: f32,
     bold: bool,
+    /// Script elements are set in Courier; prose and front matter in Times.
+    mono: bool,
 }
 
 struct PdfPage {
@@ -297,66 +299,38 @@ fn pdf_text(s: &str) -> String {
 }
 
 fn build_pdf(title: &str, author: &str, pages: &[PdfPage], width_pt: f32, height_pt: f32, footer: bool) -> Vec<u8> {
-    let mut objects: Vec<Vec<u8>> = Vec::new();
-    // Fonts are objects 1 and 2, catalog 3, pages 4; page objects follow.
+    // Stable object plan. A PDF page is a dictionary, and its content stream is
+    // a *separate* object; mixing the two up makes readers treat a stream as a
+    // page and silently drop text. Keep the numbering explicit:
+    //
+    //   1 catalog · 2 pages · 3 Times-Roman · 4 Times-Bold
+    //   5 Courier · 6 Courier-Bold · 7 page 1 · 8 content 1 · ...
+    let n = pages.len();
+    let mut objects: Vec<Vec<u8>> = Vec::with_capacity(7 + n * 2);
+    objects.push(b"<< /Type /Catalog /Pages 2 0 R >>".to_vec());
+    objects.push(Vec::new()); // Pages, filled once the kids are known.
     objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>".to_vec());
     objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>".to_vec());
-    objects.push(Vec::new()); // catalog, filled later
-    objects.push(Vec::new()); // pages, filled later
+    objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>".to_vec());
+    objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>".to_vec());
 
-    let first_page_obj = 5usize;
-    let mut page_objs = Vec::new();
+    let mut kids: Vec<usize> = Vec::with_capacity(n);
     for (i, page) in pages.iter().enumerate() {
+        let page_num = 7 + i * 2;
+        let content_num = page_num + 1;
+        kids.push(page_num);
+
         let mut content = String::new();
         for line in &page.lines {
-            let y = line.y;
             content.push_str("BT\n");
-            content.push_str(&format!(
-                "/{} {} Tf\n",
-                if line.bold { "F2" } else { "F1" },
-                line.size
-            ));
-            content.push_str(&format!("1 0 0 1 {:.2} {:.2} Tm\n", line.x, y));
-            content.push_str(&format!("({}) Tj\nET\n", pdf_text(&line.text)));
-        }
-        if footer && i > 0 {
-            content.push_str("BT\n/F1 9 Tf\n");
-            content.push_str(&format!(
-                "1 0 0 1 {:.2} 36 Tm\n({}) Tj\nET\n",
-                width_pt / 2.0 - 5.0,
-                i + 1
-            ));
-        }
-        let mut obj = Vec::new();
-        obj.extend_from_slice(
-            format!(
-                "<< /Type /Page /Parent {} 0 R /MediaBox [0 0 {:.2} {:.2}] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents {} 0 R >>",
-                first_page_obj + pages.len(),
-                width_pt,
-                height_pt,
-                first_page_obj + pages.len() + 1 + i
-            )
-            .as_bytes(),
-        );
-        page_objs.push(obj);
-    }
-    // Fix: page object numbers need to be known before contents. Rebuild with
-    // a clean layout: 5..(5+n-1) pages, (5+n).. contents.
-    let n = pages.len();
-    page_objs.clear();
-    for i in 0..n {
-        let page_num = first_page_obj + i;
-        let content_num = first_page_obj + n + i;
-        let mut content = String::new();
-        for line in &pages[i].lines {
-            let y = line.y;
-            content.push_str("BT\n");
-            content.push_str(&format!(
-                "/{} {} Tf\n",
-                if line.bold { "F2" } else { "F1" },
-                line.size
-            ));
-            content.push_str(&format!("1 0 0 1 {:.2} {:.2} Tm\n", line.x, y));
+            let font = match (line.mono, line.bold) {
+                (true, true) => "F4",
+                (true, false) => "F3",
+                (false, true) => "F2",
+                (false, false) => "F1",
+            };
+            content.push_str(&format!("/{} {} Tf\n", font, line.size));
+            content.push_str(&format!("1 0 0 1 {:.2} {:.2} Tm\n", line.x, line.y));
             content.push_str(&format!("({}) Tj\nET\n", pdf_text(&line.text)));
         }
         if footer && i > 0 {
@@ -367,8 +341,9 @@ fn build_pdf(title: &str, author: &str, pages: &[PdfPage], width_pt: f32, height
                 i + 1
             ));
         }
+
         let page_obj = format!(
-            "<< /Type /Page /Parent 4 0 R /MediaBox [0 0 {:.2} {:.2}] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents {} 0 R >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {:.2} {:.2}] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> /Contents {} 0 R >>",
             width_pt, height_pt, content_num
         );
         objects.push(page_obj.into_bytes());
@@ -380,16 +355,12 @@ fn build_pdf(title: &str, author: &str, pages: &[PdfPage], width_pt: f32, height
             )
             .into_bytes(),
         );
-        let _ = page_num;
     }
-    // Catalog and Pages.
-    objects[2] = format!("<< /Type /Catalog /Pages 4 0 R >>").into_bytes();
-    let kids: Vec<String> = (0..n)
-        .map(|i| format!("{} 0 R", first_page_obj + i))
-        .collect();
-    objects[3] = format!(
+
+    let kids_refs: Vec<String> = kids.iter().map(|n| format!("{n} 0 R")).collect();
+    objects[1] = format!(
         "<< /Type /Pages /Kids [{}] /Count {} >>",
-        kids.join(" "),
+        kids_refs.join(" "),
         n
     )
     .into_bytes();
@@ -420,12 +391,10 @@ fn build_pdf(title: &str, author: &str, pages: &[PdfPage], width_pt: f32, height
     for off in &offsets {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off).as_bytes());
     }
-    let catalog = 3usize;
     pdf.extend_from_slice(
         format!(
-            "trailer\n<< /Size {} /Root {} 0 R /Info {} 0 R >>\nstartxref\n{}\n%%EOF\n",
+            "trailer\n<< /Size {} /Root 1 0 R /Info {} 0 R >>\nstartxref\n{}\n%%EOF\n",
             objects.len() + 1,
-            catalog,
             info_num,
             xref
         )
@@ -482,6 +451,7 @@ impl PdfFlow {
             y: self.y,
             size,
             bold,
+            mono: false,
         });
     }
 
@@ -495,12 +465,21 @@ impl PdfFlow {
 
 fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let (w_mm, h_mm) = settings.paper.mm();
-    let w = w_mm * 2.834645;
-    let h = h_mm * 2.834645;
+    let mut w = w_mm * 2.834645;
+    let mut h = h_mm * 2.834645;
     let screenplay = is_screenplay(project);
-    let margin = 20.0 * 2.834645;
-    let top = 22.0 * 2.834645;
-    let bottom = 22.0 * 2.834645;
+    let mut margin = 20.0 * 2.834645;
+    let mut top = 22.0 * 2.834645;
+    let mut bottom = 22.0 * 2.834645;
+    // A screenplay is a working document, not a trim size: keep the industry
+    // standard US Letter and 1.5" left margin even when the book is set to A5.
+    if screenplay {
+        w = 8.5 * 72.0;
+        h = 11.0 * 72.0;
+        margin = 1.5 * 72.0;
+        top = 1.0 * 72.0;
+        bottom = 1.0 * 72.0;
+    }
     let size = if screenplay { 12.0 } else { settings.font_size.max(8.0) };
     let gap = if screenplay {
         13.0
@@ -514,33 +493,44 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     if settings.include_title_page {
         let title_size = if screenplay { 16.0 } else { 24.0 };
         let mut page = PdfPage::new();
-        let mut y = h * 0.62;
-        for (i, line) in wrap_text(&project.title, 34).iter().enumerate() {
+        // Title, subtitle and byline get their own vertical bands. The earlier
+        // version moved the cursor down and then subtracted the offset again,
+        // which drew the subtitle on top of the title.
+        let mut y = h * 0.34;
+        for line in wrap_text(&project.title, 34) {
             page.lines.push(PdfLine {
                 text: line.clone(),
-                x: w / 2.0 - line.chars().count() as f32 * title_size * 0.28,
-                y: y - i as f32 * 32.0,
+                x: w / 2.0 - line.chars().count() as f32 * title_size * 0.24,
+                y,
                 size: title_size,
                 bold: true,
+                mono: false,
             });
+            y -= title_size * 1.25;
         }
-        y += 70.0;
+        y -= 18.0;
         if !project.subtitle.is_empty() {
-            page.lines.push(PdfLine {
-                text: project.subtitle.clone(),
-                x: w / 2.0 - project.subtitle.chars().count() as f32 * 5.5,
-                y: y - 70.0,
-                size: 12.0,
-                bold: false,
-            });
-            y += 26.0;
+            for line in wrap_text(&project.subtitle, 50) {
+                page.lines.push(PdfLine {
+                    text: line.clone(),
+                    x: w / 2.0 - line.chars().count() as f32 * 3.2,
+                    y,
+                    size: 12.0,
+                    bold: false,
+                    mono: false,
+                });
+                y -= 18.0;
+            }
         }
+        y -= 34.0;
+        let byline = format!("by {}", project.author);
         page.lines.push(PdfLine {
-            text: format!("by {}", project.author),
-            x: w / 2.0 - (project.author.chars().count() as f32 + 3.0) * 5.5,
-            y: y - 110.0,
+            text: byline.clone(),
+            x: w / 2.0 - byline.chars().count() as f32 * 3.2,
+            y,
             size: 12.0,
             bold: false,
+            mono: false,
         });
         let footer = if screenplay {
             "Scriptorium · screenplay".to_string()
@@ -548,11 +538,12 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             format!("{} · {}", project.genre, chrono::Local::now().format("%Y"))
         };
         page.lines.push(PdfLine {
+            x: w / 2.0 - footer.chars().count() as f32 * 2.3,
             text: footer,
-            x: w / 2.0 - 40.0,
             y: 70.0,
             size: 9.0,
             bold: false,
+            mono: false,
         });
         pages.push(page);
     }
@@ -564,6 +555,12 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         let mut scene_number = 1usize;
         let max_lines = ((h - top - bottom) / 13.0) as usize;
         let char_w = 7.2; // 12pt Courier at 0.6em
+        let full_chars = (content_width / char_w).floor().max(20.0) as usize;
+        let width_for = |indent_mm: f32| {
+            ((content_width - indent_mm * 2.834645) / char_w)
+                .floor()
+                .max(14.0) as usize
+        };
         fn push_line(
             page: &mut PdfPage,
             line_index: &mut usize,
@@ -581,6 +578,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                 y,
                 size: 12.0,
                 bold,
+                mono: true,
             });
             *line_index += 1;
         }
@@ -588,35 +586,35 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             let doc = section.doc;
             if doc.medium.is_script() {
                 let heading = format!("{}.", section.heading.to_uppercase());
-                for line in wrap_text(&heading, 60) {
+                for line in wrap_text(&heading, full_chars) {
                     push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, true);
                 }
                 push_line(&mut page, &mut line_index, h, top, margin, String::new(), 0.0, false);
                 for block in &doc.blocks {
-                    let (indent_mm, width_chars) = match block.kind {
-                        ElementKind::SceneHeading | ElementKind::Action | ElementKind::Shot => (0.0, 60),
-                        ElementKind::Character => (22.0, 35),
-                        ElementKind::Parenthetical => (15.0, 30),
-                        ElementKind::Dialogue => (9.0, 35),
-                        ElementKind::Transition => (42.0, 22),
-                        _ => (0.0, 60),
+                    let indent_mm = match block.kind {
+                        ElementKind::Character => 22.0,
+                        ElementKind::Parenthetical => 15.0,
+                        ElementKind::Dialogue => 9.0,
+                        ElementKind::Transition => 42.0,
+                        _ => 0.0,
                     };
+                    let width_chars = width_for(indent_mm);
                     let text = if block.kind.is_uppercase() {
                         block.text.to_uppercase()
                     } else {
                         block.text.clone()
                     };
                     if block.kind == ElementKind::SceneHeading && settings.include_scene_numbers {
-                        push_line(
-                            &mut page,
-                            &mut line_index,
-                            h,
-                            top,
-                            margin,
-                            format!("{}   {}", scene_number, text),
-                            0.0,
-                            false,
-                        );
+                        for (i, wrapped) in
+                            wrap_text(&text, full_chars.saturating_sub(4)).iter().enumerate()
+                        {
+                            let line = if i == 0 {
+                                format!("{}   {}", scene_number, wrapped)
+                            } else {
+                                wrapped.clone()
+                            };
+                            push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, false);
+                        }
                         scene_number += 1;
                     } else {
                         for wrapped in wrap_text(&text, width_chars) {
@@ -632,12 +630,12 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                     }
                 }
             } else {
-                for line in wrap_text(&section.heading.to_uppercase(), 60) {
+                for line in wrap_text(&section.heading.to_uppercase(), full_chars) {
                     push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, true);
                 }
                 push_line(&mut page, &mut line_index, h, top, margin, String::new(), 0.0, false);
                 for para in paragraphs(&doc.body_text()) {
-                    for line in wrap_text(&para, 60) {
+                    for line in wrap_text(&para, full_chars) {
                         push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, false);
                     }
                     push_line(&mut page, &mut line_index, h, top, margin, String::new(), 0.0, false);
@@ -656,9 +654,10 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     }
 
     // Prose: flowing layout with chapter headings and optional front matter.
-    let chars_per_line = (content_width / (size * 0.3528 * 0.48)).max(30.0) as usize;
+    // Times-Roman averages roughly half an em per character. The old formula
+    // mixed millimetres and points and let lines run past the page edge.
+    let chars_per_line = (content_width / (size * 0.50)).max(30.0) as usize;
     let mut headings: Vec<(String, usize)> = Vec::new();
-    let mut page_titles: Vec<(String, usize)> = Vec::new();
     let add_para = |flow: &mut PdfFlow, text: &str, bold: bool, indent: f32| {
         for part in wrap_text(text, chars_per_line) {
             flow.line(part, margin + indent, size, bold, 0.0);
@@ -677,10 +676,8 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let sections = manuscript_sections(project);
     for (i, section) in sections.iter().enumerate() {
         flow.page_break();
-        let page_no = flow.pages.len() + 1;
         let title = section_title(project, section.doc, i, settings);
-        headings.push((title.clone(), page_no));
-        page_titles.push((title.clone(), page_no));
+        headings.push((title.clone(), flow.pages.len() + 1));
         let head_size = size + 5.0;
         for part in wrap_text(&title, chars_per_line) {
             flow.line(part, margin, head_size, true, 8.0);
@@ -713,6 +710,11 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     pages.extend(flow.finish());
 
     if settings.include_toc && !headings.is_empty() {
+        // The title page (when present) sits before the flow, and the contents
+        // page will be inserted before the flow too. Both shift the printed
+        // number of every chapter by one, so convert flow page numbers to the
+        // reader's page numbers before drawing the list.
+        let title_offset = usize::from(settings.include_title_page && !pages.is_empty());
         let mut toc = PdfPage::new();
         toc.lines.push(PdfLine {
             text: "Contents".into(),
@@ -720,26 +722,34 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             y: h - top - 20.0,
             size: size + 6.0,
             bold: true,
+            mono: false,
         });
         let mut y = top + 50.0;
         for (title, page) in &headings {
+            let printed = page + title_offset + 1;
             toc.lines.push(PdfLine {
                 text: title.clone(),
                 x: margin,
                 y: h - y,
                 size,
                 bold: false,
+                mono: false,
             });
             toc.lines.push(PdfLine {
-                text: page.to_string(),
+                text: printed.to_string(),
                 x: w - margin - 20.0,
                 y: h - y,
                 size,
                 bold: false,
+                mono: false,
             });
             y += size * 1.8;
+            if y > h - bottom {
+                break;
+            }
         }
-        pages.insert(1.min(pages.len()), toc);
+        let insert_at = if title_offset == 1 { 1 } else { 0 };
+        pages.insert(insert_at.min(pages.len()), toc);
     }
 
     build_pdf(&project.title, &project.author, &pages, w, h, true)
@@ -940,12 +950,12 @@ fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         } else {
             "<w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\"/>"
         };
+        // Element order inside w:pPr matters to Word: pStyle, ind, jc.
         body.push_str(&format!(
-            "<w:p><w:pPr><w:pStyle w:val=\"{}\"/>{}{}<w:ind w:left=\"{}\"/></w:pPr><w:r><w:rPr>{}{}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",
+            "<w:p><w:pPr><w:pStyle w:val=\"{}\"/><w:ind w:left=\"{}\"/>{}</w:pPr><w:r><w:rPr>{}{}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",
             style,
-            jc,
-            if bold { "<w:b/>" } else { "" },
             indent,
+            jc,
             fonts,
             if bold { "<w:b/>" } else { "" },
             xml_escape(text)
@@ -1474,8 +1484,60 @@ mod tests {
         s.kind = ExportKind::Pdf;
         let bytes = pdf_manuscript(&p, &s);
         assert!(bytes.starts_with(b"%PDF-1.4"));
-        assert!(String::from_utf8_lossy(&bytes).contains("/Type /Page"));
-        assert!(String::from_utf8_lossy(&bytes).contains("The Salt Road"));
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("/Type /Page"));
+        assert!(text.contains("The Salt Road"));
+        assert!(text.contains("startxref"));
+        assert!(text.contains("%%EOF"));
+    }
+
+    #[test]
+    fn pdf_page_objects_point_at_real_page_streams() {
+        let p = demo();
+        let mut s = p.export.clone();
+        s.kind = ExportKind::Pdf;
+        let bytes = pdf_manuscript(&p, &s);
+        let doc = String::from_utf8_lossy(&bytes);
+
+        // Pull the /Kids list out of the page tree and prove every reference is
+        // a page dictionary, not a content stream. This is the exact mistake
+        // that made readers report "Kid object is wrong type (stream)" and drop
+        // the ends of paragraphs.
+        let kids_at = doc.find("/Type /Pages /Kids [").expect("page tree");
+        let kids_start = kids_at + "/Type /Pages /Kids [".len();
+        let kids_end = doc[kids_start..].find(']').unwrap() + kids_start;
+        let kids = &doc[kids_start..kids_end];
+        let numbers: Vec<&str> = kids.split_whitespace().filter(|s| *s != "0" && *s != "R").collect();
+        assert!(numbers.len() >= 2, "expected several pages, got {:?}", numbers);
+
+        for n in numbers {
+            let marker = format!("\n{} 0 obj\n", n);
+            let at = doc.find(&marker).unwrap_or_else(|| panic!("object {} missing", n));
+            let body = &doc[at..];
+            assert!(
+                body.starts_with(&format!("\n{} 0 obj\n<< /Type /Page ", n)),
+                "kid {} is not a /Type /Page dictionary",
+                n
+            );
+            let content_at = body.find("/Contents ").expect("contents ref");
+            let after = &body[content_at + "/Contents ".len()..];
+            let content_num: String = after
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            assert!(!content_num.is_empty(), "page {} has no content object", n);
+            let content_marker = format!("\n{} 0 obj\n", content_num);
+            let content_pos = doc.find(&content_marker).expect("content object");
+            let content_body = &doc[content_pos..];
+            assert!(
+                content_body.contains("stream"),
+                "contents {} is not a stream",
+                content_num
+            );
+        }
+
+        // Every page but the first carries a printed page number.
+        assert!(doc.matches(" BT").count() + 1 >= numbers.len());
     }
 
     #[test]
