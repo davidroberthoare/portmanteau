@@ -21,3 +21,12 @@
 ## Round 2 — per-target compile settings + base style
 
 - (pending)
+
+## Round 1 — DONE (commit 955d540)
+
+- Implementer built the folder package (manifest + documents/*.md|fountain + research + snapshots + checkpoints) with lossless Fountain round-trip (incl. a boneyard marker for lone Dialogue, a sensible deviation).
+- Build green; 35 tests pass (msc-core 8, msc-api 17, msc-export 7, msc-mcp 3).
+- Smoke-tested: folder save/open, legacy .json round-trip, screenshot non-blank (1.2 MB).
+- Note: a concurrent process committed unrelated PDF/binder fixes (d7d8f33..c03c578) during the round; no overlap with Round 1 files, build still green.
+- Learned: subagents lack `git commit` permission; the Conductor must commit.
+- Gate 1 (tester): PASS — 14 independent integration tests; they exposed storage ambiguities for ALL-CAPS Action, custom scene headings and lone Dialogue. Fixed in 7e812b5; full workspace now passes 49 tests.
