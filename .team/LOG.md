@@ -50,3 +50,11 @@
 - Smoke: PDF page numbers on/off differ (footer count 0 vs 17); EPUB cover embeds cover-image/
   cover.xhtml; EPUB settings distinct from PDF; compile screenshots non-blank.
 - Gate 1 (tester): pending.
+
+## Round 3 — DONE (font wiring + format validation)
+
+- Wired settings.font into PDF (base-14 mapping), EPUB CSS, HTML CSS, DOCX styles, RTF.
+- export.run/settings.get/settings.update now reject unknown/missing formats instead of silently
+  targeting the wrong one.
+- Build green; 64 tests pass (+6 new: pdf_font mapping, font-in-output for EPUB/HTML/PDF, bogus-format).
+- Gate 1 (tester) pending; Gate 2 (torture-tester) pending.

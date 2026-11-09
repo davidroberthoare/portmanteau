@@ -615,11 +615,24 @@ impl Workspace {
                 )
             }
             "export.run" => {
-                let kind = payload
-                    .get("format")
-                    .and_then(|v| v.as_str())
-                    .and_then(parse_export_kind)
-                    .unwrap_or(self.project.export.kind);
+                let kind = match payload.get("format") {
+                    Some(value) => {
+                        let raw = value
+                            .as_str()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| value.to_string());
+                        match parse_export_kind(&raw) {
+                            Some(k) => k,
+                            None => {
+                                return ApiResponse::err(
+                                    command,
+                                    format!("Unknown format: {}", raw),
+                                )
+                            }
+                        }
+                    }
+                    None => self.project.export.kind,
+                };
                 let mut settings = self.project.settings_for(kind);
                 settings.kind = kind;
                 apply_settings_overrides(&mut settings, &payload);
@@ -657,11 +670,24 @@ impl Workspace {
                 }
             }
             "export.settings.get" => {
-                let kind = payload
-                    .get("format")
-                    .and_then(|v| v.as_str())
-                    .and_then(parse_export_kind)
-                    .unwrap_or(self.project.export.kind);
+                let kind = match payload.get("format") {
+                    Some(value) => {
+                        let raw = value
+                            .as_str()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| value.to_string());
+                        match parse_export_kind(&raw) {
+                            Some(k) => k,
+                            None => {
+                                return ApiResponse::err(
+                                    command,
+                                    format!("Unknown format: {}", raw),
+                                )
+                            }
+                        }
+                    }
+                    None => return ApiResponse::err(command, "A format is required"),
+                };
                 let settings = self.project.settings_for(kind);
                 ApiResponse::ok(
                     command,
@@ -670,11 +696,24 @@ impl Workspace {
                 )
             }
             "export.settings.update" => {
-                let kind = payload
-                    .get("format")
-                    .and_then(|v| v.as_str())
-                    .and_then(parse_export_kind)
-                    .unwrap_or(self.project.export.kind);
+                let kind = match payload.get("format") {
+                    Some(value) => {
+                        let raw = value
+                            .as_str()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| value.to_string());
+                        match parse_export_kind(&raw) {
+                            Some(k) => k,
+                            None => {
+                                return ApiResponse::err(
+                                    command,
+                                    format!("Unknown format: {}", raw),
+                                )
+                            }
+                        }
+                    }
+                    None => return ApiResponse::err(command, "A format is required"),
+                };
                 let mut settings = self.project.settings_for(kind);
                 settings.kind = kind;
                 apply_settings_overrides(&mut settings, &payload);
@@ -1038,6 +1077,33 @@ mod tests {
         let epub_after = ws.execute("export.settings.get", json!({"format":"EPUB"}));
         assert_eq!(epub_after.data, epub_before.data);
         assert_eq!(ws.project.settings_for(ExportKind::Epub).font_size, 12.0);
+    }
+
+    #[test]
+    fn export_commands_reject_unknown_formats() {
+        let mut ws = Workspace::demo();
+        assert!(!ws.execute("export.settings.get", json!({"format":"BOGUS"})).ok);
+        assert!(
+            !ws.execute(
+                "export.settings.update",
+                json!({"format":"BOGUS","font_size":14.0})
+            )
+            .ok
+        );
+        assert!(
+            !ws.execute(
+                "export.run",
+                json!({"format":"BOGUS","path":std::env::temp_dir().join("nope").display().to_string()})
+            )
+            .ok
+        );
+    }
+
+    #[test]
+    fn export_settings_require_a_format() {
+        let mut ws = Workspace::demo();
+        assert!(!ws.execute("export.settings.get", json!({})).ok);
+        assert!(!ws.execute("export.settings.update", json!({})).ok);
     }
 
     #[test]

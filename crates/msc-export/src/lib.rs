@@ -298,6 +298,26 @@ fn pdf_text(s: &str) -> String {
     out
 }
 
+/// Map a family name to a PDF base-14 font (the writer embeds no font files).
+fn pdf_font(family: &str, bold: bool) -> &'static str {
+    let family = family.to_ascii_lowercase();
+    if family.contains("courier") || family.contains("mono") {
+        if bold { "Courier-Bold" } else { "Courier" }
+    } else if family.contains("sans") || family.contains("helvetica") || family.contains("arial") {
+        if bold { "Helvetica-Bold" } else { "Helvetica" }
+    } else if bold {
+        "Times-Bold"
+    } else {
+        "Times-Roman"
+    }
+}
+
+/// A CSS font stack built from the settings family with a safe serif fallback.
+fn css_font_family(family: &str) -> String {
+    let safe = family.replace('"', "").replace('\\', "");
+    format!("\"{}\", serif", safe)
+}
+
 fn build_pdf(
     title: &str,
     author: &str,
@@ -306,19 +326,30 @@ fn build_pdf(
     height_pt: f32,
     footer: bool,
     header: bool,
+    font: &str,
+    font_bold: &str,
 ) -> Vec<u8> {
     // Stable object plan. A PDF page is a dictionary, and its content stream is
     // a *separate* object; mixing the two up makes readers treat a stream as a
     // page and silently drop text. Keep the numbering explicit:
     //
-    //   1 catalog · 2 pages · 3 Times-Roman · 4 Times-Bold
+    //   1 catalog · 2 pages · 3 prose · 4 prose bold
     //   5 Courier · 6 Courier-Bold · 7 page 1 · 8 content 1 · ...
     let n = pages.len();
     let mut objects: Vec<Vec<u8>> = Vec::with_capacity(7 + n * 2);
     objects.push(b"<< /Type /Catalog /Pages 2 0 R >>".to_vec());
     objects.push(Vec::new()); // Pages, filled once the kids are known.
-    objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>".to_vec());
-    objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>".to_vec());
+    objects.push(
+        format!("<< /Type /Font /Subtype /Type1 /BaseFont /{} /Encoding /WinAnsiEncoding >>", font)
+            .into_bytes(),
+    );
+    objects.push(
+        format!(
+            "<< /Type /Font /Subtype /Type1 /BaseFont /{} /Encoding /WinAnsiEncoding >>",
+            font_bold
+        )
+        .into_bytes(),
+    );
     objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>".to_vec());
     objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>".to_vec());
 
@@ -695,6 +726,8 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             h,
             settings.include_page_numbers,
             settings.include_running_headers,
+            pdf_font(&settings.font, false),
+            pdf_font(&settings.font, true),
         );
     }
 
@@ -859,6 +892,8 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         h,
         settings.include_page_numbers,
         settings.include_running_headers,
+        pdf_font(&settings.font, false),
+        pdf_font(&settings.font, true),
     )
 }
 
@@ -912,8 +947,7 @@ fn epub_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         .unwrap();
 
         zip.start_file("OEBPS/style.css", deflated).unwrap();
-        zip.write_all(
-            br#"body { font-family: Georgia, "Liberation Serif", serif; line-height: 1.6; margin: 5%; color: #1b1b1b; }
+        let css = r#"body { font-family: Georgia, "Liberation Serif", serif; line-height: 1.6; margin: 5%; color: #1b1b1b; }
 h1 { font-size: 1.6em; margin: 2em 0 1em; page-break-before: always; }
 h2 { font-size: 1.25em; margin: 1.5em 0 .8em; }
 p { margin: 0 0 0 .2em; text-indent: 1.4em; text-align: justify; }
@@ -931,9 +965,12 @@ p.first, .front p { text-indent: 0; }
 .imprint { margin-top: 4em; font-size: .85em; color: #555; }
 .cover { text-align: center; margin: 0; padding: 0; }
 .cover img { max-width: 100%; }
-"#,
-        )
-        .unwrap();
+"#
+        .replace(
+            "Georgia, \"Liberation Serif\", serif",
+            &css_font_family(&settings.font),
+        );
+        zip.write_all(css.as_bytes()).unwrap();
 
         let mut manifest = String::new();
         let mut spine = String::new();
@@ -1101,12 +1138,16 @@ fn xhtml_body(doc: &Document, heading: Option<&str>) -> String {
 
 fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let mut body = String::new();
+    let prose_font = xml_escape(&settings.font);
     let mut add_para = |text: &str, style: &str, bold: bool, center: bool, mono: bool, indent: i32| {
         let jc = if center { "<w:jc w:val=\"center\"/>" } else { "" };
         let fonts = if mono {
-            "<w:rFonts w:ascii=\"Courier New\" w:hAnsi=\"Courier New\"/>"
+            "<w:rFonts w:ascii=\"Courier New\" w:hAnsi=\"Courier New\"/>".to_string()
         } else {
-            "<w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\"/>"
+            format!(
+                "<w:rFonts w:ascii=\"{}\" w:hAnsi=\"{}\"/>",
+                prose_font, prose_font
+            )
         };
         // Element order inside w:pPr matters to Word: pStyle, ind, jc.
         body.push_str(&format!(
@@ -1185,7 +1226,7 @@ fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
  <w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:sz w:val="26"/><w:i/></w:rPr></w:style>
  <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:pageBreakBefore/><w:spacing w:before="720" w:after="360"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="36"/></w:rPr></w:style>
  <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr><w:rPr><w:b/></w:rPr></w:style>
-</w:styles>"#;
+</w:styles>"#.replace("Times New Roman", &prose_font);
     let content_types = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -1218,7 +1259,7 @@ fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             ("[Content_Types].xml", content_types),
             ("_rels/.rels", rels),
             ("word/document.xml", &document),
-            ("word/styles.xml", styles),
+            ("word/styles.xml", styles.as_str()),
             ("word/_rels/document.xml.rels", doc_rels),
             ("docProps/core.xml", &core),
         ] {
@@ -1410,8 +1451,9 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
         body.push_str("</section>\n");
     }
     format!(
-        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n<title>{}</title>\n<style>\nbody{{max-width:42rem;margin:4rem auto;padding:0 1.5rem;font-family:Georgia,'Liberation Serif',serif;line-height:1.7;color:#1e1c19;background:#fbf8f1}}\nh1{{font-size:2.4rem;line-height:1.1}}h2{{margin-top:3rem;border-bottom:1px solid #d8d0c0;padding-bottom:.4rem}}\np{{margin:0 0 .9rem;text-indent:1.4rem;text-align:justify}}p.first{{text-indent:0}}\n.titlepage{{text-align:center;margin:18vh 0 22vh}}.titlepage h1{{margin-bottom:.3em}}.titlepage p{{text-indent:0}}.sub{{font-style:italic;color:#665f54}}\n.toc ol{{line-height:2}}.toc a{{color:#2f5d50;text-decoration:none}}\n.script{{font-family:'Courier New',monospace;font-size:.92rem}}.script p{{text-indent:0;margin:.4rem 0;text-align:left}}\n.scene{{text-transform:uppercase;font-weight:bold;margin-top:1.6rem!important}}.character{{margin-left:32%!important;text-transform:uppercase;margin-top:1rem!important}}.paren{{margin-left:24%!important}}.dialogue{{margin-left:16%!important;margin-right:12%!important}}.trans{{text-align:right!important}}\n.frontmatter,.backmatter{{margin-top:4rem}}\n</style>\n</head>\n<body>\n{}\n</body>\n</html>\n",
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n<title>{}</title>\n<style>\nbody{{max-width:42rem;margin:4rem auto;padding:0 1.5rem;font-family:{};line-height:1.7;color:#1e1c19;background:#fbf8f1}}\nh1{{font-size:2.4rem;line-height:1.1}}h2{{margin-top:3rem;border-bottom:1px solid #d8d0c0;padding-bottom:.4rem}}\np{{margin:0 0 .9rem;text-indent:1.4rem;text-align:justify}}p.first{{text-indent:0}}\n.titlepage{{text-align:center;margin:18vh 0 22vh}}.titlepage h1{{margin-bottom:.3em}}.titlepage p{{text-indent:0}}.sub{{font-style:italic;color:#665f54}}\n.toc ol{{line-height:2}}.toc a{{color:#2f5d50;text-decoration:none}}\n.script{{font-family:'Courier New',monospace;font-size:.92rem}}.script p{{text-indent:0;margin:.4rem 0;text-align:left}}\n.scene{{text-transform:uppercase;font-weight:bold;margin-top:1.6rem!important}}.character{{margin-left:32%!important;text-transform:uppercase;margin-top:1rem!important}}.paren{{margin-left:24%!important}}.dialogue{{margin-left:16%!important;margin-right:12%!important}}.trans{{text-align:right!important}}\n.frontmatter,.backmatter{{margin-top:4rem}}\n</style>\n</head>\n<body>\n{}\n</body>\n</html>\n",
         html_escape(&project.title),
+        css_font_family(&settings.font),
         body
     )
 }
@@ -1481,7 +1523,10 @@ fn rtf_escape(s: &str) -> String {
 
 fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
     let mut out = String::new();
-    out.push_str("{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Times New Roman;}{\\f1 Courier New;}}\n");
+    out.push_str(&format!(
+        "{{\\rtf1\\ansi\\deff0{{\\fonttbl{{\\f0 {};}}{{\\f1 Courier New;}}}}\n",
+        rtf_escape(&settings.font)
+    ));
     out.push_str("\\paperw11906\\paperh16838\\margl1440\\margr1440\\margt1440\\margb1440\n");
     if settings.include_title_page {
         out.push_str("\\qc\\f0\\fs52 ");
@@ -1711,6 +1756,48 @@ mod tests {
         // a stage play, so both fonts must actually be selected in content.
         assert!(text.contains("/F1 "));
         assert!(text.contains("/F3 "));
+    }
+
+    #[test]
+    fn pdf_font_maps_family_names_to_base14_fonts() {
+        assert_eq!(pdf_font("Courier New", false), "Courier");
+        assert_eq!(pdf_font("Liberation Serif", true), "Times-Bold");
+        assert_eq!(pdf_font("Liberation Sans", false), "Helvetica");
+    }
+
+    #[test]
+    fn pdf_base_font_follows_the_export_font_setting() {
+        let p = demo();
+        let mut s = p.settings_for(ExportKind::Pdf);
+        s.font = "Courier New".into();
+        let text = String::from_utf8_lossy(&pdf_manuscript(&p, &s)).to_string();
+        assert!(text.contains("/BaseFont /Courier "), "prose F1 should use Courier");
+        assert!(
+            text.contains("/BaseFont /Courier-Bold "),
+            "prose F2 should use Courier-Bold"
+        );
+    }
+
+    #[test]
+    fn epub_css_uses_the_export_font_setting() {
+        let p = demo();
+        let mut s = p.settings_for(ExportKind::Epub);
+        s.font = "SomeTestFont".into();
+        let bytes = epub_manuscript(&p, &s);
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut css = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("OEBPS/style.css").unwrap(), &mut css)
+            .unwrap();
+        assert!(css.contains("SomeTestFont"), "EPUB CSS: {css}");
+    }
+
+    #[test]
+    fn html_uses_the_export_font_setting() {
+        let p = demo();
+        let mut s = p.settings_for(ExportKind::Html);
+        s.font = "SomeTestFont".into();
+        let html = html_manuscript(&p, &s);
+        assert!(html.contains("SomeTestFont"), "HTML should carry the font family");
     }
 
     #[test]

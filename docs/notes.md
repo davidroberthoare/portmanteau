@@ -271,3 +271,24 @@ selected format's settings, persists edits back to `formats`, and offers a
 Save As now treats an extensionless name as a folder package (`MyBook` becomes
 `MyBook.scriptorium/`) instead of inventing a legacy `.json` file. Opening and
 saving still round-trip through the Round 1 folder format.
+
+## Round 3 — font family reaches the page, and formats fail loudly
+
+`settings.font` used to be stored and passed around but never read: every
+writer hardcoded its family. Round 3 wires it in.
+
+- **PDF** maps the family to a base-14 font with `pdf_font`: Courier for
+  names containing "courier" or "mono", Helvetica for "sans"/"helvetica"/
+  "arial", and Times otherwise (with a `-Bold` companion). The prose font
+  objects use that mapping; screenplay lines keep Courier. The page-object
+  plan and `/Kids` numbering are unchanged.
+- **EPUB** builds `style.css` from the setting, so the body becomes
+  `font-family: "<font>", serif`. Script element classes stay monospace.
+- **HTML**, **DOCX** and **RTF** use the same family in their inline CSS,
+  `styles.xml`/`rFonts` and `\fonttbl`; DOCX script paragraphs stay Courier.
+- Fountain, FDX, TXT and Markdown have no font concept, so they are untouched.
+
+`export.run`, `export.settings.get` and `export.settings.update` now reject a
+`format` key they cannot parse with `Unknown format: <value>` instead of
+silently falling back to the project's current kind. `export.settings.get` and
+`update` also require a format rather than guessing one.
