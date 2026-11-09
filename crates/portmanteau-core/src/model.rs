@@ -691,7 +691,7 @@ impl Project {
 
     pub fn ensure_folders(&mut self) {
         if self.documents.is_empty() {
-            self.add_document(None, "Manuscript", DocKind::Folder, Medium::Prose);
+            self.add_document(None, "Draft", DocKind::Folder, Medium::Prose);
             self.add_document(None, "Research", DocKind::Folder, Medium::Note);
             self.add_document(None, "Front Matter", DocKind::Folder, Medium::Prose);
             self.add_document(None, "Back Matter", DocKind::Folder, Medium::Prose);
@@ -1024,13 +1024,13 @@ mod tests {
     fn new_project_has_scaffold() {
         let p = Project::new("Test", ProjectKind::Novel);
         assert_eq!(p.documents.len(), 4);
-        assert!(p.folder_id("Manuscript").is_some());
+        assert!(p.folder_id("Draft").is_some());
     }
 
     #[test]
     fn snapshot_restore_roundtrip() {
         let mut p = Project::new("Test", ProjectKind::Novel);
-        let parent = p.folder_id("Manuscript");
+        let parent = p.folder_id("Draft");
         let id = p.add_document(parent, "Chapter", DocKind::Chapter, Medium::Prose);
         p.document_mut(&id).unwrap().text = "one two three".into();
         p.document_mut(&id).unwrap().snapshot("First pass", "rough");
@@ -1053,12 +1053,12 @@ mod tests {
     #[test]
     fn documents_move_within_their_parent() {
         let mut p = Project::new("Test", ProjectKind::Novel);
-        let parent = p.folder_id("Manuscript");
+        let parent = p.folder_id("Draft");
         let first = p.add_document(parent.clone(), "First", DocKind::Chapter, Medium::Prose);
         let second = p.add_document(parent, "Second", DocKind::Chapter, Medium::Prose);
         assert!(p.move_document(&second, -1));
         let order: Vec<String> = p
-            .children(p.folder_id("Manuscript").as_deref())
+            .children(p.folder_id("Draft").as_deref())
             .iter()
             .map(|d| d.title.clone())
             .collect();
@@ -1070,7 +1070,7 @@ mod tests {
     #[test]
     fn reparent_refuses_cycles() {
         let mut p = Project::new("Test", ProjectKind::Novel);
-        let parent = p.folder_id("Manuscript");
+        let parent = p.folder_id("Draft");
         let folder = p.add_document(parent, "Act One", DocKind::Folder, Medium::Prose);
         let scene = p.add_document(Some(folder.clone()), "Scene", DocKind::Text, Medium::Prose);
         assert!(p.reparent_document(&scene, Some(folder.clone())));
@@ -1080,7 +1080,7 @@ mod tests {
     #[test]
     fn snapshot_body_text_uses_blocks_for_scripts() {
         let mut p = Project::new("Test", ProjectKind::Film);
-        let parent = p.folder_id("Manuscript");
+        let parent = p.folder_id("Draft");
         let id = p.add_document(parent, "Scene", DocKind::Scene, Medium::Screenplay);
         let doc = p.document_mut(&id).unwrap();
         doc.blocks = vec![Block::new(ElementKind::Action, "The tide went out.")];

@@ -6,7 +6,7 @@ use eframe::egui::{
 };
 use portmanteau_core::{DocKind, ElementKind, Medium};
 
-use crate::app::{PortmanteauApp, View};
+use crate::app::PortmanteauApp;
 use crate::theme::*;
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
@@ -364,23 +364,13 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             } else {
                 String::new()
             };
-            let color = kind_color(kind);
-            let gutter_id = Id::new(("gutter", doc_id, i));
-
             ui.horizontal(|ui| {
                 ui.set_width(content_width);
-                // Element gutter.
-                let (grect, gresp) = ui.allocate_exact_size(Vec2::new(40.0, 18.0), Sense::click());
+                // Element gutter: scene numbers only.
+                let (grect, gresp) = ui.allocate_exact_size(Vec2::new(40.0, 18.0), Sense::hover());
                 if gresp.hovered() {
                     ui.painter().rect_filled(grect, CornerRadius::same(3), Color32::from_rgb(236, 230, 217));
                 }
-                ui.painter().text(
-                    grect.left_center() + Vec2::new(1.0, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    kind.short(),
-                    sans(7.8),
-                    color,
-                );
                 if !scene_label.is_empty() {
                     ui.painter().text(
                         grect.right_center() - Vec2::new(1.0, 8.0),
@@ -390,10 +380,6 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                         PAPER_MUTED,
                     );
                 }
-                if gresp.on_hover_text("Change element type").clicked() {
-                    cycle_at = Some(i);
-                }
-                let _ = gutter_id;
 
                 let indent = match kind {
                     ElementKind::Character => content_width * 0.30,
@@ -550,18 +536,6 @@ fn next_kind(after: ElementKind, medium: Medium) -> ElementKind {
     }
 }
 
-fn kind_color(kind: ElementKind) -> Color32 {
-    match kind {
-        ElementKind::SceneHeading => Color32::from_rgb(160, 112, 44),
-        ElementKind::Character => Color32::from_rgb(118, 92, 140),
-        ElementKind::Parenthetical => Color32::from_rgb(132, 117, 94),
-        ElementKind::Dialogue => Color32::from_rgb(78, 104, 128),
-        ElementKind::Transition => Color32::from_rgb(146, 96, 78),
-        ElementKind::Act | ElementKind::Scene => Color32::from_rgb(112, 134, 110),
-        _ => Color32::from_rgb(120, 112, 98),
-    }
-}
-
 fn paper_header(
     ui: &mut egui::Ui,
     project_title: &str,
@@ -622,13 +596,6 @@ fn empty_state(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .min_size(Vec2::new(120.0, 32.0));
         if ui.add(btn).clicked() {
             app.new_chapter_public();
-        }
-        ui.add_space(6.0);
-        if ui
-            .add(egui::Button::new(RichText::new("Open the corkboard").font(sans(11.0)).color(MUTED)).frame(false))
-            .clicked()
-        {
-            app.view = View::Corkboard;
         }
     });
 }

@@ -66,11 +66,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     settings = preset.settings.clone();
                 }
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if quiet_button(ui, "Open outline").clicked() {
-                    app.view = crate::app::View::Outline;
-                }
-            });
         });
         ui.add_space(12.0);
 
@@ -481,7 +476,7 @@ fn body_panel(ui: &mut egui::Ui, settings: &mut portmanteau_core::ExportSettings
             ui.add_space(7.0);
             hairline(ui);
             ui.add_space(7.0);
-            section_label(ui, "Manuscript");
+            section_label(ui, "Draft");
             ui.add_space(3.0);
             let docs = &settings.kind;
             ui.label(

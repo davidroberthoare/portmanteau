@@ -80,15 +80,10 @@ impl Workspace {
     }
 
     pub fn open(path: &Path) -> Result<Self, String> {
-        let project = if path.is_dir() {
-            storage::load_folder(path)?
-        } else if is_legacy_json(path) {
-            let text = std::fs::read_to_string(path).map_err(|e| format!("Could not read: {e}"))?;
-            serde_json::from_str(&text)
-                .map_err(|e| format!("Not a Portmanteau project: {e}"))?
-        } else {
-            return Err("Not a Portmanteau project".into());
-        };
+        if !path.is_dir() {
+            return Err("Not a Portmanteau project (expected a .portmanteau folder)".into());
+        }
+        let project = storage::load_folder(path)?;
         Ok(Self {
             project,
             path: Some(path.to_path_buf()),
@@ -103,18 +98,13 @@ impl Workspace {
         let target = path
             .or_else(|| self.path.clone())
             .unwrap_or_else(|| default_save_path(&self.project));
-        if is_legacy_json(&target) {
-            if let Some(parent) = target.parent() {
-                if !parent.as_os_str().is_empty() {
-                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                }
+        if let Some(parent) = target.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
-            let text = serde_json::to_string_pretty(&self.project).map_err(|e| e.to_string())?;
-            std::fs::write(&target, text).map_err(|e| e.to_string())?;
-        } else {
-            std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
-            storage::save_folder(&self.project, &target)?;
         }
+        std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+        storage::save_folder(&self.project, &target)?;
         self.path = Some(target.clone());
         self.dirty = false;
         let msg = format!("Saved {}", target.display());
@@ -249,11 +239,8 @@ impl Workspace {
                 }
             }
             "document.create" => {
-                let parent = str_arg(&payload, "parent").or_else(|| {
-                    self.project
-                        .folder_id("Manuscript")
-                        .or_else(|| self.project.folder_id("Script Lab"))
-                });
+                let parent = str_arg(&payload, "parent")
+                    .or_else(|| self.project.folder_id("Draft"));
                 let title = str_arg(&payload, "title").unwrap_or_else(|| "Untitled".into());
                 let kind = payload
                     .get("kind")
@@ -847,10 +834,6 @@ pub fn default_save_path(project: &Project) -> PathBuf {
         .join(format!("{}.portmanteau", storage::slugify(&project.title)))
 }
 
-fn is_legacy_json(path: &Path) -> bool {
-    path.to_string_lossy().to_ascii_lowercase().ends_with(".json")
-}
-
 fn str_arg(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
 }
@@ -966,8 +949,8 @@ pub fn command_catalogue() -> Vec<Value> {
     let entries = [
         ("project.info", "Summarise the open project", "{}"),
         ("project.new", "Create a project", r#"{"title":"...","kind":"Novel"}"#),
-        ("project.open", "Open a project folder or legacy .json file", r#"{"path":"..."}"#),
-        ("project.save", "Save the project to a folder or legacy .json file", r#"{"path":"..."}"#),
+        ("project.open", "Open a project folder package", r#"{"path":"..."}"#),
+        ("project.save", "Save the project to a folder package", r#"{"path":"..."}"#),
         ("project.checkpoint", "Save a full version checkpoint", r#"{"label":"..."}"#),
         ("project.restore_checkpoint", "Restore a checkpoint", r#"{"id":"cp-..."}"#),
         ("project.snapshots", "List document snapshots", "{}"),
@@ -1039,7 +1022,7 @@ mod tests {
         let mut ws = Workspace::demo();
         let ids: Vec<String> = ws
             .project
-            .children(ws.project.folder_id("Manuscript").as_deref())
+            .children(ws.project.folder_id("Draft").as_deref())
             .iter()
             .map(|d| d.id.clone())
             .collect();
@@ -1048,7 +1031,7 @@ mod tests {
         assert!(res.ok, "{}", res.message);
         let after: Vec<String> = ws
             .project
-            .children(ws.project.folder_id("Manuscript").as_deref())
+            .children(ws.project.folder_id("Draft").as_deref())
             .iter()
             .map(|d| d.id.clone())
             .collect();

@@ -139,7 +139,7 @@ fn collect(app: &PortmanteauApp) -> Vec<Card> {
                 .as_ref()
                 .and_then(|p| app.ws.project.document(p))
                 .map(|p| p.title.clone())
-                .unwrap_or_else(|| "Manuscript".into());
+                .unwrap_or_else(|| "Draft".into());
             Card {
                 id: d.id.clone(),
                 title: d.title.clone(),

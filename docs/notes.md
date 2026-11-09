@@ -321,3 +321,38 @@ silently falling back to the project's current kind. `export.settings.get` and
   block when two markers arrive without body text. This fixes lowercase action
   text after a character cue being read as dialogue, and empty blocks being
   dropped, while old saved packages still load.
+
+## Round 6 — folder-only projects and a single Draft binder root
+
+- **`.json` files are no longer projects.** `Workspace::open` accepts only a
+  folder package; any other path (including an old `.json` file) returns
+  `Not a Portmanteau project (expected a .portmanteau folder)`. `Workspace::save`
+  always writes a folder package, so `project.open`/`project.save` and their
+  catalogue descriptions now say "folder package".
+- **Binder root is `Draft`.** `Project::ensure_folders` seeds Draft, Research,
+  Front Matter and Back Matter. The demonstration project no longer creates a
+  separate `Script Lab` folder: `Cold Harbor · Pilot` and `The Lamp Room · One
+  act` sit alongside the novel chapters under Draft. `document.create` defaults
+  to the Draft folder.
+- The `manuscript_documents()` export filter still keys off the `Research`
+  folder title, which is unchanged.
+
+## Round 7 — UI cleanup: Draft everywhere, folders in the binder, fewer nav buttons
+
+- **Draft, not Manuscript.** The remaining UI paths that looked up the old
+  `Manuscript` folder now look up `Draft`, and the compile/corkboard fallback
+  labels say "Draft". The `Script Lab` title check is gone; a new document's
+  medium now follows the project kind (Film/Television/Theatre → screenplay,
+  otherwise prose).
+- **Folders are first-class in the binder.** The header has a `▣ +` button next
+  to `+`, row context menus offer "New folder", and `Action::NewFolder` resolves
+  a parent the same way "New inside" does (given parent → selected folder →
+  selected document's parent → root). Folders are created as `DocKind::Folder`
+  with a Prose medium.
+- **Scattered navigation removed.** Buttons that only switched screens
+  (corkboard in the editor/binder, outline on Compile, corkboard on Outline,
+  research and version history in the inspector) are gone; the left rail and the
+  View menu remain the way to change workspace.
+- **Script margin type labels removed.** The per-block gutter no longer draws
+  the element short name or cycles its type on click. Scene numbers still show,
+  and the element-kind button row above the script still sets the type.

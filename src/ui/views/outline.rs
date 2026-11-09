@@ -8,7 +8,7 @@ use portmanteau_core::{DocKind, Medium};
 
 use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
-use crate::ui::views::{content_frame, meta_line, page_head, quiet_button};
+use crate::ui::views::{content_frame, meta_line, page_head};
 
 struct Row {
     id: String,
@@ -29,11 +29,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         "Structure",
         "Outline",
         "Titles, labels, status and lengths in one place. Click any row to write.",
-        |ui| {
-            if quiet_button(ui, "Corkboard").clicked() {
-                app.view = View::Corkboard;
-            }
-        },
+        |_ui| {},
     );
 
     content_frame().show(ui, |ui| {

@@ -75,3 +75,11 @@
 - Nine work items scoped in .team/SPEC.md (rename, folders+cleanup, settings, per-element compile,
   multi-page view, spell-check, + the small ones folded into #2).
 - Round 5 (rename) pending.
+
+## Phase 2 progress
+
+- Round 5 (rename -> Portmanteau): done (cc65e02).
+- Round 6 (backend: drop legacy .json, single Draft root, remove Script Lab): done, 68 tests.
+- Round 7 (UI: Draft naming, folder creation, nav-button cleanup, script type-indicator removal): done, 68 tests.
+- Remaining: settings page + per-project style overrides; per-target per-element compile settings;
+  multi-page (Continuous/Paged) view; spell-checking.

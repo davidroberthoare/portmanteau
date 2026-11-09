@@ -6,7 +6,7 @@ use eframe::egui::{
 };
 use portmanteau_core::Medium;
 
-use crate::app::{InspectorTab, PortmanteauApp, ToastKind, View};
+use crate::app::{InspectorTab, PortmanteauApp, ToastKind};
 use crate::theme::*;
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
@@ -321,12 +321,6 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         });
     }
     ui.add_space(12.0);
-    let btn = egui::Button::new(RichText::new("Open research view").font(sans(10.5)).color(TEXT))
-        .fill(PANEL_2)
-        .corner_radius(CornerRadius::same(5));
-    if ui.add(btn).clicked() {
-        app.view = View::Research;
-    }
 }
 
 fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
@@ -387,13 +381,6 @@ fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         ui.add_space(4.0);
     }
     ui.add_space(8.0);
-    let btn = egui::Button::new(RichText::new("Open version history").font(sans(10.5)).color(TEXT))
-        .fill(PANEL_2)
-        .corner_radius(CornerRadius::same(5))
-        .min_size(Vec2::new(ui.available_width(), 28.0));
-    if ui.add(btn).clicked() {
-        app.view = View::History;
-    }
     if let Some(snap_id) = compare {
         app.open_diff(doc_id, &snap_id);
     }

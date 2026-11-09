@@ -188,8 +188,8 @@ impl PortmanteauApp {
         let selected_character = ws.project.characters.first().map(|c| c.id.clone());
         let selected_research = ws.project.research.first().map(|r| r.id.clone());
         let mut collapsed = HashSet::new();
-        if let Some(manuscript) = ws.project.folder_id("Manuscript") {
-            collapsed.remove(&manuscript);
+        if let Some(draft) = ws.project.folder_id("Draft") {
+            collapsed.remove(&draft);
         }
         let mut app = Self {
             ws,
@@ -329,18 +329,11 @@ impl PortmanteauApp {
                     d.parent.clone()
                 }
             })
-            .or_else(|| self.ws.project.folder_id("Manuscript"));
-        let is_script = self
-            .ws
-            .project
-            .document(
-                parent
-                    .as_deref()
-                    .unwrap_or_default(),
-            )
-            .map(|d| d.title == "Script Lab")
-            .unwrap_or(false)
-            || matches!(self.ws.project.kind, ProjectKind::Film | ProjectKind::Television | ProjectKind::Theatre);
+            .or_else(|| self.ws.project.folder_id("Draft"));
+        let is_script = matches!(
+            self.ws.project.kind,
+            ProjectKind::Film | ProjectKind::Television | ProjectKind::Theatre
+        );
         let (kind, medium, title) = if is_script {
             (DocKind::Scene, Medium::Screenplay, "Untitled scene")
         } else {
@@ -823,7 +816,7 @@ impl PortmanteauApp {
                     if ui.add_enabled(ready, btn).clicked() {
                         let title = self.new_project_title.trim().to_string();
                         self.ws = Workspace::new_project(&title, self.new_project_kind);
-                        let parent = self.ws.project.folder_id("Manuscript");
+                        let parent = self.ws.project.folder_id("Draft");
                         let id = self.ws.project.add_document(
                             parent,
                             "Chapter One",

@@ -10,26 +10,8 @@ pub fn demo() -> Project {
     p.logline = "A mapmaker returns to a drowned harbour town to finish her father's survey and finds the coastline — and her family — was never where the charts said.".into();
     p.daily_target = 1200;
 
-    // Folder order: Manuscript, Script Lab, Research, Front Matter, Back Matter.
-    if let Some(id) = p.folder_id("Script Lab") {
-        let _ = id;
-    }
-    let script_lab = p.add_document(None, "Script Lab", DocKind::Folder, Medium::Prose);
-    if let Some(research) = p.folder_id("Research") {
-        p.document_mut(&research).unwrap().order = 3;
-    }
-    if let Some(front) = p.folder_id("Front Matter") {
-        p.document_mut(&front).unwrap().order = 4;
-    }
-    if let Some(back) = p.folder_id("Back Matter") {
-        p.document_mut(&back).unwrap().order = 5;
-    }
-    if let Some(manuscript) = p.folder_id("Manuscript") {
-        p.document_mut(&manuscript).unwrap().order = 0;
-    }
-    p.document_mut(&script_lab).unwrap().order = 2;
-
-    let manuscript = p.folder_id("Manuscript").unwrap();
+    // Folder order: Draft, Research, Front Matter, Back Matter.
+    let manuscript = p.folder_id("Draft").unwrap();
     let part_one = p.add_document(
         Some(manuscript.clone()),
         "Part One · The Tide",
@@ -107,9 +89,9 @@ pub fn demo() -> Project {
         doc.word_target = 2000;
     }
 
-    // ---- Script Lab -------------------------------------------------------
+    // ---- Scripts (kept in the Draft folder) -------------------------------
     let cold_harbor = p.add_document(
-        Some(script_lab.clone()),
+        Some(manuscript.clone()),
         "Cold Harbor · Pilot",
         DocKind::Scene,
         Medium::TvScript,
@@ -160,7 +142,7 @@ pub fn demo() -> Project {
     }
 
     let lamp_room = p.add_document(
-        Some(script_lab.clone()),
+        Some(manuscript.clone()),
         "The Lamp Room · One act",
         DocKind::Scene,
         Medium::StagePlay,

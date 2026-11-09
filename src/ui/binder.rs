@@ -4,7 +4,7 @@ use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke,
     Vec2,
 };
-use portmanteau_core::{DocKind, Medium};
+use portmanteau_core::{DocKind, Medium, ProjectKind};
 
 use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
@@ -24,6 +24,7 @@ enum Action {
     Select(String),
     Toggle(String),
     NewUnder(Option<String>),
+    NewFolder(Option<String>),
     Snapshot(String),
     ToggleInclude(String),
     Move(String, i32),
@@ -68,12 +69,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             if ui.add(add).on_hover_text("New chapter or scene").clicked() {
                 action = Some(Action::NewUnder(None));
             }
-            if ui
-                .add(egui::Button::new(RichText::new("◫").size(12.0).color(FAINT)).frame(false))
-                .on_hover_text("Corkboard")
-                .clicked()
-            {
-                action = Some(Action::View(View::Corkboard));
+            let add_folder = egui::Button::new(RichText::new("▣ +").font(sans(12.0)).color(TEXT))
+                .fill(PANEL_2)
+                .corner_radius(CornerRadius::same(5))
+                .min_size(Vec2::new(32.0, 22.0));
+            if ui.add(add_folder).on_hover_text("New folder").clicked() {
+                action = Some(Action::NewFolder(None));
             }
             let has_selection = app.selected.is_some();
             for (glyph, hint, direction) in [
@@ -311,6 +312,10 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         action = Some(Action::NewUnder(Some(row.id.clone())));
                         ui.close_menu();
                     }
+                    if ui.button("New folder").clicked() {
+                        action = Some(Action::NewFolder(Some(row.id.clone())));
+                        ui.close_menu();
+                    }
                     if ui.button("Move up").clicked() {
                         action = Some(Action::Move(row.id.clone(), -1));
                         ui.close_menu();
@@ -416,11 +421,10 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             }
                         })
                 });
-                let is_script = parent
-                    .as_ref()
-                    .and_then(|id| app.ws.project.document(id))
-                    .map(|d| d.title == "Script Lab")
-                    .unwrap_or(false);
+                let is_script = matches!(
+                    app.ws.project.kind,
+                    ProjectKind::Film | ProjectKind::Television | ProjectKind::Theatre
+                );
                 let id = if is_script {
                     app.ws.project.add_document(
                         parent,
@@ -437,6 +441,27 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 app.selected = Some(id);
                 app.selected_block = 0;
                 app.block_focus = Some(0);
+            }
+            Action::NewFolder(parent) => {
+                let parent = parent.or_else(|| {
+                    app.selected
+                        .as_ref()
+                        .and_then(|id| app.ws.project.document(id))
+                        .and_then(|d| {
+                            if d.kind == DocKind::Folder {
+                                Some(d.id.clone())
+                            } else {
+                                d.parent.clone()
+                            }
+                        })
+                });
+                let id = app
+                    .ws
+                    .project
+                    .add_document(parent, "New folder", DocKind::Folder, Medium::Prose);
+                app.ws.dirty = true;
+                app.selected = Some(id);
+                app.selected_block = 0;
             }
             Action::Snapshot(id) => {
                 if let Some(doc) = app.ws.project.document_mut(&id) {

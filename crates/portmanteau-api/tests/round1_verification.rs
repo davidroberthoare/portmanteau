@@ -248,23 +248,38 @@ fn checkpoint_payload_lives_in_its_own_file() {
 }
 
 #[test]
-fn legacy_json_still_opens_and_keeps_its_statistics() {
+fn folder_roundtrip_keeps_its_statistics() {
     let mut ws = Workspace::demo();
     let before = ws.execute("stats", json!({}));
     assert!(before.ok, "stats failed: {}", before.message);
-    let dir = scratch("rt1-legacy");
-    let path = dir.join("legacy.portmanteau.json");
-    ws.save(Some(path.clone())).expect("save legacy");
-    assert!(path.is_file(), "legacy save did not write a file");
+    let dir = scratch("rt1-stats");
+    ws.save(Some(dir.clone())).expect("save folder");
+    assert!(dir.is_dir(), "folder save did not create a directory");
+    assert!(
+        dir.join("project.json").is_file(),
+        "folder save did not write a manifest"
+    );
 
-    let mut reopened = Workspace::open(&path).expect("open legacy");
+    let mut reopened = Workspace::open(&dir).expect("open folder");
     let after = reopened.execute("stats", json!({}));
     assert!(after.ok, "stats failed after reopen: {}", after.message);
     assert_eq!(
         before.data, after.data,
-        "legacy round trip changed the statistics"
+        "folder round trip changed the statistics"
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_json_path_is_not_a_project() {
+    let path = scratch("rt1-legacy-json").with_extension("portmanteau.json");
+    let err = Workspace::open(&path)
+        .err()
+        .expect("a .json path must not open");
+    assert!(
+        err.contains("expected a .portmanteau folder"),
+        "unclear error: {err}"
+    );
 }
 
 #[test]
