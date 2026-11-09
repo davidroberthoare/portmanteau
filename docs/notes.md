@@ -148,13 +148,15 @@ thing a visual check catches.
     load.
     Old `.scriptorium.json` files still open and still save as single files;
     new saves default to `~/Scriptorium/<slug>.scriptorium/`.
-    Script bodies stay human-readable Fountain. The three kinds Fountain cannot
-    express directly — shot, stage direction and general — carry a boneyard
-    comment (`/* @shot */`, `/* @stage */`, `/* @general */`) on the line
-    before the block; boneyard is ignored by standard Fountain readers. A
-    dialogue block with no preceding character or parenthetical cue carries
-    `/* @dialogue */` for the same reason, so even a lone dialogue block
-    round-trips without loss.
+    Script bodies stay human-readable Fountain. Kinds Fountain cannot express
+    directly — shot, stage direction and general — carry a boneyard comment
+    (`/* @shot */`, `/* @stage */`, `/* @general */`) on the line before the
+    block; boneyard is ignored by standard Fountain readers. The same mechanism
+    covers ambiguity that Fountain's heuristics would otherwise lose: a scene
+    heading without `INT.`/`EXT.`, an ALL-CAPS action line, a lone dialogue
+    block, and any other typed block whose text would be reclassified. Ordinary
+    prose-like action and standard slugs stay clean, and every one of the twelve
+    element kinds round-trips exactly.
 
 ## Screen review notes
 
@@ -191,8 +193,8 @@ thing a visual check catches.
   the desktop binary, five support crates, bundled fonts and documentation all
   build from there. Superseded prototype folders left over from an earlier
   layout were removed so there is one source tree, not two.
-- `cargo build --workspace` and `cargo test --workspace` pass (31 tests across
-  the core, export, API and MCP crates).
+- `cargo build --workspace` and `cargo test --workspace` pass (49 tests across
+  the core, export, API and MCP crates and the folder-format integration suite).
 - The screenshot flag was exercised at the required size and every workspace
   was reviewed as a picture: writing, corkboard, outline, research, develop,
   characters, versions, compare-version, compile and the command desk.
