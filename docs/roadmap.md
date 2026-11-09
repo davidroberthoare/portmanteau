@@ -9,18 +9,19 @@ the architecture and the rules.
 **Why.** Professional workflows start with a script someone else sent, or a
 novel in Word. Exporting without importing is a one-way door.
 
-**Start with Fountain and Final Draft**, then DOCX:
+**Start with Fountain, Final Draft and plain text**, then DOCX (confirmed future work):
 
-- `crates/portmanteau-core/src/script.rs` already parses loose text into typed blocks.
-  Add `parse_fountain` and `parse_fdx` next to `parse_loose`.
+- `crates/portmanteau-core/src/script.rs` already parses loose text into typed blocks, and
+  `parse_fountain` now exists (it is used for project storage). Add `parse_fdx`,
+  a DOCX reader, and a plain-text importer next to it.
 - Add `project.import` in `crates/portmanteau-api/src/lib.rs` with `format` and `path`.
 - DOCX: read `word/document.xml` out of the zip (the export side already uses
   `zip`) and map paragraphs to sections. Do not pull in a full document model.
 - Surface it in the File menu beside Open/Save, and as an MCP tool.
 
-**Done when** a real `.fountain` and `.fdx` file round-trips through import and
-export without losing scene headings, character/dialogue pairing or transitions,
-and a DOCX manuscript becomes chapters with readable prose.
+**Done when** real `.fountain`, `.fdx`, `.docx` and plain-text files round-trip
+through import and export without losing scene headings, character/dialogue
+pairing or transitions, and a manuscript becomes chapters with readable prose.
 
 ## 2. Drag-and-drop binder
 
