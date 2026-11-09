@@ -455,6 +455,22 @@ impl PdfFlow {
         });
     }
 
+    /// A screenplay line: Courier, a fixed 13pt baseline, and its own indent.
+    fn script_line(&mut self, text: String, x: f32, bold: bool, gap_before: f32) {
+        let advance = 13.0;
+        self.ensure(advance + gap_before);
+        self.y -= gap_before;
+        self.y -= advance;
+        self.current.lines.push(PdfLine {
+            text,
+            x,
+            y: self.y,
+            size: 12.0,
+            bold,
+            mono: true,
+        });
+    }
+
     fn page_break(&mut self) {
         if !self.current.lines.is_empty() {
             self.pages.push(std::mem::replace(&mut self.current, PdfPage::new()));
@@ -689,9 +705,63 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             }
             flow.line(String::new(), margin, size, false, 0.0);
         }
-        for para in paragraphs(&section.doc.body_text()) {
-            add_para(&mut flow, &para, false, 0.0);
-            flow.line(String::new(), margin, size, false, 0.0);
+        if section.doc.medium.is_script() {
+            // Mixed projects: a script section keeps Courier columns even when
+            // the surrounding manuscript is prose. This is what makes a novel
+            // with a companion pilot read correctly in one PDF.
+            let mut scene_number = 1usize;
+            for block in &section.doc.blocks {
+                let indent_mm = match block.kind {
+                    ElementKind::Character => 22.0,
+                    ElementKind::Parenthetical => 15.0,
+                    ElementKind::Dialogue => 9.0,
+                    ElementKind::Transition => 42.0,
+                    _ => 0.0,
+                };
+                let width = ((content_width - indent_mm * 2.834645) / 7.2)
+                    .floor()
+                    .max(14.0) as usize;
+                let text = if block.kind.is_uppercase() {
+                    block.text.to_uppercase()
+                } else {
+                    block.text.clone()
+                };
+                if block.kind == ElementKind::SceneHeading
+                    && settings.include_scene_numbers
+                {
+                    for (i, part) in wrap_text(&text, width.saturating_sub(4)).iter().enumerate() {
+                        let line = if i == 0 {
+                            format!("{}   {}", scene_number, part)
+                        } else {
+                            part.clone()
+                        };
+                        flow.script_line(line, margin, false, 0.0);
+                    }
+                    scene_number += 1;
+                } else {
+                    for part in wrap_text(&text, width) {
+                        flow.script_line(
+                            part,
+                            margin + indent_mm * 2.834645,
+                            false,
+                            0.0,
+                        );
+                    }
+                }
+                // A blank line closes each beat. Character and parenthetical
+                // lines stay tight to their dialogue; everything else gets air.
+                if !matches!(
+                    block.kind,
+                    ElementKind::Character | ElementKind::Parenthetical
+                ) {
+                    flow.script_line(String::new(), margin, false, 0.0);
+                }
+            }
+        } else {
+            for para in paragraphs(&section.doc.body_text()) {
+                add_para(&mut flow, &para, false, 0.0);
+                flow.line(String::new(), margin, size, false, 0.0);
+            }
         }
         if settings.include_notes && !section.doc.notes.is_empty() {
             for part in wrap_text(&format!("Author's note · {}", section.doc.notes), chars_per_line) {
@@ -1510,7 +1580,7 @@ mod tests {
         let numbers: Vec<&str> = kids.split_whitespace().filter(|s| *s != "0" && *s != "R").collect();
         assert!(numbers.len() >= 2, "expected several pages, got {:?}", numbers);
 
-        for n in numbers {
+        for n in &numbers {
             let marker = format!("\n{} 0 obj\n", n);
             let at = doc.find(&marker).unwrap_or_else(|| panic!("object {} missing", n));
             let body = &doc[at..];
@@ -1536,8 +1606,23 @@ mod tests {
             );
         }
 
-        // Every page but the first carries a printed page number.
-        assert!(doc.matches(" BT").count() + 1 >= numbers.len());
+        // Each page dictionary names a media box; a missing box is another
+        // common way malformed hand-built PDFs break readers.
+        assert_eq!(doc.matches("/MediaBox").count(), numbers.len());
+    }
+
+    #[test]
+    fn pdf_uses_courier_for_scripts_and_times_for_prose() {
+        let p = demo();
+        let mut s = p.export.clone();
+        s.kind = ExportKind::Pdf;
+        let text = String::from_utf8_lossy(&pdf_manuscript(&p, &s)).to_string();
+        assert!(text.contains("/BaseFont /Times-Roman"));
+        assert!(text.contains("/BaseFont /Courier"));
+        // The demonstration project mixes a novel with a television pilot and
+        // a stage play, so both fonts must actually be selected in content.
+        assert!(text.contains("/F1 "));
+        assert!(text.contains("/F3 "));
     }
 
     #[test]

@@ -166,14 +166,36 @@ thing a visual check catches.
   the desktop binary, five support crates, bundled fonts and documentation all
   build from there. Superseded prototype folders left over from an earlier
   layout were removed so there is one source tree, not two.
-- `cargo build --workspace` and `cargo test --workspace` pass (29 tests across
+- `cargo build --workspace` and `cargo test --workspace` pass (31 tests across
   the core, export, API and MCP crates).
 - The screenshot flag was exercised at the required size and every workspace
   was reviewed as a picture: writing, corkboard, outline, research, develop,
   characters, versions, compare-version, compile and the command desk.
 - All ten export formats were written through the CLI and checked as files:
-  PDF (16 pages), EPUB, DOCX, FDX, Fountain, HTML, Markdown, RTF, plain text
+  PDF (17 pages), EPUB, DOCX, FDX, Fountain, HTML, Markdown, RTF, plain text
   and the portable project bundle.
+
+### PDF proofing fixes
+
+The first exported PDF looked right in the app but was malformed underneath:
+readers reported "Kid object is wrong type (stream)" and every other page came
+out blank because page dictionaries and their content streams shared the same
+object numbers. `build_pdf` now uses one explicit numbering plan (catalog,
+page tree, four fonts, then page/content pairs), and a test walks the `/Kids`
+list and proves every reference is a page dictionary with a separate stream.
+
+Three layout faults were visible once the pages rendered:
+
+- The contents page was printed before the front matter, so chapter numbers
+  were two low; they now add the title page and the contents page themselves.
+- The title page put the subtitle at the same baseline as the title.
+- Long prose and screenplay lines ran past the page edge. Wrapping is now
+  measured from the real content width, and script indents (character,
+  parenthetical, dialogue, transition) are derived from that width too.
+
+A mixed project — the demonstration novel with its television pilot and stage
+play — now sets prose in Times and script sections in Courier within one PDF.
+The screenplay branch does the same for a pure film, TV or theatre project.
 - Nothing in this build depends on a network, an account or a background
   process. Collaboration remains future work and file-based by design.
 
