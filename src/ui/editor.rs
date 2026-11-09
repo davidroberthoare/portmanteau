@@ -53,7 +53,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     toolbar(
         app,
         ui,
-        page_plan.as_ref().map(|plan| plan.pages.len()),
+        page_plan.as_ref().map(|plan| plan.page_count()),
         miss.len(),
     );
 
@@ -62,10 +62,11 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     }
 
     if app.write_mode == WriteMode::Paged {
-        let plan = page_plan.unwrap_or_else(|| {
-            build_page_plan(app, &doc_id).unwrap_or_else(empty_page_plan)
-        });
-        paged_view(app, ui, &plan);
+        let plan = page_plan.unwrap_or_else(empty_page_plan);
+        match plan {
+            PagePlan::Prose(plan) => paged_prose(app, ui, &doc_id, plan),
+            PagePlan::Script(plan) => paged_script(app, ui, &doc_id, plan),
+        }
         return;
     }
 
@@ -365,7 +366,7 @@ fn toolbar(
                         }
                     }
 
-                    // Continuous vs Paged. Paged is a read-only print preview.
+                    // Continuous vs Paged. Paged edits on estimated pages.
                     if app.write_mode == WriteMode::Paged {
                         if let Some(total) = page_total {
                             let current = app.paged_page.clamp(1, total.max(1));
@@ -394,7 +395,7 @@ fn toolbar(
                                         .add(btn)
                                         .on_hover_text(match mode {
                                             WriteMode::Continuous => "Edit the single paper page",
-                                            WriteMode::Paged => "Read-only page preview",
+                                            WriteMode::Paged => "Edit on estimated pages",
                                         })
                                         .clicked()
                                     {
@@ -415,8 +416,8 @@ fn toolbar(
                         app.focus_mode = !app.focus_mode;
                     }
 
-                    // Paged mode is a read-only preview, so the medium
-                    // switcher is hidden there and the space goes to the page
+                    // Paged mode keeps the toolbar compact: the medium
+                    // switcher is hidden and the space goes to the page
                     // readout instead.
                     if app.write_mode == WriteMode::Continuous {
                         let mut new_medium = medium;
@@ -731,44 +732,14 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         ui.add_space(10.0);
 
         // Element palette for the selected block.
-        let selected_kind = doc
-            .blocks
-            .get(app.selected_block)
-            .map(|b| b.kind)
-            .unwrap_or(ElementKind::Action);
-        ui.horizontal_wrapped(|ui| {
-            for kind in ElementKind::all(doc.medium) {
-                let active = kind == selected_kind;
-                let btn = egui::Button::new(
-                    RichText::new(kind.short())
-                        .font(sans(8.5))
-                        .color(if active { Color32::from_rgb(30, 26, 19) } else { PAPER_MUTED }),
-                )
-                .fill(if active { ACCENT } else { Color32::from_rgb(235, 229, 216) })
-                .corner_radius(CornerRadius::same(10))
-                .min_size(Vec2::new(0.0, 19.0));
-                if ui.add(btn).clicked() {
-                    if let Some(block) = doc.blocks.get_mut(app.selected_block) {
-                        block.kind = kind;
-                        dirty = true;
-                    }
-                }
-            }
-            ui.add_space(6.0);
-            let add = egui::Button::new(
-                RichText::new("+ block").font(sans(8.5)).color(PAPER_MUTED),
-            )
-            .frame(false);
-            if ui.add(add).clicked() {
-                doc.blocks.push(portmanteau_core::Block::new(
-                    doc.medium.default_element(),
-                    "",
-                ));
-                app.selected_block = doc.blocks.len().saturating_sub(1);
-                app.block_focus = Some(app.selected_block);
-                dirty = true;
-            }
-        });
+        let (palette_dirty, added_block) =
+            script_element_palette(ui, doc, &mut app.selected_block);
+        if palette_dirty {
+            dirty = true;
+        }
+        if let Some(index) = added_block {
+            app.block_focus = Some(index);
+        }
         ui.add_space(12.0);
 
         if doc.blocks.is_empty() {
@@ -779,137 +750,32 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             app.block_focus = Some(0);
         }
 
-        let first_scene_number = 1usize;
-        let mut scene_no = first_scene_number;
+        let mut scene_no = 1usize;
         let content_width = ui.available_width();
+        let focus = app.block_focus;
         for i in 0..doc.blocks.len() {
-            let block_id = Id::new(("script_block", doc_id, i));
-            if app.block_focus == Some(i) {
-                ui.memory_mut(|m| m.request_focus(block_id));
+            let outcome = script_block_editor(
+                ui,
+                doc,
+                i,
+                doc_id,
+                content_width,
+                &mut scene_no,
+                &mut app.selected_block,
+                focus,
+            );
+            if outcome.add_at.is_some() {
+                add_at = outcome.add_at;
             }
-            // Keyboard: Enter starts a new element, Tab cycles its type.
-            let focused = ui.memory(|m| m.has_focus(block_id));
-            if focused {
-                let enter = ui.input_mut(|inp| {
-                    inp.consume_key(Modifiers::NONE, Key::Enter)
-                });
-                if enter {
-                    add_at = Some(i);
-                }
-                let tab = ui.input_mut(|inp| inp.consume_key(Modifiers::NONE, Key::Tab));
-                let shift_tab = ui.input_mut(|inp| {
-                    inp.consume_key(Modifiers::SHIFT, Key::Tab)
-                });
-                if tab || shift_tab {
-                    cycle_at = Some(i);
-                }
-                if ui.input(|inp| inp.key_pressed(Key::Backspace))
-                    && doc.blocks[i].text.is_empty()
-                    && doc.blocks.len() > 1
-                {
-                    remove_at = Some(i);
-                }
+            if outcome.remove_at.is_some() {
+                remove_at = outcome.remove_at;
             }
-
-            let kind = doc.blocks[i].kind;
-            let is_scene = kind == ElementKind::SceneHeading;
-            let scene_label = if is_scene {
-                let label = format!("{scene_no}");
-                scene_no += 1;
-                label
-            } else {
-                String::new()
-            };
-            ui.horizontal(|ui| {
-                ui.set_width(content_width);
-                // Element gutter: scene numbers only.
-                let (grect, gresp) = ui.allocate_exact_size(Vec2::new(40.0, 18.0), Sense::hover());
-                if gresp.hovered() {
-                    ui.painter().rect_filled(grect, CornerRadius::same(3), Color32::from_rgb(236, 230, 217));
-                }
-                if !scene_label.is_empty() {
-                    ui.painter().text(
-                        grect.right_center() - Vec2::new(1.0, 8.0),
-                        egui::Align2::RIGHT_BOTTOM,
-                        scene_label,
-                        mono(7.5),
-                        PAPER_MUTED,
-                    );
-                }
-
-                let indent = match kind {
-                    ElementKind::Character => content_width * 0.30,
-                    ElementKind::Parenthetical => content_width * 0.20,
-                    ElementKind::Dialogue => content_width * 0.12,
-                    ElementKind::Transition => 0.0,
-                    _ => 0.0,
-                };
-                if indent > 0.0 {
-                    ui.add_space(indent);
-                }
-                let width = match kind {
-                    ElementKind::Character => content_width * 0.50,
-                    ElementKind::Parenthetical => content_width * 0.52,
-                    ElementKind::Dialogue => content_width * 0.66,
-                    ElementKind::Transition => content_width * 0.55,
-                    _ => content_width - 46.0,
-                };
-                let font_size = match kind {
-                    ElementKind::SceneHeading => 11.0,
-                    ElementKind::Character => 10.5,
-                    ElementKind::Parenthetical => 10.0,
-                    ElementKind::Dialogue => 10.5,
-                    ElementKind::Transition => 10.0,
-                    _ => 10.5,
-                };
-                let rows = ((doc.blocks[i].text.chars().count() as f32 * font_size * 0.62)
-                    / width.max(80.0))
-                .ceil()
-                .clamp(1.0, 8.0) as usize;
-                let text_color = if kind == ElementKind::SceneHeading {
-                    Color32::from_rgb(31, 29, 24)
-                } else {
-                    PAPER_TEXT
-                };
-                let mut edit = TextEdit::multiline(&mut doc.blocks[i].text)
-                    .id(block_id)
-                    .font(mono(font_size))
-                    .text_color(text_color)
-                    .frame(false)
-                    .desired_width(width)
-                    .desired_rows(rows)
-                    .margin(Margin::symmetric(2, 1))
-                    .hint_text(
-                        RichText::new(kind.label())
-                            .font(mono(font_size))
-                            .color(PAPER_MUTED),
-                    );
-                if kind == ElementKind::Transition {
-                    edit = edit.horizontal_align(Align::RIGHT);
-                }
-                if kind.is_uppercase() && kind != ElementKind::Character {
-                    edit = edit.text_color(Color32::from_rgb(44, 40, 33));
-                }
-                let resp = ui.add(edit);
-                if resp.clicked() {
-                    app.selected_block = i;
-                }
-                if resp.changed() {
-                    doc.touch();
-                    dirty = true;
-                }
-                if kind == ElementKind::Transition {
-                    ui.add_space(4.0);
-                }
-            });
-            ui.add_space(if matches!(
-                kind,
-                ElementKind::Character | ElementKind::Parenthetical | ElementKind::Dialogue
-            ) {
-                1.0
-            } else {
-                8.0
-            });
+            if outcome.cycle_at.is_some() {
+                cycle_at = outcome.cycle_at;
+            }
+            if outcome.dirty {
+                dirty = true;
+            }
         }
         app.block_focus = None;
 
@@ -973,6 +839,206 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     }
 }
 
+/// Element-type palette for the currently selected block. Shared by the
+/// continuous and paged script surfaces. Returns whether anything changed and
+/// the index of a newly added block (whose field should take focus).
+fn script_element_palette(
+    ui: &mut egui::Ui,
+    doc: &mut Document,
+    selected_block: &mut usize,
+) -> (bool, Option<usize>) {
+    let mut dirty = false;
+    let mut added = None;
+    let selected_kind = doc
+        .blocks
+        .get(*selected_block)
+        .map(|b| b.kind)
+        .unwrap_or(ElementKind::Action);
+    ui.horizontal_wrapped(|ui| {
+        for kind in ElementKind::all(doc.medium) {
+            let active = kind == selected_kind;
+            let btn = egui::Button::new(
+                RichText::new(kind.short())
+                    .font(sans(8.5))
+                    .color(if active { Color32::from_rgb(30, 26, 19) } else { PAPER_MUTED }),
+            )
+            .fill(if active { ACCENT } else { Color32::from_rgb(235, 229, 216) })
+            .corner_radius(CornerRadius::same(10))
+            .min_size(Vec2::new(0.0, 19.0));
+            if ui.add(btn).clicked() {
+                if let Some(block) = doc.blocks.get_mut(*selected_block) {
+                    block.kind = kind;
+                    dirty = true;
+                }
+            }
+        }
+        ui.add_space(6.0);
+        let add = egui::Button::new(
+            RichText::new("+ block").font(sans(8.5)).color(PAPER_MUTED),
+        )
+        .frame(false);
+        if ui.add(add).clicked() {
+            doc.blocks.push(portmanteau_core::Block::new(
+                doc.medium.default_element(),
+                "",
+            ));
+            *selected_block = doc.blocks.len().saturating_sub(1);
+            added = Some(*selected_block);
+            dirty = true;
+        }
+    });
+    (dirty, added)
+}
+
+#[derive(Default)]
+struct ScriptBlockOutcome {
+    add_at: Option<usize>,
+    remove_at: Option<usize>,
+    cycle_at: Option<usize>,
+    dirty: bool,
+}
+
+/// One typed screenplay element: gutter/scene number, indentation, element
+/// colour and the inline field. Shared by the continuous and paged surfaces so
+/// both edit the same block the same way.
+#[allow(clippy::too_many_arguments)]
+fn script_block_editor(
+    ui: &mut egui::Ui,
+    doc: &mut Document,
+    index: usize,
+    doc_id: &str,
+    content_width: f32,
+    scene_no: &mut usize,
+    selected_block: &mut usize,
+    focus: Option<usize>,
+) -> ScriptBlockOutcome {
+    let mut outcome = ScriptBlockOutcome::default();
+    let block_id = Id::new(("script_block", doc_id, index));
+    if focus == Some(index) {
+        ui.memory_mut(|m| m.request_focus(block_id));
+    }
+    // Keyboard: Enter starts a new element, Tab cycles its type.
+    let focused = ui.memory(|m| m.has_focus(block_id));
+    if focused {
+        let enter = ui.input_mut(|inp| inp.consume_key(Modifiers::NONE, Key::Enter));
+        if enter {
+            outcome.add_at = Some(index);
+        }
+        let tab = ui.input_mut(|inp| inp.consume_key(Modifiers::NONE, Key::Tab));
+        let shift_tab = ui.input_mut(|inp| inp.consume_key(Modifiers::SHIFT, Key::Tab));
+        if tab || shift_tab {
+            outcome.cycle_at = Some(index);
+        }
+        if ui.input(|inp| inp.key_pressed(Key::Backspace))
+            && doc.blocks[index].text.is_empty()
+            && doc.blocks.len() > 1
+        {
+            outcome.remove_at = Some(index);
+        }
+    }
+
+    let kind = doc.blocks[index].kind;
+    let is_scene = kind == ElementKind::SceneHeading;
+    let scene_label = if is_scene {
+        let label = format!("{scene_no}");
+        *scene_no += 1;
+        label
+    } else {
+        String::new()
+    };
+    ui.horizontal(|ui| {
+        ui.set_width(content_width);
+        // Element gutter: scene numbers only.
+        let (grect, gresp) = ui.allocate_exact_size(Vec2::new(40.0, 18.0), Sense::hover());
+        if gresp.hovered() {
+            ui.painter()
+                .rect_filled(grect, CornerRadius::same(3), Color32::from_rgb(236, 230, 217));
+        }
+        if !scene_label.is_empty() {
+            ui.painter().text(
+                grect.right_center() - Vec2::new(1.0, 8.0),
+                egui::Align2::RIGHT_BOTTOM,
+                scene_label,
+                mono(7.5),
+                PAPER_MUTED,
+            );
+        }
+
+        let indent = match kind {
+            ElementKind::Character => content_width * 0.30,
+            ElementKind::Parenthetical => content_width * 0.20,
+            ElementKind::Dialogue => content_width * 0.12,
+            _ => 0.0,
+        };
+        if indent > 0.0 {
+            ui.add_space(indent);
+        }
+        let width = match kind {
+            ElementKind::Character => content_width * 0.50,
+            ElementKind::Parenthetical => content_width * 0.52,
+            ElementKind::Dialogue => content_width * 0.66,
+            ElementKind::Transition => content_width * 0.55,
+            _ => content_width - 46.0,
+        };
+        let font_size = match kind {
+            ElementKind::SceneHeading => 11.0,
+            ElementKind::Character => 10.5,
+            ElementKind::Parenthetical => 10.0,
+            ElementKind::Dialogue => 10.5,
+            ElementKind::Transition => 10.0,
+            _ => 10.5,
+        };
+        let rows = ((doc.blocks[index].text.chars().count() as f32 * font_size * 0.62)
+            / width.max(80.0))
+        .ceil()
+        .clamp(1.0, 8.0) as usize;
+        let text_color = if kind == ElementKind::SceneHeading {
+            Color32::from_rgb(31, 29, 24)
+        } else {
+            PAPER_TEXT
+        };
+        let mut edit = TextEdit::multiline(&mut doc.blocks[index].text)
+            .id(block_id)
+            .font(mono(font_size))
+            .text_color(text_color)
+            .frame(false)
+            .desired_width(width)
+            .desired_rows(rows)
+            .margin(Margin::symmetric(2, 1))
+            .hint_text(
+                RichText::new(kind.label())
+                    .font(mono(font_size))
+                    .color(PAPER_MUTED),
+            );
+        if kind == ElementKind::Transition {
+            edit = edit.horizontal_align(Align::RIGHT);
+        }
+        if kind.is_uppercase() && kind != ElementKind::Character {
+            edit = edit.text_color(Color32::from_rgb(44, 40, 33));
+        }
+        let resp = ui.add(edit);
+        if resp.clicked() {
+            *selected_block = index;
+        }
+        if resp.changed() {
+            doc.touch();
+            outcome.dirty = true;
+        }
+        if kind == ElementKind::Transition {
+            ui.add_space(4.0);
+        }
+    });
+    ui.add_space(if matches!(
+        kind,
+        ElementKind::Character | ElementKind::Parenthetical | ElementKind::Dialogue
+    ) {
+        1.0
+    } else {
+        8.0
+    });
+    outcome
+}
+
 fn next_kind(after: ElementKind, medium: Medium) -> ElementKind {
     match after {
         ElementKind::Character => ElementKind::Dialogue,
@@ -1034,37 +1100,49 @@ fn paper_rule(ui: &mut egui::Ui) {
 }
 
 // ---------------------------------------------------------------------------
-// Paged (print preview) view
+// Paged editing view
 // ---------------------------------------------------------------------------
 
-/// One rendered line inside a page. The paging estimator fills pages with these
-/// so a page break can fall between any two lines.
-struct PageLine {
-    text: String,
-    size: f32,
-    lead: f32,
-    gap_before: f32,
-    mono: bool,
-    indent: f32,
-    right: bool,
-}
-
-/// An estimated pagination of one document. Geometry and the pages themselves
-/// are owned so the view can draw without borrowing the project.
-struct PagePlan {
+/// Prose pagination: whole paragraphs (separated by `\n\n`) are packed into a
+/// page's text height and never split. The page strings are owned so the fields
+/// can be edited during the draw pass and written back afterwards.
+struct ProsePagePlan {
     page_w: f32,
     content_w: f32,
     content_h: f32,
-    pages: Vec<Vec<PageLine>>,
+    pages: Vec<String>,
+}
+
+/// Screenplay pagination: each page is a list of block indices, packed with the
+/// same 55-line estimate the old read-only preview used.
+struct ScriptPagePlan {
+    page_w: f32,
+    content_w: f32,
+    content_h: f32,
+    pages: Vec<Vec<usize>>,
+}
+
+enum PagePlan {
+    Prose(ProsePagePlan),
+    Script(ScriptPagePlan),
+}
+
+impl PagePlan {
+    fn page_count(&self) -> usize {
+        match self {
+            PagePlan::Prose(plan) => plan.pages.len().max(1),
+            PagePlan::Script(plan) => plan.pages.len().max(1),
+        }
+    }
 }
 
 fn empty_page_plan() -> PagePlan {
-    PagePlan {
+    PagePlan::Prose(ProsePagePlan {
         page_w: 444.0,
         content_w: 336.0,
         content_h: 552.0,
-        pages: vec![Vec::new()],
-    }
+        pages: vec![String::new()],
+    })
 }
 
 /// Page size from the active export target's paper, mapped into egui points at
@@ -1079,90 +1157,64 @@ fn build_page_plan(app: &PortmanteauApp, doc_id: &str) -> Option<PagePlan> {
     let doc = app.ws.project.document(doc_id)?;
     let settings = app.ws.project.settings_for(app.ws.project.export.kind);
     Some(if doc.medium.is_script() {
-        script_plan(doc, &settings)
+        PagePlan::Script(script_page_plan(doc, &settings))
     } else {
-        prose_plan(doc, &settings)
+        PagePlan::Prose(prose_page_plan(doc, &settings))
     })
 }
 
-/// Best-effort prose paging. Paragraphs are wrapped to the text width with a
-/// character-width estimate (`size * 0.55`), then lines are packed until the
-/// page's text height is used up.
-fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
+/// Best-effort prose paging. Each paragraph is measured with the same
+/// `size * 0.5` character-width estimate and `size * leading` line height the
+/// print preview used, then whole paragraphs are packed until the page's text
+/// height is exceeded.
+fn prose_page_plan(doc: &Document, settings: &ExportSettings) -> ProsePagePlan {
     let (page_w, page_h) = page_geometry(settings);
     let content_w = page_w - 108.0;
     let content_h = page_h - 78.0;
     let body = &settings.styles.body;
-    let heading = &settings.styles.chapter_heading;
     let body_size = body.size.max(6.0);
     let line_h = (body_size * body.leading.max(0.8)).max(8.0);
     let chars_per_line = (content_w / (body_size * 0.5)).floor().max(10.0) as usize;
 
-    let mut pages: Vec<Vec<PageLine>> = vec![Vec::new()];
+    // Splitting on the paragraph separator and joining it back is lossless,
+    // including blank paragraphs and trailing breaks, provided we remember
+    // whether a page has already received a paragraph.
+    let mut pages: Vec<String> = vec![String::new()];
+    let mut page_has_paragraph = false;
     let mut used = 0.0f32;
-
-    // The chapter title sits at the top of the first page, set with the
-    // chapter-heading style.
-    let title = doc.title.trim();
-    if !title.is_empty() {
-        let title_size = heading.size.max(body_size);
-        let title_lead = (title_size * heading.leading.max(0.9)).max(10.0);
-        pages[0].push(PageLine {
-            text: title.to_string(),
-            size: title_size,
-            lead: title_lead,
-            gap_before: 0.0,
-            mono: false,
-            indent: 0.0,
-            right: false,
-        });
-        used += title_lead;
-        let gap = line_h * 0.9;
-        pages[0].push(PageLine {
-            text: " ".into(),
-            size: body_size,
-            lead: line_h,
-            gap_before: gap,
-            mono: false,
-            indent: 0.0,
-            right: false,
-        });
-        used += gap + line_h;
+    for paragraph in doc.text.split("\n\n") {
+        let empty = paragraph.trim().is_empty();
+        let lines = if empty {
+            0
+        } else {
+            wrap_words(paragraph, chars_per_line).len()
+        };
+        let height = lines as f32 * line_h;
+        let gap = if empty || used <= 0.0 {
+            0.0
+        } else {
+            line_h * 0.45
+        };
+        if used > 0.0 && used + gap + height > content_h {
+            pages.push(String::new());
+            page_has_paragraph = false;
+            used = 0.0;
+        }
+        let gap = if empty || used <= 0.0 {
+            0.0
+        } else {
+            line_h * 0.45
+        };
+        let page = pages.last_mut().expect("prose page");
+        if page_has_paragraph {
+            page.push_str("\n\n");
+        }
+        page.push_str(paragraph);
+        page_has_paragraph = true;
+        used += gap + height;
     }
 
-    for paragraph in doc.body_text().split("\n\n") {
-        let paragraph = paragraph.trim();
-        if paragraph.is_empty() {
-            continue;
-        }
-        for (i, text) in wrap_words(paragraph, chars_per_line).into_iter().enumerate() {
-            let mut gap = if i == 0 && !pages.last().unwrap().is_empty() {
-                line_h * 0.45
-            } else {
-                0.0
-            };
-            if used + gap + line_h > content_h && !pages.last().unwrap().is_empty() {
-                pages.push(Vec::new());
-                used = 0.0;
-                gap = 0.0;
-            }
-            if pages.last().unwrap().is_empty() {
-                gap = 0.0;
-            }
-            pages.last_mut().unwrap().push(PageLine {
-                text,
-                size: body_size,
-                lead: line_h,
-                gap_before: gap,
-                mono: false,
-                indent: 0.0,
-                right: false,
-            });
-            used += gap + line_h;
-        }
-    }
-
-    PagePlan {
+    ProsePagePlan {
         page_w,
         content_w,
         content_h,
@@ -1170,10 +1222,10 @@ fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
     }
 }
 
-/// Script paging: roughly 55 typed lines per page, with each block's wrapped
-/// height counted in those lines. The page keeps the paper width and frame but
+/// Screenplay paging: roughly 55 typed lines per page, with each block's
+/// wrapped height counted in those lines. The page keeps the paper width and
 /// grows tall enough for all 55 lines.
-fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
+fn script_page_plan(doc: &Document, settings: &ExportSettings) -> ScriptPagePlan {
     let (page_w, _) = page_geometry(settings);
     let content_w = page_w - 108.0;
     let base = &settings.styles.action;
@@ -1182,49 +1234,40 @@ fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
     let lines_per_page = 55.0f32;
     let content_h = base_line * lines_per_page;
 
-    let mut pages: Vec<Vec<PageLine>> = vec![Vec::new()];
-    let mut used = 0.0f32;
-
-    for (index, block) in doc.blocks.iter().enumerate() {
-        let style = script_element_style(&settings.styles, block.kind);
-        let size = style.size.max(6.0);
-        let lead = (size * style.leading.max(0.85)).max(8.0);
-        let indent = style.indent.max(0.0).min(content_w * 0.42);
-        let chars_per_line = ((content_w - indent) / (size * 0.6))
-            .floor()
-            .max(8.0) as usize;
-        let wrapped = wrap_words(&block.text, chars_per_line);
-        let block_lines = (wrapped.len() as f32 * lead / base_line).max(1.0);
-        let mut gap_lines = if index == 0 || block.kind.is_dialogue() {
-            0.0
-        } else {
-            0.4
-        };
-        if used + gap_lines + block_lines > lines_per_page
-            && !pages.last().unwrap().is_empty()
-        {
-            pages.push(Vec::new());
-            used = 0.0;
-            gap_lines = 0.0;
+    let mut pages: Vec<Vec<usize>> = vec![Vec::new()];
+    if doc.blocks.is_empty() {
+        // The render pass inserts a default block; give it page one.
+        pages[0].push(0);
+    } else {
+        let mut used = 0.0f32;
+        for (index, block) in doc.blocks.iter().enumerate() {
+            let style = script_element_style(&settings.styles, block.kind);
+            let size = style.size.max(6.0);
+            let lead = (size * style.leading.max(0.85)).max(8.0);
+            let indent = style.indent.max(0.0).min(content_w * 0.42);
+            let chars_per_line = ((content_w - indent) / (size * 0.6))
+                .floor()
+                .max(8.0) as usize;
+            let wrapped = wrap_words(&block.text, chars_per_line);
+            let block_lines = (wrapped.len() as f32 * lead / base_line).max(1.0);
+            let mut gap_lines = if index == 0 || block.kind.is_dialogue() {
+                0.0
+            } else {
+                0.4
+            };
+            if used + gap_lines + block_lines > lines_per_page
+                && !pages.last().unwrap().is_empty()
+            {
+                pages.push(Vec::new());
+                used = 0.0;
+                gap_lines = 0.0;
+            }
+            pages.last_mut().unwrap().push(index);
+            used += gap_lines + block_lines;
         }
-        if pages.last().unwrap().is_empty() {
-            gap_lines = 0.0;
-        }
-        for (i, text) in wrapped.into_iter().enumerate() {
-            pages.last_mut().unwrap().push(PageLine {
-                text,
-                size,
-                lead,
-                gap_before: if i == 0 { gap_lines * base_line } else { 0.0 },
-                mono: true,
-                indent,
-                right: block.kind == ElementKind::Transition,
-            });
-        }
-        used += gap_lines + block_lines;
     }
 
-    PagePlan {
+    ScriptPagePlan {
         page_w,
         content_w,
         content_h,
@@ -1278,8 +1321,27 @@ fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
     out
 }
 
-fn paged_view(app: &mut PortmanteauApp, ui: &mut egui::Ui, plan: &PagePlan) {
-    let mut page_rects = Vec::with_capacity(plan.pages.len());
+/// Editable prose pages. Each page is one multiline field bound to an owned
+/// page string; after the draw pass the strings are joined back into
+/// `doc.text`. Re-grouping happens naturally on the next frame.
+fn paged_prose(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, plan: ProsePagePlan) {
+    let ProsePagePlan {
+        page_w,
+        content_w,
+        content_h,
+        mut pages,
+    } = plan;
+    let original = app
+        .ws
+        .project
+        .document(doc_id)
+        .map(|doc| doc.text.clone())
+        .unwrap_or_default();
+    let font_size = app.editor_font_size;
+    let rows = ((content_h / (font_size * 1.4)).floor() as usize).clamp(1, 80);
+    let total = pages.len();
+    let mut changed = false;
+    let mut page_rects = Vec::with_capacity(total);
     let mut viewport_top = f32::NEG_INFINITY;
     ScrollArea::vertical()
         .id_salt("editor_paged_scroll")
@@ -1288,16 +1350,34 @@ fn paged_view(app: &mut PortmanteauApp, ui: &mut egui::Ui, plan: &PagePlan) {
             viewport_top = ui.clip_rect().top();
             ui.add_space(22.0);
             ui.vertical_centered(|ui| {
-                ui.set_max_width(plan.page_w);
+                ui.set_max_width(page_w);
                 ui.label(
-                    RichText::new("Read-only page preview — switch to Continuous to edit")
-                        .font(sans(9.5))
-                        .color(FAINT),
+                    RichText::new(
+                        "Pages are estimated from the compile style · Enter adds a line break; a blank line starts a new paragraph",
+                    )
+                    .font(sans(9.5))
+                    .color(FAINT),
                 );
                 ui.add_space(10.0);
-                for (index, page) in plan.pages.iter().enumerate() {
-                    page_rects.push(page_frame(ui, plan, page, index + 1));
-                    if index + 1 < plan.pages.len() {
+                for (index, page) in pages.iter_mut().enumerate() {
+                    let page_id = Id::new(("paged_prose_page", doc_id, index));
+                    let response = page_frame(ui, content_w, content_h, index + 1, |ui| {
+                        let response = ui.add(
+                            TextEdit::multiline(page)
+                                .id(page_id)
+                                .font(serif(font_size))
+                                .text_color(PAPER_TEXT)
+                                .frame(false)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(rows)
+                                .margin(Margin::same(0)),
+                        );
+                        if response.changed() {
+                            changed = true;
+                        }
+                    });
+                    page_rects.push(response);
+                    if index + 1 < total {
                         ui.add_space(26.0);
                     }
                 }
@@ -1305,8 +1385,160 @@ fn paged_view(app: &mut PortmanteauApp, ui: &mut egui::Ui, plan: &PagePlan) {
             ui.add_space(36.0);
         });
 
-    // Which page has the top of the viewport scrolled into it? The toolbar
-    // reads this on the next frame.
+    if changed {
+        let reassembled = pages.join("\n\n");
+        if reassembled != original {
+            if let Some(doc) = app.ws.project.document_mut(doc_id) {
+                doc.text = reassembled;
+                doc.touch();
+            }
+            app.ws.dirty = true;
+        }
+    }
+    track_visible_page(app, &page_rects, viewport_top, total);
+}
+
+/// Editable screenplay pages. The page→block plan is computed from an
+/// immutable snapshot first, then each page renders the shared per-block
+/// editor. Edits go straight to `doc.blocks[i].text`.
+fn paged_script(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, plan: ScriptPagePlan) {
+    let ScriptPagePlan {
+        page_w,
+        content_w,
+        content_h,
+        pages,
+    } = plan;
+    let focus = app.block_focus;
+    let total = pages.len();
+    let mut add_at: Option<usize> = None;
+    let mut remove_at: Option<usize> = None;
+    let mut cycle_at: Option<usize> = None;
+    let mut dirty = false;
+    let mut page_rects = Vec::with_capacity(total);
+    let mut viewport_top = f32::NEG_INFINITY;
+
+    {
+        let Some(doc) = app.ws.project.document_mut(doc_id) else {
+            return;
+        };
+        if doc.blocks.is_empty() {
+            doc.blocks.push(portmanteau_core::Block::new(
+                doc.medium.default_element(),
+                "",
+            ));
+            dirty = true;
+        }
+        ScrollArea::vertical()
+            .id_salt("editor_paged_scroll")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                viewport_top = ui.clip_rect().top();
+                ui.add_space(22.0);
+                ui.vertical_centered(|ui| {
+                    ui.set_max_width(page_w);
+                    ui.label(
+                        RichText::new("Pages are estimated from the compile style")
+                            .font(sans(9.5))
+                            .color(FAINT),
+                    );
+                    ui.add_space(8.0);
+                    let (palette_dirty, added_block) =
+                        script_element_palette(ui, doc, &mut app.selected_block);
+                    if palette_dirty {
+                        dirty = true;
+                    }
+                    if let Some(index) = added_block {
+                        app.block_focus = Some(index);
+                    }
+                    ui.add_space(10.0);
+                    let mut scene_no = 1usize;
+                    for (index, page_blocks) in pages.iter().enumerate() {
+                        let response = page_frame(ui, content_w, content_h, index + 1, |ui| {
+                            for &block_index in page_blocks {
+                                if block_index >= doc.blocks.len() {
+                                    continue;
+                                }
+                                let outcome = script_block_editor(
+                                    ui,
+                                    doc,
+                                    block_index,
+                                    doc_id,
+                                    content_w,
+                                    &mut scene_no,
+                                    &mut app.selected_block,
+                                    focus,
+                                );
+                                if outcome.add_at.is_some() {
+                                    add_at = outcome.add_at;
+                                }
+                                if outcome.remove_at.is_some() {
+                                    remove_at = outcome.remove_at;
+                                }
+                                if outcome.cycle_at.is_some() {
+                                    cycle_at = outcome.cycle_at;
+                                }
+                                if outcome.dirty {
+                                    dirty = true;
+                                }
+                            }
+                        });
+                        page_rects.push(response);
+                        if index + 1 < total {
+                            ui.add_space(26.0);
+                        }
+                    }
+                });
+                ui.add_space(36.0);
+            });
+        app.block_focus = None;
+    }
+
+    if let Some(i) = cycle_at {
+        if let Some(doc) = app.ws.project.document_mut(doc_id) {
+            if let Some(block) = doc.blocks.get_mut(i) {
+                block.kind = block.kind.next(doc.medium);
+                app.selected_block = i;
+                app.ws.dirty = true;
+            }
+        }
+    }
+    if let Some(i) = add_at {
+        if let Some(doc) = app.ws.project.document_mut(doc_id) {
+            if let Some(block) = doc.blocks.get_mut(i) {
+                block.text = block.text.trim_end_matches('\n').to_string();
+                let next = next_kind(block.kind, doc.medium);
+                doc.blocks.insert(i + 1, portmanteau_core::Block::new(next, ""));
+            }
+            app.selected_block = i + 1;
+            app.block_focus = Some(i + 1);
+            app.ws.dirty = true;
+        }
+    }
+    if let Some(i) = remove_at {
+        if let Some(doc) = app.ws.project.document_mut(doc_id) {
+            if doc.blocks.len() > 1 {
+                doc.blocks.remove(i);
+                let next = i.saturating_sub(1);
+                app.selected_block = next;
+                app.block_focus = Some(next);
+                app.ws.dirty = true;
+            }
+        }
+    }
+    if dirty {
+        app.ws.dirty = true;
+    }
+    track_visible_page(app, &page_rects, viewport_top, total);
+}
+
+/// Which page has the top of the viewport scrolled into it? The toolbar reads
+/// this on the next frame.
+fn track_visible_page(
+    app: &mut PortmanteauApp,
+    page_rects: &[egui::Rect],
+    viewport_top: f32,
+    total: usize,
+) {
     app.paged_page = page_rects
         .iter()
         .enumerate()
@@ -1314,10 +1546,19 @@ fn paged_view(app: &mut PortmanteauApp, ui: &mut egui::Ui, plan: &PagePlan) {
         .find(|(_, rect)| rect.top() <= viewport_top + 1.0)
         .map(|(index, _)| index + 1)
         .unwrap_or(1)
-        .min(plan.pages.len().max(1));
+        .min(total.max(1));
 }
 
-fn page_frame(ui: &mut egui::Ui, plan: &PagePlan, lines: &[PageLine], number: usize) -> egui::Rect {
+fn page_frame<F>(
+    ui: &mut egui::Ui,
+    content_w: f32,
+    content_h: f32,
+    number: usize,
+    body: F,
+) -> egui::Rect
+where
+    F: FnOnce(&mut egui::Ui),
+{
     Frame::new()
         .fill(PAPER)
         .stroke(Stroke::new(1.0, PAPER_EDGE))
@@ -1336,46 +1577,12 @@ fn page_frame(ui: &mut egui::Ui, plan: &PagePlan, lines: &[PageLine], number: us
         })
         .show(ui, |ui| {
             ui.with_layout(Layout::top_down(Align::Min), |ui| {
-                ui.set_width(plan.content_w);
+                ui.set_width(content_w);
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
-                let mut used = 0.0f32;
-                for line in lines {
-                    if line.gap_before > 0.0 {
-                        ui.add_space(line.gap_before);
-                        used += line.gap_before;
-                    }
-                    let rich = RichText::new(if line.text.is_empty() {
-                        " "
-                    } else {
-                        line.text.as_str()
-                    })
-                    .font(if line.mono {
-                        mono(line.size)
-                    } else {
-                        serif(line.size)
-                    })
-                    .color(PAPER_TEXT);
-                    if line.right {
-                        // Constrain the height: an unconstrained right-to-left
-                        // layout would swallow the rest of the page.
-                        ui.allocate_ui_with_layout(
-                            Vec2::new(ui.available_width(), line.lead.max(8.0)),
-                            Layout::right_to_left(Align::Center),
-                            |ui| {
-                                ui.add(egui::Label::new(rich).wrap());
-                            },
-                        );
-                    } else if line.indent > 0.0 {
-                        ui.horizontal(|ui| {
-                            ui.add_space(line.indent);
-                            ui.add(egui::Label::new(rich).wrap());
-                        });
-                    } else {
-                        ui.add(egui::Label::new(rich).wrap());
-                    }
-                    used += line.lead;
-                }
-                let remaining = (plan.content_h - used).max(6.0);
+                let start_top = ui.cursor().top();
+                body(ui);
+                let used = (ui.cursor().top() - start_top).max(0.0);
+                let remaining = (content_h - used).max(6.0);
                 ui.add_space(remaining);
                 ui.vertical_centered(|ui| {
                     ui.label(
