@@ -12,4 +12,7 @@ pub mod text;
 
 pub use model::*;
 pub use script::ElementKind;
-pub use text::{count_words, reading_minutes, truncate_words, visible_chars};
+pub use text::{
+    count_words, diff_counts, diff_lines, reading_minutes, truncate_words, visible_chars,
+    DiffKind, DiffLine,
+};

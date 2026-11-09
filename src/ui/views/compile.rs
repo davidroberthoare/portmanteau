@@ -84,7 +84,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
                         .show(ui, |ui| {
                             for kind in ExportKind::all() {
                                 format_card(ui, kind, &mut settings);
-                                ui.add_space(5.0);
+                                ui.add_space(4.0);
                             }
                         });
                 },
@@ -226,7 +226,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
 fn format_card(ui: &mut egui::Ui, kind: ExportKind, settings: &mut msc_core::ExportSettings) {
     let selected = settings.kind == kind;
     let (rect, resp) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), 50.0), Sense::click());
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::click());
     let color = format_color(kind);
     ui.painter().rect_filled(
         rect,

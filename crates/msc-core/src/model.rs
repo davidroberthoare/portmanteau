@@ -323,6 +323,22 @@ pub struct Snapshot {
     pub words: u32,
 }
 
+impl Snapshot {
+    /// Reconstruct the saved body for comparison with the current document.
+    /// A script snapshot stores typed blocks; a prose snapshot stores text.
+    pub fn body_text(&self) -> String {
+        if self.blocks.is_empty() {
+            self.text.clone()
+        } else {
+            self.blocks
+                .iter()
+                .map(|b| b.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Character {
     pub id: String,
@@ -713,6 +729,68 @@ impl Project {
         self.touch();
     }
 
+    /// Move a document one place up or down among its siblings.
+    /// Returns false at the edge of the list.
+    pub fn move_document(&mut self, id: &str, direction: i32) -> bool {
+        let Some(doc) = self.document(id) else {
+            return false;
+        };
+        let parent = doc.parent.clone();
+        let siblings: Vec<String> = self
+            .children(parent.as_deref())
+            .iter()
+            .map(|d| d.id.clone())
+            .collect();
+        let Some(pos) = siblings.iter().position(|s| s == id) else {
+            return false;
+        };
+        let new_pos = pos as i32 + direction;
+        if new_pos < 0 || new_pos as usize >= siblings.len() {
+            return false;
+        }
+        let other = siblings[new_pos as usize].clone();
+        let this_order = self.document(id).map(|d| d.order).unwrap_or(pos as i32);
+        let other_order = self
+            .document(&other)
+            .map(|d| d.order)
+            .unwrap_or(new_pos as i32);
+        if let Some(d) = self.document_mut(id) {
+            d.order = other_order;
+            d.touch();
+        }
+        if let Some(d) = self.document_mut(&other) {
+            d.order = this_order;
+            d.touch();
+        }
+        self.touch();
+        true
+    }
+
+    /// Move a document into another folder, or to the project root.
+    /// A folder cannot be moved inside itself.
+    pub fn reparent_document(&mut self, id: &str, parent: Option<String>) -> bool {
+        if parent.as_deref() == Some(id) {
+            return false;
+        }
+        if let Some(target) = parent.as_deref() {
+            if self.descendant_ids(id).iter().any(|d| d == target) {
+                return false;
+            }
+            if self.document(target).is_none() {
+                return false;
+            }
+        }
+        let order = self.next_order(parent.as_deref());
+        let Some(doc) = self.document_mut(id) else {
+            return false;
+        };
+        doc.parent = parent;
+        doc.order = order;
+        doc.touch();
+        self.touch();
+        true
+    }
+
     pub fn descendant_ids(&self, id: &str) -> Vec<String> {
         let mut out = Vec::new();
         let mut stack = vec![id.to_string()];
@@ -895,5 +973,43 @@ mod tests {
         p.title = "Changed".into();
         assert!(p.restore_checkpoint(&cp));
         assert_eq!(p.title, "Original");
+    }
+
+    #[test]
+    fn documents_move_within_their_parent() {
+        let mut p = Project::new("Test", ProjectKind::Novel);
+        let parent = p.folder_id("Manuscript");
+        let first = p.add_document(parent.clone(), "First", DocKind::Chapter, Medium::Prose);
+        let second = p.add_document(parent, "Second", DocKind::Chapter, Medium::Prose);
+        assert!(p.move_document(&second, -1));
+        let order: Vec<String> = p
+            .children(p.folder_id("Manuscript").as_deref())
+            .iter()
+            .map(|d| d.title.clone())
+            .collect();
+        assert_eq!(order, vec!["Second", "First"]);
+        assert!(!p.move_document(&second, -1));
+        assert!(p.move_document(&first, -1));
+    }
+
+    #[test]
+    fn reparent_refuses_cycles() {
+        let mut p = Project::new("Test", ProjectKind::Novel);
+        let parent = p.folder_id("Manuscript");
+        let folder = p.add_document(parent, "Act One", DocKind::Folder, Medium::Prose);
+        let scene = p.add_document(Some(folder.clone()), "Scene", DocKind::Text, Medium::Prose);
+        assert!(p.reparent_document(&scene, Some(folder.clone())));
+        assert!(!p.reparent_document(&folder, Some(scene)));
+    }
+
+    #[test]
+    fn snapshot_body_text_uses_blocks_for_scripts() {
+        let mut p = Project::new("Test", ProjectKind::Film);
+        let parent = p.folder_id("Manuscript");
+        let id = p.add_document(parent, "Scene", DocKind::Scene, Medium::Screenplay);
+        let doc = p.document_mut(&id).unwrap();
+        doc.blocks = vec![Block::new(ElementKind::Action, "The tide went out.")];
+        doc.snapshot("First", "");
+        assert_eq!(p.document(&id).unwrap().snapshots[0].body_text(), "The tide went out.");
     }
 }

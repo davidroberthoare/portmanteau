@@ -26,6 +26,7 @@ enum Action {
     NewUnder(Option<String>),
     Snapshot(String),
     ToggleInclude(String),
+    Move(String, i32),
     Delete(String),
     View(View),
 }
@@ -73,6 +74,24 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
                 .clicked()
             {
                 action = Some(Action::View(View::Corkboard));
+            }
+            let has_selection = app.selected.is_some();
+            for (glyph, hint, direction) in [
+                ("↓", "Move selected down", 1),
+                ("↑", "Move selected up", -1),
+            ] {
+                let button = egui::Button::new(RichText::new(glyph).size(12.0).color(FAINT))
+                    .frame(false);
+                if ui
+                    .add_enabled(has_selection, button)
+                    .on_hover_text(hint)
+                    .on_disabled_hover_text("Select a document first")
+                    .clicked()
+                {
+                    if let Some(id) = app.selected.clone() {
+                        action = Some(Action::Move(id, direction));
+                    }
+                }
             }
         });
     });
@@ -283,6 +302,14 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
                         action = Some(Action::NewUnder(Some(row.id.clone())));
                         ui.close_menu();
                     }
+                    if ui.button("Move up").clicked() {
+                        action = Some(Action::Move(row.id.clone(), -1));
+                        ui.close_menu();
+                    }
+                    if ui.button("Move down").clicked() {
+                        action = Some(Action::Move(row.id.clone(), 1));
+                        ui.close_menu();
+                    }
                     if ui.button("Take snapshot").clicked() {
                         action = Some(Action::Snapshot(row.id.clone()));
                         ui.close_menu();
@@ -413,6 +440,11 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
             Action::ToggleInclude(id) => {
                 if let Some(doc) = app.ws.project.document_mut(&id) {
                     doc.include_in_export = !doc.include_in_export;
+                    app.ws.dirty = true;
+                }
+            }
+            Action::Move(id, direction) => {
+                if app.ws.project.move_document(&id, direction) {
                     app.ws.dirty = true;
                 }
             }

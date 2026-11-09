@@ -5,6 +5,7 @@
 //!   msc-cli project.info
 //!   msc-cli stats
 //!   msc-cli export.run '{"format":"EPUB","path":"exports"}'
+//!   msc-cli document.move '{"id":"doc-…","direction":"up"}' --project book.scriptorium.json --save
 
 use msc_api::Workspace;
 
@@ -12,7 +13,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         println!(
-            "Scriptorium command line\n\nUsage:\n  msc-cli <command> [json-payload] [--project path]\n\nCommands: project.info, document.list, stats, export.run, commands …"
+            "Scriptorium command line\n\nUsage:\n  msc-cli <command> [json-payload] [--project path] [--save]\n\nCommands: project.info, document.list, stats, export.run, commands …\n\n--project opens a project file instead of the demonstration project.\n--save writes the project back after a successful command (mutations are\notherwise discarded when the process exits)."
         );
         return;
     }
@@ -37,12 +38,25 @@ fn main() {
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or(serde_json::json!({}));
     let res = ws.execute(command, payload);
+    let save = args.iter().any(|a| a == "--save");
+    let saved = if res.ok && save {
+        match ws.save(None) {
+            Ok(path) => Some(path),
+            Err(e) => {
+                eprintln!("could not save the project: {e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
+    };
     println!(
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({
             "ok": res.ok,
             "message": res.message,
-            "data": res.data
+            "data": res.data,
+            "saved": saved,
         }))
         .unwrap()
     );

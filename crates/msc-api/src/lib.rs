@@ -306,6 +306,42 @@ impl Workspace {
                 self.dirty = true;
                 ApiResponse::ok(command, "Document deleted", json!({"id": id}))
             }
+            "document.move" => {
+                let Some(id) = str_arg(&payload, "id") else {
+                    return ApiResponse::err(command, "A document id is required");
+                };
+                let moved = if payload.get("parent").is_some() {
+                    let parent = payload
+                        .get("parent")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    self.project.reparent_document(&id, parent)
+                } else {
+                    let direction = match payload
+                        .get("direction")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("down")
+                        .to_ascii_lowercase()
+                        .as_str()
+                    {
+                        "up" | "-1" => -1,
+                        "down" | "1" => 1,
+                        other => {
+                            return ApiResponse::err(
+                                command,
+                                format!("Unknown direction “{other}”; use up or down"),
+                            )
+                        }
+                    };
+                    self.project.move_document(&id, direction)
+                };
+                if moved {
+                    self.dirty = true;
+                    ApiResponse::ok(command, "Document moved", json!({"id": id}))
+                } else {
+                    ApiResponse::err(command, "The document cannot move there")
+                }
+            }
             "document.snapshot" => {
                 let Some(id) = str_arg(&payload, "id") else {
                     return ApiResponse::err(command, "A document id is required");
@@ -341,6 +377,38 @@ impl Workspace {
                     }
                     None => ApiResponse::err(command, "Document not found"),
                 }
+            }
+            "snapshot.diff" => {
+                let doc_id = str_arg(&payload, "document_id").unwrap_or_default();
+                let Some(snap_id) = str_arg(&payload, "id") else {
+                    return ApiResponse::err(command, "A snapshot id is required");
+                };
+                let Some(doc) = self.project.document(&doc_id) else {
+                    return ApiResponse::err(command, "Document not found");
+                };
+                let Some(snap) = doc.snapshots.iter().find(|s| s.id == snap_id) else {
+                    return ApiResponse::err(command, "Snapshot not found");
+                };
+                let before = snap.body_text();
+                let after = doc.body_text();
+                let lines = msc_core::diff_lines(&before, &after);
+                let (added, removed) = msc_core::diff_counts(&lines);
+                ApiResponse::ok(
+                    command,
+                    format!("{added} added · {removed} removed"),
+                    json!({
+                        "document_id": doc_id,
+                        "document": doc.title,
+                        "snapshot_id": snap.id,
+                        "snapshot": snap.name,
+                        "created": snap.created,
+                        "words_before": snap.words,
+                        "words_after": doc.words(),
+                        "added": added,
+                        "removed": removed,
+                        "lines": lines,
+                    }),
+                )
             }
             "character.add" => {
                 let name = str_arg(&payload, "name").unwrap_or_else(|| "New character".into());
@@ -732,8 +800,10 @@ pub fn command_catalogue() -> Vec<Value> {
         ("document.create", "Add a document", r#"{"parent":"doc-...","title":"...","kind":"Chapter","medium":"Prose"}"#),
         ("document.update", "Change title, text, synopsis or metadata", r#"{"id":"doc-...","text":"..."}"#),
         ("document.delete", "Delete a document and its children", r#"{"id":"doc-..."}"#),
+        ("document.move", "Move a document up, down or into a folder", r#"{"id":"doc-...","direction":"up"}"#),
         ("document.snapshot", "Snapshot a document", r#"{"id":"doc-...","name":"..."}"#),
         ("snapshot.restore", "Restore a document snapshot", r#"{"document_id":"...","id":"snap-..."}"#),
+        ("snapshot.diff", "Compare a snapshot with the current document", r#"{"document_id":"...","id":"snap-..."}"#),
         ("character.add", "Add a character", r#"{"name":"...","role":"..."}"#),
         ("research.add", "Add a research note", r#"{"title":"...","body":"..."}"#),
         ("idea.add", "Add an idea card", r#"{"title":"...","body":"..."}"#),
@@ -782,6 +852,52 @@ mod tests {
         let s = ws.stats();
         assert!(s["words"].as_u64().unwrap() > 500);
         assert_eq!(s["chapters"].as_u64().unwrap(), 3);
+    }
+
+    #[test]
+    fn move_command_reorders_siblings() {
+        let mut ws = Workspace::demo();
+        let ids: Vec<String> = ws
+            .project
+            .children(ws.project.folder_id("Manuscript").as_deref())
+            .iter()
+            .map(|d| d.id.clone())
+            .collect();
+        assert!(ids.len() >= 2);
+        let res = ws.execute("document.move", json!({"id": ids[1], "direction":"up"}));
+        assert!(res.ok, "{}", res.message);
+        let after: Vec<String> = ws
+            .project
+            .children(ws.project.folder_id("Manuscript").as_deref())
+            .iter()
+            .map(|d| d.id.clone())
+            .collect();
+        assert_eq!(after[0], ids[1]);
+    }
+
+    #[test]
+    fn snapshot_diff_compares_against_current_text() {
+        let mut ws = Workspace::demo();
+        let id = ws
+            .project
+            .documents
+            .iter()
+            .find(|d| d.kind == DocKind::Chapter)
+            .map(|d| d.id.clone())
+            .unwrap();
+        ws.execute("document.snapshot", json!({"id": id, "name":"Before"}));
+        let snap = ws.project.document(&id).unwrap().snapshots[0].id.clone();
+        ws.execute(
+            "document.update",
+            json!({"id": id, "text":"A completely different chapter."}),
+        );
+        let res = ws.execute(
+            "snapshot.diff",
+            json!({"document_id": id, "id": snap}),
+        );
+        assert!(res.ok, "{}", res.message);
+        assert!(res.data["added"].as_u64().unwrap() > 0);
+        assert!(res.data["lines"].as_array().unwrap().len() > 0);
     }
 
     #[test]

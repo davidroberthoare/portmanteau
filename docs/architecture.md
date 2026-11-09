@@ -22,7 +22,7 @@ Pure Rust + serde. No file system, UI or export code.
 | --- | --- |
 | `model.rs` | `Project`, `Document`, `Block`, `Character`, `ResearchItem`, `IdeaCard`, `Beat`, `Snapshot`, `Checkpoint`, export settings |
 | `script.rs` | `ElementKind`, loose text classification, Fountain conversion, aligned plain text |
-| `text.rs` | Word counts, approximate reading time, truncation |
+| `text.rs` | Word counts, reading time, truncation, line-level diff |
 | `sample.rs` | The demonstration project, `The Salt Road` |
 
 A `Document` carries both a prose `text` and script `blocks`. Only one is
@@ -34,6 +34,9 @@ screenplay types.
 Hierarchy is a parent id plus an order integer, not a nested tree. That makes
 serialisation flat, filtering cheap, and each document an addressable record.
 `ordered_documents` and `children` reconstruct the tree for display.
+`move_document` swaps the order of two siblings, and `reparent_document` moves a
+subtree to the end of another folder while refusing cycles. Both are commands,
+so the binder arrows and an agent share one implementation.
 
 Versions are stored twice, at different scopes:
 
@@ -108,7 +111,7 @@ the painter, so no image assets or icon font are required.
 | Research | Sourcebook and linked notes | `research.add` |
 | Develop | Idea board and beat sheet | `idea.add`, direct beat edits |
 | Characters | Character sheets and appearances | direct character edits |
-| Versions | Checkpoints, snapshots, calendar | checkpoint/restore |
+| Versions | Checkpoints, snapshots, compare, calendar | checkpoint/restore/diff |
 | Compile | Format, matter and style choices | `export.run` |
 | Command desk | Raw API console | any command |
 
@@ -124,12 +127,19 @@ There are three layers, chosen so a writer can recover at the scale they need:
 Exporting always writes an `export` checkpoint first. This means a file that
 leaves the app can always be traced back to the project state that produced it.
 
+Comparison sits beside restore, not instead of it. `snapshot.diff` reconstructs
+the saved body (`Snapshot::body_text`) and runs a line-level longest-common-
+subsequence diff against the current document. The result is data — `added`,
+`removed`, word counts, and lines marked `same`, `add` or `remove` — so the
+Compare version dialog, an agent and a future review export describe a revision
+identically. The diff lives in `msc-core::text`, not in the modal.
+
 ## Testing and checks
 
-- Unit tests in `msc-core` cover scaffold creation, snapshot restore and
-  checkpoint restore.
-- `msc-api` tests cover command round-trips, unknown commands, statistics and a
-  real export file.
+- Unit tests in `msc-core` cover scaffold creation, snapshot restore, checkpoint
+  restore, document move/reparent, snapshot body text and line diff.
+- `msc-api` tests cover command round-trips, unknown commands, statistics,
+  reordering, snapshot comparison and a real export file.
 - `msc-core::script` tests cover scene and character classification, loose
   parsing and Fountain output.
 - The desktop binary has a `--screenshot` mode that draws 120 frames, captures
@@ -149,5 +159,7 @@ leaves the app can always be traced back to the project state that produced it.
 - **Local commenting:** if it is revisited, keep it file-based and versioned:
   store annotations in the project file or a sidecar file the writer owns, with
   no account, server or presence layer.
-- **Reordering:** add `document.move` to the command bus (parent + target
-  order), then wire drag-and-drop in the binder to it.
+- **Drag-and-drop:** `document.move` already handles sibling order and
+  reparenting. Wire egui drop zones in the binder to those methods.
+- **Word-level revisions:** add a finer diff unit and revision records beside
+  `snapshot.diff`; keep the line-level command backward compatible.

@@ -68,6 +68,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
 
 fn document_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut restore: Option<String> = None;
+    let mut compare: Option<String> = None;
     let mut snapshot = false;
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
@@ -246,6 +247,9 @@ fn document_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
                             if ui.small_button("Restore").clicked() {
                                 restore = Some(latest.id.clone());
                             }
+                            if ui.small_button("Compare").clicked() {
+                                compare = Some(latest.id.clone());
+                            }
                         });
                     });
                 });
@@ -254,6 +258,9 @@ fn document_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
 
     if snapshot {
         app.take_snapshot_public();
+    }
+    if let Some(snap_id) = compare {
+        app.open_diff(doc_id, &snap_id);
     }
     if let Some(snap_id) = restore {
         if let Some(doc) = app.ws.project.document_mut(doc_id) {
@@ -345,6 +352,7 @@ fn history_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
     }
     let snapshots: Vec<_> = doc.snapshots.iter().take(6).cloned().collect();
     let mut restore: Option<String> = None;
+    let mut compare: Option<String> = None;
     for (i, snap) in snapshots.iter().enumerate() {
         Frame::new()
             .fill(PANEL_2)
@@ -367,6 +375,9 @@ fn history_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
                         if ui.small_button("Restore").clicked() {
                             restore = Some(snap.id.clone());
                         }
+                        if ui.small_button("Compare").clicked() {
+                            compare = Some(snap.id.clone());
+                        }
                         if i == 0 {
                             pill(ui, "latest", SAGE, SAGE_SOFT);
                         }
@@ -382,6 +393,9 @@ fn history_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
         .min_size(Vec2::new(ui.available_width(), 28.0));
     if ui.add(btn).clicked() {
         app.view = View::History;
+    }
+    if let Some(snap_id) = compare {
+        app.open_diff(doc_id, &snap_id);
     }
     if let Some(snap_id) = restore {
         if let Some(doc) = app.ws.project.document_mut(doc_id) {

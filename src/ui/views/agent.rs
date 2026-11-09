@@ -185,7 +185,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
                         });
                         ui.add_space(4.0);
                         let output = if app.cmd_output.is_empty() {
-                            "Run a command to see its JSON response. Try “stats”, “document.list” or “compile_preview”."
+                            "Run a command to see its JSON response. Try “stats”, “document.list” or “export.preview”."
                                 .to_string()
                         } else {
                             app.cmd_output.clone()

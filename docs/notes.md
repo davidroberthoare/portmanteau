@@ -108,6 +108,29 @@ thing a visual check catches.
     layer. Existing project files still load because serde ignores the removed
     fields.
 
+17. **Made version comparison visible.** Added a line-level diff in the domain
+    core (`text::diff_lines`), `snapshot.diff` on the command bus, an MCP tool,
+    and a Compare version modal. The first version used a horizontal scroll and
+    dark red/green strips on a paper background; the screenshot showed clipped
+    prose and an inverted feel, so it now wraps long lines and uses pale paper
+    tints with dark ink. The comparison is opened from a Compare button beside
+    Restore in both the Versions screen and the inspector.
+18. **Made binder order editable.** Added `document.move` (`direction` or
+    `parent`), `Project::move_document` and `Project::reparent_document` with a
+    cycle guard. The binder gained up/down header arrows, row context-menu
+    items, and matching Edit-menu actions. Every path calls the same project
+    method, so an agent and a click cannot disagree.
+19. **Wrote the handoff.** Added `AGENTS.md` (rules, architecture, command
+    table, conventions, recipes, limits, traps) and `docs/roadmap.md` (import,
+    drag-and-drop, word-level revisions, layout, pickers, future collaboration,
+    packaging). Only the uppercase `AGENTS.md` is kept; a lowercase `agents.md`
+    would collide with it on case-insensitive file systems. Updated the README,
+    architecture and this log to match the new commands and screens.
+20. **Verified state.** `cargo build --workspace` and `cargo test --workspace`
+    pass; the screenshot mode still writes a populated 2880×1860 window; the
+    diff screen was reviewed directly with `SCRIPTORIUM_DIFF=1`. Export paths
+    were exercised again through `msc-cli`.
+
 ## Screen review notes
 
 - The writing screen reads as a book page rather than a form. The paper surface,
@@ -127,10 +150,11 @@ thing a visual check catches.
   shared review server, comments or network transport. The app is local-only;
   a future version could add file-based comments through version control, but
   nothing here depends on a server.
-- Drag-and-drop binder reordering. The command (`document.move`) should exist
-  before the gesture, so agents and the UI share behaviour.
-- Tracked changes and a visual diff between two snapshots. Restore exists;
-  comparison is the next versioning step.
+- Drag-and-drop binder reordering. One-step moves and reparenting exist on the
+  command bus and in the binder menus; the drag gesture is still to come.
+- Word-level changes, tracked changes and accept/reject hunks. A line-level
+  comparison and restore exist; revisions are the next versioning step.
+- Import of manuscripts (Fountain, FDX, DOCX). The product currently exports.
 - Native file pickers. Paths are typed, and the default export folder works
   without one.
 - Packaging installers for Windows/macOS. The code is cross-platform; the

@@ -309,6 +309,7 @@ fn snapshots_list(app: &mut ScriptoriumApp, ui: &mut egui::Ui, height: f32) {
                         );
                     }
                     let mut restore: Option<(String, String)> = None;
+                    let mut compare: Option<(String, String)> = None;
                     for (doc_id, title, snaps) in &docs {
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
@@ -356,6 +357,12 @@ fn snapshots_list(app: &mut ScriptoriumApp, ui: &mut egui::Ui, height: f32) {
                                                         snap.id.clone(),
                                                     ));
                                                 }
+                                                if ui.small_button("Compare").clicked() {
+                                                    compare = Some((
+                                                        doc_id.clone(),
+                                                        snap.id.clone(),
+                                                    ));
+                                                }
                                                 if i == 0 {
                                                     pill(ui, "latest", SAGE, SAGE_SOFT);
                                                 }
@@ -366,6 +373,9 @@ fn snapshots_list(app: &mut ScriptoriumApp, ui: &mut egui::Ui, height: f32) {
                             ui.add_space(3.0);
                         }
                         ui.add_space(6.0);
+                    }
+                    if let Some((doc_id, snap_id)) = compare {
+                        app.open_diff(&doc_id, &snap_id);
                     }
                     if let Some((doc_id, snap_id)) = restore {
                         if let Some(doc) = app.ws.project.document_mut(&doc_id) {

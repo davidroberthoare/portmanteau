@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Id, Key, Layout, Margin, RichText,
-    Stroke, TextEdit, Vec2,
+    ScrollArea, Stroke, TextEdit, Vec2,
 };
 
 use msc_api::Workspace;
@@ -99,6 +99,22 @@ pub struct Toast {
     pub kind: ToastKind,
 }
 
+/// A prepared revision comparison, owned by the shell so the modal can be
+/// drawn after the view that opened it has finished painting.
+#[derive(Clone)]
+pub struct DiffState {
+    pub doc_id: String,
+    pub doc_title: String,
+    pub snapshot_id: String,
+    pub snapshot_name: String,
+    pub created: String,
+    pub added: usize,
+    pub removed: usize,
+    pub words_before: u32,
+    pub words_after: u32,
+    pub lines: Vec<msc_core::DiffLine>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PathDialog {
     Open,
@@ -139,6 +155,7 @@ pub struct ScriptoriumApp {
     pub cmd_selected: usize,
     pub path_dialog: Option<PathDialog>,
     pub path_draft: String,
+    pub diff: Option<DiffState>,
     pub outline_filter: usize,
     pub screenshot: Option<PathBuf>,
     pub frame_no: u32,
@@ -174,7 +191,7 @@ impl ScriptoriumApp {
         if let Some(manuscript) = ws.project.folder_id("Manuscript") {
             collapsed.remove(&manuscript);
         }
-        Self {
+        let mut app = Self {
             ws,
             view: initial_view(),
             selected,
@@ -201,13 +218,26 @@ impl ScriptoriumApp {
             cmd_selected: 0,
             path_dialog: None,
             path_draft: String::new(),
+            diff: None,
             outline_filter: 0,
             screenshot,
             frame_no: 0,
             screenshot_requested: false,
             screenshot_saved: false,
             editor_font_size: 17.0,
+        };
+        // Development aid: open the first available comparison so the diff
+        // screen can be reviewed (and screenshotted) without clicking.
+        if std::env::var("SCRIPTORIUM_DIFF").is_ok() {
+            if let Some((doc_id, snap_id)) = app.ws.project.documents.iter().find_map(|d| {
+                d.snapshots
+                    .first()
+                    .map(|s| (d.id.clone(), s.id.clone()))
+            }) {
+                app.open_diff(&doc_id, &snap_id);
+            }
         }
+        app
     }
 
     pub fn current_doc(&self) -> Option<&msc_core::Document> {
@@ -229,6 +259,45 @@ impl ScriptoriumApp {
         self.selected = Some(id);
         self.selected_block = 0;
         self.view = View::Write;
+    }
+
+    /// Build a line-level comparison between a saved snapshot and the current
+    /// document. The same operation is available as `snapshot.diff` to agents.
+    pub fn open_diff(&mut self, doc_id: &str, snap_id: &str) {
+        let Some(doc) = self.ws.project.document(doc_id) else {
+            return;
+        };
+        let Some(snap) = doc.snapshots.iter().find(|s| s.id == snap_id) else {
+            return;
+        };
+        let lines = msc_core::diff_lines(&snap.body_text(), &doc.body_text());
+        let (added, removed) = msc_core::diff_counts(&lines);
+        self.diff = Some(DiffState {
+            doc_id: doc_id.to_string(),
+            doc_title: doc.title.clone(),
+            snapshot_id: snap.id.clone(),
+            snapshot_name: snap.name.clone(),
+            created: snap.created.clone(),
+            added,
+            removed,
+            words_before: snap.words,
+            words_after: doc.words(),
+            lines,
+        });
+    }
+
+    /// Reorder the open document among its siblings. Returns true when the
+    /// document actually moved.
+    pub fn move_selected(&mut self, direction: i32) -> bool {
+        let Some(id) = self.selected.clone() else {
+            return false;
+        };
+        if self.ws.project.move_document(&id, direction) {
+            self.ws.dirty = true;
+            true
+        } else {
+            false
+        }
     }
 
     fn save_project(&mut self) {
@@ -460,6 +529,15 @@ impl ScriptoriumApp {
             }
             if ui.button("Take snapshot").clicked() {
                 self.take_snapshot();
+                ui.close_menu();
+            }
+            ui.separator();
+            if ui.button("Move document up").clicked() {
+                self.move_selected(-1);
+                ui.close_menu();
+            }
+            if ui.button("Move document down").clicked() {
+                self.move_selected(1);
                 ui.close_menu();
             }
         });
@@ -785,7 +863,7 @@ impl ScriptoriumApp {
                         "Binder, corkboard and outline for long-form structure",
                         "Prose and screenplay editors with typed elements",
                         "Research, idea board, characters and story beats",
-                        "Document snapshots, project checkpoints and restore",
+                        "Snapshots, checkpoints, version comparison and restore",
                         "PDF, EPUB, DOCX, Final Draft, Fountain, HTML, Markdown, RTF and text",
                         "A JSON command API and an MCP server under the desktop UI",
                     ] {
@@ -809,6 +887,200 @@ impl ScriptoriumApp {
 
         self.idea_modal(ctx);
         self.path_modal(ctx);
+        self.diff_modal(ctx);
+    }
+
+    fn diff_modal(&mut self, ctx: &egui::Context) {
+        let Some(state) = self.diff.clone() else { return };
+        let mut open = true;
+        let mut close = false;
+        let mut restore = false;
+        egui::Window::new("Compare version")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .min_width(780.0)
+            .max_width(980.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new(&state.doc_title)
+                                .font(serif(20.0))
+                                .color(TEXT),
+                        );
+                        ui.label(
+                            RichText::new(format!(
+                                "{} · saved {} · {} words then, {} now",
+                                state.snapshot_name,
+                                state.created,
+                                state.words_before,
+                                state.words_after
+                            ))
+                            .font(sans(10.0))
+                            .color(FAINT),
+                        );
+                    });
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui.button("Close").clicked() {
+                            close = true;
+                        }
+                        if matches!(state.added + state.removed, 0) {
+                            pill(ui, "No changes", SAGE, SAGE_SOFT);
+                        } else {
+                            if state.removed > 0 {
+                                pill(
+                                    ui,
+                                    &format!("−{} removed", state.removed),
+                                    RED,
+                                    Color32::from_rgb(58, 34, 31),
+                                );
+                            }
+                            if state.added > 0 {
+                                pill(
+                                    ui,
+                                    &format!("+{} added", state.added),
+                                    SAGE,
+                                    SAGE_SOFT,
+                                );
+                            }
+                        }
+                    });
+                });
+                ui.add_space(8.0);
+                hairline(ui);
+                ui.add_space(4.0);
+
+                Frame::new()
+                    .fill(PAPER)
+                    .stroke(Stroke::new(1.0, PAPER_EDGE))
+                    .corner_radius(CornerRadius::same(4))
+                    .inner_margin(Margin::symmetric(8, 6))
+                    .show(ui, |ui| {
+                        ScrollArea::vertical()
+                            .id_salt("diff_scroll")
+                            .auto_shrink([false, false])
+                            .max_height(430.0)
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                if state.lines.is_empty() {
+                                    ui.label(
+                                        RichText::new("Both versions are empty.")
+                                            .font(mono(10.0))
+                                            .color(PAPER_MUTED),
+                                    );
+                                }
+                                for line in &state.lines {
+                                    let (sigil, sigil_color, fill, text_color) = match line.kind {
+                                        msc_core::DiffKind::Same => (
+                                            " ",
+                                            PAPER_MUTED,
+                                            PAPER,
+                                            if line.text.trim().is_empty() {
+                                                PAPER_MUTED
+                                            } else {
+                                                PAPER_TEXT
+                                            },
+                                        ),
+                                        msc_core::DiffKind::Add => (
+                                            "+",
+                                            Color32::from_rgb(72, 118, 86),
+                                            Color32::from_rgb(225, 238, 227),
+                                            Color32::from_rgb(32, 55, 39),
+                                        ),
+                                        msc_core::DiffKind::Remove => (
+                                            "−",
+                                            Color32::from_rgb(158, 75, 66),
+                                            Color32::from_rgb(245, 225, 220),
+                                            Color32::from_rgb(66, 34, 30),
+                                        ),
+                                    };
+                                    Frame::new()
+                                        .fill(fill)
+                                        .inner_margin(Margin::symmetric(4, 1))
+                                        .show(ui, |ui| {
+                                            ui.horizontal(|ui| {
+                                                ui.allocate_ui_with_layout(
+                                                    Vec2::new(58.0, 14.0),
+                                                    Layout::left_to_right(Align::Center),
+                                                    |ui| {
+                                                        ui.label(
+                                                            RichText::new(format!(
+                                                                "{:>3} {:>3}",
+                                                                line.old_line
+                                                                    .map(|n| n.to_string())
+                                                                    .unwrap_or_else(|| "·".into()),
+                                                                line.new_line
+                                                                    .map(|n| n.to_string())
+                                                                    .unwrap_or_else(|| "·".into()),
+                                                            ))
+                                                            .font(mono(8.5))
+                                                            .color(if line.kind
+                                                                == msc_core::DiffKind::Same
+                                                            {
+                                                                PAPER_MUTED
+                                                            } else {
+                                                                sigil_color
+                                                            }),
+                                                        );
+                                                    },
+                                                );
+                                                ui.label(
+                                                    RichText::new(sigil)
+                                                        .font(mono(10.5))
+                                                        .color(sigil_color),
+                                                );
+                                                ui.add(
+                                                    egui::Label::new(
+                                                        RichText::new(if line.text.is_empty() {
+                                                            " "
+                                                        } else {
+                                                            &line.text
+                                                        })
+                                                        .font(mono(10.0))
+                                                        .color(text_color),
+                                                    )
+                                                    .wrap(),
+                                                );
+                                            });
+                                        });
+                                }
+                            });
+                    });
+
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Restoring replaces the current text with this saved version.")
+                            .font(sans(9.5))
+                            .color(FAINT),
+                    );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui.button("Restore this version").clicked() {
+                            restore = true;
+                            close = true;
+                        }
+                    });
+                });
+            });
+
+        if restore {
+            if let Some(doc) = self.ws.project.document_mut(&state.doc_id) {
+                if doc.restore_snapshot(&state.snapshot_id) {
+                    self.ws.dirty = true;
+                    self.selected = Some(state.doc_id.clone());
+                    self.toast(
+                        "Version restored",
+                        format!("Replaced with “{}”", state.snapshot_name),
+                        ToastKind::Info,
+                    );
+                }
+            }
+        }
+        if !open || close {
+            self.diff = None;
+        }
     }
 
     fn path_modal(&mut self, ctx: &egui::Context) {
