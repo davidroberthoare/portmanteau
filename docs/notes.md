@@ -441,3 +441,34 @@ of the preview and the medium switcher is hidden because the preview is
 read-only. The hint above the pages says "Read-only page preview — switch to
 Continuous to edit". Limits: line lengths are estimated rather than measured by
 the font engine, paged mode is not editable, and running headers are not drawn.
+
+## Round 12 — offline spell-checking
+
+The editors now share a small pure-Rust checker in
+`crates/portmanteau-core/src/spell.rs`. It keeps a `HashSet<String>` built at
+start-up from `assets/words.txt` (about 104,000 entries, trimmed and
+lowercased). No Hunspell, network or new crate is involved.
+
+Tokenising splits on anything that is not alphabetic but keeps internal
+apostrophes and hyphens, so `don't` and `well-known` stay one token. Tokens with
+no letters or a single letter are skipped, and repeated words are only reported
+once, in first-seen order. `check_word` strips edge punctuation, accepts a
+possessive when its stem is known (`cat's` -> `cat`), and accepts a plain plural
+when its stem is known. Suggestions compute Levenshtein distance against the
+whole dictionary, keep candidates within distance two, then sort by distance and
+alphabetically and take the requested limit.
+
+The Write toolbar shows `Spelling · N` when the selected document has
+misspellings (`Spelling` when it does not). Clicking it opens a strip directly
+below the toolbar and above the paper. Each misspelled word is a collapsible
+row with its top three suggestions; clicking a suggestion replaces that token in
+`text` or in the script `blocks` after the draw pass, following the borrow-safe
+view pattern. A word with no close matches shows `(no suggestions)`. The
+replace is case-insensitive and preserves a leading capital. Spell-checking can
+be switched off with the new "Spell-checking in editors" checkbox in Settings;
+the preference lives in the global `AppSettings`.
+
+Limits: the suggestions scan the whole word list per open row and there is no
+personal dictionary or "ignore" list yet. Hyphenated compounds are checked as a
+single word, so a compound that is absent from the bundled list is reported even
+when both halves are known.

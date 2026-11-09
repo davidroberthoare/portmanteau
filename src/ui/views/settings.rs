@@ -97,6 +97,32 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             .inner_margin(Margin::symmetric(14, 10))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
+                section_label(ui, "Editing");
+                ui.add_space(4.0);
+                ui.checkbox(
+                    &mut app.settings.spellcheck,
+                    RichText::new("Spell-checking in editors")
+                        .font(sans(10.5))
+                        .color(MUTED),
+                );
+                ui.add_space(2.0);
+                ui.label(
+                    RichText::new(
+                        "The Write toolbar shows a Spelling panel with suggestions. Save defaults to keep this setting.",
+                    )
+                    .font(sans(9.5))
+                    .color(FAINT),
+                );
+            });
+
+        ui.add_space(10.0);
+        Frame::new()
+            .fill(BG)
+            .stroke(Stroke::new(1.0, BORDER_SOFT))
+            .corner_radius(CornerRadius::same(8))
+            .inner_margin(Margin::symmetric(14, 10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new("New projects copy these defaults automatically.")

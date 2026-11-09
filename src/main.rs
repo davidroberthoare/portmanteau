@@ -8,6 +8,7 @@
 mod app;
 mod icons;
 mod settings;
+mod spellcheck;
 mod theme;
 mod ui;
 

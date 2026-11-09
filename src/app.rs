@@ -188,6 +188,8 @@ pub struct PortmanteauApp {
     pub screenshot_requested: bool,
     pub screenshot_saved: bool,
     pub editor_font_size: f32,
+    pub spell: portmanteau_core::spell::SpellChecker,
+    pub show_spelling: bool,
 }
 
 impl PortmanteauApp {
@@ -255,6 +257,8 @@ impl PortmanteauApp {
             screenshot_requested: false,
             screenshot_saved: false,
             editor_font_size: 17.0,
+            spell: crate::spellcheck::load(),
+            show_spelling: false,
         };
         // Development aid: open the first available comparison so the diff
         // screen can be reviewed (and screenshotted) without clicking.

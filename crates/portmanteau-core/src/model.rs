@@ -658,12 +658,16 @@ impl ElementStyles {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct AppSettings {
     pub styles: ElementStyles,
+    /// Show the spelling panel and check words in the editors.
+    #[serde(default = "default_true")]
+    pub spellcheck: bool,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             styles: ElementStyles::default(),
+            spellcheck: true,
         }
     }
 }

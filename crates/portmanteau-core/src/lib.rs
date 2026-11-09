@@ -8,6 +8,7 @@
 pub mod model;
 pub mod sample;
 pub mod script;
+pub mod spell;
 pub mod text;
 
 pub use model::*;

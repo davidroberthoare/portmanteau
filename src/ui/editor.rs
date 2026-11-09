@@ -16,16 +16,34 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .selected
         .clone()
         .filter(|id| app.ws.project.document(id).is_some());
+    let miss = if app.settings.spellcheck {
+        doc_id
+            .as_ref()
+            .and_then(|id| app.ws.project.document(id))
+            .map(|doc| app.spell.misspellings(&doc.body_text()))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let page_plan = match (&doc_id, app.write_mode) {
         (Some(id), WriteMode::Paged) => build_page_plan(app, id),
         _ => None,
     };
-    toolbar(app, ui, page_plan.as_ref().map(|plan| plan.pages.len()));
+    toolbar(
+        app,
+        ui,
+        page_plan.as_ref().map(|plan| plan.pages.len()),
+        miss.len(),
+    );
 
     let Some(doc_id) = doc_id else {
         empty_state(app, ui);
         return;
     };
+
+    if app.settings.spellcheck && app.show_spelling {
+        spelling_panel(app, ui, &doc_id, &miss);
+    }
 
     if app.write_mode == WriteMode::Paged {
         let plan = page_plan.unwrap_or_else(|| {
@@ -84,7 +102,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     }
 }
 
-fn toolbar(app: &mut PortmanteauApp, ui: &mut egui::Ui, page_total: Option<usize>) {
+fn toolbar(
+    app: &mut PortmanteauApp,
+    ui: &mut egui::Ui,
+    page_total: Option<usize>,
+    miss_count: usize,
+) {
     Frame::new()
         .fill(Color32::from_rgb(21, 24, 29))
         .inner_margin(Margin::symmetric(16, 7))
@@ -135,6 +158,33 @@ fn toolbar(app: &mut PortmanteauApp, ui: &mut egui::Ui, page_total: Option<usize
                         .corner_radius(CornerRadius::same(5));
                     if ui.add(snap).on_hover_text("Save a version of this document").clicked() {
                         app.take_snapshot_public();
+                    }
+
+                    if app.settings.spellcheck {
+                        let label = if miss_count > 0 {
+                            format!("Spelling · {miss_count}")
+                        } else {
+                            "Spelling".to_string()
+                        };
+                        let color = if app.show_spelling {
+                            ACCENT
+                        } else if miss_count > 0 {
+                            MUTED
+                        } else {
+                            FAINT
+                        };
+                        let spell = egui::Button::new(
+                            RichText::new(label).font(sans(10.5)).color(color),
+                        )
+                        .fill(if app.show_spelling { ACCENT_SOFT } else { PANEL_2 })
+                        .corner_radius(CornerRadius::same(5));
+                        if ui
+                            .add(spell)
+                            .on_hover_text("Review misspellings and apply suggestions")
+                            .clicked()
+                        {
+                            app.show_spelling = !app.show_spelling;
+                        }
                     }
 
                     // Continuous vs Paged. Paged is a read-only print preview.
@@ -242,6 +292,166 @@ fn toolbar(app: &mut PortmanteauApp, ui: &mut egui::Ui, page_total: Option<usize
                 }
             });
         });
+}
+
+/// The spelling review strip under the toolbar. Suggestions are collected
+/// during the draw and the replacement is applied after it, so the document is
+/// never borrowed while the widgets run (AGENTS.md §8).
+fn spelling_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, miss: &[String]) {
+    let mut action: Option<(String, String)> = None;
+    Frame::new()
+        .fill(Color32::from_rgb(21, 24, 29))
+        .inner_margin(Margin::symmetric(16, 8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!("Spelling · {}", miss.len()))
+                        .font(sans(10.5))
+                        .color(if miss.is_empty() { FAINT } else { MUTED }),
+                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let close = egui::Button::new(
+                        RichText::new("Close").font(sans(9.5)).color(FAINT),
+                    )
+                    .frame(false);
+                    if ui.add(close).clicked() {
+                        app.show_spelling = false;
+                    }
+                });
+            });
+            if miss.is_empty() {
+                ui.label(
+                    RichText::new("No misspellings found in this document.")
+                        .font(sans(9.5))
+                        .color(FAINT),
+                );
+            } else {
+                ScrollArea::vertical()
+                    .id_salt("spelling_list")
+                    .max_height(150.0)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        for word in miss {
+                            let suggestions = app.spell.suggest(word, 3);
+                            egui::CollapsingHeader::new(
+                                RichText::new(word).font(mono(10.0)).color(MUTED),
+                            )
+                            .id_salt(("spelling_word", word.as_str()))
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                ui.horizontal_wrapped(|ui| {
+                                    if suggestions.is_empty() {
+                                        ui.label(
+                                            RichText::new("(no suggestions)")
+                                                .font(sans(9.5))
+                                                .color(FAINT),
+                                        );
+                                    } else {
+                                        for suggestion in &suggestions {
+                                            let button = egui::Button::new(
+                                                RichText::new(suggestion)
+                                                    .font(sans(9.5))
+                                                    .color(ACCENT),
+                                            )
+                                            .fill(PANEL_2)
+                                            .corner_radius(CornerRadius::same(4))
+                                            .min_size(Vec2::new(0.0, 18.0));
+                                            if ui.add(button).clicked() {
+                                                action = Some((
+                                                    word.clone(),
+                                                    suggestion.clone(),
+                                                ));
+                                            }
+                                        }
+                                    }
+                                });
+                            });
+                        }
+                    });
+            }
+        });
+
+    if let Some((word, replacement)) = action {
+        if let Some(doc) = app.ws.project.document_mut(doc_id) {
+            let mut changed = false;
+            if doc.medium.is_script() {
+                for block in &mut doc.blocks {
+                    let next = replace_word_in_text(&block.text, &word, &replacement);
+                    if next != block.text {
+                        block.text = next;
+                        changed = true;
+                    }
+                }
+            } else {
+                let next = replace_word_in_text(&doc.text, &word, &replacement);
+                if next != doc.text {
+                    doc.text = next;
+                    changed = true;
+                }
+            }
+            if changed {
+                doc.touch();
+                app.ws.dirty = true;
+            }
+        }
+    }
+}
+
+/// Replace a whole token in `text`, matching case-insensitively but keeping a
+/// leading capital if the original had one.
+fn replace_word_in_text(text: &str, target: &str, replacement: &str) -> String {
+    let target = target.to_lowercase();
+    let mut out = String::with_capacity(text.len());
+    let mut token = String::new();
+    for ch in text.chars() {
+        if ch.is_alphabetic() || ((ch == '\'' || ch == '-') && !token.is_empty()) {
+            token.push(ch);
+        } else {
+            flush_replacement(&mut token, &mut out, target.as_str(), replacement);
+            out.push(ch);
+        }
+    }
+    flush_replacement(&mut token, &mut out, target.as_str(), replacement);
+    out
+}
+
+fn flush_replacement(token: &mut String, out: &mut String, target: &str, replacement: &str) {
+    if token.is_empty() {
+        return;
+    }
+    let lower = token.to_lowercase();
+    let normalized = lower
+        .trim_matches(|c: char| !c.is_alphabetic() && c != '\'' && c != '-');
+    let normalized = normalized.trim_matches(|c: char| c == '\'' || c == '-');
+    if normalized == target {
+        out.push_str(&match_initial_case(token, replacement));
+    } else {
+        out.push_str(token);
+    }
+    token.clear();
+}
+
+fn match_initial_case(original: &str, replacement: &str) -> String {
+    let uppercase = original
+        .chars()
+        .find(|c| c.is_alphabetic())
+        .map(|c| c.is_uppercase())
+        .unwrap_or(false);
+    if !uppercase {
+        return replacement.to_string();
+    }
+    let mut chars = replacement.chars();
+    match chars.next() {
+        Some(first) => {
+            let mut out = String::new();
+            out.extend(first.to_uppercase());
+            out.push_str(chars.as_str());
+            out
+        }
+        None => String::new(),
+    }
 }
 
 fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_snapshot: &mut bool) {
