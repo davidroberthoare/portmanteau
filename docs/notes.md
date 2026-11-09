@@ -583,3 +583,29 @@ once.
 
 The empty-synopsis placeholder is presentation only (TextEdit hint text) and is
 never written back, so blank synopses stay blank.
+
+## Round 17 — Hunspell-backed spell-checking
+
+Detection now comes from the bundled Hunspell en_US dictionary
+(`assets/dict/en_US.aff` and `assets/dict/en_US.dic`) through `zspell` 0.5, a
+pure-Rust Hunspell implementation. `SpellChecker::new` takes the `.aff` and
+`.dic` contents plus the old `assets/words.txt` list; the dictionary is built
+once at start-up in `src/spellcheck.rs`. Because `zspell` applies the affix
+rules, real inflections are accepted (`running`, `bananas`, `cat's`) and
+plausible non-words are still flagged (`runnning`, `bananaz`).
+
+`misspellings` uses `Dictionary::check_indices`, so `zspell`'s Unicode word
+splitter decides token boundaries. Contractions are left alone and hyphenated
+compounds are split into parts that the dictionary can verify, which removes a
+class of false positives the old list-based checker had. Unique words are still
+reported once, in first-seen order.
+
+Suggestions deliberately stay on the old Levenshtein code over `words.txt`:
+`zspell`'s suggestion API is behind its unstable-suggestions feature, and the
+existing suggester already matches the editor's three-suggestion strip. The
+toolbar, replacement and Settings switch are unchanged.
+
+Limits: building the dictionary adds a short fixed cost to start-up, and
+suggestions can still differ from Hunspell's own ordering. Proper nouns and
+invented fiction names still show as misspellings, as before; a personal
+dictionary remains future work.

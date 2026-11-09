@@ -1,71 +1,70 @@
-//! A small, offline spell-checker.
+//! An offline spell-checker backed by a bundled Hunspell dictionary.
 //!
-//! The bundled word list is a plain newline-separated file. Everything here is
-//! deliberately pure: no crates, no network and no Hunspell dependencies. The
-//! desktop shell loads one [`SpellChecker`] at start-up and asks it for
+//! Detection uses [`zspell`], a pure-Rust Hunspell implementation, so inflected
+//! words (`running`, `bananas`, `cat's`) are accepted the way a real word
+//! processor accepts them. Suggestions stay on the simpler bundled word list:
+//! zspell's suggestion API lives behind an unstable feature flag, so the
+//! existing Levenshtein suggester is kept here instead.
+//!
+//! The desktop shell loads one [`SpellChecker`] at start-up and asks it for
 //! misspellings and suggestions while drawing an editor.
 
 use std::collections::HashSet;
 
-/// A set of lowercase words plus edit-distance suggestions.
+/// A Hunspell dictionary plus a word list for edit-distance suggestions.
 pub struct SpellChecker {
+    dict: zspell::Dictionary,
     words: HashSet<String>,
 }
 
 impl SpellChecker {
-    /// Build a checker from newline-separated words. Blank lines are ignored
-    /// and every entry is trimmed and lowercased.
-    pub fn new(wordlist: &str) -> Self {
+    /// Build a checker from the Hunspell `.aff`/`.dic` contents and a
+    /// newline-separated word list used for suggestions. Blank word-list lines
+    /// are ignored and every entry is trimmed and lowercased.
+    pub fn new(aff: &str, dic: &str, wordlist: &str) -> Self {
+        let dict = zspell::builder()
+            .config_str(aff)
+            .dict_str(dic)
+            .build()
+            .expect("bundled Hunspell dictionary should be valid");
         let words = wordlist
             .lines()
             .map(|line| line.trim().to_lowercase())
             .filter(|word| !word.is_empty())
             .collect();
-        Self { words }
+        Self { dict, words }
     }
 
-    /// Is `word` in the dictionary? Leading/trailing punctuation is ignored,
-    /// and a possessive (`cat's`) is accepted when its stem (`cat`) is known.
+    /// Is `word` in the dictionary? Leading/trailing punctuation is ignored;
+    /// possessives and inflections are handled by Hunspell.
     pub fn check_word(&self, word: &str) -> bool {
         let word = normalize_word(word);
         if word.is_empty() {
             return true;
         }
-        if self.words.contains(&word) {
-            return true;
-        }
-        // Possessive: cat's -> cat.
-        if let Some(stem) = word.strip_suffix("'s") {
-            if !stem.is_empty() && self.words.contains(stem) {
-                return true;
-            }
-        }
-        // A plain plural that the list does not carry separately.
-        if let Some(stem) = word.strip_suffix('s') {
-            if stem.chars().count() > 1 && self.words.contains(stem) {
-                return true;
-            }
-        }
-        false
+        self.dict.check_word(&word)
     }
 
-    /// Unique misspelled words in first-seen order. Tokens are split on
-    /// non-alphabetic characters, but internal apostrophes and hyphens stay
-    /// attached so `don't` and `well-known` are checked as one word.
+    /// Unique misspelled words in first-seen order.
+    ///
+    /// Hunspell's own word splitter drives tokenisation, so contractions are
+    /// left alone and hyphenated compounds are split into parts the dictionary
+    /// can verify.
     pub fn misspellings(&self, text: &str) -> Vec<String> {
         let mut seen: HashSet<String> = HashSet::new();
         let mut out = Vec::new();
-        for token in tokens(text) {
-            let word = normalize_word(&token);
+        for (_, token) in self.dict.check_indices(text) {
+            let word = normalize_word(token);
+            // Skip empty fragments and single letters. Hunspell's splitter
+            // leaves the `s` of a possessive on its own, and one-letter words
+            // are never worth underlining.
             if word.chars().filter(|c| c.is_alphabetic()).count() <= 1 {
                 continue;
             }
             if !seen.insert(word.clone()) {
                 continue;
             }
-            if !self.check_word(&word) {
-                out.push(word);
-            }
+            out.push(word);
         }
         out
     }
@@ -107,24 +106,6 @@ fn normalize_word(word: &str) -> String {
         .to_string()
 }
 
-/// Split text into word-like runs. A run may contain internal apostrophes and
-/// hyphens, but other punctuation and whitespace are separators.
-fn tokens(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut current = String::new();
-    for ch in text.chars() {
-        if ch.is_alphabetic() || ((ch == '\'' || ch == '-') && !current.is_empty()) {
-            current.push(ch);
-        } else if !current.is_empty() {
-            out.push(std::mem::take(&mut current));
-        }
-    }
-    if !current.is_empty() {
-        out.push(current);
-    }
-    out
-}
-
 /// Levenshtein edit distance, two rolling rows so memory stays linear.
 fn levenshtein(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
@@ -155,7 +136,11 @@ mod tests {
     use super::*;
 
     fn bundled() -> SpellChecker {
-        SpellChecker::new(include_str!("../../../assets/words.txt"))
+        SpellChecker::new(
+            include_str!("../../../assets/dict/en_US.aff"),
+            include_str!("../../../assets/dict/en_US.dic"),
+            include_str!("../../../assets/words.txt"),
+        )
     }
 
     #[test]
@@ -190,23 +175,33 @@ mod tests {
         let spell = bundled();
         assert!(spell.check_word("cat's"));
         assert!(spell.check_word("runs"));
-        // Fall back to the stem even when the possessive is not listed.
-        let small = SpellChecker::new("cat\nruns\n");
-        assert!(small.check_word("cat's"));
-        assert!(small.check_word("cats"));
-        assert!(!small.check_word("catz's"));
+        assert!(spell.check_word("cats"));
+        assert!(!spell.check_word("catz's"));
     }
 
     #[test]
-    fn keeps_internal_apostrophes_and_hyphens() {
+    fn inflected_forms_are_understood() {
         let spell = bundled();
-        let miss = spell.misspellings("don't well-known qik's");
+        assert!(spell.check_word("running"));
+        assert!(spell.check_word("bananas"));
+        assert!(!spell.check_word("runnning"));
+        assert!(!spell.check_word("bananaz"));
+    }
+
+    #[test]
+    fn contractions_and_hyphenated_words_do_not_false_positive() {
+        let spell = bundled();
+        let miss = spell.misspellings("don't well-known qik's qik");
+        // Hunspell's splitter leaves contractions alone and splits a
+        // hyphenated compound into words it can verify.
         assert!(!miss.contains(&"don't".to_string()));
-        // The bundled list has no hyphenated entries, but the token must stay
-        // whole instead of becoming "well" and "known".
-        assert!(miss.contains(&"well-known".to_string()));
+        assert!(!miss.contains(&"well-known".to_string()));
         assert!(!miss.contains(&"well".to_string()));
         assert!(!miss.contains(&"known".to_string()));
-        assert!(miss.contains(&"qik's".to_string()));
+        assert!(!miss.contains(&"qik's".to_string()));
+        // The possessive's trailing `s` fragment must not be reported.
+        assert!(!miss.contains(&"s".to_string()));
+        assert!(miss.contains(&"qik".to_string()));
+        assert!(!miss.contains(&"-".to_string()));
     }
 }

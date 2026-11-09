@@ -44,10 +44,11 @@ PORTMANTEAU_DOC="Cold Harbor" ./target/debug/portmanteau --screenshot shots/scri
 - Focus mode, medium conversion, custom word targets and status labels.
 - Continuous vs Paged view: Paged is a read-only print preview that estimates
   page breaks from the active export format and shows page numbers.
-- Offline spell-checking in both prose and script editors: the Spelling toolbar
-  panel lists unique misspellings with up to three suggestions from a bundled
-  word list; click a suggestion to replace the word. It can be turned off in
-  Settings.
+- Offline spell-checking in both prose and script editors, backed by a bundled
+  Hunspell dictionary (en_US) so inflected forms such as `running` and `bananas`
+  are understood. The Spelling toolbar panel lists unique misspellings with up
+  to three suggestions from a bundled word list; click a suggestion to replace
+  the word. It can be turned off in Settings.
 
 **Structure**
 - Binder tree with parts, chapters, scenes, research, front matter and back
