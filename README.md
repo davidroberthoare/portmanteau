@@ -42,6 +42,8 @@ PORTMANTEAU_DOC="Cold Harbor" ./target/debug/portmanteau --screenshot shots/scri
 - Per-element colour and gutter, Tab/Shift-Tab to change type, Enter to add the
   next logical element, Backspace on an empty element to remove it.
 - Focus mode, medium conversion, custom word targets and status labels.
+- Continuous vs Paged view: Paged is a read-only print preview that estimates
+  page breaks from the active export format and shows page numbers.
 
 **Structure**
 - Binder tree with parts, chapters, scenes, research, front matter and back

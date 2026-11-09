@@ -89,6 +89,23 @@ fn initial_view() -> View {
         .unwrap_or(View::Write)
 }
 
+/// How the Write editor presents the page. Continuous is the editable paper;
+/// Paged is a read-only print preview built from the active export target.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WriteMode {
+    Continuous,
+    Paged,
+}
+
+impl WriteMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            WriteMode::Continuous => "Continuous",
+            WriteMode::Paged => "Paged",
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum InspectorTab {
     Document,
@@ -136,6 +153,10 @@ pub struct PortmanteauApp {
     pub ws: Workspace,
     pub settings: AppSettings,
     pub view: View,
+    pub write_mode: WriteMode,
+    /// The page currently at the top of the Paged preview, for the toolbar
+    /// readout. Updated after the pages are drawn.
+    pub paged_page: usize,
     pub selected: Option<String>,
     pub selected_block: usize,
     pub block_focus: Option<usize>,
@@ -201,6 +222,8 @@ impl PortmanteauApp {
             ws,
             settings,
             view: initial_view(),
+            write_mode: WriteMode::Continuous,
+            paged_page: 1,
             selected,
             selected_block: 0,
             block_focus: None,

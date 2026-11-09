@@ -4,19 +4,34 @@ use eframe::egui::{
     self, Align, Color32, ComboBox, CornerRadius, Frame, Id, Key, Layout, Margin, Modifiers,
     RichText, ScrollArea, Sense, Stroke, TextEdit, Vec2,
 };
-use portmanteau_core::{DocKind, ElementKind, Medium};
+use portmanteau_core::{
+    DocKind, Document, ElementKind, ElementStyle, ElementStyles, ExportSettings, Medium,
+};
 
-use crate::app::PortmanteauApp;
+use crate::app::{PortmanteauApp, WriteMode};
 use crate::theme::*;
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
-    toolbar(app, ui);
-    let Some(doc_id) = app.selected.clone() else {
+    let doc_id = app
+        .selected
+        .clone()
+        .filter(|id| app.ws.project.document(id).is_some());
+    let page_plan = match (&doc_id, app.write_mode) {
+        (Some(id), WriteMode::Paged) => build_page_plan(app, id),
+        _ => None,
+    };
+    toolbar(app, ui, page_plan.as_ref().map(|plan| plan.pages.len()));
+
+    let Some(doc_id) = doc_id else {
         empty_state(app, ui);
         return;
     };
-    if app.ws.project.document(&doc_id).is_none() {
-        empty_state(app, ui);
+
+    if app.write_mode == WriteMode::Paged {
+        let plan = page_plan.unwrap_or_else(|| {
+            build_page_plan(app, &doc_id).unwrap_or_else(empty_page_plan)
+        });
+        paged_view(app, ui, &plan);
         return;
     }
 
@@ -69,7 +84,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     }
 }
 
-fn toolbar(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
+fn toolbar(app: &mut PortmanteauApp, ui: &mut egui::Ui, page_total: Option<usize>) {
     Frame::new()
         .fill(Color32::from_rgb(21, 24, 29))
         .inner_margin(Margin::symmetric(16, 7))
@@ -113,6 +128,7 @@ fn toolbar(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     );
                 }
 
+                let mut new_mode = app.write_mode;
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let snap = egui::Button::new(RichText::new("Snapshot").font(sans(10.5)).color(MUTED))
                         .fill(PANEL_2)
@@ -120,6 +136,46 @@ fn toolbar(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     if ui.add(snap).on_hover_text("Save a version of this document").clicked() {
                         app.take_snapshot_public();
                     }
+
+                    // Continuous vs Paged. Paged is a read-only print preview.
+                    if app.write_mode == WriteMode::Paged {
+                        if let Some(total) = page_total {
+                            let current = app.paged_page.clamp(1, total.max(1));
+                            pill(ui, &format!("Page {current} of {total}"), FAINT, PANEL_2);
+                        }
+                    }
+                    Frame::new()
+                        .fill(PANEL_2)
+                        .corner_radius(CornerRadius::same(5))
+                        .inner_margin(Margin::symmetric(2, 1))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 1.0;
+                                ui.spacing_mut().button_padding = Vec2::new(4.0, 2.0);
+                                for mode in [WriteMode::Continuous, WriteMode::Paged] {
+                                    let active = new_mode == mode;
+                                    let btn = egui::Button::new(
+                                        RichText::new(mode.label())
+                                            .font(sans(9.5))
+                                            .color(if active { ACCENT } else { MUTED }),
+                                    )
+                                    .fill(if active { ACCENT_SOFT } else { PANEL_2 })
+                                    .corner_radius(CornerRadius::same(4))
+                                    .min_size(Vec2::new(0.0, 19.0));
+                                    if ui
+                                        .add(btn)
+                                        .on_hover_text(match mode {
+                                            WriteMode::Continuous => "Edit the single paper page",
+                                            WriteMode::Paged => "Read-only page preview",
+                                        })
+                                        .clicked()
+                                    {
+                                        new_mode = mode;
+                                    }
+                                }
+                            });
+                        });
+
                     let focus = egui::Button::new(
                         RichText::new(if app.focus_mode { "Exit focus" } else { "Focus" })
                             .font(sans(10.5))
@@ -131,26 +187,31 @@ fn toolbar(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         app.focus_mode = !app.focus_mode;
                     }
 
-                    let mut new_medium = medium;
-                    ComboBox::from_id_salt("editor_medium")
-                        .selected_text(RichText::new(medium.label()).font(sans(10.5)).color(MUTED))
-                        .width(98.0)
-                        .show_ui(ui, |ui| {
-                            for m in [
-                                Medium::Prose,
-                                Medium::Screenplay,
-                                Medium::StagePlay,
-                                Medium::TvScript,
-                            ] {
-                                ui.selectable_value(&mut new_medium, m, m.label());
+                    // Paged mode is a read-only preview, so the medium
+                    // switcher is hidden there and the space goes to the page
+                    // readout instead.
+                    if app.write_mode == WriteMode::Continuous {
+                        let mut new_medium = medium;
+                        ComboBox::from_id_salt("editor_medium")
+                            .selected_text(RichText::new(medium.label()).font(sans(10.5)).color(MUTED))
+                            .width(98.0)
+                            .show_ui(ui, |ui| {
+                                for m in [
+                                    Medium::Prose,
+                                    Medium::Screenplay,
+                                    Medium::StagePlay,
+                                    Medium::TvScript,
+                                ] {
+                                    ui.selectable_value(&mut new_medium, m, m.label());
+                                }
+                            });
+                        if new_medium != medium {
+                            if let Some(doc) = app.ws.project.document_mut(&id) {
+                                doc.convert_medium(new_medium);
+                                app.ws.dirty = true;
+                                app.block_focus = Some(0);
+                                app.selected_block = 0;
                             }
-                        });
-                    if new_medium != medium {
-                        if let Some(doc) = app.ws.project.document_mut(&id) {
-                            doc.convert_medium(new_medium);
-                            app.ws.dirty = true;
-                            app.block_focus = Some(0);
-                            app.selected_block = 0;
                         }
                     }
                     let stats = app.ws.project.document(&id).map(|d| {
@@ -173,6 +234,12 @@ fn toolbar(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         }
                     }
                 });
+                if new_mode != app.write_mode {
+                    if new_mode == WriteMode::Paged {
+                        app.paged_page = 1;
+                    }
+                    app.write_mode = new_mode;
+                }
             });
         });
 }
@@ -222,6 +289,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         }
         ui.add_space(26.0);
         let words = doc.words();
+        let pages = doc.pages();
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(format!("{} words  ·  {} min read", words, portmanteau_core::reading_minutes(words)))
@@ -229,7 +297,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                     .color(PAPER_MUTED),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new("1").font(serif(9.0)).color(PAPER_MUTED));
+                ui.label(RichText::new(format!("{pages}")).font(serif(9.0)).color(PAPER_MUTED));
             });
         });
         let _ = take_snapshot;
@@ -575,6 +643,363 @@ fn paper_rule(ui: &mut egui::Ui) {
         [rect.left_center(), rect.right_center()],
         Stroke::new(1.0, PAPER_EDGE),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Paged (print preview) view
+// ---------------------------------------------------------------------------
+
+/// One rendered line inside a page. The paging estimator fills pages with these
+/// so a page break can fall between any two lines.
+struct PageLine {
+    text: String,
+    size: f32,
+    lead: f32,
+    gap_before: f32,
+    mono: bool,
+    indent: f32,
+    right: bool,
+}
+
+/// An estimated pagination of one document. Geometry and the pages themselves
+/// are owned so the view can draw without borrowing the project.
+struct PagePlan {
+    page_w: f32,
+    content_w: f32,
+    content_h: f32,
+    pages: Vec<Vec<PageLine>>,
+}
+
+fn empty_page_plan() -> PagePlan {
+    PagePlan {
+        page_w: 444.0,
+        content_w: 336.0,
+        content_h: 552.0,
+        pages: vec![Vec::new()],
+    }
+}
+
+/// Page size from the active export target's paper, mapped into egui points at
+/// a readable on-screen scale (1 mm ~ 3 points). Margins match the continuous
+/// paper: 54 pt left/right, 44 top, 34 bottom.
+fn page_geometry(settings: &ExportSettings) -> (f32, f32) {
+    let (mm_w, mm_h) = settings.paper.mm();
+    ((mm_w * 3.0).clamp(420.0, 760.0), (mm_h * 3.0).max(520.0))
+}
+
+fn build_page_plan(app: &PortmanteauApp, doc_id: &str) -> Option<PagePlan> {
+    let doc = app.ws.project.document(doc_id)?;
+    let settings = app.ws.project.settings_for(app.ws.project.export.kind);
+    Some(if doc.medium.is_script() {
+        script_plan(doc, &settings)
+    } else {
+        prose_plan(doc, &settings)
+    })
+}
+
+/// Best-effort prose paging. Paragraphs are wrapped to the text width with a
+/// character-width estimate (`size * 0.55`), then lines are packed until the
+/// page's text height is used up.
+fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
+    let (page_w, page_h) = page_geometry(settings);
+    let content_w = page_w - 108.0;
+    let content_h = page_h - 78.0;
+    let body = &settings.styles.body;
+    let heading = &settings.styles.chapter_heading;
+    let body_size = body.size.max(6.0);
+    let line_h = (body_size * body.leading.max(0.8)).max(8.0);
+    let chars_per_line = (content_w / (body_size * 0.5)).floor().max(10.0) as usize;
+
+    let mut pages: Vec<Vec<PageLine>> = vec![Vec::new()];
+    let mut used = 0.0f32;
+
+    // The chapter title sits at the top of the first page, set with the
+    // chapter-heading style.
+    let title = doc.title.trim();
+    if !title.is_empty() {
+        let title_size = heading.size.max(body_size);
+        let title_lead = (title_size * heading.leading.max(0.9)).max(10.0);
+        pages[0].push(PageLine {
+            text: title.to_string(),
+            size: title_size,
+            lead: title_lead,
+            gap_before: 0.0,
+            mono: false,
+            indent: 0.0,
+            right: false,
+        });
+        used += title_lead;
+        let gap = line_h * 0.9;
+        pages[0].push(PageLine {
+            text: " ".into(),
+            size: body_size,
+            lead: line_h,
+            gap_before: gap,
+            mono: false,
+            indent: 0.0,
+            right: false,
+        });
+        used += gap + line_h;
+    }
+
+    for paragraph in doc.body_text().split("\n\n") {
+        let paragraph = paragraph.trim();
+        if paragraph.is_empty() {
+            continue;
+        }
+        for (i, text) in wrap_words(paragraph, chars_per_line).into_iter().enumerate() {
+            let mut gap = if i == 0 && !pages.last().unwrap().is_empty() {
+                line_h * 0.45
+            } else {
+                0.0
+            };
+            if used + gap + line_h > content_h && !pages.last().unwrap().is_empty() {
+                pages.push(Vec::new());
+                used = 0.0;
+                gap = 0.0;
+            }
+            if pages.last().unwrap().is_empty() {
+                gap = 0.0;
+            }
+            pages.last_mut().unwrap().push(PageLine {
+                text,
+                size: body_size,
+                lead: line_h,
+                gap_before: gap,
+                mono: false,
+                indent: 0.0,
+                right: false,
+            });
+            used += gap + line_h;
+        }
+    }
+
+    PagePlan {
+        page_w,
+        content_w,
+        content_h,
+        pages,
+    }
+}
+
+/// Script paging: roughly 55 typed lines per page, with each block's wrapped
+/// height counted in those lines. The page keeps the paper width and frame but
+/// grows tall enough for all 55 lines.
+fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
+    let (page_w, _) = page_geometry(settings);
+    let content_w = page_w - 108.0;
+    let base = &settings.styles.action;
+    let base_size = base.size.max(7.0);
+    let base_line = (base_size * base.leading.max(0.85)).max(9.0);
+    let lines_per_page = 55.0f32;
+    let content_h = base_line * lines_per_page;
+
+    let mut pages: Vec<Vec<PageLine>> = vec![Vec::new()];
+    let mut used = 0.0f32;
+
+    for (index, block) in doc.blocks.iter().enumerate() {
+        let style = script_element_style(&settings.styles, block.kind);
+        let size = style.size.max(6.0);
+        let lead = (size * style.leading.max(0.85)).max(8.0);
+        let indent = style.indent.max(0.0).min(content_w * 0.42);
+        let chars_per_line = ((content_w - indent) / (size * 0.6))
+            .floor()
+            .max(8.0) as usize;
+        let wrapped = wrap_words(&block.text, chars_per_line);
+        let block_lines = (wrapped.len() as f32 * lead / base_line).max(1.0);
+        let mut gap_lines = if index == 0 || block.kind.is_dialogue() {
+            0.0
+        } else {
+            0.4
+        };
+        if used + gap_lines + block_lines > lines_per_page
+            && !pages.last().unwrap().is_empty()
+        {
+            pages.push(Vec::new());
+            used = 0.0;
+            gap_lines = 0.0;
+        }
+        if pages.last().unwrap().is_empty() {
+            gap_lines = 0.0;
+        }
+        for (i, text) in wrapped.into_iter().enumerate() {
+            pages.last_mut().unwrap().push(PageLine {
+                text,
+                size,
+                lead,
+                gap_before: if i == 0 { gap_lines * base_line } else { 0.0 },
+                mono: true,
+                indent,
+                right: block.kind == ElementKind::Transition,
+            });
+        }
+        used += gap_lines + block_lines;
+    }
+
+    PagePlan {
+        page_w,
+        content_w,
+        content_h,
+        pages,
+    }
+}
+
+fn script_element_style<'a>(styles: &'a ElementStyles, kind: ElementKind) -> &'a ElementStyle {
+    match kind {
+        ElementKind::SceneHeading => &styles.scene_heading,
+        ElementKind::Action | ElementKind::Shot => &styles.action,
+        ElementKind::Character => &styles.character,
+        ElementKind::Parenthetical => &styles.parenthetical,
+        ElementKind::Dialogue | ElementKind::Lyric => &styles.dialogue,
+        ElementKind::Transition => &styles.transition,
+        ElementKind::Act => &styles.act,
+        ElementKind::Scene => &styles.scene,
+        ElementKind::StageDirection => &styles.stage_direction,
+        ElementKind::General => &styles.general,
+    }
+}
+
+/// Break a paragraph into display lines using an estimated character width.
+/// Wrapping happens on spaces; a single word longer than the line stays whole.
+fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
+    let max_chars = max_chars.max(4);
+    let mut out = Vec::new();
+    for raw in text.split('\n') {
+        let mut line = String::new();
+        for word in raw.split_whitespace() {
+            let word_len = word.chars().count();
+            if line.is_empty() {
+                line = word.to_string();
+            } else if line.chars().count() + 1 + word_len <= max_chars {
+                line.push(' ');
+                line.push_str(word);
+            } else {
+                out.push(std::mem::take(&mut line));
+                line = word.to_string();
+            }
+        }
+        if !line.is_empty() {
+            out.push(line);
+        } else if raw.trim().is_empty() && !out.is_empty() {
+            out.push(" ".into());
+        }
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
+fn paged_view(app: &mut PortmanteauApp, ui: &mut egui::Ui, plan: &PagePlan) {
+    let mut page_rects = Vec::with_capacity(plan.pages.len());
+    let mut viewport_top = f32::NEG_INFINITY;
+    ScrollArea::vertical()
+        .id_salt("editor_paged_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            viewport_top = ui.clip_rect().top();
+            ui.add_space(22.0);
+            ui.vertical_centered(|ui| {
+                ui.set_max_width(plan.page_w);
+                ui.label(
+                    RichText::new("Read-only page preview — switch to Continuous to edit")
+                        .font(sans(9.5))
+                        .color(FAINT),
+                );
+                ui.add_space(10.0);
+                for (index, page) in plan.pages.iter().enumerate() {
+                    page_rects.push(page_frame(ui, plan, page, index + 1));
+                    if index + 1 < plan.pages.len() {
+                        ui.add_space(26.0);
+                    }
+                }
+            });
+            ui.add_space(36.0);
+        });
+
+    // Which page has the top of the viewport scrolled into it? The toolbar
+    // reads this on the next frame.
+    app.paged_page = page_rects
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, rect)| rect.top() <= viewport_top + 1.0)
+        .map(|(index, _)| index + 1)
+        .unwrap_or(1)
+        .min(plan.pages.len().max(1));
+}
+
+fn page_frame(ui: &mut egui::Ui, plan: &PagePlan, lines: &[PageLine], number: usize) -> egui::Rect {
+    Frame::new()
+        .fill(PAPER)
+        .stroke(Stroke::new(1.0, PAPER_EDGE))
+        .corner_radius(CornerRadius::same(3))
+        .shadow(egui::epaint::Shadow {
+            offset: [0, 10],
+            blur: 34,
+            spread: 0,
+            color: Color32::from_black_alpha(90),
+        })
+        .inner_margin(Margin {
+            left: 54,
+            right: 54,
+            top: 44,
+            bottom: 34,
+        })
+        .show(ui, |ui| {
+            ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                ui.set_width(plan.content_w);
+                ui.spacing_mut().item_spacing = Vec2::ZERO;
+                let mut used = 0.0f32;
+                for line in lines {
+                    if line.gap_before > 0.0 {
+                        ui.add_space(line.gap_before);
+                        used += line.gap_before;
+                    }
+                    let rich = RichText::new(if line.text.is_empty() {
+                        " "
+                    } else {
+                        line.text.as_str()
+                    })
+                    .font(if line.mono {
+                        mono(line.size)
+                    } else {
+                        serif(line.size)
+                    })
+                    .color(PAPER_TEXT);
+                    if line.right {
+                        // Constrain the height: an unconstrained right-to-left
+                        // layout would swallow the rest of the page.
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(ui.available_width(), line.lead.max(8.0)),
+                            Layout::right_to_left(Align::Center),
+                            |ui| {
+                                ui.add(egui::Label::new(rich).wrap());
+                            },
+                        );
+                    } else if line.indent > 0.0 {
+                        ui.horizontal(|ui| {
+                            ui.add_space(line.indent);
+                            ui.add(egui::Label::new(rich).wrap());
+                        });
+                    } else {
+                        ui.add(egui::Label::new(rich).wrap());
+                    }
+                    used += line.lead;
+                }
+                let remaining = (plan.content_h - used).max(6.0);
+                ui.add_space(remaining);
+                ui.vertical_centered(|ui| {
+                    ui.label(
+                        RichText::new(format!("{number}"))
+                            .font(serif(9.0))
+                            .color(PAPER_MUTED),
+                    );
+                });
+            });
+        })
+        .response
+        .rect
 }
 
 fn empty_state(app: &mut PortmanteauApp, ui: &mut egui::Ui) {

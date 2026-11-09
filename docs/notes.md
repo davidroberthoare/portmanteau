@@ -415,3 +415,29 @@ prose lines, the title-page sizes for the title block, `chapter_heading.size`,
 element styles, including script font families and indents. DOCX and RTF still
 read `settings.font`; they are unchanged. `settings.font` remains the seeded
 copy used by those writers and by previews.
+
+## Round 11 — Continuous vs Paged view
+
+The Write toolbar now carries a small **Continuous / Paged** segmented control.
+Continuous is the existing editable paper. Paged is a deliberate read-only
+print preview: the document is split into discrete paper pages using the active
+export target's `PaperSize`, `styles.body` size/leading and the same 54/44/34
+inner margins as the continuous paper. It is the first version of page view;
+editing across pages is future work.
+
+Page breaks are estimates, in the spirit of Scrivener's page view. Prose is
+split on blank lines, each paragraph is word-wrapped with a `size * 0.5`
+character-width estimate, and lines are packed into the page's text height.
+Scripts are counted at roughly 55 typed lines per page, with each block's
+wrapped height and dialogue spacing accounted for. The prose paper width is the
+format's paper width in millimetres scaled by 3 (A5 is about 444 × 630 egui
+points), which keeps the preview readable without a real typesetter. Script
+pages keep the paper width but grow tall enough for 55 lines.
+
+Paged mode shows the document title at the top of the first page, left-aligned
+prose, indented script elements, transitions on the right, and a centred page
+number in each footer. The toolbar shows “Page N of M” for the page at the top
+of the preview and the medium switcher is hidden because the preview is
+read-only. The hint above the pages says "Read-only page preview — switch to
+Continuous to edit". Limits: line lengths are estimated rather than measured by
+the font engine, paged mode is not editable, and running headers are not drawn.
