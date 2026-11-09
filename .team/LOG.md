@@ -39,3 +39,14 @@
   explicit boneyard markers for ambiguous kinds. Accepted baseline is 7e812b5 (49 tests green).
 - Open follow-ups folded into Round 2: (RISK3) msc-mcp project_save description + missing
   project_open tool; (RISK4) Save-As still defaults extensionless paths to legacy .json.
+
+## Round 2 — DONE (commit c072dec)
+
+- Per-format ExportSettings (Project.formats) + per-project base style (Project.style),
+  seeded in sample::demo(); PDF page numbers/running headers; EPUB cover embedding; four
+  new commands (export.settings.get/update, style.get/update) + MCP tools + project_open;
+  compile UI per-format persistence + base-style editor + new toggles; Save-As folder default.
+- Build green; 58 tests pass (msc-api 10, msc-core 21, msc-export 10, msc-mcp 3, +14 round1).
+- Smoke: PDF page numbers on/off differ (footer count 0 vs 17); EPUB cover embeds cover-image/
+  cover.xhtml; EPUB settings distinct from PDF; compile screenshots non-blank.
+- Gate 1 (tester): pending.
