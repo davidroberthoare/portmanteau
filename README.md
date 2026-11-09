@@ -80,6 +80,12 @@ PORTMANTEAU_DOC="Cold Harbor" ./target/debug/portmanteau --screenshot shots/scri
   prose and script. Page numbers and running headers apply to PDF; an EPUB can
   reference a JPG or PNG cover image.
 
+**Defaults**
+- A **Settings** workspace edits the global per-element type defaults.
+- Defaults are saved to `$XDG_CONFIG_HOME/portmanteau/config.json` (falling back
+  to `~/.config/portmanteau/config.json`), applied to the current project on
+  demand, and copied into every new project.
+
 **Automation**
 - Every important action is a JSON command on a single workspace object.
 - `portmanteau-api` is the command bus; the UI uses it for creations and exports.
@@ -101,7 +107,8 @@ app/
       editor.rs         prose and screenplay surfaces
       inspector.rs      metadata, notes and versions
       views/            corkboard, outline, research, develop,
-                        characters, history, compile, command desk
+                        characters, history, compile, command desk,
+                        settings
   crates/
     portmanteau-core/           domain model, script parser, sample project
     portmanteau-export/         PDF, EPUB, DOCX, FDX, Fountain, HTML, MD, RTF, TXT, ZIP

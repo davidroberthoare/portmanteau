@@ -10,7 +10,7 @@ use eframe::egui::{
 };
 
 use portmanteau_api::Workspace;
-use portmanteau_core::{DocKind, ElementKind, Medium, ProjectKind};
+use portmanteau_core::{AppSettings, DocKind, ElementKind, Medium, ProjectKind};
 
 use crate::icons::{self, Icon};
 use crate::theme::*;
@@ -27,6 +27,7 @@ pub enum View {
     History,
     Compile,
     Agent,
+    Settings,
 }
 
 impl View {
@@ -41,6 +42,7 @@ impl View {
             View::History => "Versions",
             View::Compile => "Compile",
             View::Agent => "Command desk",
+            View::Settings => "Settings",
         }
     }
     pub fn icon(self) -> Icon {
@@ -54,9 +56,10 @@ impl View {
             View::History => Icon::History,
             View::Compile => Icon::Compile,
             View::Agent => Icon::Agent,
+            View::Settings => Icon::Settings,
         }
     }
-    pub fn all() -> [View; 9] {
+    pub fn all() -> [View; 10] {
         [
             View::Write,
             View::Corkboard,
@@ -67,6 +70,7 @@ impl View {
             View::History,
             View::Compile,
             View::Agent,
+            View::Settings,
         ]
     }
     /// Development aid: `PORTMANTEAU_VIEW=corkboard` opens a workspace
@@ -130,6 +134,7 @@ pub enum ToastKind {
 
 pub struct PortmanteauApp {
     pub ws: Workspace,
+    pub settings: AppSettings,
     pub view: View,
     pub selected: Option<String>,
     pub selected_block: usize,
@@ -191,8 +196,10 @@ impl PortmanteauApp {
         if let Some(draft) = ws.project.folder_id("Draft") {
             collapsed.remove(&draft);
         }
+        let settings = crate::settings::load_settings();
         let mut app = Self {
             ws,
+            settings,
             view: initial_view(),
             selected,
             selected_block: 0,
@@ -816,6 +823,7 @@ impl PortmanteauApp {
                     if ui.add_enabled(ready, btn).clicked() {
                         let title = self.new_project_title.trim().to_string();
                         self.ws = Workspace::new_project(&title, self.new_project_kind);
+                        self.ws.project.styles = self.settings.styles.clone();
                         let parent = self.ws.project.folder_id("Draft");
                         let id = self.ws.project.add_document(
                             parent,

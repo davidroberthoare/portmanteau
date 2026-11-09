@@ -127,6 +127,7 @@ the painter, so no image assets or icon font are required.
 | Versions | Checkpoints, snapshots, compare, calendar | checkpoint/restore/diff |
 | Compile | Format, matter and style choices | `export.run` |
 | Command desk | Raw API console | any command |
+| Settings | Global element-style defaults, saved to a local config file | `AppSettings` load/save, apply to project |
 
 ## Versioning model
 

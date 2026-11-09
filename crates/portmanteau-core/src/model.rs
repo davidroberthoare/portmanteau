@@ -653,6 +653,21 @@ impl ElementStyles {
     }
 }
 
+/// Global defaults that live outside any one project. The Settings workspace
+/// edits these and can copy them into the open project.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct AppSettings {
+    pub styles: ElementStyles,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            styles: ElementStyles::default(),
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }

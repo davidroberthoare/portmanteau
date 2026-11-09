@@ -374,3 +374,20 @@ silently falling back to the project's current kind. `export.settings.get` and
   list of elements with font, size, leading and indent. “Reset this format to
   base style” seeds from `body` for prose projects and `action` for script
   projects, matching `settings_for`.
+
+## Round 9 — global Settings workspace
+
+- **A tenth workspace.** `View::Settings` sits at the end of the rail. It edits
+  the global `AppSettings` instead of the open project.
+- **Config file.** Defaults are stored as pretty JSON at
+  `$XDG_CONFIG_HOME/portmanteau/config.json`, falling back to
+  `$HOME/.config/portmanteau/config.json`, then `./portmanteau-config.json`.
+  A missing or malformed file quietly loads the built-in `ElementStyles`.
+- **One editor, two owners.** The per-element style rows moved out of Compile
+  into `views::element_styles_editor`. Compile uses it for
+  `project.styles`; Settings uses it for `app.settings.styles`.
+- **Defaults flow.** "Save defaults" writes the config file, "Apply to current
+  project" copies the global styles into `project.styles` and marks the project
+  dirty, and "Reset defaults" restores the built-in styles. Creating a new
+  project copies the global defaults into it; the demonstration project keeps
+  its own styles.

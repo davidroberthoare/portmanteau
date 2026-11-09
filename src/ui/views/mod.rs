@@ -9,10 +9,12 @@ pub mod develop;
 pub mod history;
 pub mod outline;
 pub mod research;
+pub mod settings;
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, Stroke, Vec2,
+    self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, Stroke, TextEdit, Vec2,
 };
+use portmanteau_core::ElementStyles;
 
 use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
@@ -27,6 +29,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         View::History => history::show(app, ui),
         View::Compile => compile::show(app, ui),
         View::Agent => agent::show(app, ui),
+        View::Settings => settings::show(app, ui),
         View::Write => {}
     }
 }
@@ -113,6 +116,86 @@ pub fn meta_line(ui: &mut egui::Ui, parts: &[&str]) {
         .collect::<Vec<_>>()
         .join("  ·  ");
     ui.label(RichText::new(text).font(sans(9.5)).color(FAINT));
+}
+
+const ELEMENT_ROWS: [(&str, &str); 15] = [
+    ("Title page title", "title_page_title"),
+    ("Title page subtitle", "title_page_subtitle"),
+    ("Title page author", "title_page_author"),
+    ("Chapter heading", "chapter_heading"),
+    ("Body", "body"),
+    ("Scene heading", "scene_heading"),
+    ("Action", "action"),
+    ("Character", "character"),
+    ("Parenthetical", "parenthetical"),
+    ("Dialogue", "dialogue"),
+    ("Transition", "transition"),
+    ("Act", "act"),
+    ("Scene", "scene"),
+    ("Stage direction", "stage_direction"),
+    ("General", "general"),
+];
+
+/// The shared per-element style editor: one rounded row per manuscript
+/// element with font, size, leading and indent. Used by Compile (the current
+/// project) and Settings (the global defaults).
+pub fn element_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) {
+    for (label, key) in ELEMENT_ROWS {
+        if let Some(element) = styles.element_mut(key) {
+            element_row(ui, label, element);
+            ui.add_space(4.0);
+        }
+    }
+}
+
+fn element_row(ui: &mut egui::Ui, label: &str, element: &mut portmanteau_core::ElementStyle) {
+    Frame::new()
+        .fill(PANEL_2)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .corner_radius(CornerRadius::same(5))
+        .inner_margin(Margin::symmetric(10, 6))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_wrapped(|ui| {
+                ui.allocate_ui_with_layout(
+                    Vec2::new(118.0, 18.0),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        ui.label(RichText::new(label).font(sans(9.5)).color(TEXT));
+                    },
+                );
+                ui.add(
+                    TextEdit::singleline(&mut element.font)
+                        .hint_text("Font family")
+                        .font(mono(9.0))
+                        .desired_width(145.0),
+                );
+                ui.add_space(4.0);
+                ui.label(RichText::new("Size").font(sans(8.5)).color(FAINT));
+                ui.add(
+                    egui::DragValue::new(&mut element.size)
+                        .speed(0.1)
+                        .range(4.0..=72.0)
+                        .suffix(" pt"),
+                );
+                ui.add_space(4.0);
+                ui.label(RichText::new("Leading").font(sans(8.5)).color(FAINT));
+                ui.add(
+                    egui::DragValue::new(&mut element.leading)
+                        .speed(0.02)
+                        .range(0.5..=3.0)
+                        .suffix("×"),
+                );
+                ui.add_space(4.0);
+                ui.label(RichText::new("Indent").font(sans(8.5)).color(FAINT));
+                ui.add(
+                    egui::DragValue::new(&mut element.indent)
+                        .speed(0.5)
+                        .range(0.0..=800.0)
+                        .suffix(" pt"),
+                );
+            });
+        });
 }
 
 
