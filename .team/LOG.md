@@ -83,3 +83,11 @@
 - Round 7 (UI: Draft naming, folder creation, nav-button cleanup, script type-indicator removal): done, 68 tests.
 - Remaining: settings page + per-project style overrides; per-target per-element compile settings;
   multi-page (Continuous/Paged) view; spell-checking.
+
+## Phase 2 progress (continued)
+
+- Round 8 (per-element style model ElementStyles): done.
+- Round 9 (Settings workspace + global defaults store): done.
+- Round 10a (per-format per-element styles, data/API/UI): done.
+- Round 10b (PDF/EPUB/HTML writers consume per-element styles): done, 70 tests.
+- Remaining: multi-page (Continuous/Paged) view; spell-checking.

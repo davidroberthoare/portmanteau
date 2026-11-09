@@ -318,6 +318,41 @@ fn css_font_family(family: &str) -> String {
     format!("\"{}\", serif", safe)
 }
 
+/// The style that governs one screenplay element in the export writers.
+fn script_style<'a>(styles: &'a ElementStyles, kind: ElementKind) -> &'a ElementStyle {
+    match kind {
+        ElementKind::SceneHeading => &styles.scene_heading,
+        ElementKind::Action | ElementKind::Shot => &styles.action,
+        ElementKind::Character => &styles.character,
+        ElementKind::Parenthetical => &styles.parenthetical,
+        ElementKind::Dialogue | ElementKind::Lyric => &styles.dialogue,
+        ElementKind::Transition => &styles.transition,
+        ElementKind::Act => &styles.act,
+        ElementKind::Scene => &styles.scene,
+        ElementKind::StageDirection => &styles.stage_direction,
+        ElementKind::General => &styles.general,
+    }
+}
+
+/// CSS family for one element, falling back when its family is unset.
+fn element_css_font(style: &ElementStyle, fallback: &str) -> String {
+    let family = if style.font.trim().is_empty() {
+        fallback
+    } else {
+        style.font.as_str()
+    };
+    css_font_family(family)
+}
+
+/// CSS left margin: a point indent converted to characters, or the old percentage.
+fn element_css_indent(style: &ElementStyle, fallback: &str) -> String {
+    if style.indent > 0.0 {
+        format!("{:.2}ch", style.indent / 7.2)
+    } else {
+        fallback.to_string()
+    }
+}
+
 fn build_pdf(
     title: &str,
     author: &str,
@@ -507,9 +542,10 @@ impl PdfFlow {
         });
     }
 
-    /// A screenplay line: Courier, a fixed 13pt baseline, and its own indent.
-    fn script_line(&mut self, text: String, x: f32, bold: bool, gap_before: f32) {
-        let advance = 13.0;
+    /// A screenplay line: Courier, a baseline just past its type size, and its
+    /// own indent.
+    fn script_line(&mut self, text: String, x: f32, size: f32, bold: bool, gap_before: f32) {
+        let advance = size + 1.0;
         self.ensure(advance + gap_before);
         self.y -= gap_before;
         self.y -= advance;
@@ -517,7 +553,7 @@ impl PdfFlow {
             text,
             x,
             y: self.y,
-            size: 12.0,
+            size,
             bold,
             mono: true,
         });
@@ -548,18 +584,19 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         top = 1.0 * 72.0;
         bottom = 1.0 * 72.0;
     }
-    let size = if screenplay { 12.0 } else { settings.font_size.max(8.0) };
-    let gap = if screenplay {
-        13.0
-    } else {
-        size * settings.line_spacing.max(1.0)
-    };
+    let size = settings.styles.body.size.max(8.0);
+    let gap = size * settings.styles.body.leading.max(1.0);
     let mut flow = PdfFlow::new(h, top, bottom, gap);
     let mut pages: Vec<PdfPage> = Vec::new();
     let content_width = w - margin * 2.0;
 
     if settings.include_title_page {
-        let title_size = if screenplay { 16.0 } else { 24.0 };
+        let title_style = &settings.styles.title_page_title;
+        let subtitle_style = &settings.styles.title_page_subtitle;
+        let author_style = &settings.styles.title_page_author;
+        let title_size = title_style.size.max(8.0);
+        let subtitle_size = subtitle_style.size.max(8.0);
+        let author_size = author_style.size.max(8.0);
         let mut page = PdfPage::new();
         // Title, subtitle and byline get their own vertical bands. The earlier
         // version moved the cursor down and then subtracted the offset again,
@@ -581,9 +618,9 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             for line in wrap_text(&project.subtitle, 50) {
                 page.lines.push(PdfLine {
                     text: line.clone(),
-                    x: w / 2.0 - line.chars().count() as f32 * 3.2,
+                    x: w / 2.0 - line.chars().count() as f32 * subtitle_size * 0.24,
                     y,
-                    size: 12.0,
+                    size: subtitle_size,
                     bold: false,
                     mono: false,
                 });
@@ -594,9 +631,9 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         let byline = format!("by {}", project.author);
         page.lines.push(PdfLine {
             text: byline.clone(),
-            x: w / 2.0 - byline.chars().count() as f32 * 3.2,
+            x: w / 2.0 - byline.chars().count() as f32 * author_size * 0.24,
             y,
-            size: 12.0,
+            size: author_size,
             bold: false,
             mono: false,
         });
@@ -637,6 +674,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             margin: f32,
             text: String,
             x_mm: f32,
+            size: f32,
             bold: bool,
         ) {
             let y = h - top - (*line_index as f32) * 13.0;
@@ -644,7 +682,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                 text,
                 x: x_mm * 2.834645 + margin,
                 y,
-                size: 12.0,
+                size,
                 bold,
                 mono: true,
             });
@@ -655,17 +693,23 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             if doc.medium.is_script() {
                 let heading = format!("{}.", section.heading.to_uppercase());
                 for line in wrap_text(&heading, full_chars) {
-                    push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, true);
+                    push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, 12.0, true);
                 }
-                push_line(&mut page, &mut line_index, h, top, margin, String::new(), 0.0, false);
+                push_line(
+                    &mut page,
+                    &mut line_index,
+                    h,
+                    top,
+                    margin,
+                    String::new(),
+                    0.0,
+                    12.0,
+                    false,
+                );
                 for block in &doc.blocks {
-                    let indent_mm = match block.kind {
-                        ElementKind::Character => 22.0,
-                        ElementKind::Parenthetical => 15.0,
-                        ElementKind::Dialogue => 9.0,
-                        ElementKind::Transition => 42.0,
-                        _ => 0.0,
-                    };
+                    let style = script_style(&settings.styles, block.kind);
+                    let block_size = style.size.max(8.0);
+                    let indent_mm = style.indent / 2.834645;
                     let width_chars = width_for(indent_mm);
                     let text = if block.kind.is_uppercase() {
                         block.text.to_uppercase()
@@ -681,16 +725,46 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                             } else {
                                 wrapped.clone()
                             };
-                            push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, false);
+                            push_line(
+                                &mut page,
+                                &mut line_index,
+                                h,
+                                top,
+                                margin,
+                                line,
+                                0.0,
+                                block_size,
+                                false,
+                            );
                         }
                         scene_number += 1;
                     } else {
                         for wrapped in wrap_text(&text, width_chars) {
-                            push_line(&mut page, &mut line_index, h, top, margin, wrapped, indent_mm, false);
+                            push_line(
+                                &mut page,
+                                &mut line_index,
+                                h,
+                                top,
+                                margin,
+                                wrapped,
+                                indent_mm,
+                                block_size,
+                                false,
+                            );
                         }
                     }
                     if !block.kind.is_dialogue() {
-                        push_line(&mut page, &mut line_index, h, top, margin, String::new(), 0.0, false);
+                        push_line(
+                            &mut page,
+                            &mut line_index,
+                            h,
+                            top,
+                            margin,
+                            String::new(),
+                            0.0,
+                            12.0,
+                            false,
+                        );
                     }
                     if line_index >= max_lines {
                         pages.push(std::mem::replace(&mut page, PdfPage::new()));
@@ -699,14 +773,44 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                 }
             } else {
                 for line in wrap_text(&section.heading.to_uppercase(), full_chars) {
-                    push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, true);
+                    push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, 12.0, true);
                 }
-                push_line(&mut page, &mut line_index, h, top, margin, String::new(), 0.0, false);
+                push_line(
+                    &mut page,
+                    &mut line_index,
+                    h,
+                    top,
+                    margin,
+                    String::new(),
+                    0.0,
+                    12.0,
+                    false,
+                );
                 for para in paragraphs(&doc.body_text()) {
                     for line in wrap_text(&para, full_chars) {
-                        push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, false);
+                        push_line(
+                            &mut page,
+                            &mut line_index,
+                            h,
+                            top,
+                            margin,
+                            line,
+                            0.0,
+                            12.0,
+                            false,
+                        );
                     }
-                    push_line(&mut page, &mut line_index, h, top, margin, String::new(), 0.0, false);
+                    push_line(
+                        &mut page,
+                        &mut line_index,
+                        h,
+                        top,
+                        margin,
+                        String::new(),
+                        0.0,
+                        12.0,
+                        false,
+                    );
                 }
             }
             if line_index >= max_lines - 3 {
@@ -726,8 +830,8 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             h,
             settings.include_page_numbers,
             settings.include_running_headers,
-            pdf_font(&settings.font, false),
-            pdf_font(&settings.font, true),
+            pdf_font(&settings.styles.body.font, false),
+            pdf_font(&settings.styles.body.font, true),
         );
     }
 
@@ -756,11 +860,24 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         flow.page_break();
         let title = section_title(project, section.doc, i, settings);
         headings.push((title.clone(), flow.pages.len() + 1));
-        let head_size = size + 5.0;
+        let head_size = settings.styles.chapter_heading.size.max(size);
+        let mut first_heading_line = true;
         for part in wrap_text(&title, chars_per_line) {
-            flow.line(part, margin, head_size, true, 8.0);
+            let gap_before = if first_heading_line {
+                settings.styles.chapter_heading.before
+            } else {
+                0.0
+            };
+            flow.line(part, margin, head_size, true, gap_before);
+            first_heading_line = false;
         }
-        flow.line(String::new(), margin, size, false, 0.0);
+        flow.line(
+            String::new(),
+            margin,
+            size,
+            false,
+            settings.styles.chapter_heading.after,
+        );
         if settings.include_synopsis && !section.doc.synopsis.is_empty() {
             for part in wrap_text(&format!("Synopsis · {}", section.doc.synopsis), chars_per_line) {
                 flow.line(part, margin, size - 1.0, false, 0.0);
@@ -773,13 +890,9 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             // with a companion pilot read correctly in one PDF.
             let mut scene_number = 1usize;
             for block in &section.doc.blocks {
-                let indent_mm = match block.kind {
-                    ElementKind::Character => 22.0,
-                    ElementKind::Parenthetical => 15.0,
-                    ElementKind::Dialogue => 9.0,
-                    ElementKind::Transition => 42.0,
-                    _ => 0.0,
-                };
+                let style = script_style(&settings.styles, block.kind);
+                let block_size = style.size.max(8.0);
+                let indent_mm = style.indent / 2.834645;
                 let width = ((content_width - indent_mm * 2.834645) / 7.2)
                     .floor()
                     .max(14.0) as usize;
@@ -797,7 +910,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                         } else {
                             part.clone()
                         };
-                        flow.script_line(line, margin, false, 0.0);
+                        flow.script_line(line, margin, block_size, false, 0.0);
                     }
                     scene_number += 1;
                 } else {
@@ -805,6 +918,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                         flow.script_line(
                             part,
                             margin + indent_mm * 2.834645,
+                            block_size,
                             false,
                             0.0,
                         );
@@ -816,7 +930,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                     block.kind,
                     ElementKind::Character | ElementKind::Parenthetical
                 ) {
-                    flow.script_line(String::new(), margin, false, 0.0);
+                    flow.script_line(String::new(), margin, 12.0, false, 0.0);
                 }
             }
         } else {
@@ -892,8 +1006,8 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         h,
         settings.include_page_numbers,
         settings.include_running_headers,
-        pdf_font(&settings.font, false),
-        pdf_font(&settings.font, true),
+        pdf_font(&settings.styles.body.font, false),
+        pdf_font(&settings.styles.body.font, true),
     )
 }
 
@@ -947,28 +1061,59 @@ fn epub_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         .unwrap();
 
         zip.start_file("OEBPS/style.css", deflated).unwrap();
-        let css = r#"body { font-family: Georgia, "Liberation Serif", serif; line-height: 1.6; margin: 5%; color: #1b1b1b; }
-h1 { font-size: 1.6em; margin: 2em 0 1em; page-break-before: always; }
-h2 { font-size: 1.25em; margin: 1.5em 0 .8em; }
-p { margin: 0 0 0 .2em; text-indent: 1.4em; text-align: justify; }
-p.first, .front p { text-indent: 0; }
-.center { text-align: center; text-indent: 0; }
-.scene { font-family: "Courier New", monospace; text-transform: uppercase; font-weight: bold; margin-top: 1.5em; text-indent: 0; }
-.action { font-family: "Courier New", monospace; margin: .5em 0 .8em; text-indent: 0; }
-.character { font-family: "Courier New", monospace; margin: 1em 0 0 32%; text-indent: 0; text-transform: uppercase; }
-.parenthetical { font-family: "Courier New", monospace; margin: 0 0 0 26%; text-indent: 0; }
-.dialogue { font-family: "Courier New", monospace; margin: 0 10% .7em 18%; text-indent: 0; }
-.transition { font-family: "Courier New", monospace; text-align: right; text-indent: 0; }
-.title-page { text-align: center; margin-top: 26%; }
-.title-page h1 { page-break-before: avoid; font-size: 2.2em; }
-.byline { font-size: 1.1em; margin-top: 1.5em; }
-.imprint { margin-top: 4em; font-size: .85em; color: #555; }
-.cover { text-align: center; margin: 0; padding: 0; }
-.cover img { max-width: 100%; }
-"#
-        .replace(
-            "Georgia, \"Liberation Serif\", serif",
-            &css_font_family(&settings.font),
+        let st = &settings.styles;
+        let body_font = element_css_font(&st.body, "Liberation Serif");
+        let scene_font = element_css_font(&st.scene_heading, "Courier New");
+        let action_font = element_css_font(&st.action, "Courier New");
+        let character_font = element_css_font(&st.character, "Courier New");
+        let parenthetical_font = element_css_font(&st.parenthetical, "Courier New");
+        let dialogue_font = element_css_font(&st.dialogue, "Courier New");
+        let transition_font = element_css_font(&st.transition, "Courier New");
+        let character_indent = element_css_indent(&st.character, "32%");
+        let parenthetical_indent = element_css_indent(&st.parenthetical, "26%");
+        let dialogue_indent = element_css_indent(&st.dialogue, "18%");
+        let css = format!(
+            r#"body {{ font-family: {body_font}; line-height: {body_leading:.2}; margin: 5%; color: #1b1b1b; }}
+h1 {{ font-size: {chapter_size:.1}pt; margin: 2em 0 1em; page-break-before: always; }}
+h2 {{ font-size: 1.25em; margin: 1.5em 0 .8em; }}
+p {{ margin: 0 0 0 .2em; text-indent: 1.4em; text-align: justify; }}
+p.first, .front p {{ text-indent: 0; }}
+.center {{ text-align: center; text-indent: 0; }}
+.scene {{ font-family: {scene_font}; font-size: {scene_size:.1}pt; text-transform: uppercase; font-weight: bold; margin-top: 1.5em; text-indent: 0; }}
+.action {{ font-family: {action_font}; font-size: {action_size:.1}pt; margin: .5em 0 .8em; text-indent: 0; }}
+.character {{ font-family: {character_font}; font-size: {character_size:.1}pt; margin: 1em 0 0 {character_indent}; text-indent: 0; text-transform: uppercase; }}
+.parenthetical {{ font-family: {parenthetical_font}; font-size: {parenthetical_size:.1}pt; margin: 0 0 0 {parenthetical_indent}; text-indent: 0; }}
+.dialogue {{ font-family: {dialogue_font}; font-size: {dialogue_size:.1}pt; margin: 0 10% .7em {dialogue_indent}; text-indent: 0; }}
+.transition {{ font-family: {transition_font}; font-size: {transition_size:.1}pt; text-align: right; text-indent: 0; }}
+.title-page {{ text-align: center; margin-top: 26%; }}
+.title-page h1 {{ page-break-before: avoid; font-size: {title_size:.1}pt; }}
+.title-page .subtitle {{ font-size: {subtitle_size:.1}pt; }}
+.byline {{ font-size: {author_size:.1}pt; margin-top: 1.5em; }}
+.imprint {{ margin-top: 4em; font-size: .85em; color: #555; }}
+.cover {{ text-align: center; margin: 0; padding: 0; }}
+.cover img {{ max-width: 100%; }}
+"#,
+            body_font = body_font,
+            body_leading = st.body.leading.max(1.0),
+            chapter_size = st.chapter_heading.size.max(8.0),
+            scene_font = scene_font,
+            scene_size = st.scene_heading.size.max(8.0),
+            action_font = action_font,
+            action_size = st.action.size.max(8.0),
+            character_font = character_font,
+            character_size = st.character.size.max(8.0),
+            character_indent = character_indent,
+            parenthetical_font = parenthetical_font,
+            parenthetical_size = st.parenthetical.size.max(8.0),
+            parenthetical_indent = parenthetical_indent,
+            dialogue_font = dialogue_font,
+            dialogue_size = st.dialogue.size.max(8.0),
+            dialogue_indent = dialogue_indent,
+            transition_font = transition_font,
+            transition_size = st.transition.size.max(8.0),
+            title_size = st.title_page_title.size.max(8.0),
+            subtitle_size = st.title_page_subtitle.size.max(8.0),
+            author_size = st.title_page_author.size.max(8.0),
         );
         zip.write_all(css.as_bytes()).unwrap();
 
@@ -1002,7 +1147,7 @@ p.first, .front p { text-indent: 0; }
 
         if settings.include_title_page {
             let body = format!(
-                "<div class=\"title-page\"><h1>{}</h1><p class=\"center\">{}</p><p class=\"byline\">by {}</p><p class=\"imprint\">{}</p></div>",
+                "<div class=\"title-page\"><h1>{}</h1><p class=\"center subtitle\">{}</p><p class=\"byline\">by {}</p><p class=\"imprint\">{}</p></div>",
                 xml_escape(&project.title),
                 xml_escape(&project.subtitle),
                 xml_escape(&project.author),
@@ -1450,11 +1595,21 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
         }
         body.push_str("</section>\n");
     }
+    let st = &settings.styles;
+    let body_font = element_css_font(&st.body, "Liberation Serif");
+    let script_font = element_css_font(&st.action, "Courier New");
+    let chapter_size = st.chapter_heading.size.max(8.0);
     format!(
-        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n<title>{}</title>\n<style>\nbody{{max-width:42rem;margin:4rem auto;padding:0 1.5rem;font-family:{};line-height:1.7;color:#1e1c19;background:#fbf8f1}}\nh1{{font-size:2.4rem;line-height:1.1}}h2{{margin-top:3rem;border-bottom:1px solid #d8d0c0;padding-bottom:.4rem}}\np{{margin:0 0 .9rem;text-indent:1.4rem;text-align:justify}}p.first{{text-indent:0}}\n.titlepage{{text-align:center;margin:18vh 0 22vh}}.titlepage h1{{margin-bottom:.3em}}.titlepage p{{text-indent:0}}.sub{{font-style:italic;color:#665f54}}\n.toc ol{{line-height:2}}.toc a{{color:#2f5d50;text-decoration:none}}\n.script{{font-family:'Courier New',monospace;font-size:.92rem}}.script p{{text-indent:0;margin:.4rem 0;text-align:left}}\n.scene{{text-transform:uppercase;font-weight:bold;margin-top:1.6rem!important}}.character{{margin-left:32%!important;text-transform:uppercase;margin-top:1rem!important}}.paren{{margin-left:24%!important}}.dialogue{{margin-left:16%!important;margin-right:12%!important}}.trans{{text-align:right!important}}\n.frontmatter,.backmatter{{margin-top:4rem}}\n</style>\n</head>\n<body>\n{}\n</body>\n</html>\n",
-        html_escape(&project.title),
-        css_font_family(&settings.font),
-        body
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n<title>{title}</title>\n<style>\nbody{{max-width:42rem;margin:4rem auto;padding:0 1.5rem;font-family:{body_font};line-height:{body_leading:.2};color:#1e1c19;background:#fbf8f1}}\nh1{{font-size:{h1_size:.1}pt;line-height:1.1}}h2{{font-size:{chapter_size:.1}pt;margin-top:3rem;border-bottom:1px solid #d8d0c0;padding-bottom:.4rem}}\np{{margin:0 0 .9rem;text-indent:1.4rem;text-align:justify}}p.first{{text-indent:0}}\n.titlepage{{text-align:center;margin:18vh 0 22vh}}.titlepage h1{{font-size:{title_size:.1}pt;margin-bottom:.3em}}.titlepage p{{text-indent:0}}.sub{{font-style:italic;color:#665f54}}\n.toc ol{{line-height:2}}.toc a{{color:#2f5d50;text-decoration:none}}\n.script{{font-family:{script_font};font-size:{script_size:.1}pt}}.script p{{text-indent:0;margin:.4rem 0;text-align:left}}\n.scene{{text-transform:uppercase;font-weight:bold;margin-top:1.6rem!important}}.character{{margin-left:32%!important;text-transform:uppercase;margin-top:1rem!important}}.paren{{margin-left:24%!important}}.dialogue{{margin-left:16%!important;margin-right:12%!important}}.trans{{text-align:right!important}}\n.frontmatter,.backmatter{{margin-top:4rem}}\n</style>\n</head>\n<body>\n{body}\n</body>\n</html>\n",
+        title = html_escape(&project.title),
+        body_font = body_font,
+        body_leading = st.body.leading.max(1.0),
+        h1_size = chapter_size * 1.5,
+        chapter_size = chapter_size,
+        title_size = st.title_page_title.size.max(8.0),
+        script_font = script_font,
+        script_size = st.action.size.max(8.0),
+        body = body,
     )
 }
 
@@ -1766,10 +1921,10 @@ mod tests {
     }
 
     #[test]
-    fn pdf_base_font_follows_the_export_font_setting() {
+    fn pdf_base_font_follows_the_body_style() {
         let p = demo();
         let mut s = p.settings_for(ExportKind::Pdf);
-        s.font = "Courier New".into();
+        s.styles.body.font = "Courier New".into();
         let text = String::from_utf8_lossy(&pdf_manuscript(&p, &s)).to_string();
         assert!(text.contains("/BaseFont /Courier "), "prose F1 should use Courier");
         assert!(
@@ -1779,10 +1934,23 @@ mod tests {
     }
 
     #[test]
-    fn epub_css_uses_the_export_font_setting() {
+    fn pdf_title_page_uses_the_title_style_size() {
+        let p = demo();
+        let mut s = p.settings_for(ExportKind::Pdf);
+        s.include_title_page = true;
+        s.styles.title_page_title.size = 30.0;
+        let text = String::from_utf8_lossy(&pdf_manuscript(&p, &s)).to_string();
+        assert!(
+            text.contains("F2 30 Tf"),
+            "title should be drawn at 30pt in the bold prose face"
+        );
+    }
+
+    #[test]
+    fn epub_css_uses_the_body_style_font() {
         let p = demo();
         let mut s = p.settings_for(ExportKind::Epub);
-        s.font = "SomeTestFont".into();
+        s.styles.body.font = "SomeTestFont".into();
         let bytes = epub_manuscript(&p, &s);
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
         let mut css = String::new();
@@ -1792,10 +1960,10 @@ mod tests {
     }
 
     #[test]
-    fn html_uses_the_export_font_setting() {
+    fn html_uses_the_body_style_font() {
         let p = demo();
         let mut s = p.settings_for(ExportKind::Html);
-        s.font = "SomeTestFont".into();
+        s.styles.body.font = "SomeTestFont".into();
         let html = html_manuscript(&p, &s);
         assert!(html.contains("SomeTestFont"), "HTML should carry the font family");
     }

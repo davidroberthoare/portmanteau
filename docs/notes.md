@@ -403,3 +403,15 @@ limits as `style.update`. The Compile screen's element editor now edits the
 selected format's draft; the reset button re-seeds it from the project base.
 The Settings workspace still owns the project-wide defaults. Export writers are
 not yet reading these per-format styles — that is the next round.
+
+## Round 10b — writers read the per-format styles
+
+PDF, EPUB and HTML now take their type from `ExportSettings.styles`, not from the
+old `settings.font`/`font_size`/`line_spacing` copies. PDF uses
+`styles.body.font` for the prose face (F1/F2), `styles.body.size`/`.leading` for
+prose lines, the title-page sizes for the title block, `chapter_heading.size`,
+`.before` and `.after` for chapter openings, and each screenplay element's
+`size`/`indent` for script lines. EPUB and HTML build their CSS from the same
+element styles, including script font families and indents. DOCX and RTF still
+read `settings.font`; they are unchanged. `settings.font` remains the seeded
+copy used by those writers and by previews.
