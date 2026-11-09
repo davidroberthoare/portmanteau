@@ -391,3 +391,15 @@ silently falling back to the project's current kind. `export.settings.get` and
   dirty, and "Reset defaults" restores the built-in styles. Creating a new
   project copies the global defaults into it; the demonstration project keeps
   its own styles.
+
+## Round 10a — per-format element styles
+
+Each output format now carries its own `ElementStyles` inside `ExportSettings`.
+A format that has never been configured is seeded from `project.styles`, so PDF
+and EPUB can diverge without touching the project-wide base. `export.settings.get`
+returns the stored styles and `export.settings.update` accepts a nested `styles`
+object (`{"body":{"size":15}}`), merged element by element with the same numeric
+limits as `style.update`. The Compile screen's element editor now edits the
+selected format's draft; the reset button re-seeds it from the project base.
+The Settings workspace still owns the project-wide defaults. Export writers are
+not yet reading these per-format styles — that is the next round.

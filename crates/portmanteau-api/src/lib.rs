@@ -725,36 +725,8 @@ impl Workspace {
                 // Work on a clone so a rejected numeric value cannot leave the
                 // style half-updated.
                 let mut styles = self.project.styles.clone();
-                if let Some(object) = payload.as_object() {
-                    for (name, fields) in object {
-                        let Some(element) = styles.element_mut(name) else {
-                            continue;
-                        };
-                        if let Some(v) = fields.get("font").and_then(|v| v.as_str()) {
-                            element.font = v.into();
-                        }
-                        for (field, value, min, max) in [
-                            ("size", fields.get("size"), 4.0, 72.0),
-                            ("leading", fields.get("leading"), 0.5, 3.0),
-                            ("indent", fields.get("indent"), 0.0, 800.0),
-                            ("before", fields.get("before"), 0.0, 800.0),
-                            ("after", fields.get("after"), 0.0, 800.0),
-                        ] {
-                            let Some(value) = value else { continue };
-                            let parsed = match parse_finite_f32(value, field, min, max) {
-                                Ok(v) => v,
-                                Err(e) => return ApiResponse::err(command, e),
-                            };
-                            match field {
-                                "size" => element.size = parsed,
-                                "leading" => element.leading = parsed,
-                                "indent" => element.indent = parsed,
-                                "before" => element.before = parsed,
-                                "after" => element.after = parsed,
-                                _ => {}
-                            }
-                        }
-                    }
+                if let Err(e) = apply_style_overrides(&mut styles, &payload) {
+                    return ApiResponse::err(command, e);
                 }
                 self.project.styles = styles;
                 self.dirty = true;
@@ -847,6 +819,42 @@ fn parse_finite_f32(value: &Value, key: &str, min: f32, max: f32) -> Result<f32,
     Ok(parsed)
 }
 
+/// Merge a `{"<element>":{...}}` JSON object into an element-style set.
+/// Unknown element names and unknown subfields are ignored, so a newer client
+/// can send extra fields safely. Numeric values go through `parse_finite_f32`.
+fn apply_style_overrides(styles: &mut ElementStyles, payload: &Value) -> Result<(), String> {
+    let Some(object) = payload.as_object() else {
+        return Ok(());
+    };
+    for (name, fields) in object {
+        let Some(element) = styles.element_mut(name) else {
+            continue;
+        };
+        if let Some(v) = fields.get("font").and_then(|v| v.as_str()) {
+            element.font = v.into();
+        }
+        for (field, value, min, max) in [
+            ("size", fields.get("size"), 4.0, 72.0),
+            ("leading", fields.get("leading"), 0.5, 3.0),
+            ("indent", fields.get("indent"), 0.0, 800.0),
+            ("before", fields.get("before"), 0.0, 800.0),
+            ("after", fields.get("after"), 0.0, 800.0),
+        ] {
+            let Some(value) = value else { continue };
+            let parsed = parse_finite_f32(value, field, min, max)?;
+            match field {
+                "size" => element.size = parsed,
+                "leading" => element.leading = parsed,
+                "indent" => element.indent = parsed,
+                "before" => element.before = parsed,
+                "after" => element.after = parsed,
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Merge the settings fields a caller may supply on top of a resolved set.
 /// Unknown keys are ignored, so a newer client can send extra fields safely.
 fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> Result<(), String> {
@@ -891,6 +899,9 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
         if let Some(v) = payload.get(key).and_then(|v| v.as_bool()) {
             *field = v;
         }
+    }
+    if let Some(v) = payload.get("styles") {
+        apply_style_overrides(&mut settings.styles, v)?;
     }
     Ok(())
 }
@@ -1099,6 +1110,34 @@ mod tests {
         let epub_after = ws.execute("export.settings.get", json!({"format":"EPUB"}));
         assert_eq!(epub_after.data, epub_before.data);
         assert_eq!(ws.project.settings_for(ExportKind::Epub).font_size, 12.0);
+    }
+
+    #[test]
+    fn export_settings_styles_are_per_format() {
+        let mut ws = Workspace::demo();
+        let epub_before = ws.execute("export.settings.get", json!({"format":"EPUB"}));
+        assert!(epub_before.ok, "{}", epub_before.message);
+        let epub_body_size = epub_before.data["styles"]["body"]["size"]
+            .as_f64()
+            .unwrap();
+        assert_eq!(epub_body_size, 11.0);
+
+        let updated = ws.execute(
+            "export.settings.update",
+            json!({"format":"PDF","styles":{"body":{"size":15.0}}}),
+        );
+        assert!(updated.ok, "{}", updated.message);
+
+        let pdf = ws.execute("export.settings.get", json!({"format":"PDF"}));
+        assert_eq!(pdf.data["styles"]["body"]["size"].as_f64().unwrap(), 15.0);
+        assert_eq!(ws.project.settings_for(ExportKind::Pdf).styles.body.size, 15.0);
+
+        let epub_after = ws.execute("export.settings.get", json!({"format":"EPUB"}));
+        assert_eq!(
+            epub_after.data["styles"]["body"]["size"].as_f64().unwrap(),
+            epub_body_size,
+            "editing PDF styles must not leak into EPUB"
+        );
     }
 
     #[test]

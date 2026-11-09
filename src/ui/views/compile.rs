@@ -36,7 +36,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .ws
         .project
         .settings_for(app.ws.project.export.kind);
-    let mut styles = app.ws.project.styles.clone();
     let mut compile = false;
 
     content_frame().show(ui, |ui| {
@@ -109,13 +108,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         ui.horizontal(|ui| {
                             if quiet_button(ui, "Reset this format to base style").clicked() {
                                 settings = seeded_settings(
-                                    &styles,
+                                    &app.ws.project.styles,
                                     app.ws.project.kind,
                                     settings.kind,
                                 );
                             }
                             ui.label(
-                                RichText::new("Seeds from the element styles below.")
+                                RichText::new("Seeds from the project-wide element styles.")
                                     .font(sans(9.0))
                                     .color(FAINT),
                             );
@@ -228,7 +227,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 }
                             });
                         ui.add_space(12.0);
-                        style_panel(ui, &mut styles);
+                        style_panel(ui, &mut settings.styles);
                         ui.add_space(14.0);
                         preview_panel(app, ui);
                     });
@@ -239,9 +238,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let before = app.ws.project.settings_for(settings.kind);
     app.ws.project.set_settings(settings.clone());
     app.ws.project.export = settings.clone();
-    let styles_changed = app.ws.project.styles != styles;
-    app.ws.project.styles = styles;
-    if before != settings || styles_changed {
+    if before != settings {
         app.ws.dirty = true;
     }
     if compile {
@@ -308,6 +305,7 @@ fn seeded_settings(
 ) -> ExportSettings {
     let mut settings = ExportSettings {
         kind,
+        styles: styles.clone(),
         ..ExportSettings::default()
     };
     let base = if project_kind.default_medium().is_script() {
@@ -502,7 +500,7 @@ fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles) {
             section_label(ui, "Element styles");
             ui.label(
                 RichText::new(
-                    "Per-element type for the manuscript. New output formats start from these; formats that already have settings keep their own.",
+                    "Per-element type for this output format. These are per-format; the project-wide defaults live in Settings.",
                 )
                 .font(sans(9.0))
                 .color(FAINT),

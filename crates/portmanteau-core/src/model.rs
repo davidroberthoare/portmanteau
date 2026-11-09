@@ -697,6 +697,10 @@ pub struct ExportSettings {
     pub include_notes: bool,
     pub include_author_bio: bool,
     pub output_path: String,
+    /// Per-element styles for this output format. A format that has never been
+    /// configured is seeded from the project's base styles, then diverges.
+    #[serde(default)]
+    pub styles: ElementStyles,
 }
 
 impl Default for ExportSettings {
@@ -722,6 +726,7 @@ impl Default for ExportSettings {
             include_notes: false,
             include_author_bio: true,
             output_path: String::new(),
+            styles: ElementStyles::default(),
         }
     }
 }
@@ -813,6 +818,7 @@ impl Project {
         }
         let mut settings = ExportSettings {
             kind,
+            styles: self.styles.clone(),
             ..ExportSettings::default()
         };
         let base = if self.kind.default_medium().is_script() {
