@@ -160,6 +160,23 @@ thing a visual check catches.
 - Packaging installers for Windows/macOS. The code is cross-platform; the
   release pipeline is separate work.
 
+## Handoff check for this build
+
+- The cargo workspace now lives directly in `app/`, as the brief requires, and
+  the desktop binary, five support crates, bundled fonts and documentation all
+  build from there. Superseded prototype folders left over from an earlier
+  layout were removed so there is one source tree, not two.
+- `cargo build --workspace` and `cargo test --workspace` pass (29 tests across
+  the core, export, API and MCP crates).
+- The screenshot flag was exercised at the required size and every workspace
+  was reviewed as a picture: writing, corkboard, outline, research, develop,
+  characters, versions, compare-version, compile and the command desk.
+- All ten export formats were written through the CLI and checked as files:
+  PDF (16 pages), EPUB, DOCX, FDX, Fountain, HTML, Markdown, RTF, plain text
+  and the portable project bundle.
+- Nothing in this build depends on a network, an account or a background
+  process. Collaboration remains future work and file-based by design.
+
 ## Open questions for the next conversation
 
 1. Should compile use the built-in PDF typesetter longer, or delegate to
