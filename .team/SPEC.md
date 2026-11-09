@@ -218,3 +218,23 @@ Update command_catalogue(), README command table, and msc-mcp tool definitions/m
 3. Real-file checks: PDF page numbers appear iff include_page_numbers set.
 4. EPUB with cover set contains cover-image/cover.xhtml; EPUB without does not.
 5. --screenshot still works; Compile screen screenshot populated.
+
+---
+
+## PHASE 2 (user decisions recorded)
+
+Decisions: product renamed to **Portmanteau**; binder uses a single **"Draft"** top-level
+root (prose + scripts mixed, user creates sub-folders); **no legacy `.json` compatibility**
+(remove it — folder format only); settings page for default styles + per-project overrides.
+
+Work items, in planned order:
+1. Rename Scriptorium -> Portmanteau (binary, crates, ext, default path, title, env vars, docs).
+2. Folders + cleanup: single Draft root; user can add folders; compile logic keyed by DocKind
+   not folder title; drop legacy .json open/save; remove scattered nav buttons; remove script
+   margin type indicators.
+3. Settings page + per-project style overrides (default per-element script styles + overrides).
+4. Per-target per-element compile settings (font/size/margins/paragraph-spacing per element per
+   target; e.g. title-page title font on PDF vs EPUB).
+5. Multi-page view: Continuous vs Paged toggle; paged mode estimates page breaks from the
+   target formatting (Scrivener Page-View model).
+6. Spell-checking in all editors (Hunspell-compatible: spellbook/zspell + bundled dictionary).

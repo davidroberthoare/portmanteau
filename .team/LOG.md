@@ -68,3 +68,10 @@
   4. Fountain storage Action->Dialogue + dropped empty blocks -> explicit `/* @kind */` marker on EVERY block.
 - Build green; 67 tests pass. Reproduced 1e39 lockout before the fix; after, it errors cleanly and the project reopens.
 - Removed the torture-tester's scratch `tests/` directory (not part of deliverables).
+
+## Phase 2 — kicked off
+
+- Decisions: name = Portmanteau; single "Draft" binder root; drop legacy .json compat.
+- Nine work items scoped in .team/SPEC.md (rename, folders+cleanup, settings, per-element compile,
+  multi-page view, spell-check, + the small ones folded into #2).
+- Round 5 (rename) pending.
