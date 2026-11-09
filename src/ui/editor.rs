@@ -10,24 +10,45 @@ use portmanteau_core::{
 
 use crate::app::{PortmanteauApp, WriteMode};
 use crate::theme::*;
+use crate::ui::views::{content_frame, page_head};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let doc_id = app
         .selected
         .clone()
         .filter(|id| app.ws.project.document(id).is_some());
+
+    let Some(doc_id) = doc_id else {
+        toolbar(app, ui, None, 0);
+        empty_state(app, ui);
+        return;
+    };
+
+    // Folders are containers, not text documents. They get their own panel
+    // instead of the paper/script surface and the writing toolbar.
+    let is_folder = app
+        .ws
+        .project
+        .document(&doc_id)
+        .map(|doc| doc.kind == DocKind::Folder)
+        .unwrap_or(false);
+    if is_folder {
+        folder_panel(app, ui, &doc_id);
+        return;
+    }
+
     let miss = if app.settings.spellcheck {
-        doc_id
-            .as_ref()
-            .and_then(|id| app.ws.project.document(id))
+        app.ws
+            .project
+            .document(&doc_id)
             .map(|doc| app.spell.misspellings(&doc.body_text()))
             .unwrap_or_default()
     } else {
         Vec::new()
     };
-    let page_plan = match (&doc_id, app.write_mode) {
-        (Some(id), WriteMode::Paged) => build_page_plan(app, id),
-        _ => None,
+    let page_plan = match app.write_mode {
+        WriteMode::Paged => build_page_plan(app, &doc_id),
+        WriteMode::Continuous => None,
     };
     toolbar(
         app,
@@ -35,11 +56,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         page_plan.as_ref().map(|plan| plan.pages.len()),
         miss.len(),
     );
-
-    let Some(doc_id) = doc_id else {
-        empty_state(app, ui);
-        return;
-    };
 
     if app.settings.spellcheck && app.show_spelling {
         spelling_panel(app, ui, &doc_id, &miss);
@@ -100,6 +116,168 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     if take_snapshot {
         app.take_snapshot_public();
     }
+}
+
+/// Folders are pure containers, so the Write view shows this panel rather than
+/// a paper page: an editable name and synopsis, then the documents inside.
+fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
+    let Some(doc) = app.ws.project.document(doc_id) else {
+        return;
+    };
+    let original_title = doc.title.clone();
+    let original_synopsis = doc.synopsis.clone();
+    let children: Vec<(String, String, DocKind, Medium, u32)> = app
+        .ws
+        .project
+        .children(Some(doc_id))
+        .into_iter()
+        .map(|child| {
+            (
+                child.id.clone(),
+                child.title.clone(),
+                child.kind,
+                child.medium,
+                child.words(),
+            )
+        })
+        .collect();
+
+    let mut title = original_title.clone();
+    let mut synopsis = original_synopsis.clone();
+    let mut open_child: Option<String> = None;
+
+    let subtitle = match children.len() {
+        1 => "1 document in this folder.".to_string(),
+        n => format!("{n} documents in this folder."),
+    };
+    page_head(ui, "Folder", &title, &subtitle, |_ui| {});
+
+    ScrollArea::vertical()
+        .id_salt("folder_panel_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            content_frame().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                section_label(ui, "Folder name");
+                ui.add_space(4.0);
+                ui.add(
+                    TextEdit::singleline(&mut title)
+                        .font(serif(22.0))
+                        .text_color(TEXT)
+                        .desired_width(f32::INFINITY),
+                );
+                ui.add_space(16.0);
+                section_label(ui, "Synopsis");
+                ui.add_space(4.0);
+                ui.add(
+                    TextEdit::multiline(&mut synopsis)
+                        .font(serif(13.0))
+                        .text_color(TEXT)
+                        .desired_width(f32::INFINITY)
+                        .desired_rows(3)
+                        .hint_text(
+                            RichText::new("What belongs in this folder?")
+                                .font(serif(13.0))
+                                .color(FAINT),
+                        ),
+                );
+                ui.add_space(20.0);
+                section_label(ui, "Contents");
+                ui.add_space(6.0);
+                if children.is_empty() {
+                    ui.label(
+                        RichText::new("This folder is empty.")
+                            .font(sans(11.0))
+                            .color(FAINT),
+                    );
+                } else {
+                    for (child_id, child_title, kind, medium, words) in &children {
+                        if folder_child_row(ui, child_title, *kind, *medium, *words) {
+                            open_child = Some(child_id.clone());
+                        }
+                    }
+                }
+                ui.add_space(18.0);
+                ui.label(
+                    RichText::new(
+                        "Folders group documents. Add content with the + button in the binder.",
+                    )
+                    .font(sans(10.0))
+                    .color(FAINT),
+                );
+            });
+        });
+
+    if title != original_title || synopsis != original_synopsis {
+        if let Some(doc) = app.ws.project.document_mut(doc_id) {
+            if title != original_title {
+                doc.title = title;
+                doc.touch();
+            }
+            if synopsis != original_synopsis {
+                doc.synopsis = synopsis;
+                doc.touch();
+            }
+        }
+        app.ws.dirty = true;
+    }
+
+    if let Some(id) = open_child {
+        app.open_doc(id);
+    }
+}
+
+fn folder_child_row(
+    ui: &mut egui::Ui,
+    title: &str,
+    kind: DocKind,
+    medium: Medium,
+    words: u32,
+) -> bool {
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, CornerRadius::same(5), PANEL_2);
+    }
+    let (glyph, color) = match kind {
+        DocKind::Folder => ("▣", MUTED),
+        DocKind::Chapter => ("¶", ACCENT),
+        DocKind::Scene if medium.is_script() => ("▶", PURPLE),
+        DocKind::Scene => ("◆", SAGE),
+        DocKind::Research => ("⌕", BLUE),
+        DocKind::Character => ("☺", PURPLE),
+        DocKind::FrontMatter | DocKind::BackMatter => ("▤", FAINT),
+        DocKind::Text => ("◆", FAINT),
+    };
+    ui.painter().text(
+        egui::pos2(rect.left() + 10.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        glyph,
+        sans(10.5),
+        color,
+    );
+    let right = if kind.is_folder() { 10.0 } else { 66.0 };
+    let title_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + 28.0, rect.top()),
+        egui::pos2(rect.right() - right, rect.bottom()),
+    );
+    ui.painter().with_clip_rect(title_rect).text(
+        title_rect.left_center(),
+        egui::Align2::LEFT_CENTER,
+        title,
+        sans(11.0),
+        TEXT,
+    );
+    if !kind.is_folder() {
+        ui.painter().text(
+            egui::pos2(rect.right() - 10.0, rect.center().y),
+            egui::Align2::RIGHT_CENTER,
+            format!("{words} w"),
+            mono(9.0),
+            FAINT,
+        );
+    }
+    resp.clicked()
 }
 
 fn toolbar(

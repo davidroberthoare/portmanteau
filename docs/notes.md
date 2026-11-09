@@ -472,3 +472,20 @@ Limits: the suggestions scan the whole word list per open row and there is no
 personal dictionary or "ignore" list yet. Hyphenated compounds are checked as a
 single word, so a compound that is absent from the bundled list is reported even
 when both halves are known.
+
+## Round 13 — folders are containers
+
+Folders still use `Document` with `kind == DocKind::Folder` in the model, but the
+Write view no longer treats them as editable text. Selecting a folder now opens
+a small folder panel instead of the paper or script surface: an editable name,
+an editable synopsis, a clickable list of the documents inside (kind glyph,
+title and word count for non-folders), and the quiet hint "Folders group
+documents. Add content with the + button in the binder." The script/prose
+toolbar (Snapshot, Focus, medium switcher, Continuous/Paged) is not drawn for a
+folder. Name and synopsis edits are read into owned strings and applied through
+`document_mut` after the draw pass, matching the borrow-safe view pattern.
+
+Two smaller guards came with it: the binder no longer paints a word count on a
+folder row (its kind glyph already says what it is), and "Take snapshot" is
+absent from a folder's row context menu. The binder action handler also refuses
+a folder snapshot defensively. No domain or command changes were needed.

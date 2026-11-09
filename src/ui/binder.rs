@@ -290,7 +290,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     title_color,
                 );
 
-                if row.words > 0 {
+                if row.words > 0 && !row.kind.is_folder() {
                     ui.painter().text(
                         egui::pos2(rect.right() - 6.0, rect.center().y),
                         egui::Align2::RIGHT_CENTER,
@@ -324,7 +324,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         action = Some(Action::Move(row.id.clone(), 1));
                         ui.close_menu();
                     }
-                    if ui.button("Take snapshot").clicked() {
+                    if !row.kind.is_folder() && ui.button("Take snapshot").clicked() {
                         action = Some(Action::Snapshot(row.id.clone()));
                         ui.close_menu();
                     }
@@ -464,6 +464,15 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 app.selected_block = 0;
             }
             Action::Snapshot(id) => {
+                let is_folder = app
+                    .ws
+                    .project
+                    .document(&id)
+                    .map(|d| d.kind.is_folder())
+                    .unwrap_or(false);
+                if is_folder {
+                    return;
+                }
                 if let Some(doc) = app.ws.project.document_mut(&id) {
                     let label = format!("Snapshot · {}", chrono::Local::now().format("%d %b %H:%M"));
                     doc.snapshot(label.clone(), "Snapshot from the binder");
