@@ -292,3 +292,32 @@ writer hardcoded its family. Round 3 wires it in.
 `format` key they cannot parse with `Unknown format: <value>` instead of
 silently falling back to the project's current kind. `export.settings.get` and
 `update` also require a format rather than guessing one.
+
+## Round 4 — safety fixes around persistence and storage Fountain
+
+- **Path traversal.** `storage.rs` now derives every id-based filename through
+  `safe_component`, which keeps only ASCII alphanumerics and `-` (an empty
+  result becomes `x`). Alongside `id8`, this cleans `document_name`,
+  `research_name`, snapshot stems, snapshot doc directories and the checkpoint
+  filename used by both save and load, so a hostile `project.json` cannot make
+  a save write outside the package.
+- **Atomic folder save.** `save_folder` builds the whole package in a fresh
+  sibling temporary directory (`.<name>.tmp-<pid>-<nanos>`), renames the
+  existing package to `.<name>.bak-…`, then renames the temporary into place
+  and removes the backup. A failure at any step cleans up the temporary and
+  restores the backup, so an interrupted save leaves the previous project
+  intact. `load_folder` still reads only `dir`; leftover temp/backup siblings
+  are ignored.
+- **Finite numeric settings.** `export.settings.update`, `style.update` and the
+  `export.run` override path parse `font_size`/`prose_size`/`script_size`
+  against 4.0–72.0 and `line_spacing`/`prose_leading`/`script_leading` against
+  0.5–3.0. A value such as `1e39` now returns a clear error instead of storing
+  f32 infinity, which `serde_json` writes as `null` and which used to make the
+  project impossible to reopen.
+- **Explicit storage Fountain.** `to_storage_fountain` now writes a boneyard
+  marker before every block, and an empty block is just its marker line.
+  `parse_fountain` resolves a block's kind from that marker first (falling back
+  to the old heuristics only when no marker is present), and emits an empty
+  block when two markers arrive without body text. This fixes lowercase action
+  text after a character cue being read as dialogue, and empty blocks being
+  dropped, while old saved packages still load.

@@ -34,8 +34,23 @@ pub fn slugify(text: &str) -> String {
     }
 }
 
+/// A safe single path component derived from an id. Keeps only ASCII
+/// alphanumerics and `-`, so a hostile id such as `../../evil` cannot escape
+/// the package. Normal ids (`doc-xxxxxxxx`, `cp-xxxxxxxx`) are unaffected.
+fn safe_component(s: &str) -> String {
+    let out: String = s
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    if out.is_empty() {
+        "x".into()
+    } else {
+        out
+    }
+}
+
 fn id8(id: &str) -> String {
-    id.chars().take(8).collect()
+    safe_component(id).chars().take(8).collect()
 }
 
 fn document_name(doc: &Document) -> String {
@@ -79,8 +94,10 @@ fn reset_dir(path: &Path) -> Result<(), String> {
         .map_err(|e| format!("Could not create {}: {e}", path.display()))
 }
 
-/// Write a project as a folder package, replacing the managed directories.
-pub fn save_folder(project: &Project, dir: &Path) -> Result<(), String> {
+/// Write the full package into `dir`, replacing its managed directories.
+/// `dir` is expected to be a fresh temporary directory when called from
+/// `save_folder`.
+fn write_package(project: &Project, dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
 
     let documents = dir.join("documents");
@@ -150,10 +167,80 @@ pub fn save_folder(project: &Project, dir: &Path) -> Result<(), String> {
     for cp in &project.checkpoints {
         let text =
             serde_json::to_string_pretty(cp).map_err(|e| format!("Could not serialise: {e}"))?;
-        write_file(&checkpoints.join(format!("{}.json", cp.id)), text)?;
+        write_file(
+            &checkpoints.join(format!("{}.json", safe_component(&cp.id))),
+            text,
+        )?;
     }
 
     Ok(())
+}
+
+/// A unique suffix for the temporary and backup sibling directories. No
+/// external crate is needed; the process id plus the current time in
+/// nanoseconds is enough to keep concurrent saves apart.
+fn unique_suffix() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{}-{}", std::process::id(), nanos)
+}
+
+/// Write a project as a folder package atomically.
+///
+/// The package is built in a fresh sibling directory and only swapped into
+/// place once it is complete, so an interruption cannot destroy the existing
+/// project.
+pub fn save_folder(project: &Project, dir: &Path) -> Result<(), String> {
+    let parent = match dir.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    };
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("Could not create {}: {e}", parent.display()))?;
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "project".into());
+    let suffix = unique_suffix();
+    let temp = parent.join(format!(".{name}.tmp-{suffix}"));
+    let backup = parent.join(format!(".{name}.bak-{suffix}"));
+
+    if temp.exists() {
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+    if let Err(e) = write_package(project, &temp) {
+        let _ = std::fs::remove_dir_all(&temp);
+        return Err(e);
+    }
+
+    let had_existing = dir.exists();
+    if had_existing {
+        if backup.exists() {
+            let _ = std::fs::remove_dir_all(&backup);
+        }
+        if let Err(e) = std::fs::rename(dir, &backup) {
+            let _ = std::fs::remove_dir_all(&temp);
+            return Err(format!("Could not replace {}: {e}", dir.display()));
+        }
+    }
+
+    match std::fs::rename(&temp, dir) {
+        Ok(()) => {
+            if had_existing {
+                let _ = std::fs::remove_dir_all(&backup);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            if had_existing {
+                let _ = std::fs::rename(&backup, dir);
+            }
+            let _ = std::fs::remove_dir_all(&temp);
+            Err(format!("Could not replace {}: {e}", dir.display()))
+        }
+    }
 }
 
 /// Read a folder package, re-attaching bodies from their derived filenames.
@@ -213,7 +300,7 @@ pub fn load_folder(dir: &Path) -> Result<Project, String> {
 
     let checkpoints = dir.join("checkpoints");
     for cp in &mut project.checkpoints {
-        let path = checkpoints.join(format!("{}.json", cp.id));
+        let path = checkpoints.join(format!("{}.json", safe_component(&cp.id)));
         if let Ok(body) = std::fs::read_to_string(&path) {
             if let Ok(full) = serde_json::from_str::<Checkpoint>(&body) {
                 cp.payload = full.payload;

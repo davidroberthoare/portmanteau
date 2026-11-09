@@ -635,7 +635,9 @@ impl Workspace {
                 };
                 let mut settings = self.project.settings_for(kind);
                 settings.kind = kind;
-                apply_settings_overrides(&mut settings, &payload);
+                if let Err(e) = apply_settings_overrides(&mut settings, &payload) {
+                    return ApiResponse::err(command, e);
+                }
                 self.project.set_settings(settings.clone());
                 self.project.export = settings.clone();
                 let target = if settings.output_path.trim().is_empty() {
@@ -716,7 +718,9 @@ impl Workspace {
                 };
                 let mut settings = self.project.settings_for(kind);
                 settings.kind = kind;
-                apply_settings_overrides(&mut settings, &payload);
+                if let Err(e) = apply_settings_overrides(&mut settings, &payload) {
+                    return ApiResponse::err(command, e);
+                }
                 self.project.set_settings(settings.clone());
                 self.dirty = true;
                 ApiResponse::ok(
@@ -731,23 +735,48 @@ impl Workspace {
                 serde_json::to_value(&self.project.style).unwrap_or(Value::Null),
             ),
             "style.update" => {
+                // Validate every numeric field before changing anything, so a
+                // rejected value cannot leave the style half-updated.
+                let parsed: Result<[Option<f32>; 4], String> = (|| {
+                    let prose_size = payload
+                        .get("prose_size")
+                        .map(|v| parse_finite_f32(v, "prose_size", 4.0, 72.0))
+                        .transpose()?;
+                    let prose_leading = payload
+                        .get("prose_leading")
+                        .map(|v| parse_finite_f32(v, "prose_leading", 0.5, 3.0))
+                        .transpose()?;
+                    let script_size = payload
+                        .get("script_size")
+                        .map(|v| parse_finite_f32(v, "script_size", 4.0, 72.0))
+                        .transpose()?;
+                    let script_leading = payload
+                        .get("script_leading")
+                        .map(|v| parse_finite_f32(v, "script_leading", 0.5, 3.0))
+                        .transpose()?;
+                    Ok([prose_size, prose_leading, script_size, script_leading])
+                })();
+                let [prose_size, prose_leading, script_size, script_leading] = match parsed {
+                    Ok(values) => values,
+                    Err(e) => return ApiResponse::err(command, e),
+                };
                 if let Some(v) = payload.get("prose_font").and_then(|v| v.as_str()) {
                     self.project.style.prose_font = v.into();
                 }
-                if let Some(v) = payload.get("prose_size").and_then(|v| v.as_f64()) {
-                    self.project.style.prose_size = v as f32;
+                if let Some(v) = prose_size {
+                    self.project.style.prose_size = v;
                 }
-                if let Some(v) = payload.get("prose_leading").and_then(|v| v.as_f64()) {
-                    self.project.style.prose_leading = v as f32;
+                if let Some(v) = prose_leading {
+                    self.project.style.prose_leading = v;
                 }
                 if let Some(v) = payload.get("script_font").and_then(|v| v.as_str()) {
                     self.project.style.script_font = v.into();
                 }
-                if let Some(v) = payload.get("script_size").and_then(|v| v.as_f64()) {
-                    self.project.style.script_size = v as f32;
+                if let Some(v) = script_size {
+                    self.project.style.script_size = v;
                 }
-                if let Some(v) = payload.get("script_leading").and_then(|v| v.as_f64()) {
-                    self.project.style.script_leading = v as f32;
+                if let Some(v) = script_leading {
+                    self.project.style.script_leading = v;
                 }
                 self.dirty = true;
                 ApiResponse::ok(
@@ -826,9 +855,26 @@ fn str_arg(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
 }
 
+/// Parse a numeric setting that must be a finite number in `min..=max`.
+/// This runs at the command boundary so an overflowing value such as `1e39`
+/// is rejected instead of becoming f32 infinity (which serde_json writes as
+/// `null` and makes the project unopenable).
+fn parse_finite_f32(value: &Value, key: &str, min: f32, max: f32) -> Result<f32, String> {
+    let raw = value
+        .as_f64()
+        .ok_or_else(|| format!("{key} must be a number"))?;
+    let parsed = raw as f32;
+    if !parsed.is_finite() || parsed < min || parsed > max {
+        return Err(format!(
+            "{key} must be a finite number between {min} and {max}"
+        ));
+    }
+    Ok(parsed)
+}
+
 /// Merge the settings fields a caller may supply on top of a resolved set.
 /// Unknown keys are ignored, so a newer client can send extra fields safely.
-fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) {
+fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> Result<(), String> {
     if let Some(v) = payload.get("path").and_then(|v| v.as_str()) {
         settings.output_path = v.into();
     }
@@ -843,11 +889,11 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) {
     if let Some(v) = payload.get("font").and_then(|v| v.as_str()) {
         settings.font = v.into();
     }
-    if let Some(v) = payload.get("font_size").and_then(|v| v.as_f64()) {
-        settings.font_size = v as f32;
+    if let Some(v) = payload.get("font_size") {
+        settings.font_size = parse_finite_f32(v, "font_size", 4.0, 72.0)?;
     }
-    if let Some(v) = payload.get("line_spacing").and_then(|v| v.as_f64()) {
-        settings.line_spacing = v as f32;
+    if let Some(v) = payload.get("line_spacing") {
+        settings.line_spacing = parse_finite_f32(v, "line_spacing", 0.5, 3.0)?;
     }
     if let Some(v) = payload.get("cover_image").and_then(|v| v.as_str()) {
         settings.cover_image = v.into();
@@ -871,6 +917,7 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) {
             *field = v;
         }
     }
+    Ok(())
 }
 
 fn parse_project_kind(s: &str) -> Option<ProjectKind> {

@@ -58,3 +58,13 @@
   targeting the wrong one.
 - Build green; 64 tests pass (+6 new: pdf_font mapping, font-in-output for EPUB/HTML/PDF, bogus-format).
 - Gate 1 (tester) pending; Gate 2 (torture-tester) pending.
+
+## Round 4 — DONE (data-safety & fidelity fixes)
+
+- Torture-tester (Gate 2) found 4 real bugs; all fixed:
+  1. path traversal via hostile ids -> safe_component() sanitisation,
+  2. non-atomic folder save -> write to temp sibling + atomic rename swap,
+  3. f32 infinity (font_size=1e39) -> `null` lockout -> finite/range validation with clear errors,
+  4. Fountain storage Action->Dialogue + dropped empty blocks -> explicit `/* @kind */` marker on EVERY block.
+- Build green; 67 tests pass. Reproduced 1e39 lockout before the fix; after, it errors cleanly and the project reopens.
+- Removed the torture-tester's scratch `tests/` directory (not part of deliverables).

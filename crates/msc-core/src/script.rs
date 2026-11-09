@@ -291,46 +291,24 @@ fn marker_kind(line: &str) -> Option<ElementKind> {
 
 /// Render blocks for on-disk storage.
 ///
-/// This is Fountain, but the kinds Fountain cannot express directly carry a
-/// boneyard comment on the line before the block so that a round trip loses
-/// nothing. Standard Fountain readers ignore boneyard comments. A dialogue
-/// block with no character or parenthetical cue before it carries the same
-/// marker, so a single dialogue block can round-trip on its own.
+/// This is Fountain, but every block carries a boneyard comment on the line
+/// before its body. The marker makes the stored kind explicit, so a round trip
+/// loses nothing even when Fountain's heuristics would read the body as a
+/// different element (a lowercase action after a character cue, for example).
+/// Standard Fountain readers ignore boneyard comments. An empty block emits
+/// the marker line alone, so emptiness itself survives the round trip.
 pub fn to_storage_fountain(blocks: &[Block], medium: crate::Medium) -> String {
     let mut out = String::new();
-    let mut previous: Option<ElementKind> = None;
     for (i, b) in blocks.iter().enumerate() {
         if i > 0 {
             out.push_str("\n\n");
         }
-        let rendered = block_to_fountain(b, medium);
-        let body = rendered.trim_start_matches('\n');
-        let first_line = body.lines().next().unwrap_or("").trim();
-        let natural = fountain_syntax(first_line);
-        // A block needs an explicit marker only when Fountain would read it as
-        // something else (an all-caps action, a scene heading with no INT/EXT,
-        // a lone dialogue line). This keeps ordinary scripts readable while
-        // still round-tripping every typed element losslessly.
-        let marker = if b.kind == ElementKind::Dialogue
-            && matches!(
-                previous,
-                Some(ElementKind::Character) | Some(ElementKind::Parenthetical)
-            )
-        {
-            None
-        } else if b.kind == ElementKind::Action && natural.is_none() {
-            None
-        } else if natural == Some(b.kind) {
-            None
-        } else {
-            Some(boneyard_marker(b.kind))
-        };
-        if let Some(marker) = marker {
-            out.push_str(marker);
-            out.push('\n');
+        out.push_str(boneyard_marker(b.kind));
+        out.push('\n');
+        if !b.text.trim().is_empty() {
+            let rendered = block_to_fountain(b, medium);
+            out.push_str(rendered.trim_start_matches('\n'));
         }
-        out.push_str(body);
-        previous = Some(b.kind);
     }
     out.trim().to_string() + "\n"
 }
@@ -373,6 +351,12 @@ fn fountain_syntax(line: &str) -> Option<ElementKind> {
 
 /// Rebuild typed blocks from storage Fountain. This is the inverse of
 /// `to_storage_fountain`.
+///
+/// A marker resolves the kind of the next non-empty text line. Two markers in
+/// a row mean the first block had no body, so an empty block is emitted before
+/// the second marker takes over. When no marker is present the old heuristics
+/// still apply, so folders saved by the previous format and plain Fountain
+/// imports keep working.
 pub fn parse_fountain(text: &str, medium: crate::Medium) -> Vec<Block> {
     let _ = medium;
     let mut blocks = Vec::new();
@@ -384,6 +368,12 @@ pub fn parse_fountain(text: &str, medium: crate::Medium) -> Vec<Block> {
             continue;
         }
         if let Some(kind) = marker_kind(line) {
+            if let Some(empty_kind) = pending.take() {
+                blocks.push(Block {
+                    kind: empty_kind,
+                    text: String::new(),
+                });
+            }
             pending = Some(kind);
             continue;
         }
@@ -420,6 +410,12 @@ pub fn parse_fountain(text: &str, medium: crate::Medium) -> Vec<Block> {
         blocks.push(Block {
             kind,
             text: body.to_string(),
+        });
+    }
+    if let Some(kind) = pending.take() {
+        blocks.push(Block {
+            kind,
+            text: String::new(),
         });
     }
     blocks
@@ -537,5 +533,34 @@ mod tests {
         ];
         let storage = to_storage_fountain(&blocks, crate::Medium::Screenplay);
         assert_eq!(parse_fountain(&storage, crate::Medium::Screenplay), blocks);
+    }
+
+    #[test]
+    fn storage_fountain_roundtrips_an_empty_action() {
+        let blocks = vec![Block::new(ElementKind::Action, "")];
+        let storage = to_storage_fountain(&blocks, crate::Medium::Screenplay);
+        let parsed = parse_fountain(&storage, crate::Medium::Screenplay);
+        assert_eq!(parsed, blocks, "{storage:?}");
+    }
+
+    #[test]
+    fn storage_fountain_keeps_lowercase_action_after_character() {
+        let blocks = vec![
+            Block::new(ElementKind::Character, "MARA"),
+            Block::new(ElementKind::Action, "She stands."),
+        ];
+        let storage = to_storage_fountain(&blocks, crate::Medium::Screenplay);
+        let parsed = parse_fountain(&storage, crate::Medium::Screenplay);
+        assert_eq!(parsed, blocks, "{storage:?}");
+        assert_eq!(parsed[1].kind, ElementKind::Action);
+    }
+
+    #[test]
+    fn storage_fountain_keeps_lowercase_character() {
+        let blocks = vec![Block::new(ElementKind::Character, "mara")];
+        let storage = to_storage_fountain(&blocks, crate::Medium::Screenplay);
+        let parsed = parse_fountain(&storage, crate::Medium::Screenplay);
+        assert_eq!(parsed.len(), 1, "{storage:?}");
+        assert_eq!(parsed[0].kind, ElementKind::Character, "{storage:?}");
     }
 }
