@@ -254,22 +254,37 @@ pub fn to_fountain(blocks: &[Block], medium: crate::Medium) -> String {
     out.trim().to_string() + "\n"
 }
 
-fn boneyard_marker(kind: ElementKind) -> Option<&'static str> {
+fn boneyard_marker(kind: ElementKind) -> &'static str {
     match kind {
-        ElementKind::Shot => Some("/* @shot */"),
-        ElementKind::StageDirection => Some("/* @stage */"),
-        ElementKind::General => Some("/* @general */"),
-        ElementKind::Dialogue => Some("/* @dialogue */"),
-        _ => None,
+        ElementKind::SceneHeading => "/* @scene-heading */",
+        ElementKind::Action => "/* @action */",
+        ElementKind::Character => "/* @character */",
+        ElementKind::Parenthetical => "/* @parenthetical */",
+        ElementKind::Dialogue => "/* @dialogue */",
+        ElementKind::Transition => "/* @transition */",
+        ElementKind::Shot => "/* @shot */",
+        ElementKind::Act => "/* @act */",
+        ElementKind::Scene => "/* @scene */",
+        ElementKind::StageDirection => "/* @stage */",
+        ElementKind::Lyric => "/* @lyric */",
+        ElementKind::General => "/* @general */",
     }
 }
 
 fn marker_kind(line: &str) -> Option<ElementKind> {
     match line {
-        "/* @shot */" => Some(ElementKind::Shot),
-        "/* @stage */" => Some(ElementKind::StageDirection),
-        "/* @general */" => Some(ElementKind::General),
+        "/* @scene-heading */" => Some(ElementKind::SceneHeading),
+        "/* @action */" => Some(ElementKind::Action),
+        "/* @character */" => Some(ElementKind::Character),
+        "/* @parenthetical */" => Some(ElementKind::Parenthetical),
         "/* @dialogue */" => Some(ElementKind::Dialogue),
+        "/* @transition */" => Some(ElementKind::Transition),
+        "/* @shot */" => Some(ElementKind::Shot),
+        "/* @act */" => Some(ElementKind::Act),
+        "/* @scene */" => Some(ElementKind::Scene),
+        "/* @stage */" => Some(ElementKind::StageDirection),
+        "/* @lyric */" => Some(ElementKind::Lyric),
+        "/* @general */" => Some(ElementKind::General),
         _ => None,
     }
 }
@@ -288,22 +303,33 @@ pub fn to_storage_fountain(blocks: &[Block], medium: crate::Medium) -> String {
         if i > 0 {
             out.push_str("\n\n");
         }
-        let marker = match b.kind {
-            ElementKind::Dialogue
-                if matches!(
-                    previous,
-                    Some(ElementKind::Character) | Some(ElementKind::Parenthetical)
-                ) =>
-            {
-                None
-            }
-            kind => boneyard_marker(kind),
+        let rendered = block_to_fountain(b, medium);
+        let body = rendered.trim_start_matches('\n');
+        let first_line = body.lines().next().unwrap_or("").trim();
+        let natural = fountain_syntax(first_line);
+        // A block needs an explicit marker only when Fountain would read it as
+        // something else (an all-caps action, a scene heading with no INT/EXT,
+        // a lone dialogue line). This keeps ordinary scripts readable while
+        // still round-tripping every typed element losslessly.
+        let marker = if b.kind == ElementKind::Dialogue
+            && matches!(
+                previous,
+                Some(ElementKind::Character) | Some(ElementKind::Parenthetical)
+            )
+        {
+            None
+        } else if b.kind == ElementKind::Action && natural.is_none() {
+            None
+        } else if natural == Some(b.kind) {
+            None
+        } else {
+            Some(boneyard_marker(b.kind))
         };
         if let Some(marker) = marker {
             out.push_str(marker);
             out.push('\n');
         }
-        out.push_str(block_to_fountain(b, medium).trim_start_matches('\n'));
+        out.push_str(body);
         previous = Some(b.kind);
     }
     out.trim().to_string() + "\n"
@@ -367,10 +393,15 @@ pub fn parse_fountain(text: &str, medium: crate::Medium) -> Vec<Block> {
         }
         let kind = if let Some(kind) = pending.take() {
             kind
+        } else if line.starts_with('(') {
+            // A parenthetical is always a parenthetical inside a speech.
+            ElementKind::Parenthetical
+        } else if expect_dialogue {
+            // Dialogue may be ALL CAPS; context wins over Fountain's
+            // character-name heuristic.
+            ElementKind::Dialogue
         } else if let Some(kind) = fountain_syntax(line) {
             kind
-        } else if expect_dialogue {
-            ElementKind::Dialogue
         } else {
             ElementKind::Action
         };
