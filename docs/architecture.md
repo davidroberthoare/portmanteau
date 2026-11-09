@@ -2,19 +2,19 @@
 
 ## Design rule
 
-The window is replaceable. Everything that makes Scriptorium a writing tool
+The window is replaceable. Everything that makes Portmanteau a writing tool
 lives below the window and is reachable through JSON commands.
 
 That gives three useful properties:
 
-1. The same behaviour is testable from `msc-cli`, `msc-mcp` and automated tests.
+1. The same behaviour is testable from `portmanteau-cli`, `portmanteau-mcp` and automated tests.
 2. A future mobile, web or terminal client can reuse the core without egui.
 3. An agent can read and write the project with the same operations a person
    uses, rather than scraping the interface.
 
 ## Crates
 
-### `msc-core` — the domain
+### `portmanteau-core` — the domain
 
 Pure Rust + serde. No file system, UI or export code.
 
@@ -45,7 +45,7 @@ Versions are stored twice, at different scopes:
   30. Restoring keeps the existing checkpoint list so the restore itself does
   not destroy the history that made it possible.
 
-### `msc-export` — compilation
+### `portmanteau-export` — compilation
 
 One assembly pass (`manuscript_sections`) and one writer per format. Front and
 back matter are collected from the binder folders and filtered by the export
@@ -71,7 +71,7 @@ ebook genuinely have different paper, type and matter choices. `export.run`
 resolves the same per-format settings before applying payload overrides, so the
 UI, the CLI and MCP all compile through one path.
 
-### `msc-api` — the command bus and persistence
+### `portmanteau-api` — the command bus and persistence
 
 `Workspace` owns the `Project`, the open path, a dirty flag and a short log.
 `execute(command, payload)` is a single match with one response shape. Commands
@@ -89,13 +89,13 @@ structure and short metadata — and each document body sits beside it as a
 Markdown or lossless-Fountain file, with snapshots and checkpoint payloads in
 their own directories. A project stays portable, diffable and easy to inspect;
 a writer can read the manuscript in any text editor. Legacy single-file
-`.scriptorium.json` projects still open and save, while new saves use the
+`.portmanteau.json` projects still open and save, while new saves use the
 folder form. A transactional store can sit behind the same commands later.
 
-### `msc-mcp` and `msc-cli`
+### `portmanteau-mcp` and `portmanteau-cli`
 
-`msc-mcp` serves newline-delimited JSON-RPC over stdio, exposes the catalogue as
-MCP tools, and maps each tool onto one command. `msc-cli` executes a single
+`portmanteau-mcp` serves newline-delimited JSON-RPC over stdio, exposes the catalogue as
+MCP tools, and maps each tool onto one command. `portmanteau-cli` executes a single
 command for smoke tests and shell automation.
 
 ### Desktop layer
@@ -105,7 +105,7 @@ bar, modals, shortcuts and screenshot mode. It owns view state only; the
 document state stays in `Workspace`.
 
 `src/ui/views/` contains one module per workspace. Each is a function over
-`&mut ScriptoriumApp` and `&mut egui::Ui`. Mutations are collected into small
+`&mut PortmanteauApp` and `&mut egui::Ui`. Mutations are collected into small
 action enums or local options and applied after the draw pass, which avoids
 borrow conflicts and keeps the painting code readable.
 
@@ -145,20 +145,20 @@ the saved body (`Snapshot::body_text`) and runs a line-level longest-common-
 subsequence diff against the current document. The result is data — `added`,
 `removed`, word counts, and lines marked `same`, `add` or `remove` — so the
 Compare version dialog, an agent and a future review export describe a revision
-identically. The diff lives in `msc-core::text`, not in the modal.
+identically. The diff lives in `portmanteau-core::text`, not in the modal.
 
 ## Testing and checks
 
-- Unit tests in `msc-core` cover scaffold creation, snapshot restore, checkpoint
+- Unit tests in `portmanteau-core` cover scaffold creation, snapshot restore, checkpoint
   restore, document move/reparent, snapshot body text and line diff.
-- `msc-api` tests cover command round-trips, unknown commands, statistics,
+- `portmanteau-api` tests cover command round-trips, unknown commands, statistics,
   reordering, snapshot comparison and a real export file.
-- `msc-core::script` tests cover scene and character classification, loose
+- `portmanteau-core::script` tests cover scene and character classification, loose
   parsing and Fountain output.
 - The desktop binary has a `--screenshot` mode that draws 120 frames, captures
   the viewport as PNG and exits. It is both a visual review tool and the build
   check used by the surrounding tooling.
-- `SCRIPTORIUM_VIEW` and `SCRIPTORIUM_DOC` open a specific screen and document,
+- `PORTMANTEAU_VIEW` and `PORTMANTEAU_DOC` open a specific screen and document,
   so every workspace can be inspected without clicking.
 
 ## Extension points

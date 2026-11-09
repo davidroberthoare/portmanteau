@@ -1,4 +1,4 @@
-//! Scriptorium domain model: projects, binder, documents, script elements,
+//! Portmanteau domain model: projects, binder, documents, script elements,
 //! research, story development, versions and export settings.
 
 use serde::{Deserialize, Serialize};

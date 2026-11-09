@@ -28,11 +28,11 @@ pub const PAPER_TEXT: Color32 = Color32::from_rgb(40, 37, 32);
 pub const PAPER_MUTED: Color32 = Color32::from_rgb(128, 119, 103);
 
 pub fn serif(size: f32) -> FontId {
-    FontId::new(size, FontFamily::Name("scriptorium-serif".into()))
+    FontId::new(size, FontFamily::Name("portmanteau-serif".into()))
 }
 
 pub fn sans(size: f32) -> FontId {
-    FontId::new(size, FontFamily::Name("scriptorium-sans".into()))
+    FontId::new(size, FontFamily::Name("portmanteau-sans".into()))
 }
 
 pub fn mono(size: f32) -> FontId {
@@ -42,56 +42,56 @@ pub fn mono(size: f32) -> FontId {
 pub fn install(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
-        "scriptorium-serif".into(),
+        "portmanteau-serif".into(),
         FontData::from_static(include_bytes!("../assets/LiberationSerif-Regular.ttf")).into(),
     );
     fonts.font_data.insert(
-        "scriptorium-serif-italic".into(),
+        "portmanteau-serif-italic".into(),
         FontData::from_static(include_bytes!("../assets/LiberationSerif-Italic.ttf")).into(),
     );
     fonts.font_data.insert(
-        "scriptorium-sans".into(),
+        "portmanteau-sans".into(),
         FontData::from_static(include_bytes!("../assets/LiberationSans-Regular.ttf")).into(),
     );
     fonts.font_data.insert(
-        "scriptorium-sans-bold".into(),
+        "portmanteau-sans-bold".into(),
         FontData::from_static(include_bytes!("../assets/LiberationSans-Bold.ttf")).into(),
     );
     fonts.font_data.insert(
-        "scriptorium-mono".into(),
+        "portmanteau-mono".into(),
         FontData::from_static(include_bytes!("../assets/LiberationMono-Regular.ttf")).into(),
     );
     // A broad fallback for the small set of typographic marks used in the
     // binder and toolbars (¶, ▸, ⌕, ＋). Liberation does not carry them.
     fonts.font_data.insert(
-        "scriptorium-symbols".into(),
+        "portmanteau-symbols".into(),
         FontData::from_static(include_bytes!("../assets/DejaVuSans.ttf")).into(),
     );
     fonts
         .families
-        .entry(FontFamily::Name("scriptorium-serif".into()))
+        .entry(FontFamily::Name("portmanteau-serif".into()))
         .or_default()
-        .insert(0, "scriptorium-serif".into());
+        .insert(0, "portmanteau-serif".into());
     fonts
         .families
-        .entry(FontFamily::Name("scriptorium-sans".into()))
+        .entry(FontFamily::Name("portmanteau-sans".into()))
         .or_default()
-        .insert(0, "scriptorium-sans".into());
+        .insert(0, "portmanteau-sans".into());
     fonts
         .families
         .entry(FontFamily::Monospace)
         .or_default()
-        .insert(0, "scriptorium-mono".into());
+        .insert(0, "portmanteau-mono".into());
     for family in [
-        FontFamily::Name("scriptorium-serif".into()),
-        FontFamily::Name("scriptorium-sans".into()),
+        FontFamily::Name("portmanteau-serif".into()),
+        FontFamily::Name("portmanteau-sans".into()),
         FontFamily::Monospace,
     ] {
         fonts
             .families
             .entry(family)
             .or_default()
-            .push("scriptorium-symbols".into());
+            .push("portmanteau-symbols".into());
     }
     // Keep the default emoji/symbol fonts available behind the Latin faces.
     ctx.set_fonts(fonts);

@@ -1,22 +1,22 @@
 [workspace]
 members = [
-    "crates/msc-core",
-    "crates/msc-export",
-    "crates/msc-api",
-    "crates/msc-mcp",
-    "crates/msc-cli",
+    "crates/portmanteau-core",
+    "crates/portmanteau-export",
+    "crates/portmanteau-api",
+    "crates/portmanteau-mcp",
+    "crates/portmanteau-cli",
 ]
 resolver = "2"
 
 [package]
-name = "myscript"
+name = "portmanteau"
 version = "0.1.0"
 edition = "2021"
-description = "Scriptorium — a native writing studio for novels, film, TV and theatre"
-default-run = "myscript"
+description = "Portmanteau — a native writing studio for novels, film, TV and theatre"
+default-run = "portmanteau"
 
 [[bin]]
-name = "myscript"
+name = "portmanteau"
 path = "src/main.rs"
 
 [dependencies]
@@ -26,9 +26,9 @@ image = { version = "0.25.10", default-features = false, features = ["png"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
-msc-core = { path = "crates/msc-core" }
-msc-export = { path = "crates/msc-export" }
-msc-api = { path = "crates/msc-api" }
+portmanteau-core = { path = "crates/portmanteau-core" }
+portmanteau-export = { path = "crates/portmanteau-export" }
+portmanteau-api = { path = "crates/portmanteau-api" }
 
 [profile.dev]
 opt-level = 1

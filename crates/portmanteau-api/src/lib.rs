@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 pub mod storage;
 
-use msc_core::*;
+use portmanteau_core::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -44,7 +44,7 @@ pub struct Workspace {
     pub path: Option<PathBuf>,
     pub dirty: bool,
     pub log: Vec<String>,
-    pub last_export: Option<msc_export::ExportInfo>,
+    pub last_export: Option<portmanteau_export::ExportInfo>,
     pub last_message: String,
 }
 
@@ -85,9 +85,9 @@ impl Workspace {
         } else if is_legacy_json(path) {
             let text = std::fs::read_to_string(path).map_err(|e| format!("Could not read: {e}"))?;
             serde_json::from_str(&text)
-                .map_err(|e| format!("Not a Scriptorium project: {e}"))?
+                .map_err(|e| format!("Not a Portmanteau project: {e}"))?
         } else {
-            return Err("Not a Scriptorium project".into());
+            return Err("Not a Portmanteau project".into());
         };
         Ok(Self {
             project,
@@ -408,8 +408,8 @@ impl Workspace {
                 };
                 let before = snap.body_text();
                 let after = doc.body_text();
-                let lines = msc_core::diff_lines(&before, &after);
-                let (added, removed) = msc_core::diff_counts(&lines);
+                let lines = portmanteau_core::diff_lines(&before, &after);
+                let (added, removed) = portmanteau_core::diff_counts(&lines);
                 ApiResponse::ok(
                     command,
                     format!("{added} added · {removed} removed"),
@@ -649,13 +649,13 @@ impl Workspace {
                     if candidate.extension().is_some() {
                         Some(candidate)
                     } else {
-                        Some(candidate.join(msc_export::default_filename(
+                        Some(candidate.join(portmanteau_export::default_filename(
                             &self.project,
                             settings.kind,
                         )))
                     }
                 };
-                match msc_export::export(&self.project, &settings, target.as_deref()) {
+                match portmanteau_export::export(&self.project, &settings, target.as_deref()) {
                     Ok(info) => {
                         self.last_message = info.message.clone();
                         self.log.push(format!("Exported {} → {}", info.format, info.path));
@@ -843,8 +843,8 @@ impl Workspace {
 pub fn default_save_path(project: &Project) -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     PathBuf::from(home)
-        .join("Scriptorium")
-        .join(format!("{}.scriptorium", storage::slugify(&project.title)))
+        .join("Portmanteau")
+        .join(format!("{}.portmanteau", storage::slugify(&project.title)))
 }
 
 fn is_legacy_json(path: &Path) -> bool {
@@ -1083,7 +1083,7 @@ mod tests {
     #[test]
     fn export_command_writes_a_file() {
         let mut ws = Workspace::demo();
-        let dir = std::env::temp_dir().join(msc_core::new_id("api-export"));
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("api-export"));
         let res = ws.execute(
             "export.run",
             json!({"format":"Fountain","path":dir.display().to_string()}),
@@ -1183,7 +1183,7 @@ mod tests {
     #[test]
     fn folder_roundtrip_preserves_project() {
         let ws = Workspace::demo();
-        let dir = std::env::temp_dir().join(msc_core::new_id("api-folder"));
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("api-folder"));
         storage::save_folder(&ws.project, &dir).expect("save folder");
         assert!(dir.join("project.json").is_file());
         assert!(dir.join("assets").is_dir());
@@ -1198,7 +1198,7 @@ mod tests {
     #[test]
     fn workspace_saves_and_opens_a_folder() {
         let mut ws = Workspace::demo();
-        let dir = std::env::temp_dir().join(msc_core::new_id("api-ws-folder"));
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("api-ws-folder"));
         ws.save(Some(dir.clone())).expect("save workspace");
         assert!(dir.is_dir());
         let reopened = Workspace::open(&dir).expect("open workspace");

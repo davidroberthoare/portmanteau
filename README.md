@@ -1,4 +1,4 @@
-# Scriptorium
+# Portmanteau
 
 A native writing studio for novels, film, television and theatre, built as a
 modular Rust workspace with a command-driven core and an egui desktop layer.
@@ -16,20 +16,20 @@ Or run a built binary:
 
 ```sh
 cargo build
-./target/debug/myscript
+./target/debug/portmanteau
 ```
 
 Screenshot mode (used by the build checks, and useful for visual reviews):
 
 ```sh
-./target/debug/myscript --screenshot shots/now.png
+./target/debug/portmanteau --screenshot shots/now.png
 ```
 
 Development aids for reviewing individual screens:
 
 ```sh
-SCRIPTORIUM_VIEW=corkboard ./target/debug/myscript --screenshot shots/corkboard.png
-SCRIPTORIUM_DOC="Cold Harbor" ./target/debug/myscript --screenshot shots/script.png
+PORTMANTEAU_VIEW=corkboard ./target/debug/portmanteau --screenshot shots/corkboard.png
+PORTMANTEAU_DOC="Cold Harbor" ./target/debug/portmanteau --screenshot shots/script.png
 ```
 
 ## What is in this version
@@ -82,9 +82,9 @@ SCRIPTORIUM_DOC="Cold Harbor" ./target/debug/myscript --screenshot shots/script.
 
 **Automation**
 - Every important action is a JSON command on a single workspace object.
-- `msc-api` is the command bus; the UI uses it for creations and exports.
-- `msc-mcp` exposes the same commands as MCP tools over stdio.
-- `msc-cli` runs one command and prints JSON.
+- `portmanteau-api` is the command bus; the UI uses it for creations and exports.
+- `portmanteau-mcp` exposes the same commands as MCP tools over stdio.
+- `portmanteau-cli` runs one command and prints JSON.
 - The **Command desk** view lets a person inspect, edit and run the same calls.
 
 ## Workspace layout
@@ -103,11 +103,11 @@ app/
       views/            corkboard, outline, research, develop,
                         characters, history, compile, command desk
   crates/
-    msc-core/           domain model, script parser, sample project
-    msc-export/         PDF, EPUB, DOCX, FDX, Fountain, HTML, MD, RTF, TXT, ZIP
-    msc-api/            Workspace and JSON command bus
-    msc-mcp/            MCP server (stdio JSON-RPC)
-    msc-cli/            one-command CLI client
+    portmanteau-core/           domain model, script parser, sample project
+    portmanteau-export/         PDF, EPUB, DOCX, FDX, Fountain, HTML, MD, RTF, TXT, ZIP
+    portmanteau-api/            Workspace and JSON command bus
+    portmanteau-mcp/            MCP server (stdio JSON-RPC)
+    portmanteau-cli/            one-command CLI client
   assets/               bundled Liberation and DejaVu fonts
   docs/                 architecture and running notes
 ```
@@ -115,16 +115,16 @@ app/
 The dependency direction is one-way:
 
 ```
-msc-core  <-  msc-export
+portmanteau-core  <-  portmanteau-export
     ^             ^
     |             |
-  msc-api  <----  msc-mcp / msc-cli
+  portmanteau-api  <----  portmanteau-mcp / portmanteau-cli
     ^
   desktop UI
 ```
 
-`msc-core` knows nothing about files, UI or export. `msc-export` knows about
-the manuscript, not the window. `msc-api` owns persistence and the command
+`portmanteau-core` knows nothing about files, UI or export. `portmanteau-export` knows about
+the manuscript, not the window. `portmanteau-api` owns persistence and the command
 surface. The desktop layer is a view onto that API, not a second model.
 
 ## Commands
@@ -159,28 +159,28 @@ A command always returns `{ ok, command, message, data }`.
 Examples:
 
 ```sh
-cargo run -p msc-cli -- stats
-cargo run -p msc-cli -- export.run '{"format":"EPUB","path":"exports"}'
-cargo run -p msc-cli -- document.create '{"title":"New scene","kind":"Scene","medium":"Screenplay"}'
-cargo run -p msc-cli -- document.move '{"id":"doc-…","direction":"up"}' \
-  --project book.scriptorium --save
+cargo run -p portmanteau-cli -- stats
+cargo run -p portmanteau-cli -- export.run '{"format":"EPUB","path":"exports"}'
+cargo run -p portmanteau-cli -- document.create '{"title":"New scene","kind":"Scene","medium":"Screenplay"}'
+cargo run -p portmanteau-cli -- document.move '{"id":"doc-…","direction":"up"}' \
+  --project book.portmanteau --save
 ```
 
 The CLI is one command per process. Add `--save` to write a mutating command
 back to the project; otherwise it runs against an in-memory copy.
 
-Projects are folder packages with the extension `.scriptorium`. `project.json`
+Projects are folder packages with the extension `.portmanteau`. `project.json`
 is the manifest — binder structure and short metadata — and each document body
 is a Markdown or Fountain file in `documents/`, so the writing stays readable
-and diffable outside Scriptorium. Saving without a path uses
-`~/Scriptorium/the-salt-road.scriptorium/`. Opening a legacy
-`.scriptorium.json` file still works, and saving to a `.json` path keeps that
+and diffable outside Portmanteau. Saving without a path uses
+`~/Portmanteau/the-salt-road.portmanteau/`. Opening a legacy
+`.portmanteau.json` file still works, and saving to a `.json` path keeps that
 single-file form. The File menu has Open, Save and Save As, with `Ctrl/Cmd+O`
 and `Ctrl/Cmd+Shift+S` shortcuts.
 
 ## Local-only, deliberately
 
-Scriptorium has no accounts, network code, shared review server or sync layer.
+Portmanteau has no accounts, network code, shared review server or sync layer.
 Everything lives in a project folder on the writer's own disk, and the project
 bundle is a local archive rather than a collaboration format. Any future
 commenting should be built on versioned files in the writer's own repository,

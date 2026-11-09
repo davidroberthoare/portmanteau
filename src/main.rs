@@ -1,8 +1,8 @@
-//! Scriptorium — a native writing studio for novels, film, television and theatre.
+//! Portmanteau — a native writing studio for novels, film, television and theatre.
 //!
 //! The binary is intentionally thin: it installs the visual language and hands
-//! the window to [`app::ScriptoriumApp`]. Everything below the window lives in
-//! the `msc-*` crates: a domain core, a command API, an MCP server and the
+//! the window to [`app::PortmanteauApp`]. Everything below the window lives in
+//! the `portmanteau-*` crates: a domain core, a command API, an MCP server and the
 //! export engine.
 
 mod app;
@@ -36,16 +36,16 @@ fn main() -> eframe::Result<()> {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1440.0, 930.0])
             .with_min_inner_size([1080.0, 700.0])
-            .with_title("Scriptorium"),
+            .with_title("Portmanteau"),
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
     eframe::run_native(
-        "Scriptorium",
+        "Portmanteau",
         options,
         Box::new(move |cc| {
             theme::install(&cc.egui_ctx);
-            Ok(Box::new(app::ScriptoriumApp::new(screenshot)))
+            Ok(Box::new(app::PortmanteauApp::new(screenshot)))
         }),
     )
 }

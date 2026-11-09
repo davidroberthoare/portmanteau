@@ -5,9 +5,9 @@ use eframe::egui::{
     Stroke, TextEdit, Vec2,
 };
 
-use msc_core::Character;
+use portmanteau_core::Character;
 
-use crate::app::ScriptoriumApp;
+use crate::app::PortmanteauApp;
 use crate::theme::*;
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button};
 
@@ -20,7 +20,7 @@ const FACE_COLORS: [Color32; 6] = [
     Color32::from_rgb(176, 166, 132),
 ];
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut add = false;
     page_head(
         ui,
@@ -162,7 +162,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
     }
 }
 
-fn detail(app: &mut ScriptoriumApp, ui: &mut egui::Ui, id: &str) {
+fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
     let Some(pos) = app.ws.project.characters.iter().position(|c| c.id == id) else {
         return;
     };

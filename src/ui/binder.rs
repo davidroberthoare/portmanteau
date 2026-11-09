@@ -4,9 +4,9 @@ use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke,
     Vec2,
 };
-use msc_core::{DocKind, Medium};
+use portmanteau_core::{DocKind, Medium};
 
-use crate::app::{ScriptoriumApp, View};
+use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
 
 struct Row {
@@ -32,7 +32,7 @@ enum Action {
 }
 
 fn collect_rows(
-    app: &ScriptoriumApp,
+    app: &PortmanteauApp,
     parent: Option<&str>,
     depth: usize,
     out: &mut Vec<Row>,
@@ -55,7 +55,7 @@ fn collect_rows(
     }
 }
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut action: Option<Action> = None;
 
     ui.horizontal(|ui| {
@@ -475,7 +475,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
     }
 }
 
-fn target_card(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+fn target_card(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     Frame::new()
         .fill(PANEL_2)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -524,7 +524,7 @@ fn target_card(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
         });
 }
 
-fn streak_days(app: &ScriptoriumApp) -> u32 {
+fn streak_days(app: &PortmanteauApp) -> u32 {
     let log = &app.ws.project.session_log;
     let mut streak = 0;
     for entry in log.iter().rev() {

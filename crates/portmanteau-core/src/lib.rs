@@ -1,4 +1,4 @@
-//! Scriptorium's domain core.
+//! Portmanteau's domain core.
 //!
 //! Everything below the UI lives here: the project graph, screenplay blocks,
 //! research, story structure, snapshots and export settings. It has no UI or

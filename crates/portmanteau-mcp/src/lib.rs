@@ -1,10 +1,10 @@
-//! MCP (Model Context Protocol) server for Scriptorium.
+//! MCP (Model Context Protocol) server for Portmanteau.
 //!
 //! The desktop API is exposed as MCP tools over newline-delimited JSON-RPC on
 //! stdin/stdout. That makes the whole writing studio scriptable by an agent:
 //! read the binder, write a chapter, snapshot it, export a screenplay.
 
-use msc_api::{ApiResponse, Workspace};
+use portmanteau_api::{ApiResponse, Workspace};
 use serde_json::{json, Value};
 
 pub fn tool_definitions() -> Value {
@@ -110,8 +110,8 @@ pub fn handle_message(ws: &mut Workspace, message: &Value) -> Option<Value> {
         "initialize" => Ok(json!({
             "protocolVersion": "2024-11-05",
             "capabilities": {"tools": {"listChanged": false}},
-            "serverInfo": {"name": "scriptorium", "version": env!("CARGO_PKG_VERSION")},
-            "instructions": "Scriptorium is a writing studio for novels, film, TV and theatre. Read the project, write documents, snapshot versions and compile to professional formats."
+            "serverInfo": {"name": "portmanteau", "version": env!("CARGO_PKG_VERSION")},
+            "instructions": "Portmanteau is a writing studio for novels, film, TV and theatre. Read the project, write documents, snapshot versions and compile to professional formats."
         })),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({"tools": tool_definitions()})),
@@ -133,14 +133,14 @@ pub fn handle_message(ws: &mut Workspace, message: &Value) -> Option<Value> {
             }
         }
         "resources/list" => Ok(json!({"resources": [
-            {"uri": "scriptorium://project", "name": "Open project", "description": "Project summary", "mimeType": "application/json"},
-            {"uri": "scriptorium://binder", "name": "Binder", "description": "Every document in the project", "mimeType": "application/json"}
+            {"uri": "portmanteau://project", "name": "Open project", "description": "Project summary", "mimeType": "application/json"},
+            {"uri": "portmanteau://binder", "name": "Binder", "description": "Every document in the project", "mimeType": "application/json"}
         ]})),
         "resources/read" => {
             let uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or("");
             let res = match uri {
-                "scriptorium://project" => ws.execute("project.info", json!({})),
-                "scriptorium://binder" => ws.execute("document.list", json!({})),
+                "portmanteau://project" => ws.execute("project.info", json!({})),
+                "portmanteau://binder" => ws.execute("document.list", json!({})),
                 _ => ApiResponse {
                     ok: false,
                     command: "resources/read".into(),
@@ -169,12 +169,12 @@ pub fn serve_stdio() {
         .and_then(|i| std::env::args().nth(i + 1));
     let mut ws = match path {
         Some(p) => Workspace::open(std::path::Path::new(&p)).unwrap_or_else(|e| {
-            eprintln!("scriptorium-mcp: {e}; starting the demonstration project");
+            eprintln!("portmanteau-mcp: {e}; starting the demonstration project");
             Workspace::demo()
         }),
         None => Workspace::demo(),
     };
-    eprintln!("scriptorium-mcp {} ready on stdio", env!("CARGO_PKG_VERSION"));
+    eprintln!("portmanteau-mcp {} ready on stdio", env!("CARGO_PKG_VERSION"));
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
@@ -209,7 +209,7 @@ mod tests {
             &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
         )
         .unwrap();
-        assert_eq!(res["result"]["serverInfo"]["name"], "scriptorium");
+        assert_eq!(res["result"]["serverInfo"]["name"], "portmanteau");
     }
 
     #[test]

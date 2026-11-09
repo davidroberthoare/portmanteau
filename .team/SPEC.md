@@ -1,4 +1,4 @@
-# SPEC — Scriptorium: project bundle + per-target compile
+# SPEC — Portmanteau: project bundle + per-target compile
 
 ## Goal
 
@@ -12,8 +12,8 @@ Three things, in priority order:
 
 ## Non-goals
 
-- Do NOT rewrite the application architecture. Keep the crate split (msc-core,
-  msc-export, msc-api, msc-mcp, msc-cli) and the in-memory Project/Document model.
+- Do NOT rewrite the application architecture. Keep the crate split (portmanteau-core,
+  portmanteau-export, portmanteau-api, portmanteau-mcp, portmanteau-cli) and the in-memory Project/Document model.
 - Do NOT implement manuscript import, drag-and-drop, word-level diff, or a new PDF
   typesetter. Those stay on the roadmap.
 - Do NOT add collaboration, network, accounts, or telemetry.
@@ -37,15 +37,15 @@ Three things, in priority order:
 Scrivener stores a project as a `.scriv` FOLDER PACKAGE: a small XML index
 (project.scrivx) plus one human-readable content file per binder item, with the binder
 tree kept in the index. Ulysses and iA Writer store plain Markdown files on disk.
-Scriptorium follows the same pattern: a folder package with a small JSON manifest (the
+Portmanteau follows the same pattern: a folder package with a small JSON manifest (the
 index — structure + short metadata) and one Markdown / Fountain file per document body
-(the writing itself). Legacy `.scriptorium.json` files must still open.
+(the writing itself). Legacy `.portmanteau.json` files must still open.
 
 ### On-disk layout
 
-A project is a directory with extension `.scriptorium`:
+A project is a directory with extension `.portmanteau`:
 
-    <Slug>.scriptorium/
+    <Slug>.portmanteau/
       project.json                     # manifest (index + metadata, NO long bodies)
       documents/                       # one file per binder document (body only)
         <nn>-<slug>-<id8>.md           #   prose  -> verbatim UTF-8 text
@@ -85,8 +85,8 @@ docs/notes.md.
 
 ### Filenames are derived, not stored
 
-Do NOT add a file/path field to the domain model (msc-core has no filesystem concerns).
-The storage module in msc-api derives each filename from record fields. `save` fully
+Do NOT add a file/path field to the domain model (portmanteau-core has no filesystem concerns).
+The storage module in portmanteau-api derives each filename from record fields. `save` fully
 rewrites documents/, research/, snapshots/ and checkpoints/ each time, so renames/moves
 never leave orphans.
 
@@ -97,7 +97,7 @@ losslessly (all 12 ElementKinds preserved).
 
 - script::to_fountain (interchange export) stays as-is.
 - Add script::to_storage_fountain(blocks, medium) and
-  script::parse_fountain(text, medium) -> Vec<Block> in crates/msc-core/src/script.rs.
+  script::parse_fountain(text, medium) -> Vec<Block> in crates/portmanteau-core/src/script.rs.
 - The three kinds Fountain cannot natively express — Shot, StageDirection, General — are
   emitted with a Fountain BONEYARD marker comment (/* @shot */, /* @stage */,
   /* @general */) on its own line immediately before the block. Standard Fountain readers
@@ -108,14 +108,14 @@ losslessly (all 12 ElementKinds preserved).
 - Prose (non-script) bodies are written verbatim as .md and read back verbatim (no
   Markdown parsing).
 
-### Open / save / migrate (crates/msc-api/src/lib.rs)
+### Open / save / migrate (crates/portmanteau-api/src/lib.rs)
 
-- New module crates/msc-api/src/storage.rs owns save_folder(project, dir) and
+- New module crates/portmanteau-api/src/storage.rs owns save_folder(project, dir) and
   load_folder(dir) -> Result<Project, String>.
 - Workspace::open(path): directory -> load_folder; *.json -> legacy single-file; else error.
 - Workspace::save(path): *.json -> legacy save; otherwise -> save_folder (create dir).
   save(None): use self.path if set (respect its format); else default folder
-  ~/Scriptorium/<slug>.scriptorium/.
+  ~/Portmanteau/<slug>.portmanteau/.
 - Update default_save_path() to the folder path.
 - Update project.open/project.save catalogue text and MCP descriptions to mention
   "folder or legacy .json".
@@ -123,7 +123,7 @@ losslessly (all 12 ElementKinds preserved).
 ### UI copy (src/app.rs)
 
 Update the Save/Open modal hint and default-path string to the folder form
-(<slug>.scriptorium/), and any `.scriptorium.json` mentions, while still accepting legacy
+(<slug>.portmanteau/), and any `.portmanteau.json` mentions, while still accepting legacy
 .json paths.
 
 ### Documentation
@@ -135,23 +135,23 @@ Update the Save/Open modal hint and default-path string to the folder form
 ### Round 1 acceptance criteria (each checkable)
 
 1. cargo build --workspace and cargo test --workspace pass from app/.
-2. New tests: msc-core parse_fountain/to_storage_fountain round-trips all 12 kinds;
-   msc-api saves the demo to a folder, reloads it, asserts project identical (bodies,
+2. New tests: portmanteau-core parse_fountain/to_storage_fountain round-trips all 12 kinds;
+   portmanteau-api saves the demo to a folder, reloads it, asserts project identical (bodies,
    snapshots, research, checkpoints, settings all match).
 3. CLI smoke test:
-     ./target/debug/msc-cli project.save '{"path":"/tmp/rt1/the-salt-road.scriptorium"}' --save
-     find /tmp/rt1/the-salt-road.scriptorium -type f
+     ./target/debug/portmanteau-cli project.save '{"path":"/tmp/rt1/the-salt-road.portmanteau"}' --save
+     find /tmp/rt1/the-salt-road.portmanteau -type f
      # expects project.json, documents/*.md|*.fountain, research/*.md, snapshots/**, checkpoints/*.json
-     ./target/debug/msc-cli project.open '{"path":"/tmp/rt1/the-salt-road.scriptorium"}'
+     ./target/debug/portmanteau-cli project.open '{"path":"/tmp/rt1/the-salt-road.portmanteau"}'
    project.open must succeed and document.list after it must match the demo.
-4. Legacy round-trip: save demo to /tmp/x.scriptorium.json, reopen, stats unchanged.
+4. Legacy round-trip: save demo to /tmp/x.portmanteau.json, reopen, stats unchanged.
 5. --screenshot still writes a populated PNG.
 
 ---
 
 ## ROUND 2 — Per-target compile settings + base style
 
-### Model changes (crates/msc-core/src/model.rs)
+### Model changes (crates/portmanteau-core/src/model.rs)
 
     pub struct ProjectStyle {           // project-wide base, per medium
         pub prose_font: String,          // "Liberation Serif"
@@ -179,9 +179,9 @@ Serde: new fields use #[serde(default)] so old files/manifests load (AGENTS.md s
 
 Workspace::execute("export.run") resolves the target format's settings:
 parse format; settings = project.settings_for(kind); apply payload overrides; persist via
-set_settings; call msc_export::export.
+set_settings; call portmanteau_export::export.
 
-### Export engine behaviour (crates/msc-export/src/lib.rs)
+### Export engine behaviour (crates/portmanteau-export/src/lib.rs)
 
 - PDF: honour include_page_numbers (footer page number, omit when false) and
   include_running_headers (running head with title/author, omit when false), prose path.
@@ -198,7 +198,7 @@ set_settings; call msc_export::export.
 - export.settings.update {"format":"PDF", ...fields...}
 - style.get {}
 - style.update {...fields...}
-Update command_catalogue(), README command table, and msc-mcp tool definitions/mappings.
+Update command_catalogue(), README command table, and portmanteau-mcp tool definitions/mappings.
 
 ### Compile UI (src/ui/views/compile.rs)
 
@@ -228,7 +228,7 @@ root (prose + scripts mixed, user creates sub-folders); **no legacy `.json` comp
 (remove it — folder format only); settings page for default styles + per-project overrides.
 
 Work items, in planned order:
-1. Rename Scriptorium -> Portmanteau (binary, crates, ext, default path, title, env vars, docs).
+1. Rename the product to Portmanteau (binary, crates, ext, default path, title, env vars, docs).
 2. Folders + cleanup: single Draft root; user can add folders; compile logic keyed by DocKind
    not folder title; drop legacy .json open/save; remove scattered nav buttons; remove script
    margin type indicators.

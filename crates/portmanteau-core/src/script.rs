@@ -1,6 +1,6 @@
 //! Script elements, loose parsing and Fountain conversion.
 //!
-//! Scriptorium stores scripts as a sequence of typed blocks. That keeps the
+//! Portmanteau stores scripts as a sequence of typed blocks. That keeps the
 //! editor predictable and makes exports to Fountain, Final Draft and PDF a
 //! matter of walking the same list.
 

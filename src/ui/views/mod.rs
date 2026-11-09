@@ -14,10 +14,10 @@ use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, Stroke, Vec2,
 };
 
-use crate::app::{ScriptoriumApp, View};
+use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     match app.view {
         View::Corkboard => corkboard::show(app, ui),
         View::Outline => outline::show(app, ui),

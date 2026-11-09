@@ -2,5 +2,5 @@
 /shots
 /export
 /exports
-*.scriptorium.json
+*.portmanteau.json
 .DS_Store

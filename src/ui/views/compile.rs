@@ -6,15 +6,15 @@ use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense,
     Stroke, TextEdit, Vec2,
 };
-use msc_core::{
+use portmanteau_core::{
     DocKind, ExportKind, ExportSettings, PaperSize, ProjectKind, ProjectStyle,
 };
 
-use crate::app::{ScriptoriumApp, ToastKind};
+use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::*;
 use crate::ui::views::{content_frame, meta_line, page_head, quiet_button};
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     page_head(
         ui,
         "Finish",
@@ -340,7 +340,7 @@ fn format_color(kind: ExportKind) -> Color32 {
     }
 }
 
-fn output_panel(app: &ScriptoriumApp, ui: &mut egui::Ui, settings: &mut msc_core::ExportSettings) {
+fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut portmanteau_core::ExportSettings) {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -366,7 +366,7 @@ fn output_panel(app: &ScriptoriumApp, ui: &mut egui::Ui, settings: &mut msc_core
                         );
                     });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let name = msc_export::default_filename(&app.ws.project, settings.kind);
+                    let name = portmanteau_export::default_filename(&app.ws.project, settings.kind);
                     ui.label(
                         RichText::new(format!("/ {name}"))
                             .font(mono(9.0))
@@ -385,7 +385,7 @@ fn output_panel(app: &ScriptoriumApp, ui: &mut egui::Ui, settings: &mut msc_core
         });
 }
 
-fn page_panel(ui: &mut egui::Ui, settings: &mut msc_core::ExportSettings) {
+fn page_panel(ui: &mut egui::Ui, settings: &mut portmanteau_core::ExportSettings) {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -463,7 +463,7 @@ fn page_panel(ui: &mut egui::Ui, settings: &mut msc_core::ExportSettings) {
         });
 }
 
-fn body_panel(ui: &mut egui::Ui, settings: &mut msc_core::ExportSettings) {
+fn body_panel(ui: &mut egui::Ui, settings: &mut portmanteau_core::ExportSettings) {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -564,8 +564,8 @@ fn style_panel(ui: &mut egui::Ui, style: &mut ProjectStyle) {
 
 fn check(
     ui: &mut egui::Ui,
-    settings: &mut msc_core::ExportSettings,
-    field: impl Fn(&mut msc_core::ExportSettings) -> &mut bool,
+    settings: &mut portmanteau_core::ExportSettings,
+    field: impl Fn(&mut portmanteau_core::ExportSettings) -> &mut bool,
     label: &str,
 ) {
     let mut value = *field(settings);
@@ -574,7 +574,7 @@ fn check(
     }
 }
 
-fn preview_panel(app: &ScriptoriumApp, ui: &mut egui::Ui) {
+fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui) {
     Frame::new()
         .fill(BG)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -628,7 +628,7 @@ fn preview_panel(app: &ScriptoriumApp, ui: &mut egui::Ui) {
         });
 }
 
-fn run_export(app: &mut ScriptoriumApp, settings: &msc_core::ExportSettings) {
+fn run_export(app: &mut PortmanteauApp, settings: &portmanteau_core::ExportSettings) {
     let payload = serde_json::json!({
         "format": settings.kind.label(),
         "path": settings.output_path,

@@ -86,7 +86,7 @@ thing a visual check catches.
     drew the search magnifier with the painter; fixed the clipped session card;
     pluralised version counts; aligned agent defaults with the highlighted
     command; removed dead code and warnings.
-12. **Verified exports.** Ran all ten formats through `msc-cli` into a temp
+12. **Verified exports.** Ran all ten formats through `portmanteau-cli` into a temp
     folder. Confirmed PDF magic bytes, EPUB and DOCX zip structure, FDX/XML,
     Fountain title page and project bundle.
 13. **Rebuild check.** Passed: build, screenshot 2880×1860, populated start
@@ -128,17 +128,17 @@ thing a visual check catches.
     architecture and this log to match the new commands and screens.
 20. **Verified state.** `cargo build --workspace` and `cargo test --workspace`
     pass; the screenshot mode still writes a populated 2880×1860 window; the
-    diff screen was reviewed directly with `SCRIPTORIUM_DIFF=1`. Export paths
-    were exercised again through `msc-cli`.
+    diff screen was reviewed directly with `PORTMANTEAU_DIFF=1`. Export paths
+    were exercised again through `portmanteau-cli`.
 
-21. **Moved projects to a folder package.** A project is now a `.scriptorium`
+21. **Moved projects to a folder package.** A project is now a `.portmanteau`
     directory instead of one JSON blob: `project.json` holds the binder
     structure and short metadata, and every long body is externalised.
     Documents are `documents/<nn>-<slug>-<id8>.md` (prose, verbatim) or
     `.fountain` (scripts); research lives in `research/`, named snapshots in
     `snapshots/<docid8>/`, checkpoint payloads in `checkpoints/<id>.json`, and
     `assets/` is reserved for future binaries. Filenames are derived from the
-    record, never stored, so `msc-core` stays free of filesystem knowledge.
+    record, never stored, so `portmanteau-core` stays free of filesystem knowledge.
     The `<id8>` suffix is the lookup key; the number and title slug are there
     for humans. Saves clear and rewrite the managed directories, so renaming
     or moving a document cannot leave an orphan file behind.
@@ -146,8 +146,8 @@ thing a visual check catches.
     each checkpoint's id/label/created/kind/words with its payload emptied, and
     the full JSON (including payload) is read from `checkpoints/<id>.json` on
     load.
-    Old `.scriptorium.json` files still open and still save as single files;
-    new saves default to `~/Scriptorium/<slug>.scriptorium/`.
+    Old `.portmanteau.json` files still open and still save as single files;
+    new saves default to `~/Portmanteau/<slug>.portmanteau/`.
     Script bodies stay human-readable Fountain. Kinds Fountain cannot express
     directly — shot, stage direction and general — carry a boneyard comment
     (`/* @shot */`, `/* @stage */`, `/* @general */`) on the line before the
@@ -269,7 +269,7 @@ selected format's settings, persists edits back to `formats`, and offers a
 "Reset this format to base style" button plus the base-style editor.
 
 Save As now treats an extensionless name as a folder package (`MyBook` becomes
-`MyBook.scriptorium/`) instead of inventing a legacy `.json` file. Opening and
+`MyBook.portmanteau/`) instead of inventing a legacy `.json` file. Opening and
 saving still round-trip through the Round 1 folder format.
 
 ## Round 3 — font family reaches the page, and formats fail loudly

@@ -1,4 +1,4 @@
-//! Scriptorium desktop shell.
+//! Portmanteau desktop shell.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -9,8 +9,8 @@ use eframe::egui::{
     ScrollArea, Stroke, TextEdit, Vec2,
 };
 
-use msc_api::Workspace;
-use msc_core::{DocKind, ElementKind, Medium, ProjectKind};
+use portmanteau_api::Workspace;
+use portmanteau_core::{DocKind, ElementKind, Medium, ProjectKind};
 
 use crate::icons::{self, Icon};
 use crate::theme::*;
@@ -69,7 +69,7 @@ impl View {
             View::Agent,
         ]
     }
-    /// Development aid: `SCRIPTORIUM_VIEW=corkboard` opens a workspace
+    /// Development aid: `PORTMANTEAU_VIEW=corkboard` opens a workspace
     /// directly, which makes automated screenshots of each screen possible.
     pub fn from_key(key: &str) -> Option<View> {
         View::all()
@@ -79,7 +79,7 @@ impl View {
 }
 
 fn initial_view() -> View {
-    std::env::var("SCRIPTORIUM_VIEW")
+    std::env::var("PORTMANTEAU_VIEW")
         .ok()
         .and_then(|key| View::from_key(key.trim()))
         .unwrap_or(View::Write)
@@ -112,7 +112,7 @@ pub struct DiffState {
     pub removed: usize,
     pub words_before: u32,
     pub words_after: u32,
-    pub lines: Vec<msc_core::DiffLine>,
+    pub lines: Vec<portmanteau_core::DiffLine>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -128,7 +128,7 @@ pub enum ToastKind {
     Info,
 }
 
-pub struct ScriptoriumApp {
+pub struct PortmanteauApp {
     pub ws: Workspace,
     pub view: View,
     pub selected: Option<String>,
@@ -164,7 +164,7 @@ pub struct ScriptoriumApp {
     pub editor_font_size: f32,
 }
 
-impl ScriptoriumApp {
+impl PortmanteauApp {
     pub fn new(screenshot: Option<PathBuf>) -> Self {
         let ws = Workspace::demo();
         let selected = ws
@@ -174,7 +174,7 @@ impl ScriptoriumApp {
             .find(|d| d.title.starts_with("Chapter One"))
             .map(|d| d.id.clone())
             .or_else(|| ws.project.documents.iter().find(|d| d.kind == DocKind::Chapter).map(|d| d.id.clone()));
-        let selected = std::env::var("SCRIPTORIUM_DOC")
+        let selected = std::env::var("PORTMANTEAU_DOC")
             .ok()
             .and_then(|needle| {
                 let needle = needle.to_lowercase();
@@ -228,7 +228,7 @@ impl ScriptoriumApp {
         };
         // Development aid: open the first available comparison so the diff
         // screen can be reviewed (and screenshotted) without clicking.
-        if std::env::var("SCRIPTORIUM_DIFF").is_ok() {
+        if std::env::var("PORTMANTEAU_DIFF").is_ok() {
             if let Some((doc_id, snap_id)) = app.ws.project.documents.iter().find_map(|d| {
                 d.snapshots
                     .first()
@@ -240,7 +240,7 @@ impl ScriptoriumApp {
         app
     }
 
-    pub fn current_doc(&self) -> Option<&msc_core::Document> {
+    pub fn current_doc(&self) -> Option<&portmanteau_core::Document> {
         self.selected
             .as_ref()
             .and_then(|id| self.ws.project.document(id))
@@ -270,8 +270,8 @@ impl ScriptoriumApp {
         let Some(snap) = doc.snapshots.iter().find(|s| s.id == snap_id) else {
             return;
         };
-        let lines = msc_core::diff_lines(&snap.body_text(), &doc.body_text());
-        let (added, removed) = msc_core::diff_counts(&lines);
+        let lines = portmanteau_core::diff_lines(&snap.body_text(), &doc.body_text());
+        let (added, removed) = portmanteau_core::diff_counts(&lines);
         self.diff = Some(DiffState {
             doc_id: doc_id.to_string(),
             doc_title: doc.title.clone(),
@@ -349,7 +349,7 @@ impl ScriptoriumApp {
         let id = self.ws.project.add_document(parent, title, kind, medium);
         if medium.is_script() {
             if let Some(doc) = self.ws.project.document_mut(&id) {
-                doc.blocks.push(msc_core::Block::new(ElementKind::SceneHeading, "INT. LOCATION — DAY"));
+                doc.blocks.push(portmanteau_core::Block::new(ElementKind::SceneHeading, "INT. LOCATION — DAY"));
             }
         }
         self.ws.dirty = true;
@@ -408,7 +408,7 @@ impl ScriptoriumApp {
                         Color32::from_rgb(28, 24, 18),
                     );
                     ui.add_space(3.0);
-                    ui.label(RichText::new("Scriptorium").font(serif(19.0)).color(TEXT));
+                    ui.label(RichText::new("Portmanteau").font(serif(19.0)).color(TEXT));
                     ui.add_space(10.0);
 
                     self.menus(ui);
@@ -494,7 +494,7 @@ impl ScriptoriumApp {
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|| {
                         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-                        format!("{home}/Scriptorium/{}.scriptorium/", slug(&self.ws.project.title))
+                        format!("{home}/Portmanteau/{}.portmanteau/", slug(&self.ws.project.title))
                     });
                 ui.close_menu();
             }
@@ -843,14 +843,14 @@ impl ScriptoriumApp {
 
         if self.show_about {
             let mut open = self.show_about;
-            egui::Window::new("About Scriptorium")
+            egui::Window::new("About Portmanteau")
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
                 .min_width(400.0)
                 .show(ctx, |ui| {
-                    ui.label(RichText::new("Scriptorium").font(serif(26.0)).color(TEXT));
+                    ui.label(RichText::new("Portmanteau").font(serif(26.0)).color(TEXT));
                     ui.label(
                         RichText::new("A native writing studio for novels, film, television and theatre.")
                             .font(sans(12.0))
@@ -973,7 +973,7 @@ impl ScriptoriumApp {
                                 }
                                 for line in &state.lines {
                                     let (sigil, sigil_color, fill, text_color) = match line.kind {
-                                        msc_core::DiffKind::Same => (
+                                        portmanteau_core::DiffKind::Same => (
                                             " ",
                                             PAPER_MUTED,
                                             PAPER,
@@ -983,13 +983,13 @@ impl ScriptoriumApp {
                                                 PAPER_TEXT
                                             },
                                         ),
-                                        msc_core::DiffKind::Add => (
+                                        portmanteau_core::DiffKind::Add => (
                                             "+",
                                             Color32::from_rgb(72, 118, 86),
                                             Color32::from_rgb(225, 238, 227),
                                             Color32::from_rgb(32, 55, 39),
                                         ),
-                                        msc_core::DiffKind::Remove => (
+                                        portmanteau_core::DiffKind::Remove => (
                                             "−",
                                             Color32::from_rgb(158, 75, 66),
                                             Color32::from_rgb(245, 225, 220),
@@ -1017,7 +1017,7 @@ impl ScriptoriumApp {
                                                             ))
                                                             .font(mono(8.5))
                                                             .color(if line.kind
-                                                                == msc_core::DiffKind::Same
+                                                                == portmanteau_core::DiffKind::Same
                                                             {
                                                                 PAPER_MUTED
                                                             } else {
@@ -1091,7 +1091,7 @@ impl ScriptoriumApp {
             PathDialog::Open => (
                 "Open project",
                 "Open",
-                "Path to a .scriptorium project folder (or a legacy .json file)",
+                "Path to a .portmanteau project folder (or a legacy .json file)",
             ),
             PathDialog::SaveAs => (
                 "Save project as",
@@ -1177,8 +1177,8 @@ impl ScriptoriumApp {
                     let mut path = PathBuf::from(self.path_draft.trim());
                     if path.extension().is_none() {
                         // A bare name means a folder package, not a legacy
-                        // single-file project: "MyBook" -> "MyBook.scriptorium/".
-                        path.set_extension("scriptorium");
+                        // single-file project: "MyBook" -> "MyBook.portmanteau/".
+                        path.set_extension("portmanteau");
                     }
                     match self.ws.save(Some(path.clone())) {
                         Ok(msg) => {
@@ -1277,7 +1277,7 @@ impl ScriptoriumApp {
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| {
                     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-                    format!("{home}/Scriptorium/{}.scriptorium/", slug(&self.ws.project.title))
+                    format!("{home}/Portmanteau/{}.portmanteau/", slug(&self.ws.project.title))
                 });
         }
         if open {
@@ -1349,7 +1349,7 @@ fn slug(title: &str) -> String {
     if s.is_empty() { "untitled".into() } else { s }
 }
 
-impl eframe::App for ScriptoriumApp {
+impl eframe::App for PortmanteauApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_shortcuts(ctx);
         self.top_bar(ctx);
@@ -1382,7 +1382,7 @@ impl eframe::App for ScriptoriumApp {
     }
 }
 
-impl ScriptoriumApp {
+impl PortmanteauApp {
     fn binder(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("binder")
             .exact_width(272.0)

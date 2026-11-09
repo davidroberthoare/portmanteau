@@ -1,19 +1,19 @@
 //! A small command-line client for the same API the desktop app and MCP server
-//! use. Useful for smoke tests and for wiring Scriptorium into other tools.
+//! use. Useful for smoke tests and for wiring Portmanteau into other tools.
 //!
 //! Examples:
-//!   msc-cli project.info
-//!   msc-cli stats
-//!   msc-cli export.run '{"format":"EPUB","path":"exports"}'
-//!   msc-cli document.move '{"id":"doc-…","direction":"up"}' --project book.scriptorium.json --save
+//!   portmanteau-cli project.info
+//!   portmanteau-cli stats
+//!   portmanteau-cli export.run '{"format":"EPUB","path":"exports"}'
+//!   portmanteau-cli document.move '{"id":"doc-…","direction":"up"}' --project book.portmanteau.json --save
 
-use msc_api::Workspace;
+use portmanteau_api::Workspace;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         println!(
-            "Scriptorium command line\n\nUsage:\n  msc-cli <command> [json-payload] [--project path] [--save]\n\nCommands: project.info, document.list, stats, export.run, commands …\n\n--project opens a project file instead of the demonstration project.\n--save writes the project back after a successful command (mutations are\notherwise discarded when the process exits)."
+            "Portmanteau command line\n\nUsage:\n  portmanteau-cli <command> [json-payload] [--project path] [--save]\n\nCommands: project.info, document.list, stats, export.run, commands …\n\n--project opens a project file instead of the demonstration project.\n--save writes the project back after a successful command (mutations are\notherwise discarded when the process exits)."
         );
         return;
     }

@@ -6,11 +6,11 @@ use eframe::egui::{
     Stroke, TextEdit, Vec2,
 };
 
-use crate::app::{ScriptoriumApp, ToastKind};
+use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::*;
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button};
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     page_head(
         ui,
         "Time",
@@ -101,7 +101,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
     });
 }
 
-fn snapshot_count(app: &ScriptoriumApp) -> usize {
+fn snapshot_count(app: &PortmanteauApp) -> usize {
     app.ws
         .project
         .documents
@@ -110,7 +110,7 @@ fn snapshot_count(app: &ScriptoriumApp) -> usize {
         .sum()
 }
 
-fn session_chart(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+fn session_chart(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let entries: Vec<(String, u32)> = app
         .ws
         .project
@@ -183,7 +183,7 @@ fn session_chart(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
         });
 }
 
-fn checkpoints_list(app: &mut ScriptoriumApp, ui: &mut egui::Ui, height: f32) {
+fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -264,7 +264,7 @@ fn checkpoints_list(app: &mut ScriptoriumApp, ui: &mut egui::Ui, height: f32) {
                                     .project
                                     .documents
                                     .iter()
-                                    .find(|d| d.kind == msc_core::DocKind::Chapter)
+                                    .find(|d| d.kind == portmanteau_core::DocKind::Chapter)
                                     .map(|d| d.id.clone());
                             }
                             app.toast(
@@ -278,7 +278,7 @@ fn checkpoints_list(app: &mut ScriptoriumApp, ui: &mut egui::Ui, height: f32) {
         });
 }
 
-fn snapshots_list(app: &mut ScriptoriumApp, ui: &mut egui::Ui, height: f32) {
+fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
     Frame::new()
         .fill(BG)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -293,7 +293,7 @@ fn snapshots_list(app: &mut ScriptoriumApp, ui: &mut egui::Ui, height: f32) {
                 .auto_shrink([false, false])
                 .max_height(height - 46.0)
                 .show(ui, |ui| {
-                    let docs: Vec<(String, String, Vec<msc_core::Snapshot>)> = app
+                    let docs: Vec<(String, String, Vec<portmanteau_core::Snapshot>)> = app
                         .ws
                         .project
                         .documents

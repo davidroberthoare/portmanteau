@@ -5,11 +5,11 @@ use eframe::egui::{
     Stroke, TextEdit, Vec2,
 };
 
-use crate::app::ScriptoriumApp;
+use crate::app::PortmanteauApp;
 use crate::theme::*;
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button};
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut add = false;
     page_head(
         ui,
@@ -161,7 +161,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
     }
 }
 
-fn editor(app: &mut ScriptoriumApp, ui: &mut egui::Ui, id: &str) {
+fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
     let Some(pos) = app.ws.project.research.iter().position(|r| r.id == id) else {
         return;
     };
@@ -184,7 +184,7 @@ fn editor(app: &mut ScriptoriumApp, ui: &mut egui::Ui, id: &str) {
             ui.horizontal(|ui| {
                 section_label(ui, "Research note");
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    meta_line(ui, &[&format!("{} words", msc_core::count_words(&body))]);
+                    meta_line(ui, &[&format!("{} words", portmanteau_core::count_words(&body))]);
                 });
             });
             ui.add_space(5.0);
@@ -258,7 +258,7 @@ fn editor(app: &mut ScriptoriumApp, ui: &mut egui::Ui, id: &str) {
                         .project
                         .documents
                         .iter()
-                        .find(|d| d.kind == msc_core::DocKind::Research && d.title == old_title)
+                        .find(|d| d.kind == portmanteau_core::DocKind::Research && d.title == old_title)
                     {
                         open_doc = Some(doc.id.clone());
                     }
@@ -269,7 +269,7 @@ fn editor(app: &mut ScriptoriumApp, ui: &mut egui::Ui, id: &str) {
                         .project
                         .documents
                         .iter()
-                        .find(|d| d.kind == msc_core::DocKind::Research && d.title == old_title)
+                        .find(|d| d.kind == portmanteau_core::DocKind::Research && d.title == old_title)
                     {
                         meta_line(ui, &[&format!("Linked to {}", doc.title)]);
                     }
@@ -289,7 +289,7 @@ fn editor(app: &mut ScriptoriumApp, ui: &mut egui::Ui, id: &str) {
             .project
             .documents
             .iter_mut()
-            .find(|d| d.kind == msc_core::DocKind::Research && d.title == old_title)
+            .find(|d| d.kind == portmanteau_core::DocKind::Research && d.title == old_title)
         {
             doc.title = title;
             doc.text = body;

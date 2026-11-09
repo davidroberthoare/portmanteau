@@ -1,6 +1,6 @@
 //! Folder-package persistence.
 //!
-//! A project is a directory ending in `.scriptorium`. `project.json` is the
+//! A project is a directory ending in `.portmanteau`. `project.json` is the
 //! manifest: the whole `Project` with its long bodies emptied. Each document,
 //! research note, snapshot and checkpoint body lives in its own small file.
 //! Filenames are derived from record fields, never stored in the model, so the
@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use msc_core::*;
+use portmanteau_core::*;
 
 /// A readable filename fragment: lowercase ASCII alphanumerics, with runs of
 /// other characters collapsed to a single dash.
@@ -249,12 +249,12 @@ pub fn load_folder(dir: &Path) -> Result<Project, String> {
     let manifest_path = dir.join("project.json");
     let text = std::fs::read_to_string(&manifest_path).map_err(|e| {
         format!(
-            "Not a Scriptorium project: could not read {}: {e}",
+            "Not a Portmanteau project: could not read {}: {e}",
             manifest_path.display()
         )
     })?;
     let mut project: Project =
-        serde_json::from_str(&text).map_err(|e| format!("Not a Scriptorium project: {e}"))?;
+        serde_json::from_str(&text).map_err(|e| format!("Not a Portmanteau project: {e}"))?;
 
     let documents = dir.join("documents");
     for doc in &mut project.documents {

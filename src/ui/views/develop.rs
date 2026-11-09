@@ -6,13 +6,13 @@ use eframe::egui::{
     Stroke, TextEdit, Vec2,
 };
 
-use msc_core::{new_id, Beat};
+use portmanteau_core::{new_id, Beat};
 
-use crate::app::ScriptoriumApp;
+use crate::app::PortmanteauApp;
 use crate::theme::*;
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button, quiet_button};
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut add_idea = false;
     page_head(
         ui,
@@ -132,9 +132,9 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
 }
 
 fn idea_card(
-    app: &mut ScriptoriumApp,
+    app: &mut PortmanteauApp,
     ui: &mut egui::Ui,
-    idea: &msc_core::IdeaCard,
+    idea: &portmanteau_core::IdeaCard,
     width: f32,
 ) {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, 132.0), Sense::click());
@@ -200,7 +200,7 @@ fn idea_card(
     resp.on_hover_text("Open this card");
 }
 
-fn beats_panel(app: &mut ScriptoriumApp, ui: &mut egui::Ui, height: f32) {
+fn beats_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))

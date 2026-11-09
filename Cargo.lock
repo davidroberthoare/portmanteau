@@ -1835,74 +1835,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "msc-api"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "msc-core",
- "msc-export",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "msc-cli"
-version = "0.1.0"
-dependencies = [
- "msc-api",
- "msc-core",
- "msc-export",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "msc-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "uuid",
-]
-
-[[package]]
-name = "msc-export"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "msc-core",
- "serde",
- "serde_json",
- "zip",
-]
-
-[[package]]
-name = "msc-mcp"
-version = "0.1.0"
-dependencies = [
- "msc-api",
- "msc-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "myscript"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "eframe",
- "egui",
- "image",
- "msc-api",
- "msc-core",
- "msc-export",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "naga"
 version = "24.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2452,6 +2384,74 @@ dependencies = [
  "pin-project-lite",
  "rustix 1.1.6",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "portmanteau"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "eframe",
+ "egui",
+ "image",
+ "portmanteau-api",
+ "portmanteau-core",
+ "portmanteau-export",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "portmanteau-api"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "portmanteau-core",
+ "portmanteau-export",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "portmanteau-cli"
+version = "0.1.0"
+dependencies = [
+ "portmanteau-api",
+ "portmanteau-core",
+ "portmanteau-export",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "portmanteau-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "portmanteau-export"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "portmanteau-core",
+ "serde",
+ "serde_json",
+ "zip",
+]
+
+[[package]]
+name = "portmanteau-mcp"
+version = "0.1.0"
+dependencies = [
+ "portmanteau-api",
+ "portmanteau-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

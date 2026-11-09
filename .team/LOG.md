@@ -25,7 +25,7 @@
 ## Round 1 — DONE (commit 955d540)
 
 - Implementer built the folder package (manifest + documents/*.md|fountain + research + snapshots + checkpoints) with lossless Fountain round-trip (incl. a boneyard marker for lone Dialogue, a sensible deviation).
-- Build green; 35 tests pass (msc-core 8, msc-api 17, msc-export 7, msc-mcp 3).
+- Build green; 35 tests pass (portmanteau-core 8, portmanteau-api 17, portmanteau-export 7, portmanteau-mcp 3).
 - Smoke-tested: folder save/open, legacy .json round-trip, screenshot non-blank (1.2 MB).
 - Note: a concurrent process committed unrelated PDF/binder fixes (d7d8f33..c03c578) during the round; no overlap with Round 1 files, build still green.
 - Learned: subagents lack `git commit` permission; the Conductor must commit.
@@ -33,11 +33,11 @@
 
 ## Round 1 — Gate 1 (tester) verdict: PASS (at 7e812b5)
 
-- Tester added `crates/msc-api/tests/round1_verification.rs` (14 tests) and verified all 5 criteria.
+- Tester added `crates/portmanteau-api/tests/round1_verification.rs` (14 tests) and verified all 5 criteria.
 - Tester (and a concurrent fix) caught a real lossless-round-trip bug at 955d540: SceneHeading
   without INT./EXT. and ALL-CAPS Action were misread as Character. Fixed in 7e812b5 by emitting
   explicit boneyard markers for ambiguous kinds. Accepted baseline is 7e812b5 (49 tests green).
-- Open follow-ups folded into Round 2: (RISK3) msc-mcp project_save description + missing
+- Open follow-ups folded into Round 2: (RISK3) portmanteau-mcp project_save description + missing
   project_open tool; (RISK4) Save-As still defaults extensionless paths to legacy .json.
 
 ## Round 2 — DONE (commit c072dec)
@@ -46,7 +46,7 @@
   seeded in sample::demo(); PDF page numbers/running headers; EPUB cover embedding; four
   new commands (export.settings.get/update, style.get/update) + MCP tools + project_open;
   compile UI per-format persistence + base-style editor + new toggles; Save-As folder default.
-- Build green; 58 tests pass (msc-api 10, msc-core 21, msc-export 10, msc-mcp 3, +14 round1).
+- Build green; 58 tests pass (portmanteau-api 10, portmanteau-core 21, portmanteau-export 10, portmanteau-mcp 3, +14 round1).
 - Smoke: PDF page numbers on/off differ (footer count 0 vs 17); EPUB cover embeds cover-image/
   cover.xhtml; EPUB settings distinct from PDF; compile screenshots non-blank.
 - Gate 1 (tester): pending.

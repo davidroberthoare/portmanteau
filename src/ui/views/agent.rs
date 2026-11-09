@@ -6,11 +6,11 @@ use eframe::egui::{
     Stroke, TextEdit, Vec2,
 };
 
-use crate::app::{ScriptoriumApp, ToastKind};
+use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::*;
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button};
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     page_head(
         ui,
         "Automation",
@@ -25,7 +25,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
         },
     );
 
-    let catalogue = msc_api::command_catalogue();
+    let catalogue = portmanteau_api::command_catalogue();
     content_frame().show(ui, |ui| {
         let height = (ui.available_height() - 4.0).max(400.0);
         ui.horizontal_top(|ui| {
@@ -115,7 +115,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
                         ui.horizontal(|ui| {
                             section_label(ui, "Call");
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                meta_line(ui, &["msc-mcp exposes these as agent tools"]);
+                                meta_line(ui, &["portmanteau-mcp exposes these as agent tools"]);
                             });
                         });
                         ui.add_space(4.0);
@@ -210,7 +210,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
     });
 }
 
-fn run(app: &mut ScriptoriumApp) {
+fn run(app: &mut PortmanteauApp) {
     let command = app.cmd_name.trim().to_string();
     let payload: serde_json::Value =
         serde_json::from_str(&app.cmd_payload).unwrap_or_else(|_| serde_json::json!({}));

@@ -4,12 +4,12 @@ use eframe::egui::{
     self, Align, Color32, ComboBox, CornerRadius, Frame, Id, Key, Layout, Margin, Modifiers,
     RichText, ScrollArea, Sense, Stroke, TextEdit, Vec2,
 };
-use msc_core::{DocKind, ElementKind, Medium};
+use portmanteau_core::{DocKind, ElementKind, Medium};
 
-use crate::app::{ScriptoriumApp, View};
+use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     toolbar(app, ui);
     let Some(doc_id) = app.selected.clone() else {
         empty_state(app, ui);
@@ -69,7 +69,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
     }
 }
 
-fn toolbar(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+fn toolbar(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     Frame::new()
         .fill(Color32::from_rgb(21, 24, 29))
         .inner_margin(Margin::symmetric(16, 7))
@@ -177,7 +177,7 @@ fn toolbar(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
         });
 }
 
-fn prose_page(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str, take_snapshot: &mut bool) {
+fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_snapshot: &mut bool) {
     let mut dirty = false;
     let project_title = app.ws.project.title.clone();
     {
@@ -224,7 +224,7 @@ fn prose_page(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         let words = doc.words();
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(format!("{} words  ·  {} min read", words, msc_core::reading_minutes(words)))
+                RichText::new(format!("{} words  ·  {} min read", words, portmanteau_core::reading_minutes(words)))
                     .font(sans(9.0))
                     .color(PAPER_MUTED),
             );
@@ -239,7 +239,7 @@ fn prose_page(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str, take_sn
     }
 }
 
-fn script_page(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
+fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut dirty = false;
     let mut add_at: Option<usize> = None;
     let mut remove_at: Option<usize> = None;
@@ -304,7 +304,7 @@ fn script_page(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
             )
             .frame(false);
             if ui.add(add).clicked() {
-                doc.blocks.push(msc_core::Block::new(
+                doc.blocks.push(portmanteau_core::Block::new(
                     doc.medium.default_element(),
                     "",
                 ));
@@ -316,7 +316,7 @@ fn script_page(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
         ui.add_space(12.0);
 
         if doc.blocks.is_empty() {
-            doc.blocks.push(msc_core::Block::new(
+            doc.blocks.push(portmanteau_core::Block::new(
                 doc.medium.default_element(),
                 "",
             ));
@@ -479,7 +479,7 @@ fn script_page(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
             .frame(false);
             if ui.add(add).clicked() {
                 let last_kind = doc.blocks.last().map(|b| b.kind).unwrap_or(ElementKind::Action);
-                doc.blocks.push(msc_core::Block::new(next_kind(last_kind, doc.medium), ""));
+                doc.blocks.push(portmanteau_core::Block::new(next_kind(last_kind, doc.medium), ""));
                 app.selected_block = doc.blocks.len() - 1;
                 app.block_focus = Some(app.selected_block);
                 dirty = true;
@@ -508,7 +508,7 @@ fn script_page(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
             if let Some(block) = doc.blocks.get_mut(i) {
                 block.text = block.text.trim_end_matches('\n').to_string();
                 let next = next_kind(block.kind, doc.medium);
-                doc.blocks.insert(i + 1, msc_core::Block::new(next, ""));
+                doc.blocks.insert(i + 1, portmanteau_core::Block::new(next, ""));
             }
             app.selected_block = i + 1;
             app.block_focus = Some(i + 1);
@@ -603,7 +603,7 @@ fn paper_rule(ui: &mut egui::Ui) {
     );
 }
 
-fn empty_state(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+fn empty_state(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.vertical_centered(|ui| {
         ui.add_space(120.0);
         ui.label(RichText::new("Nothing open").font(serif(30.0)).color(MUTED));

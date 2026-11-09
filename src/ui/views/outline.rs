@@ -4,9 +4,9 @@ use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense,
     Stroke, Vec2,
 };
-use msc_core::{DocKind, Medium};
+use portmanteau_core::{DocKind, Medium};
 
-use crate::app::{ScriptoriumApp, View};
+use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
 use crate::ui::views::{content_frame, meta_line, page_head, quiet_button};
 
@@ -23,7 +23,7 @@ struct Row {
     depth: usize,
 }
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     page_head(
         ui,
         "Structure",
@@ -253,7 +253,7 @@ fn header_row(ui: &mut egui::Ui) {
     );
 }
 
-fn collect(app: &ScriptoriumApp) -> Vec<Row> {
+fn collect(app: &PortmanteauApp) -> Vec<Row> {
     app.ws
         .project
         .manuscript_documents()
@@ -274,7 +274,7 @@ fn collect(app: &ScriptoriumApp) -> Vec<Row> {
         .collect()
 }
 
-fn depth_of(app: &ScriptoriumApp, doc: &msc_core::Document) -> usize {
+fn depth_of(app: &PortmanteauApp, doc: &portmanteau_core::Document) -> usize {
     let mut depth: usize = 0;
     let mut parent = doc.parent.clone();
     while let Some(id) = parent {

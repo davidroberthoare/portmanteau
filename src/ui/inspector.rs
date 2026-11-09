@@ -4,12 +4,12 @@ use eframe::egui::{
     self, Align, ComboBox, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea,
     Stroke, TextEdit, Vec2,
 };
-use msc_core::Medium;
+use portmanteau_core::Medium;
 
-use crate::app::{InspectorTab, ScriptoriumApp, ToastKind, View};
+use crate::app::{InspectorTab, PortmanteauApp, ToastKind, View};
 use crate::theme::*;
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         for (tab, label) in [
             (InspectorTab::Document, "Document"),
@@ -66,7 +66,7 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
         });
 }
 
-fn document_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
+fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut restore: Option<String> = None;
     let mut compare: Option<String> = None;
     let mut snapshot = false;
@@ -193,7 +193,7 @@ fn document_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
         ui.horizontal(|ui| {
             stat_cell(ui, &words.to_string(), "words");
             stat_cell(ui, &pages.to_string(), "pages");
-            stat_cell(ui, &format!("{}m", msc_core::reading_minutes(words)), "read");
+            stat_cell(ui, &format!("{}m", portmanteau_core::reading_minutes(words)), "read");
         });
         ui.add_space(8.0);
         ui.label(
@@ -272,7 +272,7 @@ fn document_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
     }
 }
 
-fn notes_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
+fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let research: Vec<(String, String)> = app
         .ws
         .project
@@ -329,7 +329,7 @@ fn notes_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
     }
 }
 
-fn history_tab(app: &mut ScriptoriumApp, ui: &mut egui::Ui, doc_id: &str) {
+fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let Some(doc) = app.ws.project.document(doc_id) else { return };
     section_label(ui, "Document versions");
     ui.add_space(3.0);

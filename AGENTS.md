@@ -1,4 +1,4 @@
-# AGENTS.md — working on Scriptorium
+# AGENTS.md — working on Portmanteau
 
 This is the `agents.md` handoff the person asked for, kept under the standard
 uppercase name so agent tooling finds it. Only one file exists: a second
@@ -23,7 +23,7 @@ Companion documents:
 
 ## 1. The product in one paragraph
 
-Scriptorium is a native, offline writing studio for novelists and playwrights
+Portmanteau is a native, offline writing studio for novelists and playwrights
 and screenwriters. It covers the core of Scrivener, Final Draft and WriterDuet:
 a binder and outline, prose and screenplay editors, corkboard, research, idea
 development, character sheets, story beats, version history, and compilation to
@@ -91,19 +91,19 @@ cargo build                     # desktop binary + workspace crates
 cargo run                       # normal launch
 cargo test --workspace          # unit tests
 
-./target/debug/myscript --screenshot shots/now.png
-SCRIPTORIUM_VIEW=corkboard ./target/debug/myscript --screenshot shots/corkboard.png
-SCRIPTORIUM_DOC="Cold Harbor" ./target/debug/myscript --screenshot shots/script.png
-SCRIPTORIUM_DIFF=1 ./target/debug/myscript --screenshot shots/diff.png
+./target/debug/portmanteau --screenshot shots/now.png
+PORTMANTEAU_VIEW=corkboard ./target/debug/portmanteau --screenshot shots/corkboard.png
+PORTMANTEAU_DOC="Cold Harbor" ./target/debug/portmanteau --screenshot shots/script.png
+PORTMANTEAU_DIFF=1 ./target/debug/portmanteau --screenshot shots/diff.png
 ```
 
-`SCRIPTORIUM_VIEW` accepts `write`, `corkboard`, `outline`, `research`,
+`PORTMANTEAU_VIEW` accepts `write`, `corkboard`, `outline`, `research`,
 `develop`, `characters`, `history`, `compile`, `agent` (or a view's visible
-label, case-insensitive). `SCRIPTORIUM_DOC` matches a substring of a document
-title. `SCRIPTORIUM_DIFF` opens the first available snapshot comparison.
+label, case-insensitive). `PORTMANTEAU_DOC` matches a substring of a document
+title. `PORTMANTEAU_DIFF` opens the first available snapshot comparison.
 
 Build outputs, screenshots, exports and local project files are git-ignored.
-Do not commit `target/`, `shots/`, `exports/` or `*.scriptorium.json`.
+Do not commit `target/`, `shots/`, `exports/` or `*.portmanteau.json`.
 
 ---
 
@@ -120,7 +120,7 @@ As of this handoff:
   command and the `compare_snapshot` MCP tool.
 - Binder order is editable through the header arrows, the row context menu, the
   Edit menu, and the `document.move` command.
-- All ten export formats have been exercised to real files through `msc-cli`.
+- All ten export formats have been exercised to real files through `portmanteau-cli`.
 - `cargo test --workspace` passes.
 - Collaboration is deliberately absent. Do not reintroduce comment, account,
   sync or presence scaffolding without asking the person first.
@@ -134,7 +134,7 @@ the next likely work.
 
 ```
 app/
-  Cargo.toml                 workspace + myscript binary + shared dependencies
+  Cargo.toml                 workspace + portmanteau binary + shared dependencies
   Cargo.lock                 committed
   src/
     main.rs                  entry point; --screenshot parsing; eframe launch
@@ -158,7 +158,7 @@ app/
         compile.rs           format cards, settings, preview, export action
         agent.rs             Command desk (searchable JSON console)
   crates/
-    msc-core/
+    portmanteau-core/
       src/lib.rs             crate exports
       src/model.rs           Project, Document, Block, Snapshot, Checkpoint,
                              Character, ResearchItem, IdeaCard, Beat,
@@ -166,11 +166,11 @@ app/
       src/script.rs          ElementKind, loose-text classification, Fountain
       src/text.rs            word counts, reading time, line diff
       src/sample.rs          original demonstration project, "The Salt Road"
-    msc-export/src/lib.rs    section assembly + ten writers, no UI dependencies
-    msc-api/src/lib.rs       Workspace, JSON command bus, persistence, tests
-    msc-mcp/src/lib.rs       MCP tool definitions and stdio JSON-RPC server
-    msc-mcp/src/main.rs      msc-mcp entry point
-    msc-cli/src/main.rs      one-command CLI client for smoke tests
+    portmanteau-export/src/lib.rs    section assembly + ten writers, no UI dependencies
+    portmanteau-api/src/lib.rs       Workspace, JSON command bus, persistence, tests
+    portmanteau-mcp/src/lib.rs       MCP tool definitions and stdio JSON-RPC server
+    portmanteau-mcp/src/main.rs      portmanteau-mcp entry point
+    portmanteau-cli/src/main.rs      one-command CLI client for smoke tests
   assets/                    bundled Liberation + DejaVu fonts
   docs/                      architecture, notes, roadmap
   README.md                  product-facing documentation
@@ -180,16 +180,16 @@ app/
 Dependency direction is one-way:
 
 ```
-msc-core  <-  msc-export
+portmanteau-core  <-  portmanteau-export
     ^             ^
     |             |
-  msc-api  <----  msc-mcp / msc-cli
+  portmanteau-api  <----  portmanteau-mcp / portmanteau-cli
     ^
-  desktop UI (myscript)
+  desktop UI (portmanteau)
 ```
 
-`msc-core` has no filesystem, UI or export code. `msc-export` knows the
-manuscript but not the window. `msc-api` owns persistence and the command
+`portmanteau-core` has no filesystem, UI or export code. `portmanteau-export` knows the
+manuscript but not the window. `portmanteau-api` owns persistence and the command
 surface. The desktop layer only holds view state and calls the API.
 
 ---
@@ -223,7 +223,7 @@ surface. The desktop layer only holds view state and calls the API.
   (scene numbers, synopsis, notes, acknowledgements, author bio) and output path.
 
 Project files are pretty-printed JSON with the extension
-`.scriptorium.json`. `schema` is currently `1`. Unknown fields are ignored by
+`.portmanteau.json`. `schema` is currently `1`. Unknown fields are ignored by
 serde, which is how old files survive model changes. If you remove a field,
 mention it in `docs/notes.md`; if you rename one, add a migration or keep a
 serde alias.
@@ -238,15 +238,15 @@ serde alias.
 { "ok": true, "command": "document.get", "message": "Document", "data": { } }
 ```
 
-The catalogue lives in `command_catalogue()` in `crates/msc-api/src/lib.rs`.
+The catalogue lives in `command_catalogue()` in `crates/portmanteau-api/src/lib.rs`.
 `commands` returns it; the Command desk and MCP examples read the same source.
 When you add a command, update **all** of these:
 
 1. the match arm in `Workspace::execute`;
 2. the catalogue entry;
-3. an MCP tool in `crates/msc-mcp/src/lib.rs` if agents should use it;
+3. an MCP tool in `crates/portmanteau-mcp/src/lib.rs` if agents should use it;
 4. the command table in `README.md`;
-5. a test in `crates/msc-api/src/lib.rs` when it has real logic.
+5. a test in `crates/portmanteau-api/src/lib.rs` when it has real logic.
 
 | Command | Purpose | Example payload |
 | --- | --- | --- |
@@ -294,14 +294,14 @@ Notes:
 ### CLI
 
 ```sh
-cargo run -p msc-cli -- stats
-cargo run -p msc-cli -- document.list
-cargo run -p msc-cli -- document.move '{"id":"doc-…","direction":"up"}'
-cargo run -p msc-cli -- snapshot.diff '{"document_id":"doc-…","id":"snap-…"}'
-cargo run -p msc-cli -- export.run '{"format":"EPUB","path":"exports"}'
-cargo run -p msc-cli -- project.info --project /path/to/book.scriptorium.json
-cargo run -p msc-cli -- document.move '{"id":"doc-…","direction":"up"}' \
-  --project /path/to/book.scriptorium.json --save
+cargo run -p portmanteau-cli -- stats
+cargo run -p portmanteau-cli -- document.list
+cargo run -p portmanteau-cli -- document.move '{"id":"doc-…","direction":"up"}'
+cargo run -p portmanteau-cli -- snapshot.diff '{"document_id":"doc-…","id":"snap-…"}'
+cargo run -p portmanteau-cli -- export.run '{"format":"EPUB","path":"exports"}'
+cargo run -p portmanteau-cli -- project.info --project /path/to/book.portmanteau.json
+cargo run -p portmanteau-cli -- document.move '{"id":"doc-…","direction":"up"}' \
+  --project /path/to/book.portmanteau.json --save
 ```
 
 The CLI uses the demonstration project unless `--project` is passed. Mutating
@@ -310,7 +310,7 @@ commands write their own output regardless.
 
 ### MCP
 
-`msc-mcp` serves newline-delimited JSON-RPC over stdio. Tools include
+`portmanteau-mcp` serves newline-delimited JSON-RPC over stdio. Tools include
 `project_info`, `list_binder`, `read_document`, `create_document`,
 `update_document`, `delete_document`, `move_document`, `snapshot_document`,
 `list_snapshots`, `restore_snapshot`, `compare_snapshot`, `checkpoint`,
@@ -318,7 +318,7 @@ commands write their own output regardless.
 `list_export_formats`, `export_manuscript`, `add_character`,
 `add_research_note`, `add_idea` and `list_commands`.
 
-Run it with `cargo run -p msc-mcp` and speak JSON-RPC on stdin/stdout. It starts
+Run it with `cargo run -p portmanteau-mcp` and speak JSON-RPC on stdin/stdout. It starts
 with the demonstration project in memory; persistence happens through the
 project save/open tools.
 
@@ -345,9 +345,9 @@ project save/open tools.
 - Text widgets hold egui's own undo history. Structural changes should create a
   snapshot/checkpoint first when they are risky.
 - `src/app.rs` modals: New project, About, path Open/Save As, idea card and
-  Compare version. Add new modal state to `ScriptoriumApp` and call the modal
+  Compare version. Add new modal state to `PortmanteauApp` and call the modal
   from `modals()`, not from a view.
-- Screenshot mode lives in `ScriptoriumApp::screenshot_tick`. It requests a
+- Screenshot mode lives in `PortmanteauApp::screenshot_tick`. It requests a
   viewport screenshot at frame 120, saves RGBA through the `image` crate and
   closes the window. Keep the frame count and the close.
 
@@ -361,11 +361,11 @@ Run these before every handoff:
 cd app
 cargo build --workspace
 cargo test --workspace
-./target/debug/myscript --screenshot shots/now.png
+./target/debug/portmanteau --screenshot shots/now.png
 ```
 
 Then look at `shots/now.png` (and any screen you touched with
-`SCRIPTORIUM_VIEW`). Confirm it is populated and the intended screen is
+`PORTMANTEAU_VIEW`). Confirm it is populated and the intended screen is
 readable. The outer checker also runs `rebuild_check`, which checks the build
 and a populated 2880×1860 screenshot; it must pass.
 
@@ -373,20 +373,20 @@ For exports, exercise one or more real files and check the bytes, not just the
 success flag:
 
 ```sh
-./target/debug/msc-cli export.run '{"format":"PDF","path":"/tmp/scriptorium-test"}'
-./target/debug/msc-cli export.run '{"format":"EPUB","path":"/tmp/scriptorium-test"}'
-./target/debug/msc-cli export.run '{"format":"FDX","path":"/tmp/scriptorium-test"}'
-file /tmp/scriptorium-test/*
+./target/debug/portmanteau-cli export.run '{"format":"PDF","path":"/tmp/portmanteau-test"}'
+./target/debug/portmanteau-cli export.run '{"format":"EPUB","path":"/tmp/portmanteau-test"}'
+./target/debug/portmanteau-cli export.run '{"format":"FDX","path":"/tmp/portmanteau-test"}'
+file /tmp/portmanteau-test/*
 ```
 
 Current test coverage:
 
-- `msc-core`: project scaffold, snapshot restore, checkpoint restore, document
+- `portmanteau-core`: project scaffold, snapshot restore, checkpoint restore, document
   move/reparent, snapshot body text, script classification/parsing, word counts
   and line diff.
-- `msc-api`: command round-trip, unknown command, stats, move, snapshot diff,
+- `portmanteau-api`: command round-trip, unknown command, stats, move, snapshot diff,
   a real Fountain export.
-- `msc-mcp`: tool list is non-empty and callable.
+- `portmanteau-mcp`: tool list is non-empty and callable.
 
 ---
 
@@ -394,7 +394,7 @@ Current test coverage:
 
 ### Add a command
 
-1. Add the match arm in `crates/msc-api/src/lib.rs`.
+1. Add the match arm in `crates/portmanteau-api/src/lib.rs`.
 2. Add the catalogue tuple at the bottom of that file.
 3. Add a stable payload parser; return `ApiResponse::err` with a human message
    on bad input.
@@ -405,10 +405,10 @@ Current test coverage:
 ### Add an export format
 
 1. Add an `ExportKind` variant, `label`, `short`, `extension` and `description`
-   in `crates/msc-core/src/model.rs`.
-2. Add a writer in `crates/msc-export/src/lib.rs` and a match arm in `export()`.
+   in `crates/portmanteau-core/src/model.rs`.
+2. Add a writer in `crates/portmanteau-export/src/lib.rs` and a match arm in `export()`.
 3. If the format needs a new front/back matter option, add it to
-   `ExportSettings` **and** `crates/msc-export` assembly **and** the Compile
+   `ExportSettings` **and** `crates/portmanteau-export` assembly **and** the Compile
    screen.
 4. The Compile format grid and `export.formats` follow the enum. Verify the
    file with a real export.
@@ -421,7 +421,7 @@ Current test coverage:
 3. Create `src/ui/views/<name>.rs`, register it in `views/mod.rs` and dispatch
    from `views::show`.
 4. Use the shared page chrome. Collect actions after drawing.
-5. Add the screen to the `SCRIPTORIUM_VIEW` list in this file and in the docs.
+5. Add the screen to the `PORTMANTEAU_VIEW` list in this file and in the docs.
 
 ### Change a versioning rule
 
@@ -511,7 +511,7 @@ local project files).
    and `docs/roadmap.md`.
 2. Run `cargo build --workspace`, `cargo test --workspace` and the screenshot
    command. Look at the PNG.
-3. Run `msc-cli commands` and `msc-cli stats` to see the command surface.
+3. Run `portmanteau-cli commands` and `portmanteau-cli stats` to see the command surface.
 4. Open `src/app.rs` and `src/ui/views/mod.rs`; the shape of every screen should
    become clear from those two files.
 5. Pick the next item from `docs/roadmap.md` that matters to the person, add the

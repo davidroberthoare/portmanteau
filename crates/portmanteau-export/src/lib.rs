@@ -8,8 +8,8 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use msc_core::script;
-use msc_core::*;
+use portmanteau_core::script;
+use portmanteau_core::*;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -421,7 +421,7 @@ fn build_pdf(
     let info_num = objects.len() + 1;
     objects.push(
         format!(
-            "<< /Title ({}) /Author ({}) /Producer (Scriptorium) /Creator (Scriptorium) >>",
+            "<< /Title ({}) /Author ({}) /Producer (Portmanteau) /Creator (Portmanteau) >>",
             pdf_text(title),
             pdf_text(author)
         )
@@ -601,7 +601,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             mono: false,
         });
         let footer = if screenplay {
-            "Scriptorium · screenplay".to_string()
+            "Portmanteau · screenplay".to_string()
         } else {
             format!("{} · {}", project.genre, chrono::Local::now().format("%Y"))
         };
@@ -1661,7 +1661,7 @@ fn bundle_manuscript(project: &Project) -> Result<Vec<u8>, String> {
         zip.start_file("README.txt", opts).unwrap();
         zip.write_all(
             format!(
-                "{} by {}\n\nThis bundle contains the project file, a Markdown manuscript, a Fountain screenplay, and version notes.\nOpen project.json with Scriptorium to continue writing.\n",
+                "{} by {}\n\nThis bundle contains the project file, a Markdown manuscript, a Fountain screenplay, and version notes.\nOpen project.json with Portmanteau to continue writing.\n",
                 project.title, project.author
             )
             .as_bytes(),
@@ -1677,7 +1677,7 @@ mod tests {
     use super::*;
 
     fn demo() -> Project {
-        msc_core::sample::demo()
+        portmanteau_core::sample::demo()
     }
 
     #[test]
@@ -1870,7 +1870,7 @@ mod tests {
     #[test]
     fn epub_embeds_a_cover_only_when_the_file_exists() {
         let p = demo();
-        let dir = std::env::temp_dir().join(msc_core::new_id("epub-cover"));
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("epub-cover"));
         fs::create_dir_all(&dir).unwrap();
         let png = dir.join("cover.png");
         fs::write(&png, TINY_PNG).unwrap();
@@ -1903,7 +1903,7 @@ mod tests {
     #[test]
     fn every_format_exports_to_disk() {
         let p = demo();
-        let dir = std::env::temp_dir().join(format!("scriptorium-test-{}", msc_core::new_id("t")));
+        let dir = std::env::temp_dir().join(format!("portmanteau-test-{}", portmanteau_core::new_id("t")));
         for kind in ExportKind::all() {
             let mut s = p.export.clone();
             s.kind = kind;

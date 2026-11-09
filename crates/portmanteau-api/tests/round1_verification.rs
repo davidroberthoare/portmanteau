@@ -6,15 +6,15 @@
 
 use std::path::PathBuf;
 
-use msc_api::{storage, Workspace};
+use portmanteau_api::{storage, Workspace};
 use serde_json::json;
-use msc_core::{
+use portmanteau_core::{
     script, Block, DocKind, Document, ElementKind, Medium, Project, ProjectKind, ResearchItem,
     Snapshot,
 };
 
 fn scratch(tag: &str) -> PathBuf {
-    std::env::temp_dir().join(msc_core::new_id(tag))
+    std::env::temp_dir().join(portmanteau_core::new_id(tag))
 }
 
 fn make_doc(id: &str, title: &str, medium: Medium) -> Document {
@@ -253,7 +253,7 @@ fn legacy_json_still_opens_and_keeps_its_statistics() {
     let before = ws.execute("stats", json!({}));
     assert!(before.ok, "stats failed: {}", before.message);
     let dir = scratch("rt1-legacy");
-    let path = dir.join("legacy.scriptorium.json");
+    let path = dir.join("legacy.portmanteau.json");
     ws.save(Some(path.clone())).expect("save legacy");
     assert!(path.is_file(), "legacy save did not write a file");
 
@@ -330,7 +330,7 @@ fn research_body_is_externalised_and_restored() {
         body: "A distinctive research body sentence.".into(),
         kind: "Note".into(),
         source: String::new(),
-        created: msc_core::now_stamp(),
+        created: portmanteau_core::now_stamp(),
     });
     let dir = scratch("rt1-research");
     storage::save_folder(&project, &dir).expect("save");
@@ -351,7 +351,7 @@ fn snapshot_body_is_externalised_and_restored() {
     doc.snapshots.push(Snapshot {
         id: "snap-probe".into(),
         name: "First Pass".into(),
-        created: msc_core::now_stamp(),
+        created: portmanteau_core::now_stamp(),
         note: String::new(),
         text: "A distinctive snapshot body sentence.".into(),
         blocks: vec![],

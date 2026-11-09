@@ -5,7 +5,7 @@ use eframe::egui::{
     Stroke, Vec2,
 };
 
-use crate::app::{ScriptoriumApp, View};
+use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button};
 
@@ -20,7 +20,7 @@ struct Card {
     group: String,
 }
 
-pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut new_card = false;
     page_head(
         ui,
@@ -113,16 +113,16 @@ pub fn show(app: &mut ScriptoriumApp, ui: &mut egui::Ui) {
     }
 }
 
-fn card_count(app: &ScriptoriumApp) -> usize {
+fn card_count(app: &PortmanteauApp) -> usize {
     app.ws
         .project
         .documents
         .iter()
-        .filter(|d| matches!(d.kind, msc_core::DocKind::Chapter | msc_core::DocKind::Scene))
+        .filter(|d| matches!(d.kind, portmanteau_core::DocKind::Chapter | portmanteau_core::DocKind::Scene))
         .count()
 }
 
-fn collect(app: &ScriptoriumApp) -> Vec<Card> {
+fn collect(app: &PortmanteauApp) -> Vec<Card> {
     app.ws
         .project
         .manuscript_documents()
@@ -130,7 +130,7 @@ fn collect(app: &ScriptoriumApp) -> Vec<Card> {
         .filter(|d| {
             matches!(
                 d.kind,
-                msc_core::DocKind::Chapter | msc_core::DocKind::Scene | msc_core::DocKind::Text
+                portmanteau_core::DocKind::Chapter | portmanteau_core::DocKind::Scene | portmanteau_core::DocKind::Text
             )
         })
         .map(|d| {
@@ -151,11 +151,11 @@ fn collect(app: &ScriptoriumApp) -> Vec<Card> {
                 words: d.words(),
                 status: d.status.clone(),
                 label: d.label.clone(),
-                kind: if d.kind == msc_core::DocKind::Scene {
+                kind: if d.kind == portmanteau_core::DocKind::Scene {
                     match d.medium {
-                        msc_core::Medium::Screenplay => "Scene · screenplay".into(),
-                        msc_core::Medium::StagePlay => "Scene · stage".into(),
-                        msc_core::Medium::TvScript => "Scene · TV".into(),
+                        portmanteau_core::Medium::Screenplay => "Scene · screenplay".into(),
+                        portmanteau_core::Medium::StagePlay => "Scene · stage".into(),
+                        portmanteau_core::Medium::TvScript => "Scene · TV".into(),
                         _ => "Scene".into(),
                     }
                 } else {
@@ -167,7 +167,7 @@ fn collect(app: &ScriptoriumApp) -> Vec<Card> {
         .collect()
 }
 
-fn card_ui(app: &mut ScriptoriumApp, ui: &mut egui::Ui, card: &Card, width: f32) {
+fn card_ui(app: &mut PortmanteauApp, ui: &mut egui::Ui, card: &Card, width: f32) {
     let height = 176.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
     let selected = app.selected.as_deref() == Some(card.id.as_str());

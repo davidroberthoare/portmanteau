@@ -11,9 +11,9 @@ novel in Word. Exporting without importing is a one-way door.
 
 **Start with Fountain and Final Draft**, then DOCX:
 
-- `crates/msc-core/src/script.rs` already parses loose text into typed blocks.
+- `crates/portmanteau-core/src/script.rs` already parses loose text into typed blocks.
   Add `parse_fountain` and `parse_fdx` next to `parse_loose`.
-- Add `project.import` in `crates/msc-api/src/lib.rs` with `format` and `path`.
+- Add `project.import` in `crates/portmanteau-api/src/lib.rs` with `format` and `path`.
 - DOCX: read `word/document.xml` out of the zip (the export side already uses
   `zip`) and map paragraphs to sections. Do not pull in a full document model.
 - Surface it in the File menu beside Open/Save, and as an MCP tool.
@@ -43,7 +43,7 @@ the tree, marks the project dirty and survives save/reopen.
 sentence and reject that one." A revision workflow needs a finer unit and a
 record that can be shared.
 
-- Extend `msc-core/src/text.rs` with a word-level diff, or add a `diff` module.
+- Extend `portmanteau-core/src/text.rs` with a word-level diff, or add a `diff` module.
 - Keep `snapshot.diff` backward compatible; add a `unit` field or a separate
   `snapshot.diff_words`.
 - Add `document.revision` records (old text, new text, author, timestamp,
@@ -58,7 +58,7 @@ reject a hunk, and export the revision notes without any network service.
 
 **Why.** The current engines produce valid files, but not typeset books.
 
-- `crates/msc-export/src/lib.rs`: one assembly pass, one writer per format.
+- `crates/portmanteau-export/src/lib.rs`: one assembly pass, one writer per format.
   Improve the PDF writer first (running heads, margins, chapter openers,
   widows/orphans, embedded fonts) before adding an external toolchain.
 - For EPUB, add a proper NCX/nav document and per-chapter XHTML files rather
@@ -102,7 +102,7 @@ plain file (or a Git remote they own) without either installing a service.
 
 ## 7. Packaging and release pipeline
 
-- Build `myscript` for Linux, macOS and Windows. The code is platform-neutral;
+- Build `portmanteau` for Linux, macOS and Windows. The code is platform-neutral;
   the work is CI, icons, installers and signing.
 - Keep the screenshot flag working in release builds; it is the visual check.
 - Add a version number and a changelog before the first public build.
