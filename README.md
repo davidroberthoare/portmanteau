@@ -48,7 +48,7 @@ PORTMANTEAU_DOC="Cold Harbor" ./target/debug/portmanteau --screenshot shots/scri
   Hunspell dictionary (en_US) so inflected forms such as `running` and `bananas`
   are understood. The Spelling toolbar panel lists unique misspellings with up
   to three suggestions from a bundled word list; click a suggestion to replace
-  the word. It can be turned off in Settings.
+  the word. It can be turned off in the Compile ▸ Display tab.
 
 **Structure**
 - Binder tree with parts, chapters, scenes, research, front matter and back
@@ -78,19 +78,21 @@ PORTMANTEAU_DOC="Cold Harbor" ./target/debug/portmanteau --screenshot shots/scri
 **Compile and export**
 - PDF, EPUB, DOCX, Final Draft (FDX), Fountain, HTML, Markdown, RTF, plain text
   and a complete project bundle.
-- Front matter toggles: title page, copyright, dedication, author's note, table
-  of contents, chapter numbers.
-- Body and back matter toggles: scene numbers, synopses, author notes,
-  acknowledgements, about the author.
+- Front matter: a generated title page, table of contents and chapter numbers,
+  plus every document in the Front Matter folder that is included in export.
+- Body and back matter: scene numbers, synopses, author notes, plus every
+  document in the Back Matter folder that is included in export. Front and back
+  matter documents can be added, renamed or removed like any other binder item.
 - Paper size and type-size/leading controls (applied where the format supports
-  them), export presets, output folder and a compile preview.
+  them), output folder and a compile preview.
 - Per-format settings: PDF, EPUB, DOCX and the rest each remember their own
   paper, type and matter choices, seeded from a project-wide base style for
   prose and script. Page numbers and running headers apply to PDF; an EPUB can
   reference a JPG or PNG cover image.
 
 **Defaults**
-- A **Settings** workspace edits the global per-element type defaults.
+- The **Display** tab of Compile edits the global per-element type defaults and
+  the prose/script editor display sizes.
 - Defaults are saved to `$XDG_CONFIG_HOME/portmanteau/config.json` (falling back
   to `~/.config/portmanteau/config.json`), applied to the current project on
   demand, and copied into every new project.

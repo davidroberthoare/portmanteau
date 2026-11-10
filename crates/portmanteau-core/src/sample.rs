@@ -284,10 +284,6 @@ pub fn demo() -> Project {
 
     // ---- Front and back matter -------------------------------------------
     let front = p.folder_id("Front Matter").unwrap();
-    let title_page = p.add_document(Some(front.clone()), "Title Page", DocKind::FrontMatter, Medium::Prose);
-    p.document_mut(&title_page).unwrap().text =
-        "THE SALT ROAD\n\nA novel\n\nAda Marlowe\n\nSalt & Compass Press".into();
-    p.document_mut(&title_page).unwrap().synopsis = "Title, author and imprint for every export.".into();
     let copyright = p.add_document(Some(front.clone()), "Copyright", DocKind::FrontMatter, Medium::Prose);
     p.document_mut(&copyright).unwrap().text =
         "Copyright © 2026 Ada Marlowe\n\nAll rights reserved. No part of this book may be reproduced without written permission, except brief quotations in a review.\n\nThis is a work of fiction. Names, characters, places and incidents are products of the author's imagination.".into();
@@ -315,45 +311,6 @@ pub fn demo() -> Project {
             words: *w,
         });
     }
-
-    // ---- Export presets ---------------------------------------------------
-    p.presets = vec![
-        ExportPreset {
-            id: new_id("preset"),
-            name: "Manuscript · PDF".into(),
-            settings: ExportSettings {
-                kind: ExportKind::Pdf,
-                paper: PaperSize::A5,
-                font_size: 11.0,
-                line_spacing: 1.45,
-                ..ExportSettings::default()
-            },
-        },
-        ExportPreset {
-            id: new_id("preset"),
-            name: "Reader · EPUB".into(),
-            settings: ExportSettings {
-                kind: ExportKind::Epub,
-                paper: PaperSize::A5,
-                font_size: 12.0,
-                line_spacing: 1.6,
-                include_synopsis: false,
-                ..ExportSettings::default()
-            },
-        },
-        ExportPreset {
-            id: new_id("preset"),
-            name: "Producer · Final Draft".into(),
-            settings: ExportSettings {
-                kind: ExportKind::Fdx,
-                paper: PaperSize::Letter,
-                include_title_page: true,
-                include_chapter_numbers: false,
-                include_toc: false,
-                ..ExportSettings::default()
-            },
-        },
-    ];
 
     // ---- Per-format compile settings -------------------------------------
     // The same manuscript finishes differently as a book and as an ebook, so

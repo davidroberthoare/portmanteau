@@ -11,7 +11,7 @@ use eframe::egui::{
 
 use portmanteau_api::Workspace;
 use portmanteau_core::{
-    AppSettings, DatabaseItem, DocKind, ElementKind, ItemKind, Medium, ProjectKind,
+    AppSettings, DatabaseItem, DocKind, ElementKind, ExportKind, ItemKind, Medium, ProjectKind,
 };
 
 use crate::icons::{self, Icon};
@@ -28,7 +28,6 @@ pub enum View {
     History,
     Compile,
     Agent,
-    Settings,
 }
 
 impl View {
@@ -42,7 +41,6 @@ impl View {
             View::History => "Versions",
             View::Compile => "Compile",
             View::Agent => "Command desk",
-            View::Settings => "Settings",
         }
     }
     pub fn icon(self) -> Icon {
@@ -55,10 +53,9 @@ impl View {
             View::History => Icon::History,
             View::Compile => Icon::Compile,
             View::Agent => Icon::Agent,
-            View::Settings => Icon::Settings,
         }
     }
-    pub fn all() -> [View; 8] {
+    pub fn all() -> [View; 7] {
         [
             View::Write,
             View::Corkboard,
@@ -67,7 +64,6 @@ impl View {
             View::Database,
             View::History,
             View::Compile,
-            View::Settings,
         ]
     }
     /// Development aid: `PORTMANTEAU_VIEW=corkboard` opens a workspace
@@ -89,6 +85,20 @@ fn initial_view() -> View {
         .ok()
         .and_then(|key| View::from_key(key.trim()))
         .unwrap_or(View::Write)
+}
+
+/// Which tab the merged Compile screen is showing: one of the output formats,
+/// or the Display tab (editor display and global default styles).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CompileTab {
+    Display,
+    Format(ExportKind),
+}
+
+impl Default for CompileTab {
+    fn default() -> Self {
+        CompileTab::Format(ExportKind::Pdf)
+    }
 }
 
 /// How the Write editor presents the page. Continuous is the editable paper;
@@ -166,6 +176,8 @@ pub struct PortmanteauApp {
     pub ws: Workspace,
     pub settings: AppSettings,
     pub view: View,
+    /// Selected tab on the merged Compile screen.
+    pub compile_tab: CompileTab,
     pub write_mode: WriteMode,
     /// The page currently at the top of the Paged preview, for the toolbar
     /// readout. Updated after the pages are drawn.
@@ -205,7 +217,6 @@ pub struct PortmanteauApp {
     pub frame_no: u32,
     pub screenshot_requested: bool,
     pub screenshot_saved: bool,
-    pub editor_font_size: f32,
     /// Text zoom for the writing surface. Multiplies the prose type size and
     /// the screenplay element sizes; `−` / `+` in the editor toolbar change it
     /// within `0.7..=1.6`.
@@ -253,6 +264,7 @@ impl PortmanteauApp {
             ws,
             settings,
             view: initial_view(),
+            compile_tab: CompileTab::default(),
             write_mode: WriteMode::Continuous,
             paged_page: 1,
             selected,
@@ -287,7 +299,6 @@ impl PortmanteauApp {
             frame_no: 0,
             screenshot_requested: false,
             screenshot_saved: false,
-            editor_font_size: 17.0,
             editor_zoom: 1.0,
             distraction_free: false,
             corkboard_zoom: 1.0,

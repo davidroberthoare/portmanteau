@@ -865,16 +865,11 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
         ("include_page_numbers", &mut settings.include_page_numbers),
         ("include_running_headers", &mut settings.include_running_headers),
         ("include_title_page", &mut settings.include_title_page),
-        ("include_copyright", &mut settings.include_copyright),
-        ("include_dedication", &mut settings.include_dedication),
-        ("include_acknowledgements", &mut settings.include_acknowledgements),
-        ("include_preface", &mut settings.include_preface),
         ("include_toc", &mut settings.include_toc),
         ("include_chapter_numbers", &mut settings.include_chapter_numbers),
         ("include_scene_numbers", &mut settings.include_scene_numbers),
         ("include_synopsis", &mut settings.include_synopsis),
         ("include_notes", &mut settings.include_notes),
-        ("include_author_bio", &mut settings.include_author_bio),
     ] {
         if let Some(v) = payload.get(key).and_then(|v| v.as_bool()) {
             *field = v;

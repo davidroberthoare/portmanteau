@@ -720,6 +720,8 @@ fn match_initial_case(original: &str, replacement: &str) -> String {
 fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_snapshot: &mut bool) {
     let mut dirty = false;
     let zoom = app.editor_zoom.clamp(0.7, 1.6);
+    let prose_size = app.settings.display.prose_size;
+    let prose_leading = app.settings.display.prose_leading;
     let project_title = app.ws.project.title.clone();
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
@@ -744,8 +746,24 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         ui.add_space(14.0);
 
         let rows = ((doc.text.chars().count() as f32) / 72.0).ceil().max(18.0) as usize;
+        let text_size = prose_size * zoom;
+        let line_height = (prose_size * prose_leading * zoom).max(text_size);
+        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+            let mut job = egui::text::LayoutJob::single_section(
+                text.to_owned(),
+                egui::TextFormat {
+                    font_id: serif(text_size),
+                    color: PAPER_TEXT,
+                    line_height: Some(line_height),
+                    ..Default::default()
+                },
+            );
+            job.wrap.max_width = wrap_width;
+            ui.fonts(|f| f.layout_job(job))
+        };
         let edit = TextEdit::multiline(&mut doc.text)
-            .font(serif(app.editor_font_size * zoom))
+            .font(serif(text_size))
+            .layouter(&mut layouter)
             .text_color(PAPER_TEXT)
             .frame(false)
             .desired_width(f32::INFINITY)
@@ -753,7 +771,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             .margin(Margin::same(0))
             .hint_text(
                 RichText::new("Begin at the beginning…")
-                    .font(serif(17.0 * zoom))
+                    .font(serif(text_size))
                     .color(PAPER_MUTED),
             );
         let response = ui.add(edit);
@@ -790,6 +808,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut set_text_at: Option<(usize, String)> = None;
     let mut new_character: Option<NewCharacterState> = None;
     let project_title = app.ws.project.title.clone();
+    let script_size = app.settings.display.script_size;
     // Character names are read before the document is borrowed mutably: the
     // autocomplete only needs owned strings from the project.
     let character_names: Vec<String> = {
@@ -971,12 +990,12 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     _ => content_width - 46.0,
                 };
                 let font_size = match kind {
-                    ElementKind::SceneHeading => 11.0,
-                    ElementKind::Character => 10.5,
-                    ElementKind::Parenthetical => 10.0,
-                    ElementKind::Dialogue => 10.5,
-                    ElementKind::Transition => 10.0,
-                    _ => 10.5,
+                    ElementKind::SceneHeading => script_size * 1.05,
+                    ElementKind::Character => script_size,
+                    ElementKind::Parenthetical => script_size * 0.95,
+                    ElementKind::Dialogue => script_size,
+                    ElementKind::Transition => script_size * 0.95,
+                    _ => script_size,
                 } * zoom;
                 let rows = ((doc.blocks[i].text.chars().count() as f32 * font_size * 0.62)
                     / width.max(80.0))

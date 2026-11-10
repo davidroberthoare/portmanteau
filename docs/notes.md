@@ -75,7 +75,7 @@ thing a visual check catches.
 8. **Built Versions.** Checkpoint composer, fourteen-day bar chart, checkpoint
    list with restore, and grouped snapshots with restore. Restoring a
    checkpoint revalidates the open document.
-9. **Built Compile.** Ten format cards, presets, output folder, page/type
+9. **Built Compile.** Ten format cards, output folder, page/type
    controls, front-matter and body/back-matter toggles, action panel, result
    card and preview list. Fixed the API so a folder path receives the standard
    filename instead of becoming a file with no extension.
@@ -377,8 +377,9 @@ silently falling back to the project's current kind. `export.settings.get` and
 
 ## Round 9 — global Settings workspace
 
-- **A tenth workspace.** `View::Settings` sits at the end of the rail. It edits
-  the global `AppSettings` instead of the open project.
+- **A tenth workspace.** A separate Settings workspace sat at the end of the
+  rail. It edited the global `AppSettings` instead of the open project. It was
+  later folded into the Compile screen's Display tab (Round 26b).
 - **Config file.** Defaults are stored as pretty JSON at
   `$XDG_CONFIG_HOME/portmanteau/config.json`, falling back to
   `$HOME/.config/portmanteau/config.json`, then `./portmanteau-config.json`.
@@ -752,3 +753,49 @@ clipboard"). Inline previews use `egui_extras::install_image_loaders` with the
 Known limits: "Save As" to a different folder does not yet carry the old
 `assets/` tree with it, and pasted HTML is shown as source rather than rendered
 as a web page. Audio and video are references only by design.
+
+Front and back matter are now driven by the binder, not by fixed titles. Every
+`DocKind::FrontMatter` document in the Front Matter folder appears in the
+compile output before the manuscript, and every `DocKind::BackMatter` document
+in the Back Matter folder appears after it, each controlled by its own
+`include_in_export` flag. The Compile screen lists those documents instead of
+the old Copyright / Dedication / Author's note / Acknowledgements / About the
+author checkboxes. The generated title page is still separate and controlled by
+`include_title_page`.
+
+This removes five obsolete `ExportSettings` booleans: `include_copyright`,
+`include_dedication`, `include_preface`, `include_acknowledgements` and
+`include_author_bio`. Old project manifests that contain them still load because
+serde ignores unknown fields. The demonstration project no longer ships a
+"Title Page" front-matter document; the generated title page covers that.
+
+### Round 26b — Compile and Display merge
+
+The separate Settings workspace is gone. Compile is now one screen with a
+vertical tab rail: **PDF, EPUB, DOCX, FDX, Fountain, HTML, Markdown, RTF, TXT,
+Bundle**, a spacer, then **Display**. The separate Settings view and its rail
+icon were removed; `PORTMANTEAU_VIEW=settings` no longer selects a view. The
+selected tab is view state (`PortmanteauApp::compile_tab`, default
+`Format(Pdf)`), not part of the project.
+
+Each output tab keeps the output path, compile action, last-export result,
+per-format element styles and the "what will be compiled" list. Type-specific
+parameters only show where they matter: paper for PDF/DOCX/RTF, cover image for
+EPUB/HTML, and page numbers/running headers for PDF; font, size and leading
+appear everywhere. Front and back matter document lists stay in two columns;
+title-page and contents toggles are hidden for plain-text targets where they have
+no effect.
+
+The Display tab holds the editor measurements (`AppSettings.display`: prose and
+script size/leading), the spell-check switch, the global element-style editor,
+custom styles, the live preview picker, and Save defaults / Reset defaults /
+Apply to current project. The prose editor uses `display.prose_size` and
+`display.prose_leading` (multiplied by the existing zoom); the script editor uses
+`display.script_size`. Custom styles now edit the model that is persisted:
+the Display tab writes to `app.settings.styles.custom` before "Save defaults",
+and each output tab writes to that format's `settings.styles.custom`, which is
+stored through `Project::set_settings` and saved with the project.
+
+The old saved-export-shortcut model was removed from the project (`Project` no
+longer carries that list); old projects still load because serde ignores the
+unknown key.

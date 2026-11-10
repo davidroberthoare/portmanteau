@@ -124,9 +124,8 @@ the painter, so no image assets or icon font are required.
 | Research | Sourcebook and linked notes | `research.add` |
 | Database | Characters, places, events, props: notes, tags, links and appearances | direct database edits |
 | Versions | Checkpoints, snapshots, compare, calendar | checkpoint/restore/diff |
-| Compile | Format, matter and style choices | `export.run` |
+| Compile | Output-format tabs plus a Display tab for editor type and global defaults | `export.run`, `AppSettings` load/save, apply to project |
 | Command desk | Raw API console | any command |
-| Settings | Global element-style defaults, saved to a local config file | `AppSettings` load/save, apply to project |
 
 ## Versioning model
 

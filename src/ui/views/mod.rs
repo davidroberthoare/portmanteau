@@ -1,5 +1,5 @@
 //! The non-writing workspaces: corkboard, outline, research, database,
-//! version history, compilation, settings and the command desk.
+//! version history, compilation and the command desk.
 
 pub mod agent;
 pub mod database;
@@ -8,7 +8,6 @@ pub mod corkboard;
 pub mod history;
 pub mod outline;
 pub mod research;
-pub mod settings;
 
 use eframe::egui::{
     self, Align, Color32, CornerRadius, FontId, Frame, Layout, Margin, RichText, Stroke, TextEdit,
@@ -28,7 +27,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         View::History => history::show(app, ui),
         View::Compile => compile::show(app, ui),
         View::Agent => agent::show(app, ui),
-        View::Settings => settings::show(app, ui),
         View::Write => {}
     }
 }
@@ -142,7 +140,7 @@ const SCRIPT_ELEMENTS: [(&str, &str); 9] = [
 ];
 
 /// Every built-in element in editor order, paired with its display label.
-/// The Settings preview picker and the count in its header read this list.
+/// The Display preview picker and the count in its header read this list.
 pub const BUILTIN_ELEMENTS: [(&str, &str); 15] = [
     ("title_page_title", "Title page title"),
     ("title_page_subtitle", "Title page subtitle"),
@@ -188,7 +186,7 @@ fn style_summary(label: &str, style: &ElementStyle) -> String {
 
 /// The shared per-element style editor, modelled after a word processor's
 /// Paragraph dialog. Elements are grouped into three collapsible sections so
-/// the Compile and Settings screens stay compact. Each row edits an owned
+/// the Compile screen and its Display tab stay compact. Each row edits an owned
 /// clone, applied after the draw pass.
 pub fn element_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) {
     let sections: [(&str, &str, &str, &[(&str, &str)]); 3] = [
@@ -377,7 +375,7 @@ fn element_row(
     changed
 }
 
-/// Sample copy used by the live style preview on the Settings screen.
+/// Sample copy used by the live style preview on the Display tab.
 pub const PREVIEW_SAMPLE: &str =
     "The quick brown fox jumps over the lazy dog.\n\nSecond paragraph to show spacing and indentation.";
 

@@ -760,14 +760,39 @@ impl ElementStyles {
     }
 }
 
-/// Global defaults that live outside any one project. The Settings workspace
-/// edits these and can copy them into the open project.
+/// Editor display measurements. These are on-screen preferences, not export
+/// settings: the compiled page uses each format's own element styles.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct DisplaySettings {
+    pub prose_size: f32,
+    pub prose_leading: f32,
+    pub script_size: f32,
+    pub script_leading: f32,
+}
+
+impl Default for DisplaySettings {
+    fn default() -> Self {
+        Self {
+            prose_size: 17.0,
+            prose_leading: 1.5,
+            script_size: 12.0,
+            script_leading: 1.2,
+        }
+    }
+}
+
+/// Global defaults that live outside any one project. The Display tab of the
+/// Compile screen edits these and can copy them into the open project.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct AppSettings {
+    #[serde(default)]
     pub styles: ElementStyles,
     /// Show the spelling panel and check words in the editors.
     #[serde(default = "default_true")]
     pub spellcheck: bool,
+    /// Editor type sizes and leading. Older config files load the defaults.
+    #[serde(default)]
+    pub display: DisplaySettings,
 }
 
 impl Default for AppSettings {
@@ -775,6 +800,7 @@ impl Default for AppSettings {
         Self {
             styles: ElementStyles::default(),
             spellcheck: true,
+            display: DisplaySettings::default(),
         }
     }
 }
@@ -797,16 +823,11 @@ pub struct ExportSettings {
     #[serde(default)]
     pub cover_image: String,
     pub include_title_page: bool,
-    pub include_copyright: bool,
-    pub include_dedication: bool,
-    pub include_acknowledgements: bool,
-    pub include_preface: bool,
     pub include_toc: bool,
     pub include_chapter_numbers: bool,
     pub include_scene_numbers: bool,
     pub include_synopsis: bool,
     pub include_notes: bool,
-    pub include_author_bio: bool,
     pub output_path: String,
     /// Per-element styles for this output format. A format that has never been
     /// configured is seeded from the project's base styles, then diverges.
@@ -826,27 +847,15 @@ impl Default for ExportSettings {
             include_running_headers: false,
             cover_image: String::new(),
             include_title_page: true,
-            include_copyright: true,
-            include_dedication: true,
-            include_acknowledgements: true,
-            include_preface: true,
             include_toc: true,
             include_chapter_numbers: true,
             include_scene_numbers: true,
             include_synopsis: false,
             include_notes: false,
-            include_author_bio: true,
             output_path: String::new(),
             styles: ElementStyles::default(),
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct ExportPreset {
-    pub id: String,
-    pub name: String,
-    pub settings: ExportSettings,
 }
 
 // ---------------------------------------------------------------------------
@@ -873,7 +882,6 @@ pub struct Project {
     pub session_log: Vec<SessionEntry>,
     pub daily_target: u32,
     pub export: ExportSettings,
-    pub presets: Vec<ExportPreset>,
     #[serde(default)]
     pub styles: ElementStyles,
     #[serde(default)]
@@ -901,7 +909,6 @@ impl Project {
             session_log: Vec::new(),
             daily_target: 1200,
             export: ExportSettings::default(),
-            presets: Vec::new(),
             styles: ElementStyles::default(),
             formats: Vec::new(),
         };

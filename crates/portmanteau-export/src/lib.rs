@@ -117,50 +117,20 @@ fn manuscript_sections(project: &Project) -> Vec<Section<'_>> {
         .collect()
 }
 
-fn front_matter<'a>(project: &'a Project, settings: &ExportSettings) -> Vec<&'a Document> {
-    let mut out = Vec::new();
-    for doc in project.ordered_documents() {
-        if doc.kind != DocKind::FrontMatter {
-            continue;
-        }
-        let t = doc.title.to_lowercase();
-        let include = if t.contains("copyright") {
-            settings.include_copyright
-        } else if t.contains("dedication") {
-            settings.include_dedication
-        } else if t.contains("note") || t.contains("preface") || t.contains("introduction") {
-            settings.include_preface
-        } else if t.contains("title") {
-            false
-        } else {
-            true
-        };
-        if include {
-            out.push(doc);
-        }
-    }
-    out
+fn front_matter(project: &Project) -> Vec<&Document> {
+    project
+        .ordered_documents()
+        .into_iter()
+        .filter(|d| d.kind == DocKind::FrontMatter && d.include_in_export)
+        .collect()
 }
 
-fn back_matter<'a>(project: &'a Project, settings: &ExportSettings) -> Vec<&'a Document> {
-    let mut out = Vec::new();
-    for doc in project.ordered_documents() {
-        if doc.kind != DocKind::BackMatter {
-            continue;
-        }
-        let t = doc.title.to_lowercase();
-        let include = if t.contains("about") {
-            settings.include_author_bio
-        } else if t.contains("acknowledg") {
-            settings.include_acknowledgements
-        } else {
-            true
-        };
-        if include {
-            out.push(doc);
-        }
-    }
-    out
+fn back_matter(project: &Project) -> Vec<&Document> {
+    project
+        .ordered_documents()
+        .into_iter()
+        .filter(|d| d.kind == DocKind::BackMatter && d.include_in_export)
+        .collect()
 }
 
 fn is_screenplay(project: &Project) -> bool {
@@ -899,7 +869,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         }
     };
 
-    for doc in front_matter(project, settings) {
+    for doc in front_matter(project) {
         flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
         for para in paragraphs(&doc.body_text()) {
             add_para(&mut flow, &para, false);
@@ -1003,7 +973,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             }
         }
     }
-    for doc in back_matter(project, settings) {
+    for doc in back_matter(project) {
         flow.page_break();
         flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
         for para in paragraphs(&doc.body_text()) {
@@ -1231,7 +1201,7 @@ p.first {{ text-indent: 0; }}
         }
 
         let mut chapter_no = 0usize;
-        for doc in front_matter(project, settings) {
+        for doc in front_matter(project) {
             files.push((
                 format!("front-{}.xhtml", slugify(&doc.title)),
                 doc.title.clone(),
@@ -1247,7 +1217,7 @@ p.first {{ text-indent: 0; }}
                 xhtml_body(section.doc, Some(&title)),
             ));
         }
-        for doc in back_matter(project, settings) {
+        for doc in back_matter(project) {
             files.push((
                 format!("back-{}.xhtml", slugify(&doc.title)),
                 doc.title.clone(),
@@ -1388,7 +1358,7 @@ fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         add_para(&format!("by {}", project.author), "Normal", false, true, false, 0);
         add_para("", "Normal", false, false, false, 0);
     }
-    for doc in front_matter(project, settings) {
+    for doc in front_matter(project) {
         add_para(&doc.title, "Heading1", true, false, false, 0);
         for para in paragraphs(&doc.body_text()) {
             add_para(&para, "Normal", false, false, false, 0);
@@ -1426,7 +1396,7 @@ fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             }
         }
     }
-    for doc in back_matter(project, settings) {
+    for doc in back_matter(project) {
         add_para(&doc.title, "Heading1", true, false, false, 0);
         for para in paragraphs(&doc.body_text()) {
             add_para(&para, "Normal", false, false, false, 0);
@@ -1608,7 +1578,7 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
         }
         body.push_str("</ol></nav>\n");
     }
-    for doc in front_matter(project, settings) {
+    for doc in front_matter(project) {
         body.push_str(&format!(
             "<section class=\"frontmatter\"><h2>{}</h2>\n",
             html_escape(&doc.title)
@@ -1659,7 +1629,7 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
         }
         body.push_str("</section>\n");
     }
-    for doc in back_matter(project, settings) {
+    for doc in back_matter(project) {
         body.push_str(&format!(
             "<section class=\"backmatter\"><h2>{}</h2>\n",
             html_escape(&doc.title)
@@ -1714,7 +1684,7 @@ fn markdown_manuscript(project: &Project, settings: &ExportSettings) -> String {
         }
         out.push('\n');
     }
-    for doc in front_matter(project, settings) {
+    for doc in front_matter(project) {
         out.push_str(&format!("## {}\n\n", doc.title));
         for para in paragraphs(&doc.body_text()) {
             out.push_str(&para);
@@ -1735,7 +1705,7 @@ fn markdown_manuscript(project: &Project, settings: &ExportSettings) -> String {
             }
         }
     }
-    for doc in back_matter(project, settings) {
+    for doc in back_matter(project) {
         out.push_str(&format!("## {}\n\n", doc.title));
         for para in paragraphs(&doc.body_text()) {
             out.push_str(&para);
@@ -1774,7 +1744,7 @@ fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
         out.push_str(&rtf_escape(&project.author));
         out.push_str("\\par\\page\n");
     }
-    for doc in front_matter(project, settings) {
+    for doc in front_matter(project) {
         out.push_str(&format!(
             "\\f0\\fs32\\b {}\\b0\\fs24\\par\n",
             rtf_escape(&doc.title)
@@ -1814,7 +1784,7 @@ fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
             }
         }
     }
-    for doc in back_matter(project, settings) {
+    for doc in back_matter(project) {
         out.push_str(&format!(
             "\\page\\f0\\fs32\\b {}\\b0\\fs24\\par\n",
             rtf_escape(&doc.title)
@@ -1838,7 +1808,7 @@ fn txt_manuscript(project: &Project, settings: &ExportSettings) -> String {
         out.push_str(&"-".repeat(40));
         out.push_str("\n\n");
     }
-    for doc in front_matter(project, settings) {
+    for doc in front_matter(project) {
         out.push_str(&format!("{}\n\n", doc.title.to_uppercase()));
         for para in paragraphs(&doc.body_text()) {
             out.push_str(&format!("{}\n\n", para));
@@ -1858,7 +1828,7 @@ fn txt_manuscript(project: &Project, settings: &ExportSettings) -> String {
             }
         }
     }
-    for doc in back_matter(project, settings) {
+    for doc in back_matter(project) {
         out.push_str(&format!("\n{}\n\n", doc.title.to_uppercase()));
         for para in paragraphs(&doc.body_text()) {
             out.push_str(&format!("{}\n\n", para));
