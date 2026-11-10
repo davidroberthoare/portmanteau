@@ -62,6 +62,9 @@ PORTMANTEAU_DOC="Cold Harbor" ./target/debug/portmanteau --screenshot shots/scri
 - Database records for characters, places, events, props and custom items:
   title, notes, tags, related links, colour and appearances.
 - Research sourcebook with kinds, sources and a linked document per note.
+  Notes can also hold local attachments (images preview inline; audio, video
+  and documents stay as references) and pasted HTML, with embedded data-URL
+  images copied into the project folder.
 
 **Versions**
 - Per-document named snapshots with restore.

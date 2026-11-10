@@ -717,3 +717,38 @@ Old project files with a `characters` array load (serde ignores the unknown fiel
 their records are not migrated; the new `items` field defaults to empty. The script
 `ElementKind::Character` and its editor autocomplete are unchanged in meaning — the
 autocomplete now reads Character records from the database and uses their titles.
+
+### Round 25 — Research attachments and pasted HTML
+
+Research notes can now hold files beside their text. `ResearchItem` gained
+`attachments: Vec<String>` and `html: String`, both `#[serde(default)]` so older
+project manifests still load. Only basenames are stored in `project.json`; the
+bytes live in the project folder at `assets/research/<item-id>/<basename>`.
+`save_folder` keeps its atomic temp-directory swap, so it now copies the
+existing `assets/` tree into the new package before the rename — without that
+step the swap would have deleted every attachment on save. `load_folder` does
+not read `assets/`; the view reads a file only when it draws the row.
+
+The Research screen has an Attachments block under the note body. Image
+attachments (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) preview inline from the
+project bytes; audio, video, PDF and document attachments show their basename
+and kind as local references (there is no in-app playback). The typed "Attach
+file" path copies the chosen file into `assets/research/<item-id>/` and appends
+its basename once; `×` removes the row and its copied file. An unsaved project
+shows "Save the project to attach files" and refuses to attach, because there
+is no folder to own the bytes.
+
+"Paste HTML" reads clipboard text with `arboard`, stores it verbatim in
+`item.html` and previews the raw source in a wrapped mono snippet. Any
+`data:image/...;base64,...` URLs in that HTML are decoded with a small built-in
+base64 decoder (no new dependency), written as `pasted-N.<ext>`, and appended
+to the attachment list. "Paste image" asks `arboard` for an OS clipboard image
+and writes it as RGBA `pasted-image-N.png`. Both clipboard buttons use
+`arboard`, which already arrived through `egui-winit`; the Linux build works and
+the image path is best-effort (a headless machine simply reports "No image on
+clipboard"). Inline previews use `egui_extras::install_image_loaders` with the
+`image` crate's png/jpeg/gif/webp decoders enabled.
+
+Known limits: "Save As" to a different folder does not yet carry the old
+`assets/` tree with it, and pasted HTML is shown as source rather than rendered
+as a web page. Audio and video are references only by design.

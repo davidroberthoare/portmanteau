@@ -346,6 +346,8 @@ fn research_body_is_externalised_and_restored() {
         kind: "Note".into(),
         source: String::new(),
         created: portmanteau_core::now_stamp(),
+        attachments: Vec::new(),
+        html: String::new(),
     });
     let dir = scratch("rt1-research");
     storage::save_folder(&project, &dir).expect("save");
@@ -356,6 +358,25 @@ fn research_body_is_externalised_and_restored() {
     );
     let back = storage::load_folder(&dir).expect("load");
     assert_eq!(back.research[0].body, "A distinctive research body sentence.");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn resaving_keeps_attachment_assets() {
+    let project = Project::new("Probe", ProjectKind::Novel);
+    let dir = scratch("rt25-assets");
+    storage::save_folder(&project, &dir).expect("save");
+
+    let asset_dir = dir.join("assets").join("research").join("res-probe");
+    std::fs::create_dir_all(&asset_dir).expect("asset dir");
+    std::fs::write(asset_dir.join("note.png"), b"PNG-DATA").expect("asset");
+
+    // The package is rebuilt in a temporary directory and swapped in, so a
+    // second save must carry the attachment binaries across.
+    storage::save_folder(&project, &dir).expect("re-save");
+    let kept = std::fs::read(asset_dir.join("note.png")).expect("asset survived the save");
+    assert_eq!(kept, b"PNG-DATA");
+
     let _ = std::fs::remove_dir_all(dir);
 }
 

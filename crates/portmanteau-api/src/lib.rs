@@ -479,6 +479,8 @@ impl Workspace {
                     kind,
                     source,
                     created: now_stamp(),
+                    attachments: Vec::new(),
+                    html: String::new(),
                 };
                 let id = item.id.clone();
                 self.project.research.push(item);

@@ -405,6 +405,13 @@ pub struct ResearchItem {
     pub kind: String,
     pub source: String,
     pub created: String,
+    /// Attachment basenames. The bytes live beside the project in
+    /// `assets/research/<item-id>/<basename>`; the model only remembers names.
+    #[serde(default)]
+    pub attachments: Vec<String>,
+    /// A pasted HTML snippet, kept verbatim. May be empty.
+    #[serde(default)]
+    pub html: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]

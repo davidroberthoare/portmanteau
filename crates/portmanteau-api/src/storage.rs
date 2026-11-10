@@ -85,6 +85,33 @@ fn write_file(path: &Path, body: impl AsRef<[u8]>) -> Result<(), String> {
     std::fs::write(path, body).map_err(|e| format!("Could not write {}: {e}", path.display()))
 }
 
+/// Copy an existing directory tree into the freshly built package. Used for
+/// `assets/`: attachment binaries live there and are not part of the manifest.
+fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(to).map_err(|e| format!("Could not create {}: {e}", to.display()))?;
+    let entries =
+        std::fs::read_dir(from).map_err(|e| format!("Could not read {}: {e}", from.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Could not read {}: {e}", from.display()))?;
+        let target = to.join(entry.file_name());
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("Could not inspect {}: {e}", entry.path().display()))?;
+        if file_type.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target).map_err(|e| {
+                format!(
+                    "Could not copy {} to {}: {e}",
+                    entry.path().display(),
+                    target.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
 fn reset_dir(path: &Path) -> Result<(), String> {
     if path.exists() {
         std::fs::remove_dir_all(path)
@@ -213,6 +240,16 @@ pub fn save_folder(project: &Project, dir: &Path) -> Result<(), String> {
     if let Err(e) = write_package(project, &temp) {
         let _ = std::fs::remove_dir_all(&temp);
         return Err(e);
+    }
+
+    // The package is rebuilt from scratch, so carry the attachment binaries
+    // across before the swap. `project.json` only stores their basenames.
+    let existing_assets = dir.join("assets");
+    if existing_assets.is_dir() {
+        if let Err(e) = copy_dir(&existing_assets, &temp.join("assets")) {
+            let _ = std::fs::remove_dir_all(&temp);
+            return Err(e);
+        }
     }
 
     let had_existing = dir.exists();

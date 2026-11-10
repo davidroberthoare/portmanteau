@@ -199,6 +199,8 @@ pub fn demo() -> Project {
             kind: kind.into(),
             source: source.into(),
             created: now_stamp(),
+            attachments: Vec::new(),
+            html: String::new(),
         });
     };
     add_research(
