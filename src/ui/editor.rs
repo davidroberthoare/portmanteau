@@ -8,7 +8,7 @@ use portmanteau_core::{
     DocKind, Document, ElementKind, ElementStyle, ElementStyles, ExportSettings, Medium,
 };
 
-use crate::app::{PortmanteauApp, WriteMode};
+use crate::app::{NewCharacterState, PortmanteauApp, WriteMode};
 use crate::theme::*;
 use crate::ui::views::{content_frame, page_head};
 
@@ -700,7 +700,24 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut add_at: Option<usize> = None;
     let mut remove_at: Option<usize> = None;
     let mut cycle_at: Option<usize> = None;
+    let mut set_text_at: Option<(usize, String)> = None;
+    let mut new_character: Option<NewCharacterState> = None;
     let project_title = app.ws.project.title.clone();
+    // Character names are read before the document is borrowed mutably: the
+    // autocomplete only needs owned strings from the project.
+    let character_names: Vec<String> = {
+        let mut names: Vec<String> = app
+            .ws
+            .project
+            .characters
+            .iter()
+            .map(|c| c.name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .collect();
+        names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+        names
+    };
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
         paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), doc.pages());
@@ -737,7 +754,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             .map(|b| b.kind)
             .unwrap_or(ElementKind::Action);
         ui.horizontal_wrapped(|ui| {
-            for kind in ElementKind::all(doc.medium) {
+            for (index, kind) in ElementKind::all(doc.medium).into_iter().enumerate() {
                 let active = kind == selected_kind;
                 let btn = egui::Button::new(
                     RichText::new(kind.short())
@@ -747,7 +764,11 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 .fill(if active { ACCENT } else { Color32::from_rgb(235, 229, 216) })
                 .corner_radius(CornerRadius::same(10))
                 .min_size(Vec2::new(0.0, 19.0));
-                if ui.add(btn).clicked() {
+                if ui
+                    .add(btn)
+                    .on_hover_text(format!("{} · Ctrl+{}", kind.label(), index + 1))
+                    .clicked()
+                {
                     if let Some(block) = doc.blocks.get_mut(app.selected_block) {
                         block.kind = kind;
                         dirty = true;
@@ -787,7 +808,9 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             if app.block_focus == Some(i) {
                 ui.memory_mut(|m| m.request_focus(block_id));
             }
-            // Keyboard: Enter starts a new element, Tab cycles its type.
+            // Keyboard: Enter starts a new element, Tab cycles its type,
+            // Ctrl/Cmd+1…8 selects a type directly. Arrow keys stay bound to
+            // the text caret.
             let focused = ui.memory(|m| m.has_focus(block_id));
             if focused {
                 let enter = ui.input_mut(|inp| {
@@ -802,6 +825,11 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 });
                 if tab || shift_tab {
                     cycle_at = Some(i);
+                }
+                if let Some(kind) = ctrl_digit_element(ui, doc.medium) {
+                    doc.blocks[i].kind = kind;
+                    app.selected_block = i;
+                    dirty = true;
                 }
                 if ui.input(|inp| inp.key_pressed(Key::Backspace))
                     && doc.blocks[i].text.is_empty()
@@ -898,6 +926,19 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     doc.touch();
                     dirty = true;
                 }
+                if kind == ElementKind::Character && (focused || resp.has_focus()) {
+                    character_assist(
+                        ui,
+                        doc_id,
+                        i,
+                        resp.rect,
+                        &character_names,
+                        doc.blocks[i].text.as_str(),
+                        &doc.blocks,
+                        &mut set_text_at,
+                        &mut new_character,
+                    );
+                }
                 if kind == ElementKind::Transition {
                     ui.add_space(4.0);
                 }
@@ -968,8 +1009,196 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             }
         }
     }
+    if let Some((i, text)) = set_text_at {
+        if let Some(doc) = app.ws.project.document_mut(doc_id) {
+            let mut changed = false;
+            if let Some(block) = doc.blocks.get_mut(i) {
+                if block.text != text {
+                    block.text = text;
+                    changed = true;
+                }
+            }
+            if changed {
+                doc.touch();
+                app.selected_block = i;
+                app.block_focus = Some(i);
+                app.ws.dirty = true;
+            }
+        }
+    }
+    if let Some(state) = new_character {
+        app.new_character = Some(state);
+    }
     if dirty {
         app.ws.dirty = true;
+    }
+}
+
+/// Consume Ctrl/Cmd+1…8 while an element has focus and map it onto the
+/// medium's element list. Returning the kind keeps the borrow inside the block
+/// loop, where `doc` is already mutably borrowed.
+fn ctrl_digit_element(ui: &mut egui::Ui, medium: Medium) -> Option<ElementKind> {
+    let all = ElementKind::all(medium);
+    let keys = [
+        Key::Num1,
+        Key::Num2,
+        Key::Num3,
+        Key::Num4,
+        Key::Num5,
+        Key::Num6,
+        Key::Num7,
+        Key::Num8,
+    ];
+    let ctrl_or_cmd = Modifiers::CTRL | Modifiers::COMMAND;
+    for (index, key) in keys.into_iter().enumerate() {
+        let Some(kind) = all.get(index).copied() else {
+            break;
+        };
+        let hit = ui.input_mut(|input| {
+            input.consume_key(ctrl_or_cmd, key) || input.consume_key(Modifiers::COMMAND, key)
+        });
+        if hit {
+            return Some(kind);
+        }
+    }
+    None
+}
+
+/// The autocomplete dropdown and next-speaker hint for one focused Character
+/// element. Anything that needs a mutation is collected into the two `Option`
+/// out-parameters, because `doc` is borrowed for the draw.
+#[allow(clippy::too_many_arguments)]
+fn character_assist(
+    ui: &mut egui::Ui,
+    doc_id: &str,
+    index: usize,
+    rect: egui::Rect,
+    names: &[String],
+    text: &str,
+    blocks: &[portmanteau_core::Block],
+    set_text_at: &mut Option<(usize, String)>,
+    new_character: &mut Option<NewCharacterState>,
+) {
+    let query = text.trim().to_lowercase();
+    let matches: Vec<&String> = names
+        .iter()
+        .filter(|name| {
+            if query.is_empty() {
+                true
+            } else {
+                let lower = name.to_lowercase();
+                lower.contains(&query) && lower != query
+            }
+        })
+        .take(6)
+        .collect();
+
+    let area_pos = egui::pos2(rect.left(), rect.bottom() + 3.0);
+    egui::Area::new(Id::new(("character_autocomplete", doc_id, index)))
+        .order(egui::Order::Foreground)
+        .fixed_pos(area_pos)
+        .show(ui.ctx(), |ui| {
+            Frame::new()
+                .fill(Color32::from_rgb(247, 243, 233))
+                .stroke(Stroke::new(1.0, PAPER_EDGE))
+                .corner_radius(CornerRadius::same(5))
+                .shadow(egui::epaint::Shadow {
+                    offset: [0, 6],
+                    blur: 18,
+                    spread: 0,
+                    color: Color32::from_black_alpha(60),
+                })
+                .inner_margin(Margin::symmetric(5, 5))
+                .show(ui, |ui| {
+                    ui.set_min_width(190.0);
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    for name in &matches {
+                        let btn = egui::Button::new(
+                            RichText::new(name.as_str())
+                                .font(sans(10.5))
+                                .color(PAPER_TEXT),
+                        )
+                        .frame(false)
+                        .min_size(Vec2::new(180.0, 20.0));
+                        if ui.add(btn).clicked() {
+                            *set_text_at = Some((index, (*name).clone()));
+                        }
+                    }
+                    if !matches.is_empty() {
+                        ui.add_space(2.0);
+                        let (rule, _) =
+                            ui.allocate_exact_size(Vec2::new(180.0, 1.0), Sense::hover());
+                        ui.painter().line_segment(
+                            [rule.left_center(), rule.right_center()],
+                            Stroke::new(1.0, PAPER_EDGE),
+                        );
+                        ui.add_space(2.0);
+                    }
+                    let new = egui::Button::new(
+                        RichText::new("+ New character…")
+                            .font(sans(10.0))
+                            .color(PAPER_MUTED),
+                    )
+                    .frame(false)
+                    .min_size(Vec2::new(180.0, 20.0));
+                    if ui.add(new).clicked() {
+                        *new_character = Some(NewCharacterState {
+                            doc_id: doc_id.to_string(),
+                            block: index,
+                            name: text.trim().to_string(),
+                            role: String::new(),
+                        });
+                    }
+                });
+        });
+
+    if text.trim().is_empty() {
+        if let Some(speaker) = next_speaker(blocks, index) {
+            let pos = egui::pos2(rect.right() + 8.0, rect.top() + 1.0);
+            egui::Area::new(Id::new(("next_speaker", doc_id, index)))
+                .order(egui::Order::Foreground)
+                .fixed_pos(pos)
+                .show(ui.ctx(), |ui| {
+                    let hint = egui::Button::new(
+                        RichText::new(format!("↺ {speaker}"))
+                            .font(mono(8.5))
+                            .color(PAPER_MUTED),
+                    )
+                    .frame(false);
+                    if ui
+                        .add(hint)
+                        .on_hover_text("Fill the next speaker")
+                        .clicked()
+                    {
+                        *set_text_at = Some((index, speaker.clone()));
+                    }
+                });
+        }
+    }
+}
+
+/// In a back-and-forth, the next speaker is the other half of the last two
+/// distinct Character names before `index`. Repeated or one-sided names give no
+/// suggestion.
+fn next_speaker(blocks: &[portmanteau_core::Block], index: usize) -> Option<String> {
+    let mut recent: Vec<String> = Vec::new();
+    for block in blocks[..index.min(blocks.len())].iter().rev() {
+        if block.kind != ElementKind::Character {
+            continue;
+        }
+        let name = block.text.trim();
+        if name.is_empty() || recent.iter().any(|seen| seen.eq_ignore_ascii_case(name)) {
+            continue;
+        }
+        recent.push(name.to_string());
+        if recent.len() == 2 {
+            break;
+        }
+    }
+    if recent.len() < 2 {
+        None
+    } else {
+        Some(recent[1].clone())
     }
 }
 

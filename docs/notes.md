@@ -624,3 +624,28 @@ The **Command desk** is no longer in the left navigation rail or `View::all()`.
 It stays a real workspace and command surface, but is now opened from the View
 menu ("Command desk") or with `PORTMANTEAU_VIEW=agent` (also `command desk`).
 The Agent icon and dispatch remain in place.
+
+### Round 20 — Script editing ergonomics
+
+The screenplay surface now has three editing aids that stay local to the
+focused element and never change the stored project until the draw pass ends.
+
+- **Ctrl/Cmd+1…8** sets the focused element to the matching entry in
+  `ElementKind::all(medium)`. The digit key is consumed before the text widget
+  sees it, so no number is typed. Palette buttons show the same shortcut in
+  their hover text (e.g. "Character · Ctrl+3").
+- **Character autocomplete** appears under a focused Character element. It lists
+  matching names from the project's character sheets, filtered
+  case-insensitively by the element text, plus a "New character…" entry. The
+  name list is cloned before the document is borrowed. Choosing a name writes it
+  into the block; the new-character entry opens a small Name/Role window, and
+  creating adds the sheet and fills the block with the name.
+- **Next speaker** is a faint `↺ NAME` hint at the right edge of an empty
+  Character element. It comes from the two most recent distinct Character names
+  before the cursor, so a MARA / BOY back-and-forth suggests whichever of the
+  pair did not speak last. Clicking it fills the block.
+
+Tab/Shift-Tab cycling, Enter for the next element, Backspace on an empty
+element and normal arrow-key caret movement are unchanged. All project
+mutations are collected as actions and applied after the `&mut doc` scope, the
+same pattern the palette, Enter and Backspace already use.

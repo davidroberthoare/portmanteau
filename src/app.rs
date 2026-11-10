@@ -10,7 +10,7 @@ use eframe::egui::{
 };
 
 use portmanteau_api::Workspace;
-use portmanteau_core::{AppSettings, DocKind, ElementKind, Medium, ProjectKind};
+use portmanteau_core::{AppSettings, Character, DocKind, ElementKind, Medium, ProjectKind};
 
 use crate::icons::{self, Icon};
 use crate::theme::*;
@@ -142,6 +142,17 @@ pub enum PathDialog {
     SaveAs,
 }
 
+/// A character being created from the screenplay editor's "New character…"
+/// entry. The document and block are remembered so the new name can be dropped
+/// into the script when the modal closes.
+#[derive(Clone)]
+pub struct NewCharacterState {
+    pub doc_id: String,
+    pub block: usize,
+    pub name: String,
+    pub role: String,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
     Ok,
@@ -180,6 +191,7 @@ pub struct PortmanteauApp {
     pub cmd_selected: usize,
     pub path_dialog: Option<PathDialog>,
     pub path_draft: String,
+    pub new_character: Option<NewCharacterState>,
     pub diff: Option<DiffState>,
     pub outline_filter: usize,
     pub screenshot: Option<PathBuf>,
@@ -248,6 +260,7 @@ impl PortmanteauApp {
             cmd_selected: 0,
             path_dialog: None,
             path_draft: String::new(),
+            new_character: None,
             diff: None,
             outline_filter: 0,
             screenshot,
@@ -918,6 +931,86 @@ impl PortmanteauApp {
 
         self.path_modal(ctx);
         self.diff_modal(ctx);
+        self.new_character_modal(ctx);
+    }
+
+    /// The small "New character" form opened from a Character element's
+    /// autocomplete. On create the sheet is added to the project and its name
+    /// is written into the block that asked for it.
+    fn new_character_modal(&mut self, ctx: &egui::Context) {
+        let Some(mut state) = self.new_character.clone() else {
+            return;
+        };
+        let mut open = true;
+        let mut create = false;
+        egui::Window::new("New character")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .min_width(400.0)
+            .show(ctx, |ui| {
+                ui.add_space(4.0);
+                section_label(ui, "Name");
+                ui.add(
+                    TextEdit::singleline(&mut state.name)
+                        .hint_text("e.g. Mara Venn")
+                        .desired_width(f32::INFINITY)
+                        .font(serif(19.0)),
+                );
+                ui.add_space(12.0);
+                section_label(ui, "Role");
+                ui.add(
+                    TextEdit::singleline(&mut state.role)
+                        .hint_text("Protagonist, ally, antagonist…")
+                        .desired_width(f32::INFINITY)
+                        .font(sans(12.5)),
+                );
+                ui.add_space(16.0);
+                let ready = !state.name.trim().is_empty();
+                let btn = egui::Button::new(
+                    RichText::new("Create").font(sans(12.5))
+                        .color(Color32::from_rgb(25, 21, 15)),
+                )
+                .fill(if ready { ACCENT } else { PANEL_3 })
+                .corner_radius(CornerRadius::same(6))
+                .min_size(Vec2::new(110.0, 30.0));
+                if ui.add_enabled(ready, btn).clicked() {
+                    create = true;
+                }
+            });
+
+        if create {
+            let name = state.name.trim().to_string();
+            let role = state.role.trim().to_string();
+            let mut character = Character::new(name.clone(), role);
+            // The Characters view cycles through six face colours.
+            character.color = (self.ws.project.characters.len() % 6) as u8;
+            self.ws.project.characters.push(character);
+            self.ws.dirty = true;
+            if self.selected.as_deref() == Some(state.doc_id.as_str()) {
+                if let Some(doc) = self.ws.project.document_mut(&state.doc_id) {
+                    if let Some(block) = doc.blocks.get_mut(state.block) {
+                        block.text = name.clone();
+                    }
+                    doc.touch();
+                }
+                self.selected_block = state.block;
+                self.block_focus = Some(state.block);
+            }
+            self.new_character = None;
+            self.toast("Character created", name, ToastKind::Ok);
+            return;
+        }
+
+        // Keep the draft while the window is still open.
+        if let Some(current) = self.new_character.as_mut() {
+            current.name = state.name;
+            current.role = state.role;
+        }
+        if !open {
+            self.new_character = None;
+        }
     }
 
     fn diff_modal(&mut self, ctx: &egui::Context) {
