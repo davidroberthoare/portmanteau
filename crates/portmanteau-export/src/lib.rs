@@ -734,7 +734,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                     let block_size = style.size.max(8.0);
                     let indent_mm = style.indent / 2.834645;
                     let width_chars = width_for(indent_mm);
-                    let text = if block.kind.is_uppercase() {
+                    let text = if settings.styles.style_for_kind(block.kind).uppercase {
                         block.text.to_uppercase()
                     } else {
                         block.text.clone()
@@ -936,7 +936,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                 let width = ((content_width - indent_mm * 2.834645) / 7.2)
                     .floor()
                     .max(14.0) as usize;
-                let text = if block.kind.is_uppercase() {
+                let text = if settings.styles.style_for_kind(block.kind).uppercase {
                     block.text.to_uppercase()
                 } else {
                     block.text.clone()
@@ -1126,9 +1126,9 @@ h2 {{ font-size: 1.25em; margin: 1.5em 0 .8em; text-align: {heading_align}; }}
 p {{ margin: 0 0 0 .2em; text-indent: {body_first_indent:.2}pt; text-align: {body_align}; }}
 p.first {{ text-indent: 0; }}
 .center {{ text-align: center; text-indent: 0; }}
-.scene {{ font-family: {scene_font}; font-size: {scene_size:.1}pt; text-transform: uppercase; font-weight: bold; margin-top: 1.5em; text-indent: 0; }}
+.scene {{ font-family: {scene_font}; font-size: {scene_size:.1}pt; font-weight: bold; margin-top: 1.5em; text-indent: 0; }}
 .action {{ font-family: {action_font}; font-size: {action_size:.1}pt; margin: .5em 0 .8em; text-indent: 0; }}
-.character {{ font-family: {character_font}; font-size: {character_size:.1}pt; margin: 1em 0 0 {character_indent}; text-indent: 0; text-transform: uppercase; }}
+.character {{ font-family: {character_font}; font-size: {character_size:.1}pt; margin: 1em 0 0 {character_indent}; text-indent: 0; }}
 .parenthetical {{ font-family: {parenthetical_font}; font-size: {parenthetical_size:.1}pt; margin: 0 0 0 {parenthetical_indent}; text-indent: 0; }}
 .dialogue {{ font-family: {dialogue_font}; font-size: {dialogue_size:.1}pt; margin: 0 10% .7em {dialogue_indent}; text-indent: 0; }}
 .transition {{ font-family: {transition_font}; font-size: {transition_size:.1}pt; text-align: right; text-indent: 0; }}
@@ -1216,7 +1216,7 @@ p.first {{ text-indent: 0; }}
             files.push((
                 format!("front-{}.xhtml", slugify(&doc.title)),
                 doc.title.clone(),
-                xhtml_body(doc, None),
+                xhtml_body(doc, None, settings),
             ));
         }
         for (i, section) in manuscript_sections(project).iter().enumerate() {
@@ -1225,14 +1225,14 @@ p.first {{ text-indent: 0; }}
             files.push((
                 format!("chapter-{:03}.xhtml", chapter_no),
                 title.clone(),
-                xhtml_body(section.doc, Some(&title)),
+                xhtml_body(section.doc, Some(&title), settings),
             ));
         }
         for doc in back_matter(project) {
             files.push((
                 format!("back-{}.xhtml", slugify(&doc.title)),
                 doc.title.clone(),
-                xhtml_body(doc, None),
+                xhtml_body(doc, None, settings),
             ));
         }
 
@@ -1287,7 +1287,7 @@ p.first {{ text-indent: 0; }}
     buf
 }
 
-fn xhtml_body(doc: &Document, heading: Option<&str>) -> String {
+fn xhtml_body(doc: &Document, heading: Option<&str>, settings: &ExportSettings) -> String {
     let mut out = String::new();
     if let Some(h) = heading {
         out.push_str(&format!("<h1>{}</h1>\n", xml_escape(h)));
@@ -1309,7 +1309,7 @@ fn xhtml_body(doc: &Document, heading: Option<&str>) -> String {
                 ElementKind::Lyric => "dialogue",
                 ElementKind::General => "action",
             };
-            let text = if block.kind.is_uppercase() {
+            let text = if settings.styles.style_for_kind(block.kind).uppercase {
                 block.text.to_uppercase()
             } else {
                 block.text.clone()
@@ -1387,7 +1387,7 @@ fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                     ElementKind::SceneHeading => (0, true, false),
                     _ => (0, true, false),
                 };
-                let text = if block.kind.is_uppercase() {
+                let text = if settings.styles.style_for_kind(block.kind).uppercase {
                     block.text.to_uppercase()
                 } else {
                     block.text.clone()
@@ -1518,7 +1518,7 @@ fn fdx_manuscript(project: &Project, settings: &ExportSettings) -> String {
     for section in manuscript_sections(project) {
         if section.doc.medium.is_script() {
             for block in &section.doc.blocks {
-                let text = if block.kind.is_uppercase() {
+                let text = if settings.styles.style_for_kind(block.kind).uppercase {
                     block.text.to_uppercase()
                 } else {
                     block.text.clone()
@@ -1617,7 +1617,7 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
                     ElementKind::Transition => "trans",
                     _ => "action",
                 };
-                let text = if block.kind.is_uppercase() {
+                let text = if settings.styles.style_for_kind(block.kind).uppercase {
                     block.text.to_uppercase()
                 } else {
                     block.text.clone()
@@ -1660,7 +1660,7 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
     let body_first_indent = st.body.first_line_indent.max(0.0);
     let title_align = css_align(st.title_page_title.align);
     format!(
-        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n<title>{title}</title>\n<style>\nbody{{max-width:42rem;margin:4rem auto;padding:0 1.5rem;font-family:{body_font};line-height:{body_leading:.2};text-align:{body_align};color:#1e1c19;background:#fbf8f1}}\nh1{{font-size:{h1_size:.1}pt;line-height:1.1;text-align:{heading_align}}}h2{{font-size:{chapter_size:.1}pt;margin-top:3rem;border-bottom:1px solid #d8d0c0;padding-bottom:.4rem;text-align:{heading_align}}}\np{{margin:0 0 .9rem;{body_indent_margins}text-indent:{body_first_indent:.1}pt;text-align:{body_align}}}p.first{{text-indent:0}}\n.titlepage{{text-align:center;margin:18vh 0 22vh}}.titlepage h1{{font-size:{title_size:.1}pt;margin-bottom:.3em;text-align:{title_align}}}.titlepage p{{text-indent:0}}.sub{{font-style:italic;color:#665f54}}\n.toc ol{{line-height:2}}.toc a{{color:#2f5d50;text-decoration:none}}\n.script{{font-family:{script_font};font-size:{script_size:.1}pt}}.script p{{text-indent:0;margin:.4rem 0;text-align:left}}\n.scene{{text-transform:uppercase;font-weight:bold;margin-top:1.6rem!important}}.character{{margin-left:32%!important;text-transform:uppercase;margin-top:1rem!important}}.paren{{margin-left:24%!important}}.dialogue{{margin-left:16%!important;margin-right:12%!important}}.trans{{text-align:right!important}}\n.frontmatter,.backmatter{{margin-top:4rem}}\n</style>\n</head>\n<body>\n{body}\n</body>\n</html>\n",
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n<title>{title}</title>\n<style>\nbody{{max-width:42rem;margin:4rem auto;padding:0 1.5rem;font-family:{body_font};line-height:{body_leading:.2};text-align:{body_align};color:#1e1c19;background:#fbf8f1}}\nh1{{font-size:{h1_size:.1}pt;line-height:1.1;text-align:{heading_align}}}h2{{font-size:{chapter_size:.1}pt;margin-top:3rem;border-bottom:1px solid #d8d0c0;padding-bottom:.4rem;text-align:{heading_align}}}\np{{margin:0 0 .9rem;{body_indent_margins}text-indent:{body_first_indent:.1}pt;text-align:{body_align}}}p.first{{text-indent:0}}\n.titlepage{{text-align:center;margin:18vh 0 22vh}}.titlepage h1{{font-size:{title_size:.1}pt;margin-bottom:.3em;text-align:{title_align}}}.titlepage p{{text-indent:0}}.sub{{font-style:italic;color:#665f54}}\n.toc ol{{line-height:2}}.toc a{{color:#2f5d50;text-decoration:none}}\n.script{{font-family:{script_font};font-size:{script_size:.1}pt}}.script p{{text-indent:0;margin:.4rem 0;text-align:left}}\n.scene{{font-weight:bold;margin-top:1.6rem!important}}.character{{margin-left:32%!important;margin-top:1rem!important}}.paren{{margin-left:24%!important}}.dialogue{{margin-left:16%!important;margin-right:12%!important}}.trans{{text-align:right!important}}\n.frontmatter,.backmatter{{margin-top:4rem}}\n</style>\n</head>\n<body>\n{body}\n</body>\n</html>\n",
         title = html_escape(&project.title),
         body_font = body_font,
         body_leading = st.body.leading.max(1.0),
@@ -1778,7 +1778,7 @@ fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
                     ElementKind::Dialogue => 2000,
                     _ => 0,
                 };
-                let text = if block.kind.is_uppercase() {
+                let text = if settings.styles.style_for_kind(block.kind).uppercase {
                     block.text.to_uppercase()
                 } else {
                     block.text.clone()

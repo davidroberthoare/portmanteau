@@ -605,6 +605,11 @@ pub struct ElementStyle {
     pub after: f32,       // space after, points
     #[serde(default)]
     pub align: Alignment,
+    /// Render this element in all caps. Conventional for character cues,
+    /// scene headings, transitions and act markers; off for action, dialogue
+    /// and prose.
+    #[serde(default)]
+    pub uppercase: bool,
 }
 
 impl Default for ElementStyle {
@@ -619,6 +624,7 @@ impl Default for ElementStyle {
             before: 0.0,
             after: 0.0,
             align: Alignment::Left,
+            uppercase: false,
         }
     }
 }
@@ -685,10 +691,14 @@ impl Default for ElementStyles {
                 first_line_indent: 14.0,
                 ..base_element(serif, 11.0, 1.4)
             },
-            scene_heading: base_element(mono, 12.0, 1.0),
+            scene_heading: ElementStyle {
+                uppercase: true,
+                ..base_element(mono, 12.0, 1.0)
+            },
             action: base_element(mono, 12.0, 1.0),
             character: ElementStyle {
                 indent: 158.4,
+                uppercase: true,
                 ..base_element(mono, 12.0, 1.0)
             },
             parenthetical: ElementStyle {
@@ -699,8 +709,14 @@ impl Default for ElementStyles {
                 indent: 72.0,
                 ..base_element(mono, 12.0, 1.0)
             },
-            transition: base_element(mono, 12.0, 1.0),
-            act: base_element(mono, 12.0, 1.0),
+            transition: ElementStyle {
+                uppercase: true,
+                ..base_element(mono, 12.0, 1.0)
+            },
+            act: ElementStyle {
+                uppercase: true,
+                ..base_element(mono, 12.0, 1.0)
+            },
             scene: base_element(mono, 12.0, 1.0),
             stage_direction: base_element(mono, 12.0, 1.0),
             general: base_element(mono, 12.0, 1.0),
@@ -735,6 +751,23 @@ impl ElementStyles {
     /// Look up a writer-defined style by its display name.
     pub fn custom_named(&self, name: &str) -> Option<&CustomStyle> {
         self.custom.iter().find(|style| style.name == name)
+    }
+
+    /// The style backing one screenplay element kind. This is the single
+    /// mapping the editor, preview and every export writer share.
+    pub fn style_for_kind(&self, kind: ElementKind) -> &ElementStyle {
+        match kind {
+            ElementKind::SceneHeading => &self.scene_heading,
+            ElementKind::Action | ElementKind::Shot => &self.action,
+            ElementKind::Character => &self.character,
+            ElementKind::Parenthetical => &self.parenthetical,
+            ElementKind::Dialogue | ElementKind::Lyric => &self.dialogue,
+            ElementKind::Transition => &self.transition,
+            ElementKind::Act => &self.act,
+            ElementKind::Scene => &self.scene,
+            ElementKind::StageDirection => &self.stage_direction,
+            ElementKind::General => &self.general,
+        }
     }
 
     /// Look up one element by its JSON/model name.

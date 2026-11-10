@@ -783,7 +783,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let zoom = app.editor_zoom.clamp(0.7, 1.6);
     let mut add_at: Option<usize> = None;
     let mut remove_at: Option<usize> = None;
-    let mut cycle_at: Option<usize> = None;
+    let mut cycle_at: Option<(usize, bool)> = None;
     let mut set_text_at: Option<(usize, String)> = None;
     let mut new_character: Option<NewCharacterState> = None;
     let project_title = app.ws.project.title.clone();
@@ -920,7 +920,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     inp.consume_key(Modifiers::SHIFT, Key::Tab)
                 });
                 if tab || shift_tab {
-                    cycle_at = Some(i);
+                    cycle_at = Some((i, tab));
                 }
                 if let Some(kind) = ctrl_digit_element(ui, doc.medium) {
                     doc.blocks[i].kind = kind;
@@ -1029,6 +1029,9 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     };
                 }
                 if resp.changed() {
+                    if style.uppercase {
+                        doc.blocks[i].text = doc.blocks[i].text.to_uppercase();
+                    }
                     doc.touch();
                     dirty = true;
                     if kind == ElementKind::Character {
@@ -1093,10 +1096,14 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         });
     }
 
-    if let Some(i) = cycle_at {
+    if let Some((i, forward)) = cycle_at {
         if let Some(doc) = app.ws.project.document_mut(doc_id) {
             if let Some(block) = doc.blocks.get_mut(i) {
-                block.kind = block.kind.next(doc.medium);
+                block.kind = if forward {
+                    block.kind.next(doc.medium)
+                } else {
+                    block.kind.prev(doc.medium)
+                };
                 app.selected_block = i;
                 app.ws.dirty = true;
             }

@@ -975,3 +975,34 @@ Escape, and when a non-Character block is clicked. The "↺ next speaker" hint
 lives in the same popup function, so it gains the same persistent behaviour.
 Runtime click-testing still needs a real window; `--screenshot` only proves the
 screen draws.
+
+## Round 31 — All-caps becomes a style option; Shift+Tab cycles backward
+
+**Casing moved from element kind to element style.** `ElementStyle` gained a
+`uppercase` flag (`#[serde(default)]`, so older project files still load). The
+built-in defaults turn it on for Character, Scene heading, Transition and Act,
+and leave Action, Dialogue, Parenthetical, the title-page styles, prose and
+General mixed-case. `ElementStyles::style_for_kind` now owns the element-kind
+mapping that used to live in `page::script_element_style`; the page module keeps
+a thin wrapper so the editor and preview share one table. Every element-style
+row in Compile, Settings and the per-format editors has an "All caps"
+checkbox, and `style.update` / `export.settings.update` accept
+`{"character":{"uppercase":true}}` through the same merge helper as the numeric
+fields.
+
+The option is authoritative in all three places the script appears. The editor
+uppercases a block's stored text when its style says so and the text changes
+(ASCII names keep their length, so the caret stays put; combining characters or
+Unicode case pairs could move it). The paged preview uppercases `PageLine.text`.
+The PDF, EPUB, DOCX, FDX, HTML, Markdown and RTF writers branch on
+`settings.styles.style_for_kind(block.kind).uppercase` instead of the old
+`ElementKind::is_uppercase`; the EPUB and HTML stylesheets also make their
+`text-transform` conditional so switching the option off really produces mixed
+case. `portmanteau-core::script` keeps its kind-based helper because Fountain
+and plain text are interchange formats, not the writer's house style.
+
+**Shift+Tab now walks backward.** `script_page` used to collapse Tab and
+Shift+Tab into the same `cycle_at: Option<usize>` and always call
+`ElementKind::next`. It now carries `Option<(usize, bool)>`; plain Tab records
+`true` and calls `next`, Shift+Tab records `false` and calls `prev`. The block
+stays selected and focused as before.

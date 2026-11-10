@@ -373,8 +373,8 @@ fn element_row(
 
                     grid_label(ui, "After");
                     changed |= grid_drag(ui, &mut element.after, 0.5, 0.0..=800.0, " pt");
-                    ui.label("");
-                    ui.label("");
+                    grid_label(ui, "All caps");
+                    changed |= ui.checkbox(&mut element.uppercase, "").changed();
                     ui.end_row();
                 });
         });

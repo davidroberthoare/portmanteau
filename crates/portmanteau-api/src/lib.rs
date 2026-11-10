@@ -801,6 +801,9 @@ fn apply_style_overrides(styles: &mut ElementStyles, payload: &Value) -> Result<
         if let Some(v) = fields.get("font").and_then(|v| v.as_str()) {
             element.font = v.into();
         }
+        if let Some(v) = fields.get("uppercase").and_then(|v| v.as_bool()) {
+            element.uppercase = v;
+        }
         if let Some(v) = fields.get("align").and_then(|v| v.as_str()) {
             element.align = Alignment::all()
                 .into_iter()

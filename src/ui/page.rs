@@ -229,7 +229,12 @@ pub fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
         let right_indent = style.right_indent.max(0.0);
         let text_w = (content_w - indent - right_indent).max(12.0);
         let chars_per_line = (text_w / (size * 0.6)).floor().max(8.0) as usize;
-        let wrapped = wrap_words(&block.text, chars_per_line);
+        let text = if style.uppercase {
+            block.text.to_uppercase()
+        } else {
+            block.text.clone()
+        };
+        let wrapped = wrap_words(&text, chars_per_line);
         let count = wrapped.len();
         let block_lines = (count as f32 * lead / base_line).max(1.0);
         let after = style.after.max(0.0);
@@ -300,18 +305,7 @@ pub fn script_element_style<'a>(
     styles: &'a ElementStyles,
     kind: ElementKind,
 ) -> &'a ElementStyle {
-    match kind {
-        ElementKind::SceneHeading => &styles.scene_heading,
-        ElementKind::Action | ElementKind::Shot => &styles.action,
-        ElementKind::Character => &styles.character,
-        ElementKind::Parenthetical => &styles.parenthetical,
-        ElementKind::Dialogue | ElementKind::Lyric => &styles.dialogue,
-        ElementKind::Transition => &styles.transition,
-        ElementKind::Act => &styles.act,
-        ElementKind::Scene => &styles.scene,
-        ElementKind::StageDirection => &styles.stage_direction,
-        ElementKind::General => &styles.general,
-    }
+    styles.style_for_kind(kind)
 }
 
 /// Break a paragraph into display lines using an estimated character width.
