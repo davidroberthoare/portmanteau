@@ -1006,3 +1006,27 @@ Shift+Tab into the same `cycle_at: Option<usize>` and always call
 `ElementKind::next`. It now carries `Option<(usize, bool)>`; plain Tab records
 `true` and calls `next`, Shift+Tab records `false` and calls `prev`. The block
 stays selected and focused as before.
+
+## Round 32 — Headless UI tests for the script editor
+
+The script-editor interactions that caused the recent bugs now have
+deterministic tests that run under `cargo test` with no window, display or GPU.
+`src/ui/editor.rs` has a `#[cfg(test)] mod ui_tests` that drives the real
+`show()` through `egui::Context::run` with hand-built `RawInput` and `Event`s —
+egui's own harness, so no new dependency. Four tests cover Tab / Shift+Tab
+cycling, all-caps storage on a character cue, the character menu opening while
+typing, and the pure `next_speaker` seesaw.
+
+Two limits are deliberate. First, the tests assert on project/view state and on
+which widget holds focus, not on pixels or accessibility labels: finding a
+widget by its visible text would need accesskit (e.g. `egui_kittest`), which is
+not a dependency, so the character menu is tested as state rather than by
+clicking a name. Second, each test installs the bundled fonts and builds the
+demo project; that keeps the suite independent of the writer's saved settings
+but costs roughly half a second for all four tests.
+
+The Tab test also pins down a real bug in the old code. `consume_key` ignores
+extra Shift/Alt modifiers, so the plain-Tab check swallowed Shift+Tab and sent
+both forwards; Shift+Tab now has to be matched first. Removing the
+`set_focus_lock_filter` call makes the same test fail, because egui then moves
+focus to the next widget instead of leaving Tab with the block.

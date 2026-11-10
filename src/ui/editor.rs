@@ -915,10 +915,11 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 if enter {
                     add_at = Some(i);
                 }
+                // Shift+Tab has to be matched before plain Tab: `consume_key`
+                // ignores extra Shift/Alt modifiers, so a `NONE` pattern would
+                // otherwise swallow Shift+Tab and cycle forwards.
+                let shift_tab = ui.input_mut(|inp| inp.consume_key(Modifiers::SHIFT, Key::Tab));
                 let tab = ui.input_mut(|inp| inp.consume_key(Modifiers::NONE, Key::Tab));
-                let shift_tab = ui.input_mut(|inp| {
-                    inp.consume_key(Modifiers::SHIFT, Key::Tab)
-                });
                 if tab || shift_tab {
                     cycle_at = Some((i, tab));
                 }
@@ -1420,4 +1421,238 @@ fn empty_state(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             app.new_chapter_public();
         }
     });
+}
+
+/// Headless interaction tests for the screenplay surface.
+///
+/// They drive the real [`show`] function through `egui::Context::run`, so no
+/// window, GPU or display is involved: `cargo test` runs them like any other
+/// unit test. Frames are fed by hand with synthetic [`egui::RawInput`], which
+/// is exactly what an eframe integration would deliver.
+#[cfg(test)]
+mod ui_tests {
+    use super::*;
+    use crate::app::{PortmanteauApp, View};
+    use crate::ui::editor;
+    use eframe::egui::{self, Event, Key, Modifiers, Pos2, RawInput, Rect, Vec2};
+
+    const SCREEN: Vec2 = Vec2::new(1400.0, 1000.0);
+
+    /// A demo project opened on its first script document, with block 0
+    /// selected and queued for focus. Spell-checking is switched off so the
+    /// fixture does not depend on the writer's saved settings or on walking a
+    /// dictionary for every frame.
+    fn script_fixture() -> (PortmanteauApp, String) {
+        let mut app = PortmanteauApp::new(None);
+        app.settings.spellcheck = false;
+        app.show_spelling = false;
+        app.view = View::Write;
+        app.write_mode = WriteMode::Continuous;
+        let doc_id = app
+            .ws
+            .project
+            .documents
+            .iter()
+            .find(|d| d.medium.is_script())
+            .map(|d| d.id.clone())
+            .expect("the demonstration project has a script document");
+        app.selected = Some(doc_id.clone());
+        app.selected_block = 0;
+        app.block_focus = Some(0);
+        (app, doc_id)
+    }
+
+    fn headless_ctx() -> egui::Context {
+        let ctx = egui::Context::default();
+        // The editor uses the bundled families ("portmanteau-serif" and
+        // friends), which have to be registered before the first frame.
+        crate::theme::install(&ctx);
+        ctx
+    }
+
+    fn frame(app: &mut PortmanteauApp, ctx: &egui::Context, events: Vec<Event>) {
+        let input = RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                editor::show(app, ui);
+            });
+        });
+    }
+
+    /// Run enough empty frames for `request_focus` to land and for the
+    /// TextEdit to install its own event filter before ours is put back on top
+    /// of it, so the focus lock is active when a key is injected.
+    fn settle(app: &mut PortmanteauApp, ctx: &egui::Context) {
+        for _ in 0..4 {
+            frame(app, ctx, Vec::new());
+        }
+    }
+
+    fn key(key: Key, modifiers: Modifiers) -> Event {
+        Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    fn block_id(doc_id: &str, index: usize) -> Id {
+        Id::new(("script_block", doc_id, index))
+    }
+
+    fn block_kind(app: &PortmanteauApp, doc_id: &str, index: usize) -> ElementKind {
+        app.ws
+            .project
+            .document(doc_id)
+            .expect("document still exists")
+            .blocks[index]
+            .kind
+    }
+
+    fn block_text(app: &PortmanteauApp, doc_id: &str, index: usize) -> String {
+        app.ws
+            .project
+            .document(doc_id)
+            .expect("document still exists")
+            .blocks[index]
+            .text
+            .clone()
+    }
+
+    #[test]
+    fn tab_advances_and_shift_tab_reverses_the_element_type() {
+        let (mut app, doc_id) = script_fixture();
+        let ctx = headless_ctx();
+        settle(&mut app, &ctx);
+        assert!(
+            ctx.memory(|m| m.has_focus(block_id(&doc_id, 0))),
+            "block 0 should hold keyboard focus before keys are injected"
+        );
+
+        let medium = app
+            .ws
+            .project
+            .document(&doc_id)
+            .expect("document still exists")
+            .medium;
+        let before = block_kind(&app, &doc_id, 0);
+        let forward = before.next(medium);
+        assert_ne!(before, forward, "the demo medium has more than one kind");
+
+        // Tab must cycle the type (and be kept from egui's focus navigation by
+        // the focus-lock filter).
+        frame(&mut app, &ctx, vec![key(Key::Tab, Modifiers::NONE)]);
+        assert_eq!(
+            block_kind(&app, &doc_id, 0),
+            forward,
+            "Tab should advance the element type"
+        );
+        assert!(
+            ctx.memory(|m| m.has_focus(block_id(&doc_id, 0))),
+            "Tab should not move focus to another widget"
+        );
+
+        // Shift+Tab must walk the same list backwards, not advance again.
+        frame(&mut app, &ctx, vec![key(Key::Tab, Modifiers::SHIFT)]);
+        assert_eq!(
+            block_kind(&app, &doc_id, 0),
+            before,
+            "Shift+Tab should return to the previous element type"
+        );
+        assert!(
+            ctx.memory(|m| m.has_focus(block_id(&doc_id, 0))),
+            "Shift+Tab should keep focus on the block"
+        );
+    }
+
+    #[test]
+    fn typing_into_a_character_cue_uppercases_the_stored_text() {
+        let (mut app, doc_id) = script_fixture();
+        let ctx = headless_ctx();
+        if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+            doc.blocks[0].kind = ElementKind::Character;
+            doc.blocks[0].text.clear();
+        }
+        settle(&mut app, &ctx);
+        assert!(ctx.memory(|m| m.has_focus(block_id(&doc_id, 0))));
+
+        frame(&mut app, &ctx, vec![Event::Text("mara".into())]);
+        assert_eq!(
+            block_text(&app, &doc_id, 0),
+            "MARA",
+            "a Character block should store all-caps text"
+        );
+    }
+
+    #[test]
+    fn typing_into_a_character_cue_opens_the_character_menu() {
+        let (mut app, doc_id) = script_fixture();
+        let ctx = headless_ctx();
+        if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+            doc.blocks[0].kind = ElementKind::Character;
+            doc.blocks[0].text.clear();
+        }
+        settle(&mut app, &ctx);
+        assert_eq!(app.character_menu, None, "the menu starts closed");
+
+        frame(&mut app, &ctx, vec![Event::Text("ma".into())]);
+        assert_eq!(
+            app.character_menu,
+            Some((doc_id.clone(), 0)),
+            "typing a character cue should open the autocomplete for that block"
+        );
+    }
+
+    #[test]
+    fn next_speaker_suggests_the_other_half_of_a_seesaw() {
+        use portmanteau_core::Block;
+
+        let seesaw = vec![
+            Block::new(ElementKind::Character, "MARA"),
+            Block::new(
+                ElementKind::Dialogue,
+                "The chart says there's a channel here.",
+            ),
+            Block::new(ElementKind::Character, "BOY"),
+            Block::new(ElementKind::Dialogue, "The chart's wrong."),
+        ];
+        assert_eq!(
+            next_speaker(&seesaw, 1),
+            None,
+            "one name so far is not a pair"
+        );
+        assert_eq!(
+            next_speaker(&seesaw, 3).as_deref(),
+            Some("MARA"),
+            "after BOY the next speaker is MARA"
+        );
+        assert_eq!(
+            next_speaker(&seesaw, 4).as_deref(),
+            Some("MARA"),
+            "the most recent distinct name is BOY, so MARA is due"
+        );
+
+        // A repeated name is not a second voice, so there is no clear pair.
+        let repeated = vec![
+            Block::new(ElementKind::Character, "MARA"),
+            Block::new(ElementKind::Dialogue, "One."),
+            Block::new(ElementKind::Character, "mara"),
+            Block::new(ElementKind::Dialogue, "Two."),
+        ];
+        assert_eq!(next_speaker(&repeated, 4), None);
+
+        // One-sided dialogue (and empty cues) give no suggestion either.
+        let solo = vec![
+            Block::new(ElementKind::Character, "MARA"),
+            Block::new(ElementKind::Dialogue, "Alone."),
+            Block::new(ElementKind::Character, "   "),
+        ];
+        assert_eq!(next_speaker(&solo, 3), None);
+    }
 }
