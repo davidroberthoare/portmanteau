@@ -10,7 +10,9 @@ use eframe::egui::{
 };
 
 use portmanteau_api::Workspace;
-use portmanteau_core::{AppSettings, Character, DocKind, ElementKind, Medium, ProjectKind};
+use portmanteau_core::{
+    AppSettings, DatabaseItem, DocKind, ElementKind, ItemKind, Medium, ProjectKind,
+};
 
 use crate::icons::{self, Icon};
 use crate::theme::*;
@@ -22,7 +24,7 @@ pub enum View {
     Corkboard,
     Outline,
     Research,
-    Characters,
+    Database,
     History,
     Compile,
     Agent,
@@ -36,7 +38,7 @@ impl View {
             View::Corkboard => "Corkboard",
             View::Outline => "Outline",
             View::Research => "Research",
-            View::Characters => "Characters",
+            View::Database => "Database",
             View::History => "Versions",
             View::Compile => "Compile",
             View::Agent => "Command desk",
@@ -49,7 +51,7 @@ impl View {
             View::Corkboard => Icon::Corkboard,
             View::Outline => Icon::Outline,
             View::Research => Icon::Research,
-            View::Characters => Icon::Characters,
+            View::Database => Icon::Database,
             View::History => Icon::History,
             View::Compile => Icon::Compile,
             View::Agent => Icon::Agent,
@@ -62,7 +64,7 @@ impl View {
             View::Corkboard,
             View::Outline,
             View::Research,
-            View::Characters,
+            View::Database,
             View::History,
             View::Compile,
             View::Settings,
@@ -179,7 +181,12 @@ pub struct PortmanteauApp {
     pub snapshot_name: String,
     pub checkpoint_label: String,
     pub selected_research: Option<String>,
-    pub selected_character: Option<String>,
+    pub selected_item: Option<String>,
+    /// Raw text of the database Tags field for `database_tags_id`. Keeping the
+    /// unparsed text in view state stops a trailing comma or space being
+    /// normalised away while the writer is still typing.
+    pub database_tags_id: Option<String>,
+    pub database_tags_text: String,
     pub toast: Option<Toast>,
     pub show_about: bool,
     pub show_new_project: bool,
@@ -235,7 +242,7 @@ impl PortmanteauApp {
                     .map(|d| d.id.clone())
             })
             .or(selected);
-        let selected_character = ws.project.characters.first().map(|c| c.id.clone());
+        let selected_item = ws.project.items.first().map(|c| c.id.clone());
         let selected_research = ws.project.research.first().map(|r| r.id.clone());
         let mut collapsed = HashSet::new();
         if let Some(draft) = ws.project.folder_id("Draft") {
@@ -259,7 +266,9 @@ impl PortmanteauApp {
             snapshot_name: String::new(),
             checkpoint_label: String::new(),
             selected_research,
-            selected_character,
+            selected_item,
+            database_tags_id: None,
+            database_tags_text: String::new(),
             toast: None,
             show_about: false,
             show_new_project: false,
@@ -635,7 +644,7 @@ impl PortmanteauApp {
                 ui.close_menu();
             }
             if ui.button("New character").clicked() {
-                self.view = View::Characters;
+                self.view = View::Database;
                 ui.close_menu();
             }
         });
@@ -930,7 +939,7 @@ impl PortmanteauApp {
                     for line in [
                         "Binder, corkboard and outline for long-form structure",
                         "Prose and screenplay editors with typed elements",
-                        "Research, characters and structured story planning",
+                        "Research, a story database and structured planning",
                         "Snapshots, checkpoints, version comparison and restore",
                         "PDF, EPUB, DOCX, Final Draft, Fountain, HTML, Markdown, RTF and text",
                         "A JSON command API and an MCP server under the desktop UI",
@@ -1007,10 +1016,11 @@ impl PortmanteauApp {
         if create {
             let name = state.name.trim().to_string();
             let role = state.role.trim().to_string();
-            let mut character = Character::new(name.clone(), role);
-            // The Characters view cycles through six face colours.
-            character.color = (self.ws.project.characters.len() % 6) as u8;
-            self.ws.project.characters.push(character);
+            let mut character = DatabaseItem::new(ItemKind::Character, name.clone());
+            character.notes = role;
+            // The Database view cycles through six record colours.
+            character.color = (self.ws.project.items.len() % 6) as u8;
+            self.ws.project.items.push(character);
             self.ws.dirty = true;
             if self.selected.as_deref() == Some(state.doc_id.as_str()) {
                 if let Some(doc) = self.ws.project.document_mut(&state.doc_id) {

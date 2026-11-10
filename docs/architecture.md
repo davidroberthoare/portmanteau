@@ -20,7 +20,7 @@ Pure Rust + serde. No file system, UI or export code.
 
 | Module | Responsibility |
 | --- | --- |
-| `model.rs` | `Project`, `Document`, `Block`, `Character`, `ResearchItem`, `Snapshot`, `Checkpoint`, export settings |
+| `model.rs` | `Project`, `Document`, `Block`, `DatabaseItem`, `ResearchItem`, `Snapshot`, `Checkpoint`, export settings |
 | `script.rs` | `ElementKind`, loose text classification, Fountain conversion, aligned plain text |
 | `text.rs` | Word counts, reading time, truncation, line-level diff |
 | `sample.rs` | The demonstration project, `The Salt Road` |
@@ -122,7 +122,7 @@ the painter, so no image assets or icon font are required.
 | Corkboard | Story shape as cards | open document, new document |
 | Outline | Table of labels, status and length | include/exclude, open |
 | Research | Sourcebook and linked notes | `research.add` |
-| Characters | Character sheets and appearances | direct character edits |
+| Database | Characters, places, events, props: notes, tags, links and appearances | direct database edits |
 | Versions | Checkpoints, snapshots, compare, calendar | checkpoint/restore/diff |
 | Compile | Format, matter and style choices | `export.run` |
 | Command desk | Raw API console | any command |

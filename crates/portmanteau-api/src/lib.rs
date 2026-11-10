@@ -414,40 +414,58 @@ impl Workspace {
                     }),
                 )
             }
-            "character.add" => {
-                let name = str_arg(&payload, "name").unwrap_or_else(|| "New character".into());
-                let role = str_arg(&payload, "role").unwrap_or_default();
-                let mut c = Character::new(name, role);
-                if let Some(v) = payload.get("description").and_then(|v| v.as_str()) {
-                    c.description = v.into();
+            "item.add" => {
+                let kind = payload
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_item_kind)
+                    .unwrap_or(ItemKind::Character);
+                let title = str_arg(&payload, "title").unwrap_or_else(|| "New item".into());
+                let mut item = DatabaseItem::new(kind, title);
+                if let Some(v) = payload.get("notes").and_then(|v| v.as_str()) {
+                    item.notes = v.into();
                 }
-                let id = c.id.clone();
-                self.project.characters.push(c);
+                if let Some(Value::Array(tags)) = payload.get("tags") {
+                    item.tags = string_list(tags);
+                }
+                let id = item.id.clone();
+                self.project.items.push(item);
                 self.dirty = true;
-                ApiResponse::ok(command, "Character added", json!({"id": id}))
+                ApiResponse::ok(command, "Item added", json!({"id": id}))
             }
-            "character.update" => {
+            "item.update" => {
                 let Some(id) = str_arg(&payload, "id") else {
-                    return ApiResponse::err(command, "A character id is required");
+                    return ApiResponse::err(command, "An item id is required");
                 };
-                let Some(c) = self.project.characters.iter_mut().find(|c| c.id == id) else {
-                    return ApiResponse::err(command, "Character not found");
+                let Some(item) = self.project.items.iter_mut().find(|i| i.id == id) else {
+                    return ApiResponse::err(command, "Item not found");
                 };
+                if let Some(kind) = payload
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_item_kind)
+                {
+                    item.kind = kind;
+                }
                 for (key, field) in [
-                    ("name", &mut c.name),
-                    ("role", &mut c.role),
-                    ("description", &mut c.description),
-                    ("want", &mut c.want),
-                    ("need", &mut c.need),
-                    ("flaw", &mut c.flaw),
-                    ("arc", &mut c.arc),
+                    ("title", &mut item.title),
+                    ("notes", &mut item.notes),
                 ] {
                     if let Some(v) = payload.get(key).and_then(|v| v.as_str()) {
                         *field = v.into();
                     }
                 }
+                if let Some(Value::Array(tags)) = payload.get("tags") {
+                    item.tags = string_list(tags);
+                }
+                if let Some(Value::Array(related)) = payload.get("related") {
+                    item.related = string_list(related);
+                }
+                if let Some(v) = payload.get("color").and_then(|v| v.as_u64()) {
+                    item.color = v as u8;
+                }
                 self.dirty = true;
-                ApiResponse::ok(command, "Character updated", json!({"id": id}))
+                ApiResponse::ok(command, "Item updated", json!({"id": id}))
             }
             "research.add" => {
                 let title = str_arg(&payload, "title").unwrap_or_else(|| "New note".into());
@@ -690,7 +708,7 @@ impl Workspace {
             "kind": self.project.kind,
             "words": self.project.words(),
             "documents": self.project.documents.len(),
-            "characters": self.project.characters.len(),
+            "items": self.project.items.len(),
             "research": self.project.research.len(),
             "checkpoints": self.project.checkpoints.len(),
             "today_words": self.project.today_words(),
@@ -720,13 +738,22 @@ impl Workspace {
             "documents": self.project.documents.len(),
             "scenes": self.project.documents.iter().filter(|d| d.kind == DocKind::Scene).count(),
             "chapters": self.project.documents.iter().filter(|d| d.kind == DocKind::Chapter).count(),
-            "characters": self.project.characters.len(),
+            "items": self.project.items.len(),
+            "characters": self.count_items(ItemKind::Character),
+            "places": self.count_items(ItemKind::Place),
+            "events": self.count_items(ItemKind::Event),
+            "props": self.count_items(ItemKind::Prop),
+            "custom": self.count_items(ItemKind::Custom),
             "research": self.project.research.len(),
             "locations": self.project.locations().len(),
             "today": self.project.today_words(),
             "target": self.project.daily_target,
             "session": self.project.session_log,
         })
+    }
+
+    fn count_items(&self, kind: ItemKind) -> usize {
+        self.project.items.iter().filter(|i| i.kind == kind).count()
     }
 }
 
@@ -898,6 +925,19 @@ fn parse_paper(s: &str) -> Option<PaperSize> {
         .find(|p| format!("{p:?}").eq_ignore_ascii_case(s) || p.label().eq_ignore_ascii_case(s))
 }
 
+fn parse_item_kind(s: &str) -> Option<ItemKind> {
+    ItemKind::all()
+        .into_iter()
+        .find(|k| format!("{k:?}").eq_ignore_ascii_case(s) || k.label().eq_ignore_ascii_case(s))
+}
+
+fn string_list(values: &[Value]) -> Vec<String> {
+    values
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .collect()
+}
+
 /// One-line catalogue used by the UI's agent panel and by MCP tool discovery.
 pub fn command_catalogue() -> Vec<Value> {
     let entries = [
@@ -917,7 +957,8 @@ pub fn command_catalogue() -> Vec<Value> {
         ("document.snapshot", "Snapshot a document", r#"{"id":"doc-...","name":"..."}"#),
         ("snapshot.restore", "Restore a document snapshot", r#"{"document_id":"...","id":"snap-..."}"#),
         ("snapshot.diff", "Compare a snapshot with the current document", r#"{"document_id":"...","id":"snap-..."}"#),
-        ("character.add", "Add a character", r#"{"name":"...","role":"..."}"#),
+        ("item.add", "Add a story-database item", r#"{"kind":"Character","title":"...","notes":"...","tags":["..."]}"#),
+        ("item.update", "Change a story-database item", r#"{"id":"item-...","title":"...","tags":["..."]}"#),
         ("research.add", "Add a research note", r#"{"title":"...","body":"..."}"#),
         ("search", "Search the whole manuscript", r#"{"query":"..."}"#),
         ("stats", "Word, page and session statistics", "{}"),

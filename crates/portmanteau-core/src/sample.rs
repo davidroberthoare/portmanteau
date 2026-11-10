@@ -230,53 +230,55 @@ pub fn demo() -> Project {
         "Surveyors do not believe in ghosts. They believe in benchmarks: fixed points that tell you where you are when everything else moves.\n\nPlate 14 is a benchmark. If plate 14 is in the wrong place, either the plate moved or the map did. Both are possible. Neither is comfortable.\n\nCheck theodolite calibration before chapter three.",
     );
 
-    // ---- Characters -------------------------------------------------------
-    p.characters = vec![
-        Character {
-            id: new_id("char"),
-            name: "Mara Venn".into(),
-            role: "Protagonist".into(),
-            description: "A coastal surveyor in her thirties. Precise, dry, allergic to being called the map girl.".into(),
-            want: "To finish her father's survey and sell the family house.".into(),
-            need: "To stop treating inheritance as a set of measurements.".into(),
-            flaw: "She trusts instruments more than people, especially when people are telling the truth.".into(),
-            arc: "From mapping the coast to letting it change shape.".into(),
-            color: 0,
-        },
-        Character {
-            id: new_id("char"),
-            name: "Elias Rook".into(),
-            role: "Ally / keeper of the archive".into(),
-            description: "Harbour master emeritus. Makes tea in an office that has not been an office since 1987.".into(),
-            want: "To keep the town's records intact.".into(),
-            need: "To admit which records he removed.".into(),
-            flaw: "He confuses preservation with protection.".into(),
-            arc: "From custodian of a lie to witness.".into(),
-            color: 1,
-        },
-        Character {
-            id: new_id("char"),
-            name: "The Boy".into(),
-            role: "Catalyst".into(),
-            description: "Nine years old, barefoot, carries a red bucket and a brass key. May be a memory, may be a neighbour's child.".into(),
-            want: "To be taken seriously.".into(),
-            need: "To be let go.".into(),
-            flaw: "He knows more than he can say.".into(),
-            arc: "He gives Mara the key, then disappears from the story until Part Two.".into(),
-            color: 2,
-        },
-        Character {
-            id: new_id("char"),
-            name: "Ruth Alder".into(),
-            role: "Sister / keeper of the lamp".into(),
-            description: "Mara's aunt. Has watched the sea every Tuesday for nineteen years.".into(),
-            want: "For the ship to come back.".into(),
-            need: "To mourn a brother who chose the map over the family.".into(),
-            flaw: "She has made a religion of waiting.".into(),
-            arc: "From waiting to remembering.".into(),
-            color: 3,
-        },
-    ];
+    // ---- Story database ---------------------------------------------------
+    let mut add_item = |title: &str, role: &str, description: &str, want: &str, need: &str, flaw: &str, arc: &str, color: u8| {
+        let mut item = DatabaseItem::new(ItemKind::Character, title);
+        item.notes = format!(
+            "Role: {role}\n\nDescription: {description}\n\nWant: {want}\n\nNeed: {need}\n\nFlaw: {flaw}\n\nArc: {arc}"
+        );
+        item.color = color;
+        p.items.push(item);
+    };
+    add_item(
+        "Mara Venn",
+        "Protagonist",
+        "A coastal surveyor in her thirties. Precise, dry, allergic to being called the map girl.",
+        "To finish her father's survey and sell the family house.",
+        "To stop treating inheritance as a set of measurements.",
+        "She trusts instruments more than people, especially when people are telling the truth.",
+        "From mapping the coast to letting it change shape.",
+        0,
+    );
+    add_item(
+        "Elias Rook",
+        "Ally / keeper of the archive",
+        "Harbour master emeritus. Makes tea in an office that has not been an office since 1987.",
+        "To keep the town's records intact.",
+        "To admit which records he removed.",
+        "He confuses preservation with protection.",
+        "From custodian of a lie to witness.",
+        1,
+    );
+    add_item(
+        "The Boy",
+        "Catalyst",
+        "Nine years old, barefoot, carries a red bucket and a brass key. May be a memory, may be a neighbour's child.",
+        "To be taken seriously.",
+        "To be let go.",
+        "He knows more than he can say.",
+        "He gives Mara the key, then disappears from the story until Part Two.",
+        2,
+    );
+    add_item(
+        "Ruth Alder",
+        "Sister / keeper of the lamp",
+        "Mara's aunt. Has watched the sea every Tuesday for nineteen years.",
+        "For the ship to come back.",
+        "To mourn a brother who chose the map over the family.",
+        "She has made a religion of waiting.",
+        "From waiting to remembering.",
+        3,
+    );
 
     // ---- Front and back matter -------------------------------------------
     let front = p.folder_id("Front Matter").unwrap();

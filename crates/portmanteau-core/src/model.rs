@@ -339,30 +339,59 @@ impl Snapshot {
     }
 }
 
+/// The kind of record held in the story database.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ItemKind {
+    Character,
+    Place,
+    Event,
+    Prop,
+    Custom,
+}
+
+impl ItemKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            ItemKind::Character => "Character",
+            ItemKind::Place => "Place",
+            ItemKind::Event => "Event",
+            ItemKind::Prop => "Prop",
+            ItemKind::Custom => "Custom",
+        }
+    }
+
+    pub fn all() -> [ItemKind; 5] {
+        [
+            ItemKind::Character,
+            ItemKind::Place,
+            ItemKind::Event,
+            ItemKind::Prop,
+            ItemKind::Custom,
+        ]
+    }
+}
+
+/// A story-database record: a character, place, event, prop or custom item.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct Character {
+pub struct DatabaseItem {
     pub id: String,
-    pub name: String,
-    pub role: String,
-    pub description: String,
-    pub want: String,
-    pub need: String,
-    pub flaw: String,
-    pub arc: String,
+    pub kind: ItemKind,
+    pub title: String,
+    pub notes: String,
+    pub tags: Vec<String>,
+    pub related: Vec<String>,
     pub color: u8,
 }
 
-impl Character {
-    pub fn new(name: impl Into<String>, role: impl Into<String>) -> Self {
+impl DatabaseItem {
+    pub fn new(kind: ItemKind, title: impl Into<String>) -> Self {
         Self {
-            id: new_id("char"),
-            name: name.into(),
-            role: role.into(),
-            description: String::new(),
-            want: String::new(),
-            need: String::new(),
-            flaw: String::new(),
-            arc: String::new(),
+            id: new_id("item"),
+            kind,
+            title: title.into(),
+            notes: String::new(),
+            tags: Vec::new(),
+            related: Vec::new(),
             color: 0,
         }
     }
@@ -830,7 +859,8 @@ pub struct Project {
     pub created: String,
     pub updated: String,
     pub documents: Vec<Document>,
-    pub characters: Vec<Character>,
+    #[serde(default)]
+    pub items: Vec<DatabaseItem>,
     pub research: Vec<ResearchItem>,
     pub checkpoints: Vec<Checkpoint>,
     pub session_log: Vec<SessionEntry>,
@@ -858,7 +888,7 @@ impl Project {
             created: stamp.clone(),
             updated: stamp,
             documents: Vec::new(),
-            characters: Vec::new(),
+            items: Vec::new(),
             research: Vec::new(),
             checkpoints: Vec::new(),
             session_log: Vec::new(),

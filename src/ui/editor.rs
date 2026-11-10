@@ -5,7 +5,7 @@ use eframe::egui::{
     RichText, ScrollArea, Sense, Stroke, TextEdit, Vec2,
 };
 use portmanteau_core::{
-    DocKind, Document, ElementKind, ElementStyle, ElementStyles, ExportSettings, Medium,
+    DocKind, Document, ElementKind, ElementStyle, ElementStyles, ExportSettings, ItemKind, Medium,
 };
 
 use crate::app::{NewCharacterState, PortmanteauApp, WriteMode};
@@ -796,9 +796,10 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         let mut names: Vec<String> = app
             .ws
             .project
-            .characters
+            .items
             .iter()
-            .map(|c| c.name.trim().to_string())
+            .filter(|item| item.kind == ItemKind::Character)
+            .map(|item| item.title.trim().to_string())
             .filter(|name| !name.is_empty())
             .collect();
         names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));

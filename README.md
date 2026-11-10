@@ -58,8 +58,9 @@ PORTMANTEAU_DOC="Cold Harbor" ./target/debug/portmanteau --screenshot shots/scri
 - Outline table with labels, status, length and target progress.
 - Full-text search across titles and manuscript bodies.
 
-**People and research**
-- Character sheets: role, description, want, need, flaw, arc, appearances.
+**Story database and research**
+- Database records for characters, places, events, props and custom items:
+  title, notes, tags, related links, colour and appearances.
 - Research sourcebook with kinds, sources and a linked document per note.
 
 **Versions**
@@ -111,7 +112,7 @@ app/
       binder.rs         binder tree and session target
       editor.rs         prose and screenplay surfaces
       inspector.rs      metadata, notes and versions
-      views/            corkboard, outline, research, characters,
+      views/            corkboard, outline, research, database,
                         history, compile, command desk, settings
   crates/
     portmanteau-core/           domain model, script parser, sample project
@@ -154,7 +155,7 @@ A command always returns `{ ok, command, message, data }`.
 | `document.create` / `document.update` / `document.delete` | Write the binder |
 | `document.move` | Reorder within a folder, or move into one |
 | `document.snapshot` / `snapshot.restore` / `snapshot.diff` | Save, restore and compare document versions |
-| `character.add` / `character.update` | Character sheets |
+| `item.add` / `item.update` | Story-database records (characters, places, events, props, custom) |
 | `research.add` | Research note plus its binder entry |
 | `search` | Full-text search |
 | `stats` | Words, pages, scenes, chapters, session log |

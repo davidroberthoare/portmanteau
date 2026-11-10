@@ -10,7 +10,7 @@ pub enum Icon {
     Corkboard,
     Outline,
     Research,
-    Characters,
+    Database,
     History,
     Compile,
     Agent,
@@ -53,13 +53,12 @@ pub fn draw(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(p(-0.5, -0.15), p(0.2, -0.15));
             line(p(-0.15, -0.5), p(-0.15, 0.2));
         }
-        Icon::Characters => {
-            painter.circle_stroke(p(-0.3, -0.4), r * 0.38, s);
-            painter.circle_stroke(p(0.4, -0.25), r * 0.28, s);
-            painter.add(egui::Shape::line(
-                vec![p(-0.85, 0.65), p(-0.65, 0.1), p(-0.3, -0.02), p(0.05, 0.1), p(0.25, 0.65)],
-                s,
-            ));
+        Icon::Database => {
+            let db = Rect::from_min_max(p(-0.9, -0.75), p(0.9, 0.75));
+            painter.rect_stroke(db, CornerRadius::same(2), s, StrokeKind::Inside);
+            line(p(-0.9, -0.25), p(0.9, -0.25));
+            line(p(-0.9, 0.25), p(0.9, 0.25));
+            line(p(-0.3, -0.75), p(-0.3, 0.75));
         }
         Icon::History => {
             let circle = Rect::from_center_size(c, Vec2::splat(r * 1.6));

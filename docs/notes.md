@@ -197,7 +197,7 @@ thing a visual check catches.
   the core, export, API and MCP crates and the folder-format integration suite).
 - The screenshot flag was exercised at the required size and every workspace
   was reviewed as a picture: writing, corkboard, outline, research, develop,
-  characters, versions, compare-version, compile and the command desk.
+  database, versions, compare-version, compile and the command desk.
 - All ten export formats were written through the CLI and checked as files:
   PDF (17 pages), EPUB, DOCX, FDX, Fountain, HTML, Markdown, RTF, plain text
   and the portable project bundle.
@@ -635,11 +635,11 @@ focused element and never change the stored project until the draw pass ends.
   sees it, so no number is typed. Palette buttons show the same shortcut in
   their hover text (e.g. "Character · Ctrl+3").
 - **Character autocomplete** appears under a focused Character element. It lists
-  matching names from the project's character sheets, filtered
+  matching names from the database's Character records, filtered
   case-insensitively by the element text, plus a "New character…" entry. The
   name list is cloned before the document is borrowed. Choosing a name writes it
   into the block; the new-character entry opens a small Name/Role window, and
-  creating adds the sheet and fills the block with the name.
+  creating adds the record and fills the block with the name.
 - **Next speaker** is a faint `↺ NAME` hint at the right edge of an empty
   Character element. It comes from the two most recent distinct Character names
   before the cursor, so a MARA / BOY back-and-forth suggests whichever of the
@@ -696,3 +696,24 @@ the keyboard; **F11** toggles the mode (it used to toggle focus mode) and
 editor its wider 860pt page and 64pt side margins; leaving does not turn focus
 mode off, so the two settings stay independent. The existing "Focus" toolbar
 button and the View menu still toggle focus mode on their own.
+
+### Round 24 — Characters become a story database
+
+The Characters workspace is now **Database**. `Project.characters: Vec<Character>` became
+`Project.items: Vec<DatabaseItem>`; a record carries a `kind` (Character, Place, Event,
+Prop, Custom), a `title`, free `notes`, `tags`, `related` ids and a `color`. The four
+seeded characters moved across with their role, description, want, need, flaw and arc
+folded into labelled note sections. The command surface replaced `character.add` /
+`character.update` with `item.add` / `item.update`; `stats` now reports `items` plus
+per-kind counts, and the MCP tool is `add_item`.
+
+The screen keeps the list/detail shape: records are grouped by kind on the left, each row
+showing its title and colour dot, and the right pane edits kind, title, colour, tags,
+notes and related links. A related item is a clickable chip that selects it, and the
+"Link an item…" dropdown adds one. Character records still show computed manuscript
+appearances by matching the title against every document's `body_text()`.
+
+Old project files with a `characters` array load (serde ignores the unknown field) but
+their records are not migrated; the new `items` field defaults to empty. The script
+`ElementKind::Character` and its editor autocomplete are unchanged in meaning — the
+autocomplete now reads Character records from the database and uses their titles.
