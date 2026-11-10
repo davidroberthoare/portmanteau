@@ -807,6 +807,13 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
         names
     };
+    // Escape closes the character popup even though it also surrenders the
+    // text widget's focus. The filter below leaves `escape: false`, so egui
+    // clears the focus before the widget sees the key; reading the raw input
+    // here is what keeps the popup's own dismissal working.
+    if ui.input(|i| i.key_pressed(Key::Escape)) {
+        app.character_menu = None;
+    }
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
         paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), doc.pages());
@@ -991,14 +998,51 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     edit = edit.text_color(Color32::from_rgb(44, 40, 33));
                 }
                 let resp = ui.add(edit);
+                // Tab is screenplay input, not focus navigation. egui reads the
+                // focused widget's `EventFilter` at the start of every pass, so
+                // the lock must be installed after the TextEdit has drawn: the
+                // widget installs its own filter (with `tab: false`) while it
+                // draws and would otherwise overwrite this one.
+                if resp.has_focus() {
+                    ui.memory_mut(|mem| {
+                        mem.set_focus_lock_filter(
+                            block_id,
+                            egui::EventFilter {
+                                // Keep Tab/Shift+Tab for the type cycle.
+                                tab: true,
+                                // Caret movement inside the multiline widget.
+                                horizontal_arrows: true,
+                                vertical_arrows: true,
+                                escape: false,
+                            },
+                        )
+                    });
+                }
                 if resp.clicked() {
                     app.selected_block = i;
+                    // Clicking a block owns the popup: open it on a Character
+                    // element, close it for anything else.
+                    app.character_menu = if kind == ElementKind::Character {
+                        Some((doc_id.to_string(), i))
+                    } else {
+                        None
+                    };
                 }
                 if resp.changed() {
                     doc.touch();
                     dirty = true;
+                    if kind == ElementKind::Character {
+                        app.character_menu = Some((doc_id.to_string(), i));
+                    }
                 }
-                if kind == ElementKind::Character && (focused || resp.has_focus()) {
+                // The popup is drawn from view state, not from text focus, so
+                // it stays on screen while the pointer travels to it. Clicking
+                // a name then registers instead of unmounting the widget first.
+                let menu_open = matches!(
+                    app.character_menu.as_ref(),
+                    Some((id, index)) if id == doc_id && *index == i
+                );
+                if kind == ElementKind::Character && menu_open {
                     character_assist(
                         ui,
                         doc_id,
@@ -1097,9 +1141,11 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 app.ws.dirty = true;
             }
         }
+        app.character_menu = None;
     }
     if let Some(state) = new_character {
         app.new_character = Some(state);
+        app.character_menu = None;
     }
     if dirty {
         app.ws.dirty = true;

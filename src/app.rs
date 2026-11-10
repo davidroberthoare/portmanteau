@@ -243,6 +243,11 @@ pub struct PortmanteauApp {
     pub path_dialog: Option<PathDialog>,
     pub path_draft: String,
     pub new_character: Option<NewCharacterState>,
+    /// The character autocomplete that is currently drawn, as
+    /// `(document id, block index)`. It lives outside the text widget so the
+    /// popup survives the block losing focus when the pointer moves onto it to
+    /// click a name.
+    pub character_menu: Option<(String, usize)>,
     pub diff: Option<DiffState>,
     pub outline_filter: usize,
     pub screenshot: Option<PathBuf>,
@@ -324,6 +329,7 @@ impl PortmanteauApp {
             path_dialog: None,
             path_draft: String::new(),
             new_character: None,
+            character_menu: None,
             diff: None,
             outline_filter: 0,
             screenshot,

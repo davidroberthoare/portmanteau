@@ -948,3 +948,30 @@ inside a single continuous `TextEdit`, so those remain preview/Compile-only.
 `DisplaySettings` and `AppSettings::display` were removed. Older config files
 still load: serde ignores the now-unknown `display` object, and the editor
 falls back to the built-in element styles.
+
+## Round 30 — Tab owns the screenplay block; the character popup survives focus loss
+
+Two keyboard/pointer fixes on the script editor.
+
+**Tab and Shift+Tab change the element type only.** `script_page` already
+consumed Tab and set `cycle_at`, but egui's focus navigation ran first: it reads
+the focused widget's `EventFilter` at the start of each pass, and `TextEdit`
+installs `tab: false` while it draws. So after each block is added,
+`ui.memory_mut(|m| m.set_focus_lock_filter(block_id, EventFilter { tab: true,
+horizontal_arrows: true, vertical_arrows: true, escape: false }))` is called
+*after* `ui.add(edit)`; the filter is stored for the next pass, where Tab and
+the arrow keys would otherwise move focus between widgets or blocks. Tab still
+cycles the element kind once, the caret stays in the block, and `escape: false`
+leaves Escape free to drop focus as before.
+
+**The character autocomplete is no longer tied to text-field focus.** It used
+to render only while the Character block had focus, so moving the pointer to a
+name unfocused the field and unmounted the popup before the click landed. The
+open popup is now view state: `PortmanteauApp::character_menu:
+Option<(String, usize)>` holds the document id and block index. It is set when
+a Character block is clicked or its text changes, drawn whenever it matches the
+current block, and cleared when a name or "+ New character…" is chosen, on
+Escape, and when a non-Character block is clicked. The "↺ next speaker" hint
+lives in the same popup function, so it gains the same persistent behaviour.
+Runtime click-testing still needs a real window; `--screenshot` only proves the
+screen draws.
