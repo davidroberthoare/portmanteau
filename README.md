@@ -58,9 +58,7 @@ PORTMANTEAU_DOC="Cold Harbor" ./target/debug/portmanteau --screenshot shots/scri
 - Outline table with labels, status, length and target progress.
 - Full-text search across titles and manuscript bodies.
 
-**Development**
-- Idea board with premise, theme, image, scene and voice cards.
-- Eight-beat, three-act story structure, editable and tickable.
+**People and research**
 - Character sheets: role, description, want, need, flaw, arc, appearances.
 - Research sourcebook with kinds, sources and a linked document per note.
 
@@ -113,9 +111,8 @@ app/
       binder.rs         binder tree and session target
       editor.rs         prose and screenplay surfaces
       inspector.rs      metadata, notes and versions
-      views/            corkboard, outline, research, develop,
-                        characters, history, compile, command desk,
-                        settings
+      views/            corkboard, outline, research, characters,
+                        history, compile, command desk, settings
   crates/
     portmanteau-core/           domain model, script parser, sample project
     portmanteau-export/         PDF, EPUB, DOCX, FDX, Fountain, HTML, MD, RTF, TXT, ZIP
@@ -159,8 +156,6 @@ A command always returns `{ ok, command, message, data }`.
 | `document.snapshot` / `snapshot.restore` / `snapshot.diff` | Save, restore and compare document versions |
 | `character.add` / `character.update` | Character sheets |
 | `research.add` | Research note plus its binder entry |
-| `idea.add` / `idea.update` / `idea.delete` | Idea board |
-| `beat.update` | Tick or rewrite a story beat |
 | `search` | Full-text search |
 | `stats` | Words, pages, scenes, chapters, session log |
 | `script.parse` | Parse loose text into typed blocks and Fountain |

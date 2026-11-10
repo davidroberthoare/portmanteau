@@ -379,26 +379,6 @@ pub struct ResearchItem {
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct IdeaCard {
-    pub id: String,
-    pub title: String,
-    pub body: String,
-    pub kind: String,
-    pub color: u8,
-    pub pinned: bool,
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct Beat {
-    pub id: String,
-    pub title: String,
-    pub summary: String,
-    pub act: u8,
-    pub done: bool,
-    pub template: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct SessionEntry {
     pub date: String,
     pub words: u32,
@@ -852,8 +832,6 @@ pub struct Project {
     pub documents: Vec<Document>,
     pub characters: Vec<Character>,
     pub research: Vec<ResearchItem>,
-    pub ideas: Vec<IdeaCard>,
-    pub beats: Vec<Beat>,
     pub checkpoints: Vec<Checkpoint>,
     pub session_log: Vec<SessionEntry>,
     pub daily_target: u32,
@@ -882,8 +860,6 @@ impl Project {
             documents: Vec::new(),
             characters: Vec::new(),
             research: Vec::new(),
-            ideas: Vec::new(),
-            beats: Vec::new(),
             checkpoints: Vec::new(),
             session_log: Vec::new(),
             daily_target: 1200,

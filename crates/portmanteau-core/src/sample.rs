@@ -278,70 +278,6 @@ pub fn demo() -> Project {
         },
     ];
 
-    // ---- Idea development -------------------------------------------------
-    p.ideas = vec![
-        IdeaCard {
-            id: new_id("idea"),
-            title: "The premise".into(),
-            body: "A mapmaker returns to a drowned harbour town to finish her father's survey and discovers that the town was deliberately removed from the charts — by her father.".into(),
-            kind: "Premise".into(),
-            color: 0,
-            pinned: true,
-        },
-        IdeaCard {
-            id: new_id("idea"),
-            title: "What it is really about".into(),
-            body: "Inheritance is not a place or an object. It is a way of looking at the world that you did not choose and cannot entirely refuse.".into(),
-            kind: "Theme".into(),
-            color: 1,
-            pinned: true,
-        },
-        IdeaCard {
-            id: new_id("idea"),
-            title: "A street of doors".into(),
-            body: "At low tide, a street of front doors opens onto mud. Someone has left a light on in one of the houses.".into(),
-            kind: "Image".into(),
-            color: 2,
-            pinned: false,
-        },
-        IdeaCard {
-            id: new_id("idea"),
-            title: "The tide as witness".into(),
-            body: "The sea does not hide things; it keeps them at a depth where only the patient can find them. The final image should be water returning to a place that has been measured, not understood.".into(),
-            kind: "Image".into(),
-            color: 3,
-            pinned: false,
-        },
-        IdeaCard {
-            id: new_id("idea"),
-            title: "Set piece · the reading".into(),
-            body: "The will is read in the harbour office while the tide comes back in. By the time the last clause is read, the road outside is under water and no one can leave.".into(),
-            kind: "Scene".into(),
-            color: 4,
-            pinned: false,
-        },
-        IdeaCard {
-            id: new_id("idea"),
-            title: "Voice test".into(),
-            body: "Close third, with the dryness of a surveyor's log. Short declaratives. Let the reader see the emotion that Mara refuses to name. No similes in the first chapter except the ones she would actually make.".into(),
-            kind: "Voice".into(),
-            color: 5,
-            pinned: false,
-        },
-    ];
-
-    // ---- Structure --------------------------------------------------------
-    p.beats = vec![
-        beat("Ordinary world", "Mara arrives to survey the harbour and sell the house.", 1, true),
-        beat("Inciting incident", "The tide goes out and does not return; the boy shows her the old road.", 1, true),
-        beat("First threshold", "She follows the road north to the harbour that is not on the chart.", 1, true),
-        beat("Rising complications", "Plate 14 is in the wrong place. Elias knows more than he admits. The archive is missing two days.", 2, false),
-        beat("Midpoint reversal", "The missing survey party included her father — and the fourth man was Elias.", 2, false),
-        beat("Crisis", "The town asks her to finish the map that will erase it for good.", 3, false),
-        beat("Climax", "Mara surveys the harbour as it is, not as it was, and signs her own name.", 3, false),
-        beat("Resolution", "The tide returns. The road is still there under the water.", 3, false),
-    ];
-
     // ---- Front and back matter -------------------------------------------
     let front = p.folder_id("Front Matter").unwrap();
     let title_page = p.add_document(Some(front.clone()), "Title Page", DocKind::FrontMatter, Medium::Prose);
@@ -448,16 +384,5 @@ fn block(kind: ElementKind, text: &str) -> Block {
     Block {
         kind,
         text: text.into(),
-    }
-}
-
-fn beat(title: &str, summary: &str, act: u8, done: bool) -> Beat {
-    Beat {
-        id: new_id("beat"),
-        title: title.into(),
-        summary: summary.into(),
-        act,
-        done,
-        template: "Three act".into(),
     }
 }

@@ -22,7 +22,6 @@ pub enum View {
     Corkboard,
     Outline,
     Research,
-    Develop,
     Characters,
     History,
     Compile,
@@ -37,7 +36,6 @@ impl View {
             View::Corkboard => "Corkboard",
             View::Outline => "Outline",
             View::Research => "Research",
-            View::Develop => "Develop",
             View::Characters => "Characters",
             View::History => "Versions",
             View::Compile => "Compile",
@@ -51,7 +49,6 @@ impl View {
             View::Corkboard => Icon::Corkboard,
             View::Outline => Icon::Outline,
             View::Research => Icon::Research,
-            View::Develop => Icon::Develop,
             View::Characters => Icon::Characters,
             View::History => Icon::History,
             View::Compile => Icon::Compile,
@@ -59,23 +56,26 @@ impl View {
             View::Settings => Icon::Settings,
         }
     }
-    pub fn all() -> [View; 10] {
+    pub fn all() -> [View; 8] {
         [
             View::Write,
             View::Corkboard,
             View::Outline,
             View::Research,
-            View::Develop,
             View::Characters,
             View::History,
             View::Compile,
-            View::Agent,
             View::Settings,
         ]
     }
     /// Development aid: `PORTMANTEAU_VIEW=corkboard` opens a workspace
     /// directly, which makes automated screenshots of each screen possible.
     pub fn from_key(key: &str) -> Option<View> {
+        // The Command desk is intentionally absent from `all()` (it is opened
+        // from the View menu), so resolve its keys explicitly.
+        if key.eq_ignore_ascii_case("agent") || key.eq_ignore_ascii_case("command desk") {
+            return Some(View::Agent);
+        }
         View::all()
             .into_iter()
             .find(|v| format!("{v:?}").eq_ignore_ascii_case(key) || v.label().eq_ignore_ascii_case(key))
@@ -168,7 +168,6 @@ pub struct PortmanteauApp {
     pub snapshot_name: String,
     pub checkpoint_label: String,
     pub selected_research: Option<String>,
-    pub selected_idea: Option<String>,
     pub selected_character: Option<String>,
     pub toast: Option<Toast>,
     pub show_about: bool,
@@ -237,7 +236,6 @@ impl PortmanteauApp {
             snapshot_name: String::new(),
             checkpoint_label: String::new(),
             selected_research,
-            selected_idea: None,
             selected_character,
             toast: None,
             show_about: false,
@@ -575,6 +573,15 @@ impl PortmanteauApp {
                     ui.close_menu();
                 }
             }
+            // The Command desk is deliberately kept out of the rail and
+            // `View::all()`; it is reachable from this menu.
+            if ui
+                .selectable_label(self.view == View::Agent, View::Agent.label())
+                .clicked()
+            {
+                self.view = View::Agent;
+                ui.close_menu();
+            }
             ui.separator();
             if ui.button("Focus mode").clicked() {
                 self.focus_mode = !self.focus_mode;
@@ -592,10 +599,6 @@ impl PortmanteauApp {
             }
             if ui.button("New character").clicked() {
                 self.view = View::Characters;
-                ui.close_menu();
-            }
-            if ui.button("New idea card").clicked() {
-                self.view = View::Develop;
                 ui.close_menu();
             }
         });
@@ -890,7 +893,7 @@ impl PortmanteauApp {
                     for line in [
                         "Binder, corkboard and outline for long-form structure",
                         "Prose and screenplay editors with typed elements",
-                        "Research, idea board, characters and story beats",
+                        "Research, characters and structured story planning",
                         "Snapshots, checkpoints, version comparison and restore",
                         "PDF, EPUB, DOCX, Final Draft, Fountain, HTML, Markdown, RTF and text",
                         "A JSON command API and an MCP server under the desktop UI",
@@ -913,7 +916,6 @@ impl PortmanteauApp {
             }
         }
 
-        self.idea_modal(ctx);
         self.path_modal(ctx);
         self.diff_modal(ctx);
     }
@@ -1222,64 +1224,6 @@ impl PortmanteauApp {
         }
         if !open && self.path_dialog.is_some() {
             self.path_dialog = None;
-        }
-    }
-
-    fn idea_modal(&mut self, ctx: &egui::Context) {
-        let Some(id) = self.selected_idea.clone() else { return };
-        let Some(pos) = self.ws.project.ideas.iter().position(|i| i.id == id) else {
-            self.selected_idea = None;
-            return;
-        };
-        let mut open = true;
-        let mut delete = false;
-        let mut close = false;
-        egui::Window::new("Idea card")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-            .min_width(420.0)
-            .show(ctx, |ui| {
-                let card = &mut self.ws.project.ideas[pos];
-                section_label(ui, "Title");
-                if ui
-                    .add(TextEdit::singleline(&mut card.title).desired_width(f32::INFINITY).font(serif(18.0)))
-                    .changed()
-                {
-                    self.ws.dirty = true;
-                }
-                ui.add_space(8.0);
-                section_label(ui, "Note");
-                if ui
-                    .add(TextEdit::multiline(&mut card.body).desired_rows(7).desired_width(f32::INFINITY))
-                    .changed()
-                {
-                    self.ws.dirty = true;
-                }
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui.checkbox(&mut card.pinned, "Pin to the top").changed() {
-                        self.ws.dirty = true;
-                    }
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.button("Delete").clicked() {
-                            delete = true;
-                        }
-                        if ui.button("Done").clicked() {
-                            close = true;
-                        }
-                    });
-                });
-            });
-        if delete {
-            self.ws.project.ideas.retain(|i| i.id != id);
-            self.ws.dirty = true;
-            self.selected_idea = None;
-            return;
-        }
-        if !open || close {
-            self.selected_idea = None;
         }
     }
 

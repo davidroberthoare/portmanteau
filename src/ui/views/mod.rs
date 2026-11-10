@@ -1,11 +1,10 @@
-//! The non-writing workspaces: corkboard, outline, research, development,
-//! characters, version history, compilation and the command desk.
+//! The non-writing workspaces: corkboard, outline, research, characters,
+//! version history, compilation, settings and the command desk.
 
 pub mod agent;
 pub mod characters;
 pub mod compile;
 pub mod corkboard;
-pub mod develop;
 pub mod history;
 pub mod outline;
 pub mod research;
@@ -25,7 +24,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         View::Corkboard => corkboard::show(app, ui),
         View::Outline => outline::show(app, ui),
         View::Research => research::show(app, ui),
-        View::Develop => develop::show(app, ui),
         View::Characters => characters::show(app, ui),
         View::History => history::show(app, ui),
         View::Compile => compile::show(app, ui),

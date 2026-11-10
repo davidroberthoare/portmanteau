@@ -10,7 +10,6 @@ pub enum Icon {
     Corkboard,
     Outline,
     Research,
-    Develop,
     Characters,
     History,
     Compile,
@@ -53,21 +52,6 @@ pub fn draw(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(p(0.4, 0.4), p(0.95, 0.95));
             line(p(-0.5, -0.15), p(0.2, -0.15));
             line(p(-0.15, -0.5), p(-0.15, 0.2));
-        }
-        Icon::Develop => {
-            let star = vec![
-                p(0.0, -0.95),
-                p(0.22, -0.22),
-                p(0.95, 0.0),
-                p(0.22, 0.22),
-                p(0.0, 0.95),
-                p(-0.22, 0.22),
-                p(-0.95, 0.0),
-                p(-0.22, -0.22),
-                p(0.0, -0.95),
-            ];
-            painter.add(egui::Shape::line(star, s));
-            painter.circle_filled(p(0.0, 0.0), r * 0.12, color);
         }
         Icon::Characters => {
             painter.circle_stroke(p(-0.3, -0.4), r * 0.38, s);

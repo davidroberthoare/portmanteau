@@ -367,7 +367,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             for (label, count, target_view) in [
                 ("Corkboard", scenes, View::Corkboard),
                 ("Research notes", research, View::Research),
-                ("Story development", app.ws.project.ideas.len(), View::Develop),
             ] {
                 let (rect, resp) =
                     ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());

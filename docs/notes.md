@@ -609,3 +609,18 @@ Limits: building the dictionary adds a short fixed cost to start-up, and
 suggestions can still differ from Hunspell's own ordering. Proper nouns and
 invented fiction names still show as misspellings, as before; a personal
 dictionary remains future work.
+
+### Round 19 — Removed Develop, Command desk leaves the rail
+
+The **Develop** workspace was removed, together with the idea cards and the
+three-act beat sheet and their backing data (`Project.ideas`, `Project.beats`,
+`IdeaCard`, `Beat`). Old project files that still contain `ideas` or `beats`
+keys open fine because serde ignores unknown fields; saving drops them. The
+`idea.add` / `idea.update` / `idea.delete` and `beat.update` commands, the
+`add_idea` MCP tool and the Develop rail icon are gone too. The Binder's
+"Story development" collection entry went with them.
+
+The **Command desk** is no longer in the left navigation rail or `View::all()`.
+It stays a real workspace and command surface, but is now opened from the View
+menu ("Command desk") or with `PORTMANTEAU_VIEW=agent` (also `command desk`).
+The Agent icon and dispatch remain in place.

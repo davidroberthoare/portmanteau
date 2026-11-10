@@ -476,66 +476,6 @@ impl Workspace {
                 self.dirty = true;
                 ApiResponse::ok(command, "Research note added", json!({"id": id}))
             }
-            "idea.add" => {
-                let title = str_arg(&payload, "title").unwrap_or_else(|| "New idea".into());
-                let body = str_arg(&payload, "body").unwrap_or_default();
-                let kind = str_arg(&payload, "kind").unwrap_or_else(|| "Idea".into());
-                let card = IdeaCard {
-                    id: new_id("idea"),
-                    title,
-                    body,
-                    kind,
-                    color: self.project.ideas.len() as u8 % 6,
-                    pinned: false,
-                };
-                let id = card.id.clone();
-                self.project.ideas.push(card);
-                self.dirty = true;
-                ApiResponse::ok(command, "Idea added", json!({"id": id}))
-            }
-            "idea.update" => {
-                let Some(id) = str_arg(&payload, "id") else {
-                    return ApiResponse::err(command, "An idea id is required");
-                };
-                let Some(card) = self.project.ideas.iter_mut().find(|i| i.id == id) else {
-                    return ApiResponse::err(command, "Idea not found");
-                };
-                if let Some(v) = payload.get("title").and_then(|v| v.as_str()) {
-                    card.title = v.into();
-                }
-                if let Some(v) = payload.get("body").and_then(|v| v.as_str()) {
-                    card.body = v.into();
-                }
-                if let Some(v) = payload.get("pinned").and_then(|v| v.as_bool()) {
-                    card.pinned = v;
-                }
-                self.dirty = true;
-                ApiResponse::ok(command, "Idea updated", json!({"id": id}))
-            }
-            "idea.delete" => {
-                let Some(id) = str_arg(&payload, "id") else {
-                    return ApiResponse::err(command, "An idea id is required");
-                };
-                self.project.ideas.retain(|i| i.id != id);
-                self.dirty = true;
-                ApiResponse::ok(command, "Idea deleted", json!({"id": id}))
-            }
-            "beat.update" => {
-                let Some(id) = str_arg(&payload, "id") else {
-                    return ApiResponse::err(command, "A beat id is required");
-                };
-                let Some(beat) = self.project.beats.iter_mut().find(|b| b.id == id) else {
-                    return ApiResponse::err(command, "Beat not found");
-                };
-                if let Some(v) = payload.get("summary").and_then(|v| v.as_str()) {
-                    beat.summary = v.into();
-                }
-                if let Some(v) = payload.get("done").and_then(|v| v.as_bool()) {
-                    beat.done = v;
-                }
-                self.dirty = true;
-                ApiResponse::ok(command, "Beat updated", json!({"id": id}))
-            }
             "search" => {
                 let q = str_arg(&payload, "query").unwrap_or_default();
                 let hits: Vec<Value> = self
@@ -782,7 +722,6 @@ impl Workspace {
             "chapters": self.project.documents.iter().filter(|d| d.kind == DocKind::Chapter).count(),
             "characters": self.project.characters.len(),
             "research": self.project.research.len(),
-            "ideas": self.project.ideas.len(),
             "locations": self.project.locations().len(),
             "today": self.project.today_words(),
             "target": self.project.daily_target,
@@ -980,8 +919,6 @@ pub fn command_catalogue() -> Vec<Value> {
         ("snapshot.diff", "Compare a snapshot with the current document", r#"{"document_id":"...","id":"snap-..."}"#),
         ("character.add", "Add a character", r#"{"name":"...","role":"..."}"#),
         ("research.add", "Add a research note", r#"{"title":"...","body":"..."}"#),
-        ("idea.add", "Add an idea card", r#"{"title":"...","body":"..."}"#),
-        ("beat.update", "Tick or rewrite a story beat", r#"{"id":"beat-...","done":true}"#),
         ("search", "Search the whole manuscript", r#"{"query":"..."}"#),
         ("stats", "Word, page and session statistics", "{}"),
         ("script.parse", "Parse plain text into script blocks", r#"{"text":"INT. ..."}"#),

@@ -39,7 +39,6 @@ pub fn tool_definitions() -> Value {
         t("update_project_style", "Change per-element styles, which seed new output formats. Send nested objects, one per element: {\"body\":{\"size\":12,\"font\":\"Georgia\",\"align\":\"Justify\",\"first_line_indent\":18},\"dialogue\":{\"indent\":80}}. align is Left, Center, Right or Justify; indents and spacing are points.", json!({"type":"object","additionalProperties":{"type":"object","properties":{"font":{"type":"string"},"size":{"type":"number"},"leading":{"type":"number"},"indent":{"type":"number"},"first_line_indent":{"type":"number"},"right_indent":{"type":"number"},"before":{"type":"number"},"after":{"type":"number"},"align":{"type":"string","enum":["Left","Center","Right","Justify"]}}}})),
         t("add_character", "Add a character sheet.", json!({"type":"object","properties":{"name":{"type":"string"},"role":{"type":"string"},"description":{"type":"string"}},"required":["name"]})),
         t("add_research_note", "Add a research note and its binder entry.", json!({"type":"object","properties":{"title":{"type":"string"},"body":{"type":"string"},"kind":{"type":"string"},"source":{"type":"string"}},"required":["title"]})),
-        t("add_idea", "Add a card to the idea board.", json!({"type":"object","properties":{"title":{"type":"string"},"body":{"type":"string"},"kind":{"type":"string"}},"required":["title"]})),
         t("list_commands", "List every raw API command (for building new clients).", json!({"type":"object","properties":{}}))
     ])
 }
@@ -73,7 +72,6 @@ pub fn call_tool(ws: &mut Workspace, name: &str, args: &Value) -> ApiResponse {
         "update_project_style" => ("style.update", args.clone()),
         "add_character" => ("character.add", args.clone()),
         "add_research_note" => ("research.add", args.clone()),
-        "add_idea" => ("idea.add", args.clone()),
         "list_commands" => ("commands", json!({})),
         other => {
             return ApiResponse {
