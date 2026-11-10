@@ -410,9 +410,15 @@ fn toolbar(
                     )
                     .fill(PANEL_2)
                     .corner_radius(CornerRadius::same(5));
-                    if ui.add(focus).clicked() {
+                    if ui
+                        .add(focus)
+                        .on_hover_text("Hide the binder and inspector (F11)")
+                        .clicked()
+                    {
                         app.focus_mode = !app.focus_mode;
                     }
+
+                    editor_zoom_control(app, ui);
 
                     // Paged mode is a read-only preview, so the medium
                     // switcher is hidden there and the space goes to the page
@@ -467,36 +473,6 @@ fn toolbar(
                     }
                     app.write_mode = new_mode;
                 }
-            });
-
-            // Second toolbar row: writing-surface controls that do not belong
-            // in the breadcrumb row. The row keeps the existing compact button
-            // style and stays out of the way at the default window size.
-            ui.add_space(5.0);
-            ui.horizontal(|ui| {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let df_label = if app.distraction_free {
-                        "Exit distraction-free"
-                    } else {
-                        "Distraction-free"
-                    };
-                    let df = egui::Button::new(
-                        RichText::new(df_label)
-                            .font(sans(10.5))
-                            .color(if app.distraction_free { ACCENT } else { MUTED }),
-                    )
-                    .fill(PANEL_2)
-                    .corner_radius(CornerRadius::same(5));
-                    if ui
-                        .add(df)
-                        .on_hover_text("Hide every panel and write (F11 · Esc to leave)")
-                        .clicked()
-                    {
-                        app.toggle_distraction_free();
-                    }
-
-                    editor_zoom_control(app, ui);
-                });
             });
         });
 }
