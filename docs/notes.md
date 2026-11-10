@@ -609,34 +609,3 @@ Limits: building the dictionary adds a short fixed cost to start-up, and
 suggestions can still differ from Hunspell's own ordering. Proper nouns and
 invented fiction names still show as misspellings, as before; a personal
 dictionary remains future work.
-
-## Round 18 — Editable Paged view
-
-Paged mode is no longer a read-only print preview. It still estimates page
-breaks from the active compile target's paper, margins and element styles, but
-each page is now a live editor.
-
-For prose, the document's `\n\n`-separated paragraphs are measured with the
-same `size * 0.5` character-width estimate and `size * leading` line height the
-old preview used. Whole paragraphs are packed into a page until its text height
-is exceeded, so a paragraph is never split across a page. Each page is a single
-multiline `TextEdit` bound to an owned page string (paragraphs joined by
-`\n\n`) inside the existing paper frame; the page-number footer stays below the
-field. After the draw pass the page strings are joined back into `doc.text`
-via `document_mut`, touched and marked dirty, so the project model remains the
-only source of truth and pages re-group on the next frame. Because a page is
-one field, Enter inserts a soft line break; a blank line starts a new paragraph
-(the hint under the pages says this).
-
-For scripts, the page plan is computed from an immutable snapshot as a
-`Vec<Vec<usize>>` of block indices, using the old ~55-typed-line packing. The
-per-element editor was extracted into `script_block_editor`, so Continuous and
-Paged share the same indentation, colours, uppercase rules, scene numbers,
-Enter/Tab/Backspace handling and element palette. Edits write straight to
-`doc.blocks[i].text`, and the palette sits once above the pages for the
-currently selected block.
-
-Limits: cursor position is keyed by page index, so typing enough to push text
-onto a neighbouring page can move the caret when the pages re-group. Switching
-from Paged to Continuous is still the way to edit with a single uninterrupted
-caret. The medium switcher remains hidden in Paged to keep the toolbar compact.
