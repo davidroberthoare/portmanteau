@@ -32,6 +32,9 @@ portmanteau-core = { path = "crates/portmanteau-core" }
 portmanteau-export = { path = "crates/portmanteau-export" }
 portmanteau-api = { path = "crates/portmanteau-api" }
 
+[dev-dependencies]
+egui_kittest = "0.31"
+
 [profile.dev]
 opt-level = 1
 

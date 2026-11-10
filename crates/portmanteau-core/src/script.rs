@@ -138,6 +138,32 @@ impl ElementKind {
     }
 }
 
+/// Recognise common screenplay transitions, which are all-caps lines such as
+/// `FADE IN:`, `CUT TO:`, `SMASH CUT TO BLACK.`, `DISSOLVE TO:`, `MATCH CUT TO:`.
+fn is_transition(s: &str) -> bool {
+    let u = s
+        .trim()
+        .trim_end_matches(|c: char| c == '.' || c == ':')
+        .trim()
+        .to_uppercase();
+    u == "FADE IN"
+        || u == "FADE OUT"
+        || u == "FADE TO"
+        || u == "FADE TO BLACK"
+        || u == "CUT TO BLACK"
+        || u == "TO BLACK"
+        || u.ends_with(" TO BLACK")
+        || u.ends_with(" CUT TO")
+        || u.starts_with("CUT TO")
+        || u.starts_with("SMASH CUT")
+        || u.starts_with("MATCH CUT")
+        || u.starts_with("JUMP CUT")
+        || u.starts_with("HARD CUT")
+        || u.starts_with("DISSOLVE TO")
+        || u.starts_with("FADE TO")
+        || u.ends_with("TO:")
+}
+
 fn is_all_caps(s: &str) -> bool {
     let letters: Vec<char> = s.chars().filter(|c| c.is_alphabetic()).collect();
     !letters.is_empty() && letters.iter().all(|c| c.is_uppercase())
@@ -164,7 +190,7 @@ pub fn classify(text: &str) -> ElementKind {
     if upper.starts_with("SCENE ") {
         return ElementKind::Scene;
     }
-    if upper.ends_with(" TO:") || upper.ends_with(" CUT TO:") || upper == "FADE OUT." {
+    if is_transition(t) {
         return ElementKind::Transition;
     }
     if t.starts_with('(') {
@@ -470,6 +496,23 @@ mod tests {
     fn character_names_are_recognised() {
         assert_eq!(classify("MARA"), ElementKind::Character);
         assert_eq!(classify("fade out."), ElementKind::Transition);
+    }
+
+    #[test]
+    fn transitions_are_recognised() {
+        for text in [
+            "FADE IN:",
+            "FADE OUT.",
+            "FADE TO BLACK.",
+            "CUT TO:",
+            "SMASH CUT TO BLACK.",
+            "DISSOLVE TO:",
+            "MATCH CUT TO:",
+        ] {
+            assert_eq!(classify(text), ElementKind::Transition, "{text}");
+        }
+        assert_eq!(classify("REID"), ElementKind::Character);
+        assert_eq!(classify("CUTTER"), ElementKind::Character); // not a transition
     }
 
     #[test]

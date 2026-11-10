@@ -1434,7 +1434,12 @@ mod ui_tests {
     use super::*;
     use crate::app::{PortmanteauApp, View};
     use crate::ui::editor;
+    use eframe::egui::accesskit::Role;
     use eframe::egui::{self, Event, Key, Modifiers, Pos2, RawInput, Rect, Vec2};
+    use egui_kittest::kittest::Queryable;
+    use egui_kittest::Harness;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     const SCREEN: Vec2 = Vec2::new(1400.0, 1000.0);
 
@@ -1654,5 +1659,153 @@ mod ui_tests {
             Block::new(ElementKind::Character, "   "),
         ];
         assert_eq!(next_speaker(&solo, 3), None);
+    }
+
+    // ---- Click tests (egui_kittest / AccessKit) -------------------------
+
+    /// Like `script_fixture`, but block 0 is an empty Character cue so typing
+    /// opens the autocomplete. The app lives behind `Rc<RefCell<_>>` because
+    /// `Harness` keeps the drawing closure and the test reads state between
+    /// frames.
+    fn click_fixture() -> (PortmanteauApp, String) {
+        let (mut app, doc_id) = script_fixture();
+        if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+            doc.blocks[0].kind = ElementKind::Character;
+            doc.blocks[0].text.clear();
+        }
+        app.selected_block = 0;
+        app.block_focus = Some(0);
+        (app, doc_id)
+    }
+
+    struct ClickHarness {
+        harness: Harness<'static>,
+        app: Rc<RefCell<PortmanteauApp>>,
+        doc_id: String,
+    }
+
+    fn click_harness() -> ClickHarness {
+        let (app, doc_id) = click_fixture();
+        let app = Rc::new(RefCell::new(app));
+        let ui_app = Rc::clone(&app);
+        // The editor uses the bundled families ("portmanteau-serif" and
+        // friends), which have to be registered before the first layout.
+        // `set_fonts` only takes effect at the start of the next pass, so the
+        // very first harness frame installs fonts and draws nothing.
+        let mut themed = false;
+        let mut ready = false;
+        let mut harness = Harness::builder()
+            .with_size(SCREEN)
+            .with_max_steps(64)
+            .build(move |ctx| {
+                if !themed {
+                    crate::theme::install(ctx);
+                    themed = true;
+                }
+                if !ready {
+                    ready = true;
+                    return;
+                }
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    editor::show(&mut ui_app.borrow_mut(), ui);
+                });
+            });
+        // The first frame requests focus for block 0; a few more settle the
+        // TextEdit's focus and event filter before a test types or clicks.
+        harness.run_steps(4);
+        ClickHarness {
+            harness,
+            app,
+            doc_id,
+        }
+    }
+
+    impl ClickHarness {
+        fn text(&self) -> String {
+            block_text(&self.app.borrow(), &self.doc_id, 0)
+        }
+
+        fn kind(&self) -> ElementKind {
+            block_kind(&self.app.borrow(), &self.doc_id, 0)
+        }
+
+        fn open_character_menu(&mut self) {
+            self.harness
+                .input_mut()
+                .events
+                .push(Event::Text("ma".into()));
+            self.harness.run();
+            assert_eq!(
+                self.app.borrow().character_menu,
+                Some((self.doc_id.clone(), 0)),
+                "typing should open the character autocomplete"
+            );
+        }
+    }
+
+    #[test]
+    fn clicking_an_autocomplete_name_fills_the_block() {
+        let mut fixture = click_harness();
+        fixture.open_character_menu();
+
+        fixture
+            .harness
+            .get_by_role_and_label(Role::Button, "Mara Venn")
+            .click();
+        fixture.harness.run();
+
+        assert_eq!(
+            fixture.text(),
+            "Mara Venn",
+            "clicking a suggested name should store it in the Character block"
+        );
+        assert_eq!(
+            fixture.app.borrow().character_menu,
+            None,
+            "the autocomplete should close after a name is chosen"
+        );
+    }
+
+    #[test]
+    fn clicking_new_character_opens_the_modal() {
+        let mut fixture = click_harness();
+        fixture.open_character_menu();
+
+        fixture
+            .harness
+            .get_by_role_and_label(Role::Button, "+ New character…")
+            .click();
+        fixture.harness.run();
+
+        let app = fixture.app.borrow();
+        assert_eq!(
+            app.character_menu, None,
+            "the autocomplete should close when the new-character modal opens"
+        );
+        let state = app
+            .new_character
+            .as_ref()
+            .expect("clicking '+ New character…' should open the modal state");
+        assert_eq!(state.doc_id, fixture.doc_id);
+        assert_eq!(state.block, 0);
+    }
+
+    #[test]
+    fn clicking_a_palette_element_changes_the_block_type() {
+        let mut fixture = click_harness();
+        assert_eq!(fixture.kind(), ElementKind::Character);
+
+        fixture
+            .harness
+            .get_by_role_and_label(Role::Button, "Dialogue")
+            .click();
+        fixture.harness.run();
+
+        assert_eq!(
+            fixture.kind(),
+            ElementKind::Dialogue,
+            "clicking a palette element should retype the selected block"
+        );
+        assert_eq!(fixture.app.borrow().selected_block, 0);
     }
 }

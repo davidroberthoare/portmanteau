@@ -1030,3 +1030,15 @@ extra Shift/Alt modifiers, so the plain-Tab check swallowed Shift+Tab and sent
 both forwards; Shift+Tab now has to be matched first. Removing the
 `set_focus_lock_filter` call makes the same test fail, because egui then moves
 focus to the next widget instead of leaving Tab with the block.
+
+## Round 33 — Mouse-click tests with egui_kittest
+
+`egui_kittest` 0.31 is now a dev-dependency. Three click tests in
+`src/ui/editor.rs` use AccessKit labels instead of pixel coordinates: clicking
+a suggested character name fills the Character cue and closes the autocomplete;
+clicking `+ New character…` opens the new-character modal; and clicking the
+`Dialogue` palette button retypes the selected block. The app sits in an
+`Rc<RefCell<_>>` because `Harness` owns the drawing closure across frames. One
+quirk: `Context::set_fonts` applies at the next pass, so the harness closure
+installs the bundled font families and skips drawing on its first frame.
+
