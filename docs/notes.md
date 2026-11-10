@@ -799,3 +799,27 @@ stored through `Project::set_settings` and saved with the project.
 The old saved-export-shortcut model was removed from the project (`Project` no
 longer carries that list); old projects still load because serde ignores the
 unknown key.
+
+### Round 26c — Live compile preview
+
+The paging estimator that powered the editor's read-only **Paged** view was
+extracted from `src/ui/editor.rs` into a new shared module, `src/ui/page.rs`
+(`PageLine`, `PagePlan`, `prose_plan`, `script_plan`, `page_frame`,
+`paged_view` and the wrapping helpers). The editor keeps its Paged mode and
+behaviour; it now imports the same code instead of owning it.
+
+`page::manuscript_page_plan` pages the whole compiled manuscript: the generated
+title page (title, subtitle and "by <author>" centered using the title-page
+element styles), front matter, the draft (prose and script sections in binder
+order), then back matter. Each section starts on its own page, matching the
+export engine's per-section page breaks. `PageLine` gained a `center` flag so
+the title page can be set centered.
+
+The Compile output tabs now show a **Live preview** panel directly below the
+compile action. It renders the manuscript pages side by side in a horizontal
+scroller, with the usual paper frame and page-number footer, rebuilt every frame
+from the selected format's draft settings. Changing paper, element styles or
+margins updates it immediately. The caption is deliberate: this is an
+approximation driven by the real compile settings, not the export engine's
+output (wrapping uses a character-width estimate and the screen scale is about
+1 mm → 3 points). The Display tab does not show it.

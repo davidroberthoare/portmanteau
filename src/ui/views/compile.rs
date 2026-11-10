@@ -12,6 +12,7 @@ use portmanteau_core::{
 
 use crate::app::{CompileTab, PortmanteauApp, ToastKind};
 use crate::theme::*;
+use crate::ui::page::{manuscript_page_plan, page_frame};
 use crate::ui::views::{
     content_frame, custom_styles_editor, element_preview, element_styles_editor, meta_line,
     page_head, primary_button, quiet_button, BUILTIN_ELEMENTS, FONT_FAMILIES,
@@ -270,6 +271,9 @@ fn output_tab(
     ui.add_space(10.0);
 
     action_panel(app, ui, settings, compile);
+    ui.add_space(12.0);
+
+    manuscript_preview_panel(app, ui, settings);
     ui.add_space(12.0);
 
     style_panel(ui, &mut settings.styles);
@@ -731,6 +735,58 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui) {
                         .color(FAINT),
                 );
             }
+        });
+}
+
+/// A live "print preview" of the compiled manuscript. The plan is rebuilt every
+/// frame from the current draft settings (paper, element styles, margins) so
+/// changing any control redraws the pages immediately.
+fn manuscript_preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &ExportSettings) {
+    let plans = manuscript_page_plan(&app.ws.project, settings);
+    let page_count: usize = plans.iter().map(|p| p.pages.len()).sum();
+
+    Frame::new()
+        .fill(BG)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(14))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                section_label(ui, "Live preview");
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    meta_line(ui, &[&format!("{page_count} pages · approx.")]);
+                });
+            });
+            ui.label(
+                RichText::new("Approximate — rendered from your compile settings")
+                    .font(sans(9.0))
+                    .color(FAINT),
+            );
+            ui.add_space(8.0);
+
+            ScrollArea::horizontal()
+                .id_salt("compile_live_preview")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.horizontal_top(|ui| {
+                        let mut number = 1;
+                        for plan in &plans {
+                            for page in &plan.pages {
+                                page_frame(ui, plan, page, number);
+                                number += 1;
+                                ui.add_space(18.0);
+                            }
+                        }
+                    });
+                });
+
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new("Scroll sideways to read the pages · title page, front matter, draft and back matter.")
+                    .font(sans(9.0))
+                    .color(FAINT),
+            );
         });
 }
 
