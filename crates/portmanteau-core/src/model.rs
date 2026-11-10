@@ -760,29 +760,10 @@ impl ElementStyles {
     }
 }
 
-/// Editor display measurements. These are on-screen preferences, not export
-/// settings: the compiled page uses each format's own element styles.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct DisplaySettings {
-    pub prose_size: f32,
-    pub prose_leading: f32,
-    pub script_size: f32,
-    pub script_leading: f32,
-}
-
-impl Default for DisplaySettings {
-    fn default() -> Self {
-        Self {
-            prose_size: 17.0,
-            prose_leading: 1.5,
-            script_size: 12.0,
-            script_leading: 1.2,
-        }
-    }
-}
-
 /// Global defaults that live outside any one project. The Display tab of the
-/// Compile screen edits these and can copy them into the open project.
+/// Settings screen edits these and can copy them into the open project. The
+/// editors themselves draw from the default element styles, so there is no
+/// separate on-screen size preference.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct AppSettings {
     #[serde(default)]
@@ -790,9 +771,6 @@ pub struct AppSettings {
     /// Show the spelling panel and check words in the editors.
     #[serde(default = "default_true")]
     pub spellcheck: bool,
-    /// Editor type sizes and leading. Older config files load the defaults.
-    #[serde(default)]
-    pub display: DisplaySettings,
 }
 
 impl Default for AppSettings {
@@ -800,13 +778,130 @@ impl Default for AppSettings {
         Self {
             styles: ElementStyles::default(),
             spellcheck: true,
-            display: DisplaySettings::default(),
         }
     }
 }
 
 fn default_true() -> bool {
     true
+}
+
+/// How page numbers are written in a compiled PDF.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NumberFormat {
+    Arabic,
+    RomanLower,
+    RomanUpper,
+}
+
+impl NumberFormat {
+    pub fn label(self) -> &'static str {
+        match self {
+            NumberFormat::Arabic => "1, 2, 3",
+            NumberFormat::RomanLower => "i, ii, iii",
+            NumberFormat::RomanUpper => "I, II, III",
+        }
+    }
+    pub fn all() -> [NumberFormat; 3] {
+        [
+            NumberFormat::Arabic,
+            NumberFormat::RomanLower,
+            NumberFormat::RomanUpper,
+        ]
+    }
+    pub fn format(self, n: u32) -> String {
+        match self {
+            NumberFormat::Arabic => n.to_string(),
+            NumberFormat::RomanLower => roman_numeral(n).to_lowercase(),
+            NumberFormat::RomanUpper => roman_numeral(n),
+        }
+    }
+}
+
+/// Small classical Roman numeral helper for page numbers. Values outside the
+/// classical 1–3999 range fall back to the Arabic digits so the writer never
+/// loses a number.
+fn roman_numeral(mut n: u32) -> String {
+    if n == 0 || n > 3999 {
+        return n.to_string();
+    }
+    const VALUES: [(u32, &str); 13] = [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+    let mut out = String::new();
+    for (value, glyph) in VALUES {
+        while n >= value {
+            out.push_str(glyph);
+            n -= value;
+        }
+    }
+    out
+}
+
+/// Where a page number sits on the page.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HfLocation {
+    Header,
+    Footer,
+}
+
+impl HfLocation {
+    pub fn label(self) -> &'static str {
+        match self {
+            HfLocation::Header => "Header",
+            HfLocation::Footer => "Footer",
+        }
+    }
+    pub fn all() -> [HfLocation; 2] {
+        [HfLocation::Header, HfLocation::Footer]
+    }
+}
+
+/// Header and footer controls for the compiled PDF. `header_text` blank means
+/// the running header repeats the project title.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct HeaderFooter {
+    pub page_numbers: bool,
+    pub number_on_first_page: bool,
+    pub number_format: NumberFormat,
+    pub number_location: HfLocation,
+    pub number_align: Alignment,
+    pub number_spacing: f32,
+    pub start_number: u32,
+    pub running_header: bool,
+    pub header_text: String,
+    pub header_align: Alignment,
+    pub header_spacing: f32,
+}
+
+impl Default for HeaderFooter {
+    fn default() -> Self {
+        Self {
+            page_numbers: true,
+            number_on_first_page: false,
+            number_format: NumberFormat::Arabic,
+            number_location: HfLocation::Footer,
+            number_align: Alignment::Center,
+            number_spacing: 30.0,
+            start_number: 1,
+            running_header: false,
+            header_text: String::new(),
+            header_align: Alignment::Center,
+            header_spacing: 36.0,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -816,10 +911,8 @@ pub struct ExportSettings {
     pub font: String,
     pub font_size: f32,
     pub line_spacing: f32,
-    #[serde(default = "default_true")]
-    pub include_page_numbers: bool,
     #[serde(default)]
-    pub include_running_headers: bool,
+    pub header_footer: HeaderFooter,
     #[serde(default)]
     pub cover_image: String,
     pub include_title_page: bool,
@@ -847,8 +940,7 @@ impl Default for ExportSettings {
             font: "Liberation Serif".into(),
             font_size: 11.0,
             line_spacing: 1.4,
-            include_page_numbers: true,
-            include_running_headers: false,
+            header_footer: HeaderFooter::default(),
             cover_image: String::new(),
             include_title_page: true,
             include_toc: true,
@@ -1503,15 +1595,14 @@ mod tests {
         object.remove("styles");
         object.remove("formats");
         let export = object.get_mut("export").unwrap().as_object_mut().unwrap();
-        export.remove("include_page_numbers");
-        export.remove("include_running_headers");
+        export.remove("header_footer");
         export.remove("cover_image");
 
         let restored: Project = serde_json::from_value(value).unwrap();
         assert_eq!(restored.styles, ElementStyles::default());
         assert!(restored.formats.is_empty());
-        assert!(restored.export.include_page_numbers);
-        assert!(!restored.export.include_running_headers);
+        assert!(restored.export.header_footer.page_numbers);
+        assert!(!restored.export.header_footer.running_header);
         assert_eq!(restored.export.cover_image, "");
     }
 

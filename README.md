@@ -83,12 +83,13 @@ PORTMANTEAU_DOC="Cold Harbor" ./target/debug/portmanteau --screenshot shots/scri
 - Body and back matter: scene numbers, synopses, author notes, plus every
   document in the Back Matter folder that is included in export. Front and back
   matter documents can be added, renamed or removed like any other binder item.
-- Paper size and type-size/leading controls (applied where the format supports
-  them), output folder and a compile preview.
+- Paper size for print formats (the per-element styles now own type size and
+  leading), output folder and a compile preview.
 - Per-format settings: PDF, EPUB, DOCX and the rest each remember their own
   paper, type and matter choices, seeded from a project-wide base style for
-  prose and script. Page numbers and running headers apply to PDF; an EPUB can
-  reference a JPG or PNG cover image.
+  prose and script. PDF headers and footers control page numbers (format,
+  placement, alignment, spacing and start number) and an optional running
+  header; an EPUB can reference a JPG or PNG cover image.
 
 **Defaults**
 - The **Display** tab of Compile edits the global per-element type defaults and

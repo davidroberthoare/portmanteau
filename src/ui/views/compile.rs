@@ -7,7 +7,10 @@ use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense,
     Stroke, TextEdit, Vec2,
 };
-use portmanteau_core::{DocKind, ElementStyles, ExportKind, ExportSettings, PaperSize, ProjectKind};
+use portmanteau_core::{
+    Alignment, DocKind, ElementStyles, ExportKind, ExportSettings, HfLocation, NumberFormat,
+    PaperSize, ProjectKind,
+};
 
 use crate::app::{CompileTab, PortmanteauApp, ToastKind};
 use crate::theme::*;
@@ -565,39 +568,10 @@ fn type_panel(ui: &mut egui::Ui, kind: ExportKind, settings: &mut ExportSettings
                 ui.label(RichText::new("Font").font(sans(9.5)).color(MUTED));
                 font_picker(ui, &mut settings.font);
             });
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Type size").font(sans(9.5)).color(MUTED));
-                ui.add(
-                    egui::DragValue::new(&mut settings.font_size)
-                        .speed(0.1)
-                        .range(7.0..=24.0)
-                        .suffix(" pt"),
-                );
-                ui.add_space(6.0);
-                ui.label(RichText::new("Leading").font(sans(9.5)).color(MUTED));
-                ui.add(
-                    egui::DragValue::new(&mut settings.line_spacing)
-                        .speed(0.02)
-                        .range(1.0..=2.4)
-                        .suffix("×"),
-                );
-            });
 
             if kind == ExportKind::Pdf {
                 ui.add_space(7.0);
-                check(
-                    ui,
-                    settings,
-                    |s| &mut s.include_page_numbers,
-                    "Page numbers",
-                );
-                check(
-                    ui,
-                    settings,
-                    |s| &mut s.include_running_headers,
-                    "Running headers",
-                );
+                header_footer_panel(ui, settings);
             }
 
             if matches!(kind, ExportKind::Epub | ExportKind::Html) {
@@ -615,6 +589,122 @@ fn type_panel(ui: &mut egui::Ui, kind: ExportKind, settings: &mut ExportSettings
                 );
             }
         });
+}
+
+fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings) {
+    // Edit a local clone, then commit once the draw pass is over so the combo
+    // boxes can borrow the settings without fighting the rest of the panel.
+    let mut hf = settings.header_footer.clone();
+
+    hairline(ui);
+    ui.add_space(6.0);
+    section_label(ui, "Headers & footers");
+    ui.add_space(4.0);
+
+    let mut page_numbers = hf.page_numbers;
+    if ui.checkbox(&mut page_numbers, "Page numbers").changed() {
+        hf.page_numbers = page_numbers;
+    }
+    if hf.page_numbers {
+        ui.indent("hf_page_numbers", |ui| {
+            ui.horizontal(|ui| {
+                let mut first = hf.number_on_first_page;
+                if ui.checkbox(&mut first, "On first page").changed() {
+                    hf.number_on_first_page = first;
+                }
+                ui.add_space(8.0);
+                let mut start = hf.start_number;
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut start)
+                            .speed(1.0)
+                            .range(1..=9999)
+                            .prefix("start at "),
+                    )
+                    .changed()
+                {
+                    hf.start_number = start;
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Format").font(sans(9.0)).color(MUTED));
+                egui::ComboBox::from_id_salt("hf_number_format")
+                    .selected_text(RichText::new(hf.number_format.label()).font(sans(10.0)))
+                    .width(105.0)
+                    .show_ui(ui, |ui| {
+                        for format in NumberFormat::all() {
+                            ui.selectable_value(&mut hf.number_format, format, format.label());
+                        }
+                    });
+                ui.add_space(6.0);
+                ui.label(RichText::new("Where").font(sans(9.0)).color(MUTED));
+                egui::ComboBox::from_id_salt("hf_number_location")
+                    .selected_text(RichText::new(hf.number_location.label()).font(sans(10.0)))
+                    .width(80.0)
+                    .show_ui(ui, |ui| {
+                        for location in HfLocation::all() {
+                            ui.selectable_value(&mut hf.number_location, location, location.label());
+                        }
+                    });
+            });
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Align").font(sans(9.0)).color(MUTED));
+                egui::ComboBox::from_id_salt("hf_number_align")
+                    .selected_text(RichText::new(hf.number_align.label()).font(sans(10.0)))
+                    .width(80.0)
+                    .show_ui(ui, |ui| {
+                        for align in [Alignment::Left, Alignment::Center, Alignment::Right] {
+                            ui.selectable_value(&mut hf.number_align, align, align.label());
+                        }
+                    });
+                ui.add_space(6.0);
+                ui.label(RichText::new("Spacing").font(sans(9.0)).color(MUTED));
+                ui.add(
+                    egui::DragValue::new(&mut hf.number_spacing)
+                        .speed(0.5)
+                        .range(0.0..=120.0)
+                        .suffix(" pt"),
+                );
+            });
+        });
+    }
+
+    ui.add_space(4.0);
+    let mut running = hf.running_header;
+    if ui.checkbox(&mut running, "Running header").changed() {
+        hf.running_header = running;
+    }
+    if hf.running_header {
+        ui.indent("hf_running_header", |ui| {
+            ui.add(
+                TextEdit::singleline(&mut hf.header_text)
+                    .hint_text("blank = book title")
+                    .font(sans(10.0))
+                    .desired_width(f32::INFINITY),
+            );
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Align").font(sans(9.0)).color(MUTED));
+                egui::ComboBox::from_id_salt("hf_header_align")
+                    .selected_text(RichText::new(hf.header_align.label()).font(sans(10.0)))
+                    .width(80.0)
+                    .show_ui(ui, |ui| {
+                        for align in [Alignment::Left, Alignment::Center, Alignment::Right] {
+                            ui.selectable_value(&mut hf.header_align, align, align.label());
+                        }
+                    });
+                ui.add_space(6.0);
+                ui.label(RichText::new("Spacing").font(sans(9.0)).color(MUTED));
+                ui.add(
+                    egui::DragValue::new(&mut hf.header_spacing)
+                        .speed(0.5)
+                        .range(0.0..=120.0)
+                        .suffix(" pt"),
+                );
+            });
+        });
+    }
+
+    settings.header_footer = hf;
 }
 
 fn font_picker(ui: &mut egui::Ui, font: &mut String) {
@@ -812,8 +902,8 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
         "font": settings.font,
         "font_size": settings.font_size,
         "line_spacing": settings.line_spacing,
-        "include_page_numbers": settings.include_page_numbers,
-        "include_running_headers": settings.include_running_headers,
+        "header_footer": serde_json::to_value(&settings.header_footer)
+            .unwrap_or(serde_json::Value::Null),
         "cover_image": settings.cover_image,
         "include_title_page": settings.include_title_page,
         "include_toc": settings.include_toc,

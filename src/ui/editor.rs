@@ -1,14 +1,16 @@
 //! The writing surface: a paper-like prose editor and a typed screenplay editor.
 
 use eframe::egui::{
-    self, Align, Color32, ComboBox, CornerRadius, Frame, Id, Key, Layout, Margin, Modifiers,
-    RichText, ScrollArea, Sense, Stroke, TextEdit, Vec2,
+    self, Align, Color32, ComboBox, CornerRadius, FontId, Frame, Id, Key, Layout, Margin,
+    Modifiers, RichText, ScrollArea, Sense, Stroke, TextEdit, Vec2,
 };
 use portmanteau_core::{DocKind, ElementKind, ItemKind, Medium};
 
 use crate::app::{NewCharacterState, PortmanteauApp, WriteMode};
 use crate::theme::*;
-use crate::ui::page::{empty_page_plan, paged_view, prose_plan, script_plan, PagePlan};
+use crate::ui::page::{
+    empty_page_plan, paged_view, prose_plan, script_element_style, script_plan, PagePlan,
+};
 use crate::ui::views::{content_frame, page_head};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
@@ -695,8 +697,12 @@ fn match_initial_case(original: &str, replacement: &str) -> String {
 fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_snapshot: &mut bool) {
     let mut dirty = false;
     let zoom = app.editor_zoom.clamp(0.7, 1.6);
-    let prose_size = app.settings.display.prose_size;
-    let prose_leading = app.settings.display.prose_leading;
+    // The prose surface takes its type from the project's body element style,
+    // the same style the compiled page and preview use.
+    let body = app.ws.project.styles.body.clone();
+    let family = family_for_font(&body.font);
+    let text_size = body.size.max(6.0) * zoom;
+    let line_height = (body.size.max(6.0) * body.leading.max(0.85) * zoom).max(text_size);
     let project_title = app.ws.project.title.clone();
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
@@ -721,13 +727,11 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         ui.add_space(14.0);
 
         let rows = ((doc.text.chars().count() as f32) / 72.0).ceil().max(18.0) as usize;
-        let text_size = prose_size * zoom;
-        let line_height = (prose_size * prose_leading * zoom).max(text_size);
         let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
             let mut job = egui::text::LayoutJob::single_section(
                 text.to_owned(),
                 egui::TextFormat {
-                    font_id: serif(text_size),
+                    font_id: FontId::new(text_size, family.clone()),
                     color: PAPER_TEXT,
                     line_height: Some(line_height),
                     ..Default::default()
@@ -737,7 +741,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             ui.fonts(|f| f.layout_job(job))
         };
         let edit = TextEdit::multiline(&mut doc.text)
-            .font(serif(text_size))
+            .font(FontId::new(text_size, family.clone()))
             .layouter(&mut layouter)
             .text_color(PAPER_TEXT)
             .frame(false)
@@ -746,7 +750,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             .margin(Margin::same(0))
             .hint_text(
                 RichText::new("Begin at the beginning…")
-                    .font(serif(text_size))
+                    .font(FontId::new(text_size, family.clone()))
                     .color(PAPER_MUTED),
             );
         let response = ui.add(edit);
@@ -783,7 +787,10 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut set_text_at: Option<(usize, String)> = None;
     let mut new_character: Option<NewCharacterState> = None;
     let project_title = app.ws.project.title.clone();
-    let script_size = app.settings.display.script_size;
+    // Clone the element styles before the document is borrowed mutably. Each
+    // block takes its type and indent from the matching script element style,
+    // the same table the paged preview and compile use.
+    let styles = app.ws.project.styles.clone();
     // Character names are read before the document is borrowed mutably: the
     // autocomplete only needs owned strings from the project.
     let character_names: Vec<String> = {
@@ -947,31 +954,14 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     );
                 }
 
-                let indent = match kind {
-                    ElementKind::Character => content_width * 0.30,
-                    ElementKind::Parenthetical => content_width * 0.20,
-                    ElementKind::Dialogue => content_width * 0.12,
-                    ElementKind::Transition => 0.0,
-                    _ => 0.0,
-                };
+                let style = script_element_style(&styles, kind);
+                let indent = style.indent.max(0.0).min(content_width * 0.42);
                 if indent > 0.0 {
                     ui.add_space(indent);
                 }
-                let width = match kind {
-                    ElementKind::Character => content_width * 0.50,
-                    ElementKind::Parenthetical => content_width * 0.52,
-                    ElementKind::Dialogue => content_width * 0.66,
-                    ElementKind::Transition => content_width * 0.55,
-                    _ => content_width - 46.0,
-                };
-                let font_size = match kind {
-                    ElementKind::SceneHeading => script_size * 1.05,
-                    ElementKind::Character => script_size,
-                    ElementKind::Parenthetical => script_size * 0.95,
-                    ElementKind::Dialogue => script_size,
-                    ElementKind::Transition => script_size * 0.95,
-                    _ => script_size,
-                } * zoom;
+                let width = (content_width - indent - 46.0).max(80.0);
+                let family = family_for_font(&style.font);
+                let font_size = style.size.max(6.0) * zoom;
                 let rows = ((doc.blocks[i].text.chars().count() as f32 * font_size * 0.62)
                     / width.max(80.0))
                 .ceil()
@@ -983,7 +973,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 };
                 let mut edit = TextEdit::multiline(&mut doc.blocks[i].text)
                     .id(block_id)
-                    .font(mono(font_size))
+                    .font(FontId::new(font_size, family.clone()))
                     .text_color(text_color)
                     .frame(false)
                     .desired_width(width)
@@ -991,7 +981,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     .margin(Margin::symmetric(2, 1))
                     .hint_text(
                         RichText::new(kind.label())
-                            .font(mono(font_size))
+                            .font(FontId::new(font_size, family))
                             .color(PAPER_MUTED),
                     );
                 if kind == ElementKind::Transition {

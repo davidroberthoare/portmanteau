@@ -11,7 +11,7 @@ pub mod research;
 pub mod settings;
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, FontId, Frame, Layout, Margin, RichText, ScrollArea,
+    self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea,
     Stroke, TextEdit, Vec2,
 };
 use portmanteau_core::{
@@ -399,75 +399,6 @@ fn grid_drag(
             .suffix(suffix),
     )
     .changed()
-}
-
-/// Sample copy used by the live style preview on the Display tab.
-pub const PREVIEW_SAMPLE: &str =
-    "The quick brown fox jumps over the lazy dog.\n\nSecond paragraph to show spacing and indentation.";
-
-/// Draw a paper-like approximation of one element style. Font, size, leading,
-/// alignment, indents and before/after spacing are applied; the compiled page
-/// remains the source of truth, so treat this as a proof, not a layout engine.
-pub fn element_preview(ui: &mut egui::Ui, style: &ElementStyle) {
-    let family = family_for_font(&style.font);
-    let font = FontId::new(style.size.clamp(4.0, 72.0), family);
-    let line_gap = (((style.size * style.leading) - style.size).clamp(0.0, 60.0)).round();
-    Frame::new()
-        .fill(PAPER)
-        .stroke(Stroke::new(1.0, PAPER_EDGE))
-        .corner_radius(CornerRadius::same(6))
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 8],
-            blur: 22,
-            spread: 0,
-            color: Color32::from_black_alpha(90),
-        })
-        .inner_margin(Margin::symmetric(20, 16))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.spacing_mut().item_spacing.y = line_gap;
-            ui.add_space(style.before.max(0.0).round());
-            let mut first_line = true;
-            for line in PREVIEW_SAMPLE.lines() {
-                if line.trim().is_empty() {
-                    ui.add_space(line_gap + style.after.max(0.0).round());
-                    first_line = true;
-                    continue;
-                }
-                let left = style.indent.max(0.0)
-                    + if first_line {
-                        style.first_line_indent.max(0.0)
-                    } else {
-                        0.0
-                    };
-                first_line = false;
-                let text = RichText::new(line).font(font.clone()).color(PAPER_TEXT);
-                Frame::new()
-                    .inner_margin(Margin {
-                        left: left.min(120.0) as i8,
-                        right: style.right_indent.max(0.0).min(120.0) as i8,
-                        top: 0,
-                        bottom: 0,
-                    })
-                    .show(ui, |ui| match style.align {
-                        Alignment::Right => {
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.label(text);
-                            });
-                        }
-                        Alignment::Center => {
-                            ui.with_layout(Layout::top_down(Align::Center), |ui| {
-                                ui.label(text);
-                            });
-                        }
-                        // Justify is approximated as Left.
-                        _ => {
-                            ui.label(text);
-                        }
-                    });
-            }
-            ui.add_space(style.after.max(0.0).round());
-        });
 }
 
 /// The writer-defined styles, shown below the built-in sections. Each row edits

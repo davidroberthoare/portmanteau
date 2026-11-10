@@ -369,8 +369,7 @@ fn build_pdf(
     pages: &[PdfPage],
     width_pt: f32,
     height_pt: f32,
-    footer: bool,
-    header: bool,
+    header_footer: &HeaderFooter,
     font: &str,
     font_bold: &str,
 ) -> Vec<u8> {
@@ -417,24 +416,38 @@ fn build_pdf(
             content.push_str(&format!("1 0 0 1 {:.2} {:.2} Tm\n", line.x, line.y));
             content.push_str(&format!("({}) Tj\nET\n", pdf_text(&line.text)));
         }
-        if footer && i > 0 {
-            content.push_str("BT\n/F1 9 Tf\n");
-            content.push_str(&format!(
-                "1 0 0 1 {:.2} 30 Tm\n({}) Tj\nET\n",
-                width_pt / 2.0 - 3.0,
-                i + 1
-            ));
-        }
-        if header && i > 0 {
-            // A quiet running head in the top margin. It is drawn in the same
-            // content stream as the page, so the object plan stays untouched.
-            let head = pdf_text(title);
-            let x = ((width_pt - head.chars().count() as f32 * 4.5) / 2.0).max(20.0);
+        if header_footer.page_numbers && (header_footer.number_on_first_page || i > 0) {
+            let number = header_footer
+                .number_format
+                .format(header_footer.start_number + i as u32);
+            let y = match header_footer.number_location {
+                HfLocation::Footer => header_footer.number_spacing,
+                HfLocation::Header => height_pt - header_footer.header_spacing,
+            };
+            let x = aligned_x(&number, header_footer.number_align, 20.0, width_pt - 20.0, 9.0);
             content.push_str("BT\n/F1 9 Tf\n");
             content.push_str(&format!(
                 "1 0 0 1 {:.2} {:.2} Tm\n({}) Tj\nET\n",
                 x,
-                height_pt - 30.0,
+                y,
+                pdf_text(&number)
+            ));
+        }
+        if header_footer.running_header && i > 0 {
+            // A quiet running head in the top margin. It is drawn in the same
+            // content stream as the page, so the object plan stays untouched.
+            let text = if header_footer.header_text.trim().is_empty() {
+                title
+            } else {
+                header_footer.header_text.as_str()
+            };
+            let head = pdf_text(text);
+            let x = aligned_x(&head, header_footer.header_align, 20.0, width_pt - 20.0, 9.0);
+            content.push_str("BT\n/F1 9 Tf\n");
+            content.push_str(&format!(
+                "1 0 0 1 {:.2} {:.2} Tm\n({}) Tj\nET\n",
+                x,
+                height_pt - header_footer.header_spacing,
                 head
             ));
         }
@@ -838,8 +851,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             &pages,
             w,
             h,
-            settings.include_page_numbers,
-            settings.include_running_headers,
+            &settings.header_footer,
             pdf_font(&settings.styles.body.font, false),
             pdf_font(&settings.styles.body.font, true),
         );
@@ -1032,8 +1044,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         &pages,
         w,
         h,
-        settings.include_page_numbers,
-        settings.include_running_headers,
+        &settings.header_footer,
         pdf_font(&settings.styles.body.font, false),
         pdf_font(&settings.styles.body.font, true),
     )
@@ -2041,8 +2052,8 @@ mod tests {
         // a mid-page start position.
         s.include_title_page = false;
         s.include_toc = false;
-        s.include_page_numbers = false;
-        s.include_running_headers = false;
+        s.header_footer.page_numbers = false;
+        s.header_footer.running_header = false;
 
         s.styles.chapter_heading.align = Alignment::Left;
         let left = max_pdf_x(&pdf_manuscript(&p, &s));
@@ -2109,19 +2120,27 @@ mod tests {
     fn pdf_page_numbers_follow_the_setting() {
         let p = demo();
         let mut on = p.settings_for(ExportKind::Pdf);
-        on.include_page_numbers = true;
-        on.include_running_headers = false;
+        on.header_footer.page_numbers = true;
+        on.header_footer.running_header = false;
         let mut off = on.clone();
-        off.include_page_numbers = false;
+        off.header_footer.page_numbers = false;
 
         let with_numbers = String::from_utf8_lossy(&pdf_manuscript(&p, &on)).into_owned();
         let without_numbers = String::from_utf8_lossy(&pdf_manuscript(&p, &off)).into_owned();
-        assert!(with_numbers.contains(" 30 Tm"), "footer page number missing");
+        assert!(with_numbers.contains(" 30.00 Tm"), "footer page number missing");
         assert!(
-            !without_numbers.contains(" 30 Tm"),
+            !without_numbers.contains(" 30.00 Tm"),
             "footer page number should be omitted"
         );
         assert_ne!(with_numbers, without_numbers);
+
+        // Roman numerals and a non-1 start should reach the content stream.
+        let mut formatted = on.clone();
+        formatted.header_footer.number_format = NumberFormat::RomanLower;
+        formatted.header_footer.start_number = 3;
+        formatted.header_footer.number_on_first_page = true;
+        let roman = String::from_utf8_lossy(&pdf_manuscript(&p, &formatted)).into_owned();
+        assert!(roman.contains("(iii) Tj"), "roman start number missing");
     }
 
     #[test]
@@ -2129,9 +2148,9 @@ mod tests {
         let mut p = demo();
         p.title = "Header Probe".into();
         let mut off = p.settings_for(ExportKind::Pdf);
-        off.include_running_headers = false;
+        off.header_footer.running_header = false;
         let mut on = off.clone();
-        on.include_running_headers = true;
+        on.header_footer.running_header = true;
 
         let without = String::from_utf8_lossy(&pdf_manuscript(&p, &off)).into_owned();
         let with = String::from_utf8_lossy(&pdf_manuscript(&p, &on)).into_owned();

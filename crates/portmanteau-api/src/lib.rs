@@ -862,8 +862,6 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
         settings.cover_image = v.into();
     }
     for (key, field) in [
-        ("include_page_numbers", &mut settings.include_page_numbers),
-        ("include_running_headers", &mut settings.include_running_headers),
         ("include_title_page", &mut settings.include_title_page),
         ("include_toc", &mut settings.include_toc),
         ("include_chapter_numbers", &mut settings.include_chapter_numbers),
@@ -875,8 +873,75 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
             *field = v;
         }
     }
+    merge_header_footer(&mut settings.header_footer, payload)?;
     if let Some(v) = payload.get("styles") {
         apply_style_overrides(&mut settings.styles, v)?;
+    }
+    Ok(())
+}
+
+fn parse_alignment(value: &str) -> Option<Alignment> {
+    Alignment::all().into_iter().find(|a| {
+        format!("{a:?}").eq_ignore_ascii_case(value) || a.label().eq_ignore_ascii_case(value)
+    })
+}
+
+/// Merge a nested `{"header_footer":{...}}` object. Unknown subfields are
+/// ignored; invalid values are rejected before the caller commits the clone.
+fn merge_header_footer(header_footer: &mut HeaderFooter, payload: &Value) -> Result<(), String> {
+    let Some(fields) = payload.get("header_footer") else {
+        return Ok(());
+    };
+    let Some(object) = fields.as_object() else {
+        return Ok(());
+    };
+    for (key, field) in [
+        ("page_numbers", &mut header_footer.page_numbers),
+        ("number_on_first_page", &mut header_footer.number_on_first_page),
+        ("running_header", &mut header_footer.running_header),
+    ] {
+        if let Some(v) = object.get(key).and_then(|v| v.as_bool()) {
+            *field = v;
+        }
+    }
+    if let Some(v) = object.get("number_format").and_then(|v| v.as_str()) {
+        header_footer.number_format = NumberFormat::all()
+            .into_iter()
+            .find(|f| format!("{f:?}").eq_ignore_ascii_case(v) || f.label().eq_ignore_ascii_case(v))
+            .ok_or_else(|| {
+                format!("number_format must be Arabic, RomanLower or RomanUpper (got {v:?})")
+            })?;
+    }
+    if let Some(v) = object.get("number_location").and_then(|v| v.as_str()) {
+        header_footer.number_location = HfLocation::all()
+            .into_iter()
+            .find(|l| format!("{l:?}").eq_ignore_ascii_case(v) || l.label().eq_ignore_ascii_case(v))
+            .ok_or_else(|| format!("number_location must be Header or Footer (got {v:?})"))?;
+    }
+    if let Some(v) = object.get("number_align").and_then(|v| v.as_str()) {
+        header_footer.number_align =
+            parse_alignment(v).ok_or_else(|| format!("number_align invalid (got {v:?})"))?;
+    }
+    if let Some(v) = object.get("header_align").and_then(|v| v.as_str()) {
+        header_footer.header_align =
+            parse_alignment(v).ok_or_else(|| format!("header_align invalid (got {v:?})"))?;
+    }
+    for (key, field) in [
+        ("number_spacing", &mut header_footer.number_spacing),
+        ("header_spacing", &mut header_footer.header_spacing),
+    ] {
+        if let Some(v) = object.get(key) {
+            *field = parse_finite_f32(v, key, 0.0, 300.0)?;
+        }
+    }
+    if let Some(v) = object.get("start_number") {
+        let n = v
+            .as_u64()
+            .ok_or_else(|| "start_number must be a non-negative integer".to_string())?;
+        header_footer.start_number = n.min(9999) as u32;
+    }
+    if let Some(v) = object.get("header_text").and_then(|v| v.as_str()) {
+        header_footer.header_text = v.into();
     }
     Ok(())
 }
@@ -1080,18 +1145,27 @@ mod tests {
                 "format":"PDF",
                 "font_size":15.5,
                 "line_spacing":1.9,
-                "include_page_numbers":false,
-                "include_running_headers":true,
+                "header_footer":{"page_numbers":false,"number_format":"RomanLower","start_number":3},
                 "cover_image":"assets/cover.png"
             }),
         );
         assert!(updated.ok, "{}", updated.message);
         assert_eq!(updated.data["font_size"].as_f64().unwrap(), 15.5);
-        assert_eq!(updated.data["include_page_numbers"], false);
+        assert_eq!(updated.data["header_footer"]["page_numbers"], false);
+        assert_eq!(updated.data["header_footer"]["number_format"], "RomanLower");
+        assert_eq!(updated.data["header_footer"]["start_number"], 3);
 
         assert_eq!(ws.project.settings_for(ExportKind::Pdf).font_size, 15.5);
         assert_eq!(ws.project.settings_for(ExportKind::Pdf).line_spacing, 1.9);
-        assert!(ws.project.settings_for(ExportKind::Pdf).include_running_headers);
+        assert!(!ws.project.settings_for(ExportKind::Pdf).header_footer.page_numbers);
+        assert_eq!(
+            ws.project.settings_for(ExportKind::Pdf).header_footer.number_format,
+            portmanteau_core::NumberFormat::RomanLower
+        );
+        assert_eq!(
+            ws.project.settings_for(ExportKind::Pdf).header_footer.start_number,
+            3
+        );
         assert_eq!(ws.project.settings_for(ExportKind::Pdf).cover_image, "assets/cover.png");
 
         let epub_after = ws.execute("export.settings.get", json!({"format":"EPUB"}));

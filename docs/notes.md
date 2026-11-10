@@ -251,14 +251,25 @@ meant changing the EPUB type size silently restyled the PDF. Round 2 splits it:
 - The demonstration project now ships PDF, EPUB and FDX entries that differ, so
   the Compile screen has something real to switch between.
 
-In the export engine, PDF honours `include_page_numbers` (footer) and
-`include_running_headers` (a quiet 9pt title line in the top margin, drawn in
-the same content stream so the page-object plan is unchanged). EPUB honours
+In the export engine, PDF honours `HeaderFooter`: page numbers can be Arabic or
+lower/upper Roman, start at any number, sit in the header or footer, align
+left/centre/right and be suppressed on the first page; an optional running
+header repeats either custom text or the project title. Both are drawn in the
+same content stream so the page-object plan is unchanged. EPUB honours
 `cover_image`: a readable JPG/PNG is stored as `cover-image/cover.<ext>`,
 declared with `properties="cover-image"`, referenced by `<meta name="cover">`
 and shown by a first-in-spine `cover.xhtml`. A missing file is skipped rather
-than failing the export. The other writers treat the three new fields as
+than failing the export. The other writers treat the header/footer settings as
 no-ops.
+
+Round 28b replaces the old `include_page_numbers` / `include_running_headers`
+booleans with a nested `HeaderFooter`. `export.run` and
+`export.settings.update` accept `{"header_footer":{...}}` and merge only the
+fields supplied, so a caller can change the format and start number without
+resetting placement. `HeaderFooter` carries its own serde default, so older
+project files missing the key load with page numbers on and running headers
+off. The Compile panel drops the redundant global type-size/leading controls;
+paper size stays for PDF, DOCX and RTF.
 
 Four commands join the surface: `export.settings.get`,
 `export.settings.update`, `style.get` and `style.update`, with matching MCP
@@ -901,3 +912,39 @@ filename defaults (as a hint) to the export engine's `<slug>.<ext>` and is
 stored per format in the new `ExportSettings::output_filename`. Compile passes
 the joined folder + filename as the `export.run` path; a blank filename keeps
 the old folder-only behaviour (and a blank folder still means `exports/`).
+
+## Round 28b — header & footer controls
+
+The Compile "Page & type" panel no longer carries global type-size and leading
+DragValues; element styles own those, and paper size remains for print formats.
+A new "Headers & footers" panel (PDF) edits the local `HeaderFooter` clone and
+commits it after the draw pass. Page numbers gain format (Arabic/lower Roman/
+upper Roman), location, alignment, edge spacing, first-page visibility and a
+start number. The running header can use custom text or fall back to the book
+title, with its own alignment and top spacing. `export.run` and
+`export.settings.update` accept the same values as a nested `header_footer`
+object and merge only the supplied fields.
+
+## Round 29 — Settings mirrors Compile; editors use the default styles
+
+The Settings → Display tab is now a two-column layout like Compile. The left
+column is a single **Display and default styles** card: the built-in and custom
+element-style editors, the Save defaults / Apply to current project / Reset
+defaults buttons, and the config-file path. The right column is the shared
+`manuscript_preview_navigator`, previewing the whole manuscript with the global
+default styles rather than the current project's per-format settings. The old
+"Editor display" size/leading grid, the small per-element live preview card and
+the standalone Editing card are gone; the manuscript preview is the only
+preview and the spell-checking switch lives on Preferences.
+
+The Writing surface now draws from the same default element styles. Prose takes
+its font from `styles.body.font`, its size from `styles.body.size` and its line
+spacing from `styles.body.leading`. Screenplay elements look up the matching
+`styles.<element>` through `page::script_element_style`, so font, size and
+indent match the paged preview; the editor zoom still multiplies the size.
+Paragraph alignment, first-line indent and right indent cannot be represented
+inside a single continuous `TextEdit`, so those remain preview/Compile-only.
+
+`DisplaySettings` and `AppSettings::display` were removed. Older config files
+still load: serde ignores the now-unknown `display` object, and the editor
+falls back to the built-in element styles.

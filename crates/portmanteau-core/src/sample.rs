@@ -319,16 +319,16 @@ pub fn demo() -> Project {
     pdf.paper = PaperSize::A5;
     pdf.font_size = 11.0;
     pdf.line_spacing = 1.45;
-    pdf.include_page_numbers = true;
-    pdf.include_running_headers = false;
+    pdf.header_footer.page_numbers = true;
+    pdf.header_footer.running_header = false;
     p.set_settings(pdf.clone());
     p.export = pdf;
 
     let mut epub = p.settings_for(ExportKind::Epub);
     epub.font_size = 12.0;
     epub.line_spacing = 1.6;
-    epub.include_page_numbers = false;
-    epub.include_running_headers = false;
+    epub.header_footer.page_numbers = false;
+    epub.header_footer.running_header = false;
     p.set_settings(epub);
 
     let mut fdx = p.settings_for(ExportKind::Fdx);
