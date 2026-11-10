@@ -872,3 +872,32 @@ page.
 Compile now has only the output-format tabs; `CompileTab::Display` was removed
 and the screen is a straight three-column format view. The mobile/memory cost is
 nil: the paging estimate is recomputed per frame exactly as before.
+
+### Round 28a — Compile page fixes
+
+The live preview in `ui::page` now honours the full element style, not just
+size and leading. `PageLine` gained `font`, `align`, `first_line_indent`,
+`right_indent` and `after`; `page_frame` picks the bundled serif/sans/mono
+family with `theme::family_for_font` (falling back to the old `mono` flag when a
+style has no family), aligns left/centre/right (Justify is drawn as left),
+applies the first-line indent only to the opening wrapped line of a paragraph,
+shrinks the text column by the right indent, and adds the style's `after` space
+below the last line of a paragraph or script block. `prose_plan`,
+`script_plan` and `title_page_plan` pass the matching style fields through, so
+editing one element's font, alignment, indents or before/after spacing changes
+that element in the preview only. Script transitions stay right-aligned; the
+title page stays centred.
+
+The element-style rows are now a four-column `egui::Grid` (label + control
+pairs) inside each card, with the element name above it. Nothing wraps
+mid-row at the ~400 pt middle column. The Prose and Script sections can be
+greyed out: `element_styles_editor` takes `grey_prose` / `grey_script`, Compile
+disables the group that cannot apply to the project medium (Novel → script
+greyed; Film/Television/Theatre → prose greyed; Mixed → neither), and Settings
+passes `false, false` because its defaults apply to every project.
+
+"Where it goes" now has separate **Folder** and **Filename** fields. The
+filename defaults (as a hint) to the export engine's `<slug>.<ext>` and is
+stored per format in the new `ExportSettings::output_filename`. Compile passes
+the joined folder + filename as the `export.run` path; a blank filename keeps
+the old folder-only behaviour (and a blank folder still means `exports/`).

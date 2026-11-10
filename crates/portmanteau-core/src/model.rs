@@ -829,6 +829,10 @@ pub struct ExportSettings {
     pub include_synopsis: bool,
     pub include_notes: bool,
     pub output_path: String,
+    /// Per-format output filename, joined to `output_path` on compile. Blank
+    /// falls back to the export engine's standard name.
+    #[serde(default)]
+    pub output_filename: String,
     /// Per-element styles for this output format. A format that has never been
     /// configured is seeded from the project's base styles, then diverges.
     #[serde(default)]
@@ -853,6 +857,7 @@ impl Default for ExportSettings {
             include_synopsis: false,
             include_notes: false,
             output_path: String::new(),
+            output_filename: String::new(),
             styles: ElementStyles::default(),
         }
     }

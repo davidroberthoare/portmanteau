@@ -282,7 +282,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             hairline(ui);
             ui.add_space(8.0);
 
-            element_styles_editor(ui, &mut app.settings.styles);
+            element_styles_editor(ui, &mut app.settings.styles, false, false);
             ui.add_space(2.0);
             custom_styles_editor(ui, &mut app.settings.styles);
         });

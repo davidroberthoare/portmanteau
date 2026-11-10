@@ -193,7 +193,16 @@ fn style_summary(label: &str, style: &ElementStyle) -> String {
 /// Paragraph dialog. Elements are grouped into three collapsible sections so
 /// the Compile screen and its Display tab stay compact. Each row edits an owned
 /// clone, applied after the draw pass.
-pub fn element_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) {
+///
+/// `grey_prose` / `grey_script` disable the group that cannot apply to the open
+/// project's medium (a novel has no script elements, a screenplay no prose
+/// elements). Settings passes both `false`: its defaults apply to everything.
+pub fn element_styles_editor(
+    ui: &mut egui::Ui,
+    styles: &mut ElementStyles,
+    grey_prose: bool,
+    grey_script: bool,
+) {
     let sections: [(&str, &str, &str, &[(&str, &str)]); 3] = [
         (
             "Title page",
@@ -206,6 +215,11 @@ pub fn element_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) {
     ];
 
     for (section, summary_label, summary_key, elements) in sections {
+        let greyed = match section {
+            "Prose" => grey_prose,
+            "Script" => grey_script,
+            _ => false,
+        };
         let summary = styles
             .element_mut(summary_key)
             .map(|style| style_summary(summary_label, style))
@@ -213,31 +227,33 @@ pub fn element_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) {
         egui::CollapsingHeader::new(
             RichText::new(format!("{section}    {summary}"))
                 .font(sans(10.5))
-                .color(TEXT),
+                .color(if greyed { FAINT } else { TEXT }),
         )
         .id_salt(("style_section", section))
         .default_open(section == "Prose")
         .show(ui, |ui| {
-            ui.add_space(4.0);
-            section_label(ui, "Type & paragraph");
-            ui.add_space(2.0);
-            let mut first = true;
-            for (label, key) in elements {
-                if !first {
-                    ui.add_space(3.0);
-                }
-                first = false;
-                let Some(mut draft) = styles.element_mut(key).cloned() else {
-                    continue;
-                };
-                if element_row(ui, key, label, &mut draft) {
-                    if let Some(target) = styles.element_mut(key) {
-                        *target = draft;
+            ui.add_enabled_ui(!greyed, |ui| {
+                ui.add_space(4.0);
+                section_label(ui, "Type & paragraph");
+                ui.add_space(2.0);
+                let mut first = true;
+                for (label, key) in elements {
+                    if !first {
+                        ui.add_space(3.0);
+                    }
+                    first = false;
+                    let Some(mut draft) = styles.element_mut(key).cloned() else {
+                        continue;
+                    };
+                    if element_row(ui, key, label, &mut draft) {
+                        if let Some(target) = styles.element_mut(key) {
+                            *target = draft;
+                        }
                     }
                 }
-            }
-            ui.add_space(2.0);
-            hairline(ui);
+                ui.add_space(2.0);
+                hairline(ui);
+            });
         });
         ui.add_space(2.0);
     }
@@ -323,61 +339,66 @@ fn element_row(
         .inner_margin(Margin::symmetric(10, 7))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.horizontal_wrapped(|ui| {
-                ui.allocate_ui_with_layout(
-                    Vec2::new(112.0, 20.0),
-                    Layout::left_to_right(Align::Center),
-                    |ui| {
-                        ui.label(RichText::new(label).font(sans(9.5)).color(TEXT));
-                    },
-                );
-                changed |= font_combo(ui, key, element);
-                ui.add_space(4.0);
-                ui.label(RichText::new("Size").font(sans(8.5)).color(FAINT));
-                changed |= ui
-                    .add(
-                        egui::DragValue::new(&mut element.size)
-                            .speed(0.1)
-                            .range(4.0..=72.0)
-                            .suffix(" pt"),
-                    )
-                    .changed();
-                ui.add_space(4.0);
-                ui.label(RichText::new("Leading").font(sans(8.5)).color(FAINT));
-                changed |= ui
-                    .add(
-                        egui::DragValue::new(&mut element.leading)
-                            .speed(0.02)
-                            .range(0.5..=3.0)
-                            .suffix("×"),
-                    )
-                    .changed();
-                ui.add_space(4.0);
-                changed |= align_combo(ui, key, element);
-            });
+            ui.label(RichText::new(label).font(sans(9.5)).color(TEXT));
             ui.add_space(4.0);
-            ui.horizontal_wrapped(|ui| {
-                for (name, value) in [
-                    ("Indent", &mut element.indent),
-                    ("First line", &mut element.first_line_indent),
-                    ("Right", &mut element.right_indent),
-                    ("Before", &mut element.before),
-                    ("After", &mut element.after),
-                ] {
-                    ui.label(RichText::new(name).font(sans(8.5)).color(FAINT));
-                    changed |= ui
-                        .add(
-                            egui::DragValue::new(value)
-                                .speed(0.5)
-                                .range(0.0..=800.0)
-                                .suffix(" pt"),
-                        )
-                        .changed();
-                    ui.add_space(3.0);
-                }
-            });
+            egui::Grid::new(("style_grid", key))
+                .num_columns(4)
+                .spacing([8.0, 5.0])
+                .show(ui, |ui| {
+                    grid_label(ui, "Font");
+                    changed |= font_combo(ui, key, element);
+                    grid_label(ui, "Size");
+                    changed |= grid_drag(ui, &mut element.size, 0.1, 4.0..=72.0, " pt");
+                    ui.end_row();
+
+                    grid_label(ui, "Leading");
+                    changed |= grid_drag(ui, &mut element.leading, 0.02, 0.5..=3.0, "×");
+                    grid_label(ui, "Align");
+                    changed |= align_combo(ui, key, element);
+                    ui.end_row();
+
+                    grid_label(ui, "Indent");
+                    changed |= grid_drag(ui, &mut element.indent, 0.5, 0.0..=800.0, " pt");
+                    grid_label(ui, "First line");
+                    changed |=
+                        grid_drag(ui, &mut element.first_line_indent, 0.5, 0.0..=800.0, " pt");
+                    ui.end_row();
+
+                    grid_label(ui, "Right");
+                    changed |=
+                        grid_drag(ui, &mut element.right_indent, 0.5, 0.0..=800.0, " pt");
+                    grid_label(ui, "Before");
+                    changed |= grid_drag(ui, &mut element.before, 0.5, 0.0..=800.0, " pt");
+                    ui.end_row();
+
+                    grid_label(ui, "After");
+                    changed |= grid_drag(ui, &mut element.after, 0.5, 0.0..=800.0, " pt");
+                    ui.label("");
+                    ui.label("");
+                    ui.end_row();
+                });
         });
     changed
+}
+
+fn grid_label(ui: &mut egui::Ui, text: &str) {
+    ui.label(RichText::new(text).font(sans(8.5)).color(FAINT));
+}
+
+fn grid_drag(
+    ui: &mut egui::Ui,
+    value: &mut f32,
+    speed: f64,
+    range: std::ops::RangeInclusive<f32>,
+    suffix: &str,
+) -> bool {
+    ui.add(
+        egui::DragValue::new(value)
+            .speed(speed)
+            .range(range)
+            .suffix(suffix),
+    )
+    .changed()
 }
 
 /// Sample copy used by the live style preview on the Display tab.

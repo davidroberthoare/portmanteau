@@ -8,10 +8,12 @@
 //! preview.
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Stroke, Vec2,
+    self, Align, Color32, CornerRadius, FontFamily, FontId, Frame, Layout, Margin, RichText,
+    ScrollArea, Stroke, Vec2,
 };
 use portmanteau_core::{
-    DocKind, Document, ElementKind, ElementStyle, ElementStyles, ExportSettings, Project,
+    Alignment, DocKind, Document, ElementKind, ElementStyle, ElementStyles, ExportSettings,
+    Project,
 };
 
 use crate::app::PortmanteauApp;
@@ -25,7 +27,18 @@ pub struct PageLine {
     pub lead: f32,
     pub gap_before: f32,
     pub mono: bool,
+    /// Font-family name from the element style; empty means inherit.
+    pub font: String,
+    /// Paragraph alignment. `center`/`right` are kept as overrides for the
+    /// title page and screenplay transitions.
+    pub align: Alignment,
     pub indent: f32,
+    /// Extra indent applied to the first wrapped line of a paragraph only.
+    pub first_line_indent: f32,
+    /// Width removed from the right edge of the text column.
+    pub right_indent: f32,
+    /// Space after this line when it ends a paragraph or script block.
+    pub after: f32,
     pub right: bool,
     /// Center the line horizontally (used by the title page).
     pub center: bool,
@@ -108,40 +121,38 @@ pub fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
     let heading = &settings.styles.chapter_heading;
     let body_size = body.size.max(6.0);
     let line_h = (body_size * body.leading.max(0.8)).max(8.0);
-    let chars_per_line = (content_w / (body_size * 0.5)).floor().max(10.0) as usize;
+    let body_indent = body.indent.max(0.0);
+    let body_right = body.right_indent.max(0.0);
+    let text_w = (content_w - body_indent - body_right).max(24.0);
+    let chars_per_line = (text_w / (body_size * 0.5)).floor().max(10.0) as usize;
 
     let mut pages: Vec<Vec<PageLine>> = vec![Vec::new()];
     let mut used = 0.0f32;
 
     // The chapter title sits at the top of the first page, set with the
-    // chapter-heading style.
+    // chapter-heading style: its font, alignment, indents and spacing.
     let title = doc.title.trim();
     if !title.is_empty() {
         let title_size = heading.size.max(body_size);
         let title_lead = (title_size * heading.leading.max(0.9)).max(10.0);
+        let title_before = heading.before.max(0.0);
+        let title_after = heading.after.max(0.0);
         pages[0].push(PageLine {
             text: title.to_string(),
             size: title_size,
             lead: title_lead,
-            gap_before: 0.0,
+            gap_before: title_before,
             mono: false,
-            indent: 0.0,
+            font: heading.font.clone(),
+            align: heading.align,
+            indent: heading.indent.max(0.0),
+            first_line_indent: heading.first_line_indent.max(0.0),
+            right_indent: heading.right_indent.max(0.0),
+            after: title_after,
             right: false,
             center: false,
         });
-        used += title_lead;
-        let gap = line_h * 0.9;
-        pages[0].push(PageLine {
-            text: " ".into(),
-            size: body_size,
-            lead: line_h,
-            gap_before: gap,
-            mono: false,
-            indent: 0.0,
-            right: false,
-            center: false,
-        });
-        used += gap + line_h;
+        used += title_before + title_lead + title_after;
     }
 
     for paragraph in doc.body_text().split("\n\n") {
@@ -149,12 +160,12 @@ pub fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
         if paragraph.is_empty() {
             continue;
         }
-        for (i, text) in wrap_words(paragraph, chars_per_line).into_iter().enumerate() {
-            let mut gap = if i == 0 && !pages.last().unwrap().is_empty() {
-                line_h * 0.45
-            } else {
-                0.0
-            };
+        let wrapped = wrap_words(paragraph, chars_per_line);
+        let count = wrapped.len();
+        for (i, text) in wrapped.into_iter().enumerate() {
+            let first = i == 0;
+            let last = i + 1 == count;
+            let mut gap = if first { body.before.max(0.0) } else { 0.0 };
             if used + gap + line_h > content_h && !pages.last().unwrap().is_empty() {
                 pages.push(Vec::new());
                 used = 0.0;
@@ -163,17 +174,27 @@ pub fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
             if pages.last().unwrap().is_empty() {
                 gap = 0.0;
             }
+            let after = if last { body.after.max(0.0) } else { 0.0 };
             pages.last_mut().unwrap().push(PageLine {
                 text,
                 size: body_size,
                 lead: line_h,
                 gap_before: gap,
                 mono: false,
-                indent: 0.0,
+                font: body.font.clone(),
+                align: body.align,
+                indent: body_indent,
+                first_line_indent: if first {
+                    body.first_line_indent.max(0.0)
+                } else {
+                    0.0
+                },
+                right_indent: body_right,
+                after,
                 right: false,
                 center: false,
             });
-            used += gap + line_h;
+            used += gap + line_h + after;
         }
     }
 
@@ -205,16 +226,27 @@ pub fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
         let size = style.size.max(6.0);
         let lead = (size * style.leading.max(0.85)).max(8.0);
         let indent = style.indent.max(0.0).min(content_w * 0.42);
-        let chars_per_line = ((content_w - indent) / (size * 0.6))
-            .floor()
-            .max(8.0) as usize;
+        let right_indent = style.right_indent.max(0.0);
+        let text_w = (content_w - indent - right_indent).max(12.0);
+        let chars_per_line = (text_w / (size * 0.6)).floor().max(8.0) as usize;
         let wrapped = wrap_words(&block.text, chars_per_line);
-        let block_lines = (wrapped.len() as f32 * lead / base_line).max(1.0);
-        let mut gap_lines = if index == 0 || block.kind.is_dialogue() {
+        let count = wrapped.len();
+        let block_lines = (count as f32 * lead / base_line).max(1.0);
+        let after = style.after.max(0.0);
+
+        // Blocks are separated by their style's before/after spacing, with the
+        // old one-fifth-line gap as the fallback when before is unset.
+        let mut gap_points = if index == 0 || block.kind.is_dialogue() {
             0.0
         } else {
-            0.4
+            0.4 * base_line
         };
+        if index > 0 && style.before > 0.0 {
+            gap_points = style.before;
+        }
+        let mut gap_lines = gap_points / base_line;
+        let after_lines = after / base_line;
+
         if used + gap_lines + block_lines > lines_per_page
             && !pages.last().unwrap().is_empty()
         {
@@ -226,18 +258,34 @@ pub fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
             gap_lines = 0.0;
         }
         for (i, text) in wrapped.into_iter().enumerate() {
+            let first = i == 0;
+            let last = i + 1 == count;
+            let transition = block.kind == ElementKind::Transition;
             pages.last_mut().unwrap().push(PageLine {
                 text,
                 size,
                 lead,
-                gap_before: if i == 0 { gap_lines * base_line } else { 0.0 },
+                gap_before: if first { gap_lines * base_line } else { 0.0 },
                 mono: true,
+                font: style.font.clone(),
+                align: if transition {
+                    Alignment::Right
+                } else {
+                    style.align
+                },
                 indent,
-                right: block.kind == ElementKind::Transition,
+                first_line_indent: if first {
+                    style.first_line_indent.max(0.0)
+                } else {
+                    0.0
+                },
+                right_indent,
+                after: if last { after } else { 0.0 },
+                right: transition,
                 center: false,
             });
         }
-        used += gap_lines + block_lines;
+        used += gap_lines + block_lines + after_lines;
     }
 
     PagePlan {
@@ -416,7 +464,12 @@ fn title_page_plan(project: &Project, settings: &ExportSettings) -> PagePlan {
                 lead: title_lead,
                 gap_before: if i == 0 { gap } else { 0.0 },
                 mono: false,
+                font: title_style.font.clone(),
+                align: title_style.align,
                 indent: 0.0,
+                first_line_indent: 0.0,
+                right_indent: 0.0,
+                after: 0.0,
                 right: false,
                 center: true,
             });
@@ -432,7 +485,12 @@ fn title_page_plan(project: &Project, settings: &ExportSettings) -> PagePlan {
                 lead: subtitle_lead,
                 gap_before: if i == 0 { gap } else { 0.0 },
                 mono: false,
+                font: subtitle_style.font.clone(),
+                align: subtitle_style.align,
                 indent: 0.0,
+                first_line_indent: 0.0,
+                right_indent: 0.0,
+                after: 0.0,
                 right: false,
                 center: true,
             });
@@ -447,7 +505,12 @@ fn title_page_plan(project: &Project, settings: &ExportSettings) -> PagePlan {
             lead: author_lead,
             gap_before: gap,
             mono: false,
+            font: author_style.font.clone(),
+            align: author_style.align,
             indent: 0.0,
+            first_line_indent: 0.0,
+            right_indent: 0.0,
+            after: 0.0,
             right: false,
             center: true,
         });
@@ -527,44 +590,56 @@ pub fn page_frame(ui: &mut egui::Ui, plan: &PagePlan, lines: &[PageLine], number
                         ui.add_space(line.gap_before);
                         used += line.gap_before;
                     }
+                    let family = if line.font.trim().is_empty() {
+                        if line.mono {
+                            FontFamily::Monospace
+                        } else {
+                            FontFamily::Name("portmanteau-serif".into())
+                        }
+                    } else {
+                        family_for_font(&line.font)
+                    };
                     let rich = RichText::new(if line.text.is_empty() {
                         " "
                     } else {
                         line.text.as_str()
                     })
-                    .font(if line.mono {
-                        mono(line.size)
-                    } else {
-                        serif(line.size)
-                    })
+                    .font(FontId::new(line.size, family))
                     .color(PAPER_TEXT);
-                    if line.center {
-                        ui.allocate_ui_with_layout(
-                            Vec2::new(ui.available_width(), line.lead.max(8.0)),
-                            Layout::top_down(Align::Center),
-                            |ui| {
-                                ui.label(rich);
-                            },
-                        );
+                    let left = (line.indent.max(0.0) + line.first_line_indent.max(0.0))
+                        .min((plan.content_w - 24.0).max(0.0));
+                    let right = line.right_indent.max(0.0);
+                    let text_w = (plan.content_w - left - right).max(24.0);
+                    let row_h = line.lead.max(8.0);
+                    let align = if line.center {
+                        Align::Center
                     } else if line.right {
-                        // Constrain the height: an unconstrained right-to-left
-                        // layout would swallow the rest of the page.
+                        Align::Max
+                    } else {
+                        match line.align {
+                            Alignment::Center => Align::Center,
+                            Alignment::Right => Align::Max,
+                            // Justify is approximated as left alignment.
+                            _ => Align::Min,
+                        }
+                    };
+                    ui.horizontal(|ui| {
+                        if left > 0.0 {
+                            ui.add_space(left);
+                        }
                         ui.allocate_ui_with_layout(
-                            Vec2::new(ui.available_width(), line.lead.max(8.0)),
-                            Layout::right_to_left(Align::Center),
+                            Vec2::new(text_w, row_h),
+                            Layout::top_down(align),
                             |ui| {
                                 ui.add(egui::Label::new(rich).wrap());
                             },
                         );
-                    } else if line.indent > 0.0 {
-                        ui.horizontal(|ui| {
-                            ui.add_space(line.indent);
-                            ui.add(egui::Label::new(rich).wrap());
-                        });
-                    } else {
-                        ui.add(egui::Label::new(rich).wrap());
-                    }
+                    });
                     used += line.lead;
+                    if line.after > 0.0 {
+                        ui.add_space(line.after);
+                        used += line.after;
+                    }
                 }
                 let remaining = (plan.content_h - used).max(6.0);
                 ui.add_space(remaining);

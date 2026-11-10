@@ -287,7 +287,7 @@ fn output_tab(
     action_panel(app, ui, settings, compile);
     ui.add_space(12.0);
 
-    style_panel(ui, &mut settings.styles);
+    style_panel(ui, &mut settings.styles, app.ws.project.kind);
     ui.add_space(12.0);
 
     type_panel(ui, kind, settings);
@@ -323,30 +323,33 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
             ui.set_width(ui.available_width());
             section_label(ui, "Where it goes");
             ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                Frame::new()
-                    .fill(BG)
-                    .stroke(Stroke::new(1.0, BORDER_SOFT))
-                    .corner_radius(CornerRadius::same(5))
-                    .inner_margin(Margin::symmetric(8, 3))
-                    .show(ui, |ui| {
-                        ui.add(
-                            TextEdit::singleline(&mut settings.output_path)
-                                .hint_text("Folder for the export (blank = exports/)")
-                                .font(mono(10.0))
-                                .frame(false)
-                                .desired_width((ui.available_width() - 170.0).max(160.0)),
-                        );
-                    });
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let name = portmanteau_export::default_filename(&app.ws.project, settings.kind);
-                    ui.label(
-                        RichText::new(format!("/ {name}"))
-                            .font(mono(9.0))
-                            .color(FAINT),
+            let default_name = portmanteau_export::default_filename(&app.ws.project, settings.kind);
+            egui::Grid::new("export_location")
+                .num_columns(2)
+                .spacing([8.0, 5.0])
+                .min_col_width(48.0)
+                .show(ui, |ui| {
+                    ui.label(RichText::new("Folder").font(sans(8.5)).color(FAINT));
+                    output_field(
+                        ui,
+                        &mut settings.output_path,
+                        "Folder for the export (blank = exports/)",
                     );
+                    ui.end_row();
+
+                    ui.label(RichText::new("Filename").font(sans(8.5)).color(FAINT));
+                    output_field(ui, &mut settings.output_filename, &default_name);
+                    ui.end_row();
                 });
-            });
+            ui.add_space(5.0);
+            ui.label(
+                RichText::new(format!(
+                    "Writes {}",
+                    export_target_label(settings, &default_name)
+                ))
+                .font(mono(9.0))
+                .color(FAINT),
+            );
             ui.add_space(4.0);
             ui.label(
                 RichText::new(
@@ -356,6 +359,51 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                 .color(FAINT),
             );
         });
+}
+
+/// One path field in the "Where it goes" panel, framed like a form input.
+fn output_field(ui: &mut egui::Ui, value: &mut String, hint: &str) {
+    Frame::new()
+        .fill(BG)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .corner_radius(CornerRadius::same(5))
+        .inner_margin(Margin::symmetric(8, 3))
+        .show(ui, |ui| {
+            ui.add(
+                TextEdit::singleline(value)
+                    .hint_text(hint)
+                    .font(mono(10.0))
+                    .frame(false)
+                    .desired_width((ui.available_width() - 4.0).max(120.0)),
+            );
+        });
+}
+
+/// The path handed to `export.run`: folder + filename when the writer names a
+/// file, otherwise the folder alone (the engine supplies its standard name).
+/// A blank folder means the usual `exports/` destination.
+fn export_target(settings: &ExportSettings) -> Option<String> {
+    let folder = settings.output_path.trim();
+    let filename = settings.output_filename.trim();
+    if filename.is_empty() {
+        if folder.is_empty() {
+            None
+        } else {
+            Some(folder.to_string())
+        }
+    } else if folder.is_empty() {
+        Some(format!("exports/{filename}"))
+    } else {
+        Some(format!(
+            "{}/{}",
+            folder.trim_end_matches(['/', '\\']),
+            filename
+        ))
+    }
+}
+
+fn export_target_label(settings: &ExportSettings, default_name: &str) -> String {
+    export_target(settings).unwrap_or_else(|| format!("exports/{default_name}"))
 }
 
 fn action_panel(
@@ -453,7 +501,13 @@ fn action_panel(
         });
 }
 
-fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles) {
+fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, project_kind: ProjectKind) {
+    // Grey out the element group that cannot apply to this project's medium.
+    let grey_prose = matches!(
+        project_kind,
+        ProjectKind::Film | ProjectKind::Television | ProjectKind::Theatre
+    );
+    let grey_script = project_kind == ProjectKind::Novel;
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -470,7 +524,7 @@ fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles) {
                 .color(FAINT),
             );
             ui.add_space(6.0);
-            element_styles_editor(ui, styles);
+            element_styles_editor(ui, styles, grey_prose, grey_script);
             ui.add_space(2.0);
             custom_styles_editor(ui, styles);
         });
@@ -750,9 +804,10 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui) {
 }
 
 fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
+    let target = export_target(settings);
     let payload = serde_json::json!({
         "format": settings.kind.label(),
-        "path": settings.output_path,
+        "path": target,
         "paper": settings.paper.label(),
         "font": settings.font,
         "font_size": settings.font_size,
@@ -768,6 +823,12 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
         "include_notes": settings.include_notes
     });
     let res = app.ws.execute("export.run", payload);
+    // `export.run` records the full file path in the format's output_path, even
+    // if the write later fails. Put the folder-only settings back so the Folder
+    // field keeps showing the folder and the next compile cannot join the
+    // filename twice.
+    app.ws.project.set_settings(settings.clone());
+    app.ws.project.export = settings.clone();
     if res.ok {
         let path = res
             .data
