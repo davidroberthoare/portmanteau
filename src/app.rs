@@ -199,6 +199,17 @@ pub struct PortmanteauApp {
     pub screenshot_requested: bool,
     pub screenshot_saved: bool,
     pub editor_font_size: f32,
+    /// Text zoom for the writing surface. Multiplies the prose type size and
+    /// the screenplay element sizes; `−` / `+` in the editor toolbar change it
+    /// within `0.7..=1.6`.
+    pub editor_zoom: f32,
+    /// Distraction-free writing: only the editor is drawn. F11 toggles it and
+    /// Escape leaves it; the rail, top bar, binder, inspector and status bar
+    /// are hidden, but all editing stays live.
+    pub distraction_free: bool,
+    /// Corkboard card scale. 1.0 is the default card width; the `−` / `+`
+    /// controls in the corkboard header change it within `0.6..=1.6`.
+    pub corkboard_zoom: f32,
     pub spell: portmanteau_core::spell::SpellChecker,
     pub show_spelling: bool,
 }
@@ -268,6 +279,9 @@ impl PortmanteauApp {
             screenshot_requested: false,
             screenshot_saved: false,
             editor_font_size: 17.0,
+            editor_zoom: 1.0,
+            distraction_free: false,
+            corkboard_zoom: 1.0,
             spell: crate::spellcheck::load(),
             show_spelling: false,
         };
@@ -360,6 +374,16 @@ impl PortmanteauApp {
 
     pub fn new_chapter_public(&mut self) {
         self.new_chapter();
+    }
+
+    /// Enter or leave distraction-free writing. Entering also turns on focus
+    /// mode so the editor uses its wider page and margins; leaving does not
+    /// turn focus mode off, so the two settings stay independent.
+    pub fn toggle_distraction_free(&mut self) {
+        self.distraction_free = !self.distraction_free;
+        if self.distraction_free {
+            self.focus_mode = true;
+        }
     }
 
     fn new_chapter(&mut self) {
@@ -503,7 +527,7 @@ impl PortmanteauApp {
                             sans(10.0),
                             if self.focus_mode { ACCENT } else { MUTED },
                         );
-                        if resp.on_hover_text("Hide the binder and inspector (F11)").clicked() {
+                        if resp.on_hover_text("Hide the binder and inspector").clicked() {
                             self.focus_mode = !self.focus_mode;
                         }
                     });
@@ -1321,13 +1345,14 @@ impl PortmanteauApp {
     }
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
-        let (save, save_as, open, compile, focus) = ctx.input(|i| {
+        let (save, save_as, open, compile, distraction, escape) = ctx.input(|i| {
             (
                 i.modifiers.command && i.key_pressed(Key::S),
                 i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::S),
                 i.modifiers.command && i.key_pressed(Key::O),
                 i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::E),
                 i.key_pressed(Key::F11),
+                i.key_pressed(Key::Escape),
             )
         });
         if save && !save_as {
@@ -1357,8 +1382,13 @@ impl PortmanteauApp {
         if compile {
             self.view = View::Compile;
         }
-        if focus {
-            self.focus_mode = !self.focus_mode;
+        // F11 is the distraction-free writer now; the toolbar's Focus button
+        // and the View menu still toggle focus mode on its own.
+        if distraction {
+            self.toggle_distraction_free();
+        }
+        if escape && self.distraction_free {
+            self.distraction_free = false;
         }
     }
 
@@ -1417,6 +1447,20 @@ fn slug(title: &str) -> String {
 impl eframe::App for PortmanteauApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_shortcuts(ctx);
+
+        // Distraction-free draws the editor and nothing else. Escape leaves the
+        // mode (see `handle_shortcuts`); the editor toolbar keeps a toggle so
+        // the writer never needs the keyboard.
+        if self.distraction_free {
+            egui::CentralPanel::default()
+                .frame(Frame::new().fill(BG))
+                .show(ctx, |ui| {
+                    ui::editor::show(self, ui);
+                });
+            self.screenshot_tick(ctx);
+            return;
+        }
+
         self.top_bar(ctx);
         self.status_bar(ctx);
         self.rail(ctx);

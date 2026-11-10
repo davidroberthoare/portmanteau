@@ -469,7 +469,92 @@ fn toolbar(
                     app.write_mode = new_mode;
                 }
             });
+
+            // Second toolbar row: writing-surface controls that do not belong
+            // in the breadcrumb row. The row keeps the existing compact button
+            // style and stays out of the way at the default window size.
+            ui.add_space(5.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let df_label = if app.distraction_free {
+                        "Exit distraction-free"
+                    } else {
+                        "Distraction-free"
+                    };
+                    let df = egui::Button::new(
+                        RichText::new(df_label)
+                            .font(sans(10.5))
+                            .color(if app.distraction_free { ACCENT } else { MUTED }),
+                    )
+                    .fill(PANEL_2)
+                    .corner_radius(CornerRadius::same(5));
+                    if ui
+                        .add(df)
+                        .on_hover_text("Hide every panel and write (F11 · Esc to leave)")
+                        .clicked()
+                    {
+                        app.toggle_distraction_free();
+                    }
+
+                    editor_zoom_control(app, ui);
+                });
+            });
         });
+}
+
+/// Compact `−` / percentage / `+` control for the writing surface. It changes
+/// only view state; the project is untouched and nothing is saved.
+fn editor_zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
+    let zoom = app.editor_zoom.clamp(0.7, 1.6);
+    let mut next = zoom;
+    // A fixed-width allocation keeps the group compact inside the
+    // right-aligned toolbar row instead of stretching across it.
+    ui.allocate_ui_with_layout(
+        Vec2::new(88.0, 21.0),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            Frame::new()
+                .fill(PANEL_2)
+                .corner_radius(CornerRadius::same(5))
+                .inner_margin(Margin::symmetric(2, 1))
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = 1.0;
+                    ui.spacing_mut().button_padding = Vec2::new(4.0, 2.0);
+                    if zoom_button(ui, "−").on_hover_text("Zoom out").clicked() {
+                        next = step_zoom(zoom, -1);
+                    }
+                    ui.add_sized(
+                        Vec2::new(42.0, 19.0),
+                        egui::Label::new(
+                            RichText::new(format!("{}%", (zoom * 100.0).round() as i32))
+                                .font(sans(9.5))
+                                .color(MUTED),
+                        )
+                        .selectable(false),
+                    )
+                    .on_hover_text("Editor zoom");
+                    if zoom_button(ui, "+").on_hover_text("Zoom in").clicked() {
+                        next = step_zoom(zoom, 1);
+                    }
+                });
+        },
+    );
+    app.editor_zoom = next;
+}
+
+fn zoom_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new(RichText::new(glyph).font(sans(10.5)).color(MUTED))
+            .fill(PANEL_2)
+            .stroke(Stroke::new(1.0, BORDER_SOFT))
+            .corner_radius(CornerRadius::same(4))
+            .min_size(Vec2::new(20.0, 19.0)),
+    )
+}
+
+fn step_zoom(zoom: f32, direction: i32) -> f32 {
+    let stepped = ((zoom * 10.0).round() + direction as f32) / 10.0;
+    stepped.clamp(0.7, 1.6)
 }
 
 /// The spelling review strip under the toolbar. Suggestions are collected
@@ -634,6 +719,7 @@ fn match_initial_case(original: &str, replacement: &str) -> String {
 
 fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_snapshot: &mut bool) {
     let mut dirty = false;
+    let zoom = app.editor_zoom.clamp(0.7, 1.6);
     let project_title = app.ws.project.title.clone();
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
@@ -659,7 +745,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
 
         let rows = ((doc.text.chars().count() as f32) / 72.0).ceil().max(18.0) as usize;
         let edit = TextEdit::multiline(&mut doc.text)
-            .font(serif(app.editor_font_size))
+            .font(serif(app.editor_font_size * zoom))
             .text_color(PAPER_TEXT)
             .frame(false)
             .desired_width(f32::INFINITY)
@@ -667,7 +753,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             .margin(Margin::same(0))
             .hint_text(
                 RichText::new("Begin at the beginning…")
-                    .font(serif(17.0))
+                    .font(serif(17.0 * zoom))
                     .color(PAPER_MUTED),
             );
         let response = ui.add(edit);
@@ -697,6 +783,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
 
 fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut dirty = false;
+    let zoom = app.editor_zoom.clamp(0.7, 1.6);
     let mut add_at: Option<usize> = None;
     let mut remove_at: Option<usize> = None;
     let mut cycle_at: Option<usize> = None;
@@ -860,7 +947,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                         grect.right_center() - Vec2::new(1.0, 8.0),
                         egui::Align2::RIGHT_BOTTOM,
                         scene_label,
-                        mono(7.5),
+                        mono(7.5 * zoom),
                         PAPER_MUTED,
                     );
                 }
@@ -889,7 +976,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     ElementKind::Dialogue => 10.5,
                     ElementKind::Transition => 10.0,
                     _ => 10.5,
-                };
+                } * zoom;
                 let rows = ((doc.blocks[i].text.chars().count() as f32 * font_size * 0.62)
                     / width.max(80.0))
                 .ceil()

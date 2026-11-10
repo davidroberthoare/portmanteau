@@ -42,11 +42,14 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             if primary_button(ui, "+ New card").clicked() {
                 new_card = true;
             }
-            ui.add_space(6.0);
+            ui.add_space(10.0);
+            zoom_control(app, ui);
+            ui.add_space(8.0);
             meta_line(ui, &[&format!("{} cards", card_count(app))]);
         },
     );
 
+    let zoom = app.corkboard_zoom.clamp(0.6, 1.6);
     let mut cards = collect(app);
     let groups = group_ranges(&cards);
     let selected = app.selected.clone();
@@ -80,7 +83,11 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
                 let avail = ui.available_width();
                 let gap = 14.0;
-                let cols = ((avail / 285.0).floor() as usize).clamp(1, 4);
+                // Zoom scales the target card width, which in turn decides how
+                // many columns fit. 230pt at 1.0 keeps cards compact: they only
+                // carry a title, a short synopsis and a footer.
+                let target_w = (230.0 * zoom).max(120.0);
+                let cols = (((avail + gap) / (target_w + gap)).floor() as usize).clamp(1, 8);
                 let card_w = (avail - gap * (cols.saturating_sub(1)) as f32) / cols as f32;
 
                 for (index, (group, start, end)) in groups.iter().enumerate() {
@@ -111,6 +118,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                     ui,
                                     &mut cards[i],
                                     card_w,
+                                    zoom,
                                     selected.as_deref(),
                                     &mut edits,
                                     &mut select,
@@ -176,6 +184,40 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.ctx().data_mut(|d| d.insert_temp(pending_focus_id(), id));
         }
     }
+}
+
+fn zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
+    let zoom = app.corkboard_zoom.clamp(0.6, 1.6);
+    let mut next = zoom;
+    ui.horizontal(|ui| {
+        if zoom_button(ui, "+").on_hover_text("Zoom in").clicked() {
+            next = (zoom + 0.1).min(1.6);
+        }
+        ui.add_sized(
+            Vec2::new(40.0, 26.0),
+            egui::Label::new(
+                RichText::new(format!("{}%", (zoom * 100.0).round() as i32))
+                    .font(sans(10.5))
+                    .color(MUTED),
+            )
+            .selectable(false),
+        )
+        .on_hover_text("Card size");
+        if zoom_button(ui, "-").on_hover_text("Zoom out").clicked() {
+            next = (zoom - 0.1).max(0.6);
+        }
+    });
+    app.corkboard_zoom = next;
+}
+
+fn zoom_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new(RichText::new(glyph).font(sans(13.0)).color(MUTED))
+            .fill(PANEL_2)
+            .stroke(Stroke::new(1.0, BORDER_SOFT))
+            .corner_radius(CornerRadius::same(5))
+            .min_size(Vec2::new(24.0, 26.0)),
+    )
 }
 
 fn card_count(app: &PortmanteauApp) -> usize {
@@ -290,13 +332,14 @@ fn card_ui(
     ui: &mut egui::Ui,
     card: &mut Card,
     width: f32,
+    zoom: f32,
     selected: Option<&str>,
     edits: &mut Vec<CardEdit>,
     select: &mut Option<String>,
     open: &mut Option<String>,
     drop_after: &mut Option<(String, String)>,
 ) {
-    let height = 200.0;
+    let height = (200.0 * zoom).clamp(180.0, 250.0);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
     let resp = ui.interact(
         rect,
@@ -309,6 +352,13 @@ fn card_ui(
     let is_drop_target = resp
         .dnd_hover_payload::<String>()
         .is_some_and(|payload| payload.as_str() != card.id.as_str());
+    // The payload survives the whole drag gesture, so the card that started
+    // the drag can be dimmed even while the pointer is over another card.
+    let dragged_id = egui::DragAndDrop::payload::<String>(&ui.ctx());
+    let is_drag_source = resp.dragged()
+        || dragged_id
+            .as_ref()
+            .is_some_and(|payload| payload.as_str() == card.id.as_str());
 
     let fill = if is_selected || pointer_over || is_drop_target {
         PANEL_3
@@ -316,7 +366,7 @@ fn card_ui(
         PANEL_2
     };
     let (stroke_width, stroke_color) = if is_drop_target {
-        (2.0, ACCENT)
+        (3.0, ACCENT)
     } else if is_selected {
         (1.4, ACCENT)
     } else if pointer_over {
@@ -332,6 +382,9 @@ fn card_ui(
             .max_rect(rect)
             .layout(Layout::top_down(Align::Min)),
     );
+    if is_drag_source {
+        card_ui.multiply_opacity(0.4);
+    }
     Frame::new()
         .fill(fill)
         .stroke(Stroke::new(stroke_width, stroke_color))
@@ -342,6 +395,23 @@ fn card_ui(
             ui.set_min_height((rect.height() - 26.0).max(0.0));
 
             ui.horizontal(|ui| {
+                // Painted grab handle: three short lines, not a font glyph, so
+                // it never depends on a symbol being present in the bundle.
+                let (handle_rect, handle_resp) =
+                    ui.allocate_exact_size(Vec2::new(14.0, 12.0), Sense::hover());
+                let handle_color = if is_selected { accent } else { FAINT };
+                for i in 0..3 {
+                    let y = handle_rect.top() + 2.0 + i as f32 * 3.5;
+                    ui.painter().line_segment(
+                        [
+                            egui::pos2(handle_rect.left(), y),
+                            egui::pos2(handle_rect.right(), y),
+                        ],
+                        Stroke::new(1.4, handle_color),
+                    );
+                }
+                handle_resp.on_hover_text("Drag to reorder");
+                ui.add_space(3.0);
                 ui.label(
                     RichText::new(card.kind.to_uppercase())
                         .font(sans(8.0))
@@ -411,7 +481,12 @@ fn card_ui(
         });
 
     // Accent strip and footer sit on top of the frame, matching the old cards.
-    ui.painter().rect_filled(
+    // A source card being dragged fades with its inner content.
+    let mut overlay = ui.painter().clone();
+    if is_drag_source {
+        overlay.set_opacity(0.35);
+    }
+    overlay.rect_filled(
         egui::Rect::from_min_size(rect.min + Vec2::new(1.0, 1.0), Vec2::new(width - 2.0, 4.0)),
         CornerRadius {
             nw: 7,
@@ -421,32 +496,43 @@ fn card_ui(
         },
         accent,
     );
-    ui.painter().line_segment(
+    overlay.line_segment(
         [
             egui::pos2(rect.left() + 13.0, rect.bottom() - 34.0),
             egui::pos2(rect.right() - 13.0, rect.bottom() - 34.0),
         ],
         Stroke::new(1.0, BORDER_SOFT),
     );
-    ui.painter().text(
+    overlay.text(
         rect.left_bottom() + Vec2::new(13.0, -19.0),
         egui::Align2::LEFT_CENTER,
         format!("{} words", card.words),
         sans(9.0),
         FAINT,
     );
-    ui.painter().circle_filled(
+    overlay.circle_filled(
         egui::pos2(rect.right() - 62.0, rect.bottom() - 19.0),
         2.6,
         status_color(&card.status),
     );
-    ui.painter().text(
+    overlay.text(
         rect.right_bottom() + Vec2::new(-13.0, -19.0),
         egui::Align2::RIGHT_CENTER,
         &card.status,
         sans(9.0),
         status_color(&card.status),
     );
+
+    // Drop cue: the target keeps a thick accent outline and gains a vertical
+    // insertion bar at the edge it will land on. `move_after` always inserts
+    // after the target, so the bar is always the right edge.
+    if is_drop_target {
+        let bar = egui::Rect::from_min_size(
+            egui::pos2(rect.right() - 3.5, rect.top() + 14.0),
+            Vec2::new(3.5, (rect.height() - 28.0).max(20.0)),
+        );
+        overlay.rect_filled(bar, CornerRadius::same(2), ACCENT);
+    }
 
     // Drag-and-drop: this card is both a source and a drop target.
     resp.dnd_set_drag_payload(card.id.clone());

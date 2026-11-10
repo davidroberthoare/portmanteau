@@ -649,3 +649,50 @@ Tab/Shift-Tab cycling, Enter for the next element, Backspace on an empty
 element and normal arrow-key caret movement are unchanged. All project
 mutations are collected as actions and applied after the `&mut doc` scope, the
 same pattern the palette, Enter and Backspace already use.
+
+### Round 21 — Corkboard zoom, grab handle and clearer drops
+
+The corkboard header now has a small zoom control between the card count and
+"+ New card": `-`, a percentage readout and `+`. The value lives on
+`PortmanteauApp` as `corkboard_zoom` (default 1.0, clamped to 0.6–1.6) and
+scales the target card width from a 230pt base. Column count is derived from
+that width, so zooming out fits more cards per row and zooming in fits fewer;
+the card height scales mildly with the same value (clamped 180–250pt) so the
+title, synopsis and footer stay visible at both ends. The control only changes
+view state, not the project, so it is not saved.
+
+Every card now paints a small three-line grab handle at its top-left, before
+the kind label. It is painted rather than drawn as a `≡` character so the
+bundle's fonts cannot turn it into a box, and its hover hint is "Drag to
+reorder". The whole card remains the drag source; the handle is purely an
+affordance.
+
+Drag feedback is stronger and easier to read. A target card keeps a thicker
+3pt accent outline and gains a vertical accent insertion bar inside its right
+edge — `move_after` always inserts after the target, so the right edge is the
+only possible landing side. The card that started the drag fades to 40% while
+the payload is live, using `egui::DragAndDrop::payload` so the source stays
+dimmed even when the pointer is over a different card. Inline title/synopsis
+editing, double-click and the "Write" button are unchanged.
+
+### Round 22 — Editor zoom and distraction-free writing
+
+The writing surface has its own zoom, separate from the corkboard's card zoom.
+`PortmanteauApp::editor_zoom` defaults to 1.0 and is clamped to 0.7–1.6; the
+second row of the editor toolbar holds a compact `−` / percentage / `+` group
+with "Zoom out" and "Zoom in" hints. Prose multiplies `editor_font_size` by the
+zoom (and the empty-page hint follows it); screenplay elements multiply their
+per-element type size by the same value, and the scene-number gutter text
+scales mildly. Column widths and indents are fractions of the content width
+already, so they stay proportional — at 160% the text wraps more but the page
+frame does not move. Zoom changes view state only and is not saved.
+
+Distraction-free writing is a second, independent switch:
+`PortmanteauApp::distraction_free` (default false). While it is on, `update`
+draws only the editor's `CentralPanel` — no top bar, rail, binder, inspector,
+status bar or toasts. The editor toolbar stays, so the writer can leave without
+the keyboard; **F11** toggles the mode (it used to toggle focus mode) and
+**Escape** leaves it. Entering also turns on `focus_mode`, which gives the
+editor its wider 860pt page and 64pt side margins; leaving does not turn focus
+mode off, so the two settings stay independent. The existing "Focus" toolbar
+button and the View menu still toggle focus mode on their own.
