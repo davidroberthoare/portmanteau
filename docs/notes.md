@@ -823,3 +823,52 @@ margins updates it immediately. The caption is deliberate: this is an
 approximation driven by the real compile settings, not the export engine's
 output (wrapping uses a character-width estimate and the screen scale is about
 1 mm → 3 points). The Display tab does not show it.
+
+### Round 27a — Compile three-column layout and page navigation
+
+The Compile screen's output tabs now use three columns inside the content frame.
+The far-left rail keeps the output-format buttons (and Display). The middle
+column (~400 pt wide, scrolling) holds the layout parameters: output path and
+action, per-format element styles, page and type settings, the reset-to-base
+row, the front/back matter lists and the "What will be compiled" order. The
+right column (remaining width, scrolling) is the live preview. The Display tab
+keeps its old single-column layout for now.
+
+The preview is now a **single page**, not a sideways filmstrip. It has `‹ Prev`
+/ `Page N of M` / `Next ›` controls, disabled at the ends, and a **Section**
+picker that lists the title page, front matter, draft sections and back matter,
+and jumps to the first page of the chosen section. `PortmanteauApp::preview_page`
+is view state (0-based, default 0): it resets to the first page when an output
+tab button is clicked and is clamped to the page count each frame, so narrowing
+the paper or toggling the title page cannot leave it out of range.
+
+`page.rs` gained `PreviewSection { label, page_count }` and
+`ManuscriptPreview { plans, sections }`, produced by
+`manuscript_preview(project, settings)`. The section labels are the document
+titles, with "Title page" for the generated page and "Manuscript" for the
+empty-project placeholder. `ManuscriptPreview::section_start` /
+`section_starts` give cumulative page offsets. `manuscript_page_plan` was
+folded into `manuscript_preview`; its one caller in `compile.rs` was updated.
+
+### Round 27b — Settings returns; Compile loses the Display tab
+
+Display settings moved back out of Compile into a dedicated **Settings**
+workspace, pinned to the foot of the rail just above the avatar (a gear icon).
+Settings is a tabbed screen: **Preferences** (spell-checking, with a muted
+"more coming soon" note for future options) and **Display** (the old Compile
+Display tab: live element proof, editor type sizes, default element styles and
+custom styles, Save/Apply/Reset actions). The default tab is Preferences.
+
+The Display tab also gained the manuscript preview near its top. The
+single-page preview panel — `‹ Prev` / `Page N of M` / `Next ›`, section
+picker, paper frame — is now a shared helper
+`ui::views::manuscript_preview_navigator(project, settings, page, ui)` with
+`section_for_page` alongside it. Compile's right column and Settings → Display
+both call it; they keep independent page cursors (`app.preview_page` and
+`app.settings_preview_page`), so turning pages in one does not move the other.
+Settings feeds it `project.settings_for(ExportKind::Pdf)` as the representative
+page.
+
+Compile now has only the output-format tabs; `CompileTab::Display` was removed
+and the screen is a straight three-column format view. The mobile/memory cost is
+nil: the paging estimate is recomputed per frame exactly as before.

@@ -40,6 +40,46 @@ pub struct PagePlan {
     pub pages: Vec<Vec<PageLine>>,
 }
 
+/// One entry in the compiled manuscript's running order: the generated title
+/// page, a front-matter document, a draft section or a back-matter document.
+/// `page_count` is how many pages that section contributed, so the section
+/// start pages are the cumulative counts.
+pub struct PreviewSection {
+    pub label: String,
+    pub page_count: usize,
+}
+
+/// The whole compiled manuscript, paged, plus the section boundaries the
+/// Compile screen uses for its section picker.
+pub struct ManuscriptPreview {
+    pub plans: Vec<PagePlan>,
+    pub sections: Vec<PreviewSection>,
+}
+
+impl ManuscriptPreview {
+    /// Total pages across every section.
+    pub fn page_count(&self) -> usize {
+        self.plans.iter().map(|plan| plan.pages.len()).sum()
+    }
+
+    /// The 0-based page index where `section` starts, from the cumulative page
+    /// counts of the sections before it.
+    pub fn section_start(&self, section: usize) -> usize {
+        self.sections
+            .iter()
+            .take(section)
+            .map(|section| section.page_count)
+            .sum()
+    }
+
+    /// Every section's start page in order, parallel to `sections`.
+    pub fn section_starts(&self) -> Vec<usize> {
+        (0..self.sections.len())
+            .map(|section| self.section_start(section))
+            .collect()
+    }
+}
+
 pub fn empty_page_plan() -> PagePlan {
     PagePlan {
         page_w: 444.0,
@@ -258,12 +298,19 @@ pub fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
 }
 
 /// Page the whole compiled manuscript: optional title page, front matter,
-/// body sections (prose + script), back matter.
-pub fn manuscript_page_plan(project: &Project, settings: &ExportSettings) -> Vec<PagePlan> {
+/// body sections (prose + script), back matter — with section boundaries for
+/// the Compile preview's page and section navigation.
+pub fn manuscript_preview(project: &Project, settings: &ExportSettings) -> ManuscriptPreview {
     let mut plans: Vec<PagePlan> = Vec::new();
+    let mut sections: Vec<PreviewSection> = Vec::new();
 
     if settings.include_title_page {
-        plans.push(title_page_plan(project, settings));
+        let plan = title_page_plan(project, settings);
+        sections.push(PreviewSection {
+            label: "Title page".to_string(),
+            page_count: plan.pages.len(),
+        });
+        plans.push(plan);
     }
 
     // Front matter first, in binder order, matching the export assembly.
@@ -272,7 +319,9 @@ pub fn manuscript_page_plan(project: &Project, settings: &ExportSettings) -> Vec
         .into_iter()
         .filter(|d| d.kind == DocKind::FrontMatter && d.include_in_export)
     {
-        plans.push(prose_plan(doc, settings));
+        let plan = prose_plan(doc, settings);
+        sections.push(section_for(doc, &plan));
+        plans.push(plan);
     }
 
     // The draft: prose and script sections share the binder order.
@@ -280,11 +329,13 @@ pub fn manuscript_page_plan(project: &Project, settings: &ExportSettings) -> Vec
         if matches!(doc.kind, DocKind::FrontMatter | DocKind::BackMatter) {
             continue;
         }
-        plans.push(if doc.medium.is_script() {
+        let plan = if doc.medium.is_script() {
             script_plan(doc, settings)
         } else {
             prose_plan(doc, settings)
-        });
+        };
+        sections.push(section_for(doc, &plan));
+        plans.push(plan);
     }
 
     // Back matter last.
@@ -293,7 +344,9 @@ pub fn manuscript_page_plan(project: &Project, settings: &ExportSettings) -> Vec
         .into_iter()
         .filter(|d| d.kind == DocKind::BackMatter && d.include_in_export)
     {
-        plans.push(prose_plan(doc, settings));
+        let plan = prose_plan(doc, settings);
+        sections.push(section_for(doc, &plan));
+        plans.push(plan);
     }
 
     // Always show at least one page so an empty manuscript still reads as a
@@ -306,9 +359,27 @@ pub fn manuscript_page_plan(project: &Project, settings: &ExportSettings) -> Vec
             content_h: page_h - 78.0,
             pages: vec![Vec::new()],
         });
+        sections.push(PreviewSection {
+            label: "Manuscript".to_string(),
+            page_count: 1,
+        });
     }
 
-    plans
+    ManuscriptPreview { plans, sections }
+}
+
+/// Section label and page count for one paged document. The label is the
+/// document title, matching the binder.
+fn section_for(doc: &Document, plan: &PagePlan) -> PreviewSection {
+    let title = doc.title.trim();
+    PreviewSection {
+        label: if title.is_empty() {
+            "Untitled".to_string()
+        } else {
+            title.to_string()
+        },
+        page_count: plan.pages.len(),
+    }
 }
 
 /// A single centered title page: title, subtitle and byline, set with the

@@ -28,6 +28,7 @@ pub enum View {
     History,
     Compile,
     Agent,
+    Settings,
 }
 
 impl View {
@@ -41,6 +42,7 @@ impl View {
             View::History => "Versions",
             View::Compile => "Compile",
             View::Agent => "Command desk",
+            View::Settings => "Settings",
         }
     }
     pub fn icon(self) -> Icon {
@@ -53,9 +55,10 @@ impl View {
             View::History => Icon::History,
             View::Compile => Icon::Compile,
             View::Agent => Icon::Agent,
+            View::Settings => Icon::Settings,
         }
     }
-    pub fn all() -> [View; 7] {
+    pub fn all() -> [View; 8] {
         [
             View::Write,
             View::Corkboard,
@@ -64,6 +67,7 @@ impl View {
             View::Database,
             View::History,
             View::Compile,
+            View::Settings,
         ]
     }
     /// Development aid: `PORTMANTEAU_VIEW=corkboard` opens a workspace
@@ -80,6 +84,28 @@ impl View {
     }
 }
 
+fn rail_view_button(ui: &mut egui::Ui, view: View, active: bool) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(46.0, 44.0), egui::Sense::click());
+    let painter = ui.painter();
+    if active {
+        painter.rect_filled(rect, CornerRadius::same(8), ACCENT_SOFT);
+        let bar = egui::Rect::from_min_size(
+            egui::pos2(rect.left() - 8.0, rect.top() + 11.0),
+            Vec2::new(2.5, 22.0),
+        );
+        painter.rect_filled(bar, CornerRadius::same(2), ACCENT);
+    } else if resp.hovered() {
+        painter.rect_filled(rect, CornerRadius::same(8), PANEL_2);
+    }
+    icons::draw(
+        painter,
+        rect.shrink(12.0),
+        view.icon(),
+        if active { ACCENT } else { MUTED },
+    );
+    resp.on_hover_text(view.label()).clicked()
+}
+
 fn initial_view() -> View {
     std::env::var("PORTMANTEAU_VIEW")
         .ok()
@@ -87,11 +113,10 @@ fn initial_view() -> View {
         .unwrap_or(View::Write)
 }
 
-/// Which tab the merged Compile screen is showing: one of the output formats,
-/// or the Display tab (editor display and global default styles).
+/// Which output format the Compile screen is showing. The Display/editor
+/// settings now live in the Settings workspace.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CompileTab {
-    Display,
     Format(ExportKind),
 }
 
@@ -176,12 +201,19 @@ pub struct PortmanteauApp {
     pub ws: Workspace,
     pub settings: AppSettings,
     pub view: View,
-    /// Selected tab on the merged Compile screen.
+    /// Selected tab on the Compile screen.
     pub compile_tab: CompileTab,
+    /// Selected tab on the Settings screen: 0 = Preferences, 1 = Display.
+    pub settings_tab: usize,
     pub write_mode: WriteMode,
     /// The page currently at the top of the Paged preview, for the toolbar
     /// readout. Updated after the pages are drawn.
     pub paged_page: usize,
+    /// Current page of the Compile screen's single-page preview. Reset when the
+    /// selected output tab changes; clamped to the preview's page count.
+    pub preview_page: usize,
+    /// Current page of the Settings → Display manuscript preview.
+    pub settings_preview_page: usize,
     pub selected: Option<String>,
     pub selected_block: usize,
     pub block_focus: Option<usize>,
@@ -261,8 +293,11 @@ impl PortmanteauApp {
             settings,
             view: initial_view(),
             compile_tab: CompileTab::default(),
+            settings_tab: 0,
             write_mode: WriteMode::Continuous,
             paged_page: 1,
+            preview_page: 0,
+            settings_preview_page: 0,
             selected,
             selected_block: 0,
             block_focus: None,
@@ -713,27 +748,11 @@ impl PortmanteauApp {
                     );
                     ui.add_space(18.0);
                     for view in View::all() {
-                        let active = self.view == view;
-                        let (rect, resp) =
-                            ui.allocate_exact_size(Vec2::new(46.0, 44.0), egui::Sense::click());
-                        let painter = ui.painter();
-                        if active {
-                            painter.rect_filled(rect, CornerRadius::same(8), ACCENT_SOFT);
-                            let bar = egui::Rect::from_min_size(
-                                egui::pos2(rect.left() - 8.0, rect.top() + 11.0),
-                                Vec2::new(2.5, 22.0),
-                            );
-                            painter.rect_filled(bar, CornerRadius::same(2), ACCENT);
-                        } else if resp.hovered() {
-                            painter.rect_filled(rect, CornerRadius::same(8), PANEL_2);
+                        if view == View::Settings {
+                            continue;
                         }
-                        icons::draw(
-                            painter,
-                            rect.shrink(12.0),
-                            view.icon(),
-                            if active { ACCENT } else { MUTED },
-                        );
-                        if resp.on_hover_text(view.label()).clicked() {
+                        let active = self.view == view;
+                        if rail_view_button(ui, view, active) {
                             self.view = view;
                         }
                         ui.add_space(2.0);
@@ -744,6 +763,13 @@ impl PortmanteauApp {
                     let (av, _) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), egui::Sense::click());
                     ui.painter().circle_filled(av.center(), 14.0, SAGE_SOFT);
                     ui.painter().text(av.center(), egui::Align2::CENTER_CENTER, "AM", sans(9.5), SAGE);
+                    ui.add_space(6.0);
+                    // Settings sits just above the avatar, pinned to the foot
+                    // of the rail rather than in the workspace list.
+                    let active = self.view == View::Settings;
+                    if rail_view_button(ui, View::Settings, active) {
+                        self.view = View::Settings;
+                    }
                     ui.add_space(6.0);
                     let (help, hr) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), egui::Sense::click());
                     ui.painter().text(

@@ -14,6 +14,7 @@ pub enum Icon {
     History,
     Compile,
     Agent,
+    Settings,
 }
 
 pub fn draw(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
@@ -97,6 +98,14 @@ pub fn draw(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(p(-0.55, -0.3), p(-0.15, 0.0));
             line(p(-0.55, 0.3), p(-0.15, 0.0));
             line(p(0.05, 0.35), p(0.6, 0.35));
+        }
+        Icon::Settings => {
+            painter.circle_stroke(c, r * 0.55, s);
+            for tick in 0..6 {
+                let angle = std::f32::consts::TAU * tick as f32 / 6.0;
+                let dir = Vec2::new(angle.cos(), angle.sin());
+                line(c + dir * (r * 0.78), c + dir * (r * 1.12));
+            }
         }
     }
 }

@@ -8,15 +8,19 @@ pub mod corkboard;
 pub mod history;
 pub mod outline;
 pub mod research;
+pub mod settings;
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, FontId, Frame, Layout, Margin, RichText, Stroke, TextEdit,
-    Vec2,
+    self, Align, Color32, CornerRadius, FontId, Frame, Layout, Margin, RichText, ScrollArea,
+    Stroke, TextEdit, Vec2,
 };
-use portmanteau_core::{Alignment, CustomStyle, ElementStyle, ElementStyles};
+use portmanteau_core::{
+    Alignment, CustomStyle, ElementStyle, ElementStyles, ExportSettings, Project,
+};
 
 use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
+use crate::ui::page::{manuscript_preview, page_frame, PageLine, PagePlan};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     match app.view {
@@ -27,6 +31,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         View::History => history::show(app, ui),
         View::Compile => compile::show(app, ui),
         View::Agent => agent::show(app, ui),
+        View::Settings => settings::show(app, ui),
         View::Write => {}
     }
 }
@@ -551,6 +556,149 @@ pub fn custom_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) -> bo
         hairline(ui);
     });
     changed
+}
+
+/// A live single-page "print preview" of the compiled manuscript, with
+/// `‹ Prev` / page count / `Next ›` and a section picker. Shared by the Compile
+/// screen and Settings → Display so both read the same paging estimate.
+///
+/// `page` is the caller's current 0-based page cursor; it is clamped when the
+/// preview's page count shrinks and moved when the section picker changes.
+pub fn manuscript_preview_navigator(
+    project: &Project,
+    settings: &ExportSettings,
+    page: &mut usize,
+    ui: &mut egui::Ui,
+) {
+    let preview = manuscript_preview(project, settings);
+    let total = preview.page_count().max(1);
+    if *page >= total {
+        *page = total - 1;
+    }
+
+    // Flatten the section plans so one index selects a page across the whole
+    // manuscript.
+    let mut pages: Vec<(&PagePlan, &[PageLine])> = Vec::with_capacity(total);
+    for plan in &preview.plans {
+        for lines in &plan.pages {
+            pages.push((plan, lines.as_slice()));
+        }
+    }
+    let starts = preview.section_starts();
+
+    Frame::new()
+        .fill(BG)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(14))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                section_label(ui, "Live preview");
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    meta_line(ui, &[&format!("{total} pages · approx.")]);
+                });
+            });
+            ui.label(
+                RichText::new("Approximate — rendered from your compile settings")
+                    .font(sans(9.0))
+                    .color(FAINT),
+            );
+            ui.add_space(8.0);
+
+            // ---- Page and section navigation ----------------------------
+            ui.horizontal(|ui| {
+                let can_prev = *page > 0;
+                let prev = ui.add_enabled(
+                    can_prev,
+                    egui::Button::new(
+                        RichText::new("‹ Prev")
+                            .font(sans(10.5))
+                            .color(if can_prev { TEXT } else { FAINT }),
+                    )
+                    .corner_radius(CornerRadius::same(5)),
+                );
+                if prev.clicked() {
+                    *page -= 1;
+                }
+
+                ui.label(
+                    RichText::new(format!("Page {} of {}", *page + 1, total))
+                        .font(sans(10.0))
+                        .color(MUTED),
+                );
+
+                let can_next = *page + 1 < total;
+                let next = ui.add_enabled(
+                    can_next,
+                    egui::Button::new(
+                        RichText::new("Next ›")
+                            .font(sans(10.5))
+                            .color(if can_next { TEXT } else { FAINT }),
+                    )
+                    .corner_radius(CornerRadius::same(5)),
+                );
+                if next.clicked() {
+                    *page += 1;
+                }
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let current = section_for_page(&starts, *page);
+                    let mut chosen = current;
+                    egui::ComboBox::from_id_salt("preview_section")
+                        .selected_text(
+                            RichText::new(preview.sections[current].label.as_str())
+                                .font(sans(10.0))
+                                .color(TEXT),
+                        )
+                        .width(170.0)
+                        .show_ui(ui, |ui| {
+                            for (index, section) in preview.sections.iter().enumerate() {
+                                let label =
+                                    format!("{}  ·  page {}", section.label, starts[index] + 1);
+                                ui.selectable_value(&mut chosen, index, label);
+                            }
+                        });
+                    if chosen != current {
+                        *page = starts.get(chosen).copied().unwrap_or(0).min(total - 1);
+                    }
+                    ui.label(RichText::new("Section").font(sans(9.5)).color(MUTED));
+                });
+            });
+            ui.add_space(10.0);
+
+            ScrollArea::horizontal()
+                .id_salt("preview_page")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        if let Some((plan, lines)) = pages.get(*page) {
+                            page_frame(ui, plan, lines, *page + 1);
+                        }
+                    });
+                });
+
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(
+                    "Each section starts on its own page, matching the exported manuscript.",
+                )
+                .font(sans(9.0))
+                .color(FAINT),
+            );
+        });
+}
+
+/// Which section contains `page`, from the section start pages. The last
+/// section that starts at or before the page wins.
+fn section_for_page(starts: &[usize], page: usize) -> usize {
+    starts
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, start)| **start <= page)
+        .map(|(index, _)| index)
+        .unwrap_or(0)
 }
 
 

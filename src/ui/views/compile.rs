@@ -1,21 +1,19 @@
-//! Compile: choose an output format or the Display settings, decide what goes
-//! in the book, and write a real file — PDF, EPUB, DOCX, Final Draft, Fountain,
-//! HTML, Markdown, RTF, plain text or a complete project bundle.
+//! Compile: choose an output format, decide what goes in the book, and write a
+//! real file — PDF, EPUB, DOCX, Final Draft, Fountain, HTML, Markdown, RTF,
+//! plain text or a complete project bundle. Editor display settings live in the
+//! separate Settings workspace.
 
 use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense,
     Stroke, TextEdit, Vec2,
 };
-use portmanteau_core::{
-    DocKind, ElementStyles, ExportKind, ExportSettings, PaperSize, ProjectKind,
-};
+use portmanteau_core::{DocKind, ElementStyles, ExportKind, ExportSettings, PaperSize, ProjectKind};
 
 use crate::app::{CompileTab, PortmanteauApp, ToastKind};
 use crate::theme::*;
-use crate::ui::page::{manuscript_page_plan, page_frame};
 use crate::ui::views::{
-    content_frame, custom_styles_editor, element_preview, element_styles_editor, meta_line,
-    page_head, primary_button, quiet_button, BUILTIN_ELEMENTS, FONT_FAMILIES,
+    content_frame, custom_styles_editor, element_styles_editor, manuscript_preview_navigator,
+    meta_line, page_head, quiet_button, FONT_FAMILIES,
 };
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
@@ -23,7 +21,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         ui,
         "Finish",
         "Compile",
-        "One manuscript, many finish lines. Pick an output format, or set how the pages look while you write.",
+        "One manuscript, many finish lines. Pick an output format, then shape what goes in the book.",
         |ui| {
             meta_line(
                 ui,
@@ -39,8 +37,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut tab = app.compile_tab;
     let mut settings = match tab {
         CompileTab::Format(kind) => app.ws.project.settings_for(kind),
-        CompileTab::Display => app.ws.project.settings_for(ExportKind::Pdf),
     };
+    let CompileTab::Format(kind) = tab;
     let mut compile = false;
     let front_docs: Vec<(String, String, bool)> = app
         .ws
@@ -82,30 +80,26 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                     tab = CompileTab::Format(kind);
                                     settings = app.ws.project.settings_for(kind);
                                     app.ws.project.export = settings.clone();
+                                    app.preview_page = 0;
                                 }
                                 ui.add_space(2.0);
-                            }
-                            ui.add_space(10.0);
-                            hairline(ui);
-                            ui.add_space(8.0);
-                            if tab_button(ui, "Display", MUTED, tab == CompileTab::Display) {
-                                tab = CompileTab::Display;
                             }
                         });
                 },
             );
             ui.add_space(16.0);
-            // ---- Content pane -------------------------------------------
-            ui.vertical(|ui| {
-                ScrollArea::vertical()
-                    .id_salt("compile_content")
-                    .auto_shrink([false, false])
-                    .max_height(height)
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        match tab {
-                            CompileTab::Display => display_tab(app, ui),
-                            CompileTab::Format(kind) => output_tab(
+            // ---- Middle column: layout parameters -------------------
+            ui.allocate_ui_with_layout(
+                Vec2::new(400.0, height),
+                Layout::top_down(Align::Min),
+                |ui| {
+                    ScrollArea::vertical()
+                        .id_salt("compile_params")
+                        .auto_shrink([false, false])
+                        .max_height(height)
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            output_tab(
                                 app,
                                 ui,
                                 kind,
@@ -114,21 +108,41 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 &back_docs,
                                 &mut matter_toggles,
                                 &mut compile,
-                            ),
-                        }
-                    });
-            });
+                            );
+                        });
+                },
+            );
+            ui.add_space(16.0);
+            // ---- Right column: single-page live preview -------------
+            let preview_width = ui.available_width();
+            ui.allocate_ui_with_layout(
+                Vec2::new(preview_width, height),
+                Layout::top_down(Align::Min),
+                |ui| {
+                    ScrollArea::vertical()
+                        .id_salt("compile_preview")
+                        .auto_shrink([false, false])
+                        .max_height(height)
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            manuscript_preview_navigator(
+                                &app.ws.project,
+                                &settings,
+                                &mut app.preview_page,
+                                ui,
+                            );
+                        });
+                },
+            );
         });
     });
 
     app.compile_tab = tab;
-    if let CompileTab::Format(_) = tab {
-        let before = app.ws.project.settings_for(settings.kind);
-        app.ws.project.set_settings(settings.clone());
-        app.ws.project.export = settings.clone();
-        if before != settings {
-            app.ws.dirty = true;
-        }
+    let before = app.ws.project.settings_for(settings.kind);
+    app.ws.project.set_settings(settings.clone());
+    app.ws.project.export = settings.clone();
+    if before != settings {
+        app.ws.dirty = true;
     }
     let mut matter_changed = false;
     for (id, include) in matter_toggles {
@@ -271,9 +285,6 @@ fn output_tab(
     ui.add_space(10.0);
 
     action_panel(app, ui, settings, compile);
-    ui.add_space(12.0);
-
-    manuscript_preview_panel(app, ui, settings);
     ui.add_space(12.0);
 
     style_panel(ui, &mut settings.styles);
@@ -453,7 +464,7 @@ fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles) {
             section_label(ui, "Element styles");
             ui.label(
                 RichText::new(
-                    "Per-element type for this output format, including writer-defined styles. The global defaults live in the Display tab.",
+                    "Per-element type for this output format, including writer-defined styles. The global defaults live in Settings → Display.",
                 )
                 .font(sans(9.0))
                 .color(FAINT),
@@ -738,58 +749,6 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui) {
         });
 }
 
-/// A live "print preview" of the compiled manuscript. The plan is rebuilt every
-/// frame from the current draft settings (paper, element styles, margins) so
-/// changing any control redraws the pages immediately.
-fn manuscript_preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &ExportSettings) {
-    let plans = manuscript_page_plan(&app.ws.project, settings);
-    let page_count: usize = plans.iter().map(|p| p.pages.len()).sum();
-
-    Frame::new()
-        .fill(BG)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::same(14))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                section_label(ui, "Live preview");
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    meta_line(ui, &[&format!("{page_count} pages · approx.")]);
-                });
-            });
-            ui.label(
-                RichText::new("Approximate — rendered from your compile settings")
-                    .font(sans(9.0))
-                    .color(FAINT),
-            );
-            ui.add_space(8.0);
-
-            ScrollArea::horizontal()
-                .id_salt("compile_live_preview")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.horizontal_top(|ui| {
-                        let mut number = 1;
-                        for plan in &plans {
-                            for page in &plan.pages {
-                                page_frame(ui, plan, page, number);
-                                number += 1;
-                                ui.add_space(18.0);
-                            }
-                        }
-                    });
-                });
-
-            ui.add_space(4.0);
-            ui.label(
-                RichText::new("Scroll sideways to read the pages · title page, front matter, draft and back matter.")
-                    .font(sans(9.0))
-                    .color(FAINT),
-            );
-        });
-}
-
 fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
     let payload = serde_json::json!({
         "format": settings.kind.label(),
@@ -822,292 +781,3 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Display tab
-// ---------------------------------------------------------------------------
-
-fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
-    let mut save = false;
-    let mut apply = false;
-    let mut reset = false;
-
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.label(RichText::new("Display").font(serif(21.0)).color(TEXT));
-            ui.label(
-                RichText::new(
-                    "How the words look while you write, and the global house style new projects start from.",
-                )
-                .font(sans(10.0))
-                .color(FAINT),
-            );
-        });
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            pill(
-                ui,
-                &format!(
-                    "{} built-in + {} custom",
-                    BUILTIN_ELEMENTS.len(),
-                    app.settings.styles.custom.len()
-                ),
-                MUTED,
-                PANEL_2,
-            );
-        });
-    });
-    ui.add_space(8.0);
-
-    live_preview_panel(ui, &app.settings.styles);
-    ui.add_space(10.0);
-
-    Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::symmetric(14, 11))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            section_label(ui, "Editor display");
-            ui.add_space(2.0);
-            ui.label(
-                RichText::new(
-                    "On-screen type sizes. The compiled page uses each output format's own element styles.",
-                )
-                .font(sans(9.5))
-                .color(FAINT),
-            );
-            ui.add_space(6.0);
-            egui::Grid::new("display_grid")
-                .num_columns(4)
-                .spacing([8.0, 6.0])
-                .show(ui, |ui| {
-                    ui.label(RichText::new("Prose size").font(sans(9.5)).color(MUTED));
-                    ui.add(
-                        egui::DragValue::new(&mut app.settings.display.prose_size)
-                            .speed(0.1)
-                            .range(9.0..=32.0)
-                            .suffix(" pt"),
-                    );
-                    ui.label(RichText::new("Leading").font(sans(9.5)).color(MUTED));
-                    ui.add(
-                        egui::DragValue::new(&mut app.settings.display.prose_leading)
-                            .speed(0.02)
-                            .range(1.0..=2.6)
-                            .suffix("×"),
-                    );
-                    ui.end_row();
-
-                    ui.label(RichText::new("Script size").font(sans(9.5)).color(MUTED));
-                    ui.add(
-                        egui::DragValue::new(&mut app.settings.display.script_size)
-                            .speed(0.1)
-                            .range(7.0..=24.0)
-                            .suffix(" pt"),
-                    );
-                    ui.label(RichText::new("Leading").font(sans(9.5)).color(MUTED));
-                    ui.add(
-                        egui::DragValue::new(&mut app.settings.display.script_leading)
-                            .speed(0.02)
-                            .range(1.0..=2.2)
-                            .suffix("×"),
-                    );
-                    ui.end_row();
-                });
-        });
-
-    ui.add_space(10.0);
-    Frame::new()
-        .fill(BG)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::symmetric(14, 10))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            section_label(ui, "Editing");
-            ui.add_space(4.0);
-            ui.checkbox(
-                &mut app.settings.spellcheck,
-                RichText::new("Spell-checking in editors")
-                    .font(sans(10.5))
-                    .color(MUTED),
-            );
-            ui.add_space(2.0);
-            ui.label(
-                RichText::new(
-                    "The Write toolbar shows a Spelling panel with suggestions. Save defaults to keep this setting.",
-                )
-                .font(sans(9.5))
-                .color(FAINT),
-            );
-        });
-
-    ui.add_space(10.0);
-    Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::symmetric(14, 11))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    section_label(ui, "Default styles");
-                    ui.add_space(2.0);
-                    ui.label(
-                        RichText::new(
-                            "Type defaults for every manuscript element. Apply them to a project, then each output tab refines per format.",
-                        )
-                        .font(sans(9.5))
-                        .color(FAINT),
-                    );
-                    ui.label(
-                        RichText::new(format!(
-                            "Config · {}",
-                            crate::settings::config_path().display()
-                        ))
-                        .font(mono(8.5))
-                        .color(FAINT),
-                    );
-                });
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if primary_button(ui, "Save defaults").clicked() {
-                        save = true;
-                    }
-                    if quiet_button(ui, "Apply to current project").clicked() {
-                        apply = true;
-                    }
-                    if quiet_button(ui, "Reset defaults").clicked() {
-                        reset = true;
-                    }
-                });
-            });
-            ui.add_space(8.0);
-            hairline(ui);
-            ui.add_space(8.0);
-
-            element_styles_editor(ui, &mut app.settings.styles);
-            ui.add_space(2.0);
-            custom_styles_editor(ui, &mut app.settings.styles);
-        });
-
-    ui.add_space(10.0);
-    Frame::new()
-        .fill(BG)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::symmetric(14, 10))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new("New projects copy these defaults automatically.")
-                        .font(sans(9.5))
-                        .color(MUTED),
-                );
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(
-                        RichText::new("Global settings · local file")
-                            .font(sans(9.0))
-                            .color(FAINT),
-                    );
-                });
-            });
-        });
-
-    if reset {
-        app.settings.styles = ElementStyles::default();
-        app.toast(
-            "Defaults reset",
-            "Built-in element styles restored — save to keep them",
-            ToastKind::Info,
-        );
-    }
-    if save {
-        match crate::settings::save_settings(&app.settings) {
-            Ok(()) => app.toast(
-                "Defaults saved",
-                crate::settings::config_path().display().to_string(),
-                ToastKind::Ok,
-            ),
-            Err(e) => app.toast("Could not save defaults", e, ToastKind::Error),
-        }
-    }
-    if apply {
-        app.ws.project.styles = app.settings.styles.clone();
-        app.ws.dirty = true;
-        app.toast(
-            "Defaults applied",
-            "The current project now uses the global element styles",
-            ToastKind::Ok,
-        );
-    }
-}
-
-/// The live style preview: pick any built-in or custom element and see the
-/// sample set in its current type and paragraph style. The picker's choice
-/// lives in egui's temporary data so it survives the per-frame redraw.
-fn live_preview_panel(ui: &mut egui::Ui, styles: &ElementStyles) {
-    let id = egui::Id::new("settings_preview_element");
-    let mut selected: String = ui
-        .data(|data| data.get_temp(id))
-        .unwrap_or_else(|| "body".to_string());
-
-    Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::symmetric(14, 11))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                section_label(ui, "Live preview");
-                ui.add_space(6.0);
-                let display = BUILTIN_ELEMENTS
-                    .iter()
-                    .find(|(key, _)| *key == selected)
-                    .map(|(_, label)| (*label).to_string())
-                    .unwrap_or_else(|| selected.clone());
-                egui::ComboBox::from_id_salt("settings_preview_element_pick")
-                    .selected_text(RichText::new(display).font(sans(9.5)).color(TEXT))
-                    .width(190.0)
-                    .show_ui(ui, |ui| {
-                        for (key, label) in BUILTIN_ELEMENTS {
-                            ui.selectable_value(&mut selected, key.to_string(), label);
-                        }
-                        if !styles.custom.is_empty() {
-                            ui.separator();
-                            for custom in &styles.custom {
-                                ui.selectable_value(
-                                    &mut selected,
-                                    custom.name.clone(),
-                                    format!("{} (custom)", custom.name),
-                                );
-                            }
-                        }
-                    });
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    meta_line(ui, &["live as you edit below"]);
-                });
-            });
-            ui.add_space(6.0);
-            let style = styles
-                .element(&selected)
-                .or_else(|| styles.custom_named(&selected).map(|custom| &custom.style));
-            match style {
-                Some(style) => element_preview(ui, style),
-                None => {
-                    selected = "body".to_string();
-                    element_preview(ui, &styles.body);
-                }
-            }
-            ui.add_space(5.0);
-            ui.label(
-                RichText::new(
-                    "Approximate on-screen proof. The compiled page uses the same font, size, leading, alignment and indents, but line breaking and page margins may differ.",
-                )
-                .font(sans(8.5))
-                .color(FAINT),
-            );
-        });
-    ui.data_mut(|data| data.insert_temp(id, selected));
-}
