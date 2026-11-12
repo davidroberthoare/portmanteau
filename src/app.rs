@@ -253,7 +253,6 @@ pub struct PortmanteauApp {
     pub screenshot: Option<PathBuf>,
     pub frame_no: u32,
     pub screenshot_requested: bool,
-    pub screenshot_saved: bool,
     /// Text zoom for the writing surface. Multiplies the prose type size and
     /// the screenplay element sizes; `−` / `+` in the editor toolbar change it
     /// within `0.7..=1.6`.
@@ -335,7 +334,6 @@ impl PortmanteauApp {
             screenshot,
             frame_no: 0,
             screenshot_requested: false,
-            screenshot_saved: false,
             editor_zoom: 1.0,
             corkboard_zoom: 1.0,
             spell: crate::spellcheck::load(),
@@ -496,15 +494,15 @@ impl PortmanteauApp {
         self.toast("Project checkpoint saved", label, ToastKind::Ok);
     }
 
-    fn top_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("topbar")
-            .exact_height(54.0)
+    fn top_bar(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::top("topbar")
+            .exact_size(54.0)
             .frame(
                 Frame::new()
                     .fill(Color32::from_rgb(15, 17, 20))
                     .inner_margin(Margin::symmetric(14, 9)),
             )
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     let (rect, _) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), egui::Sense::hover());
                     ui.painter().rect_filled(rect, CornerRadius::same(7), ACCENT);
@@ -587,11 +585,11 @@ impl PortmanteauApp {
             if ui.button("New project…").clicked() {
                 self.new_project_title.clear();
                 self.show_new_project = true;
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Save project").clicked() {
                 self.save_project();
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Save project as…").clicked() {
                 self.path_dialog = Some(PathDialog::SaveAs);
@@ -604,7 +602,7 @@ impl PortmanteauApp {
                         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
                         format!("{home}/Portmanteau/{}.portmanteau/", slug(&self.ws.project.title))
                     });
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Open project…").clicked() {
                 self.path_dialog = Some(PathDialog::Open);
@@ -614,16 +612,16 @@ impl PortmanteauApp {
                     .as_ref()
                     .map(|p| p.display().to_string())
                     .unwrap_or_default();
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Save checkpoint").clicked() {
                 self.checkpoint(None);
-                ui.close_menu();
+                ui.close();
             }
             ui.separator();
             if ui.button("Compile & export…").clicked() {
                 self.view = View::Compile;
-                ui.close_menu();
+                ui.close();
             }
             ui.separator();
             if ui.button("Quit").clicked() {
@@ -633,27 +631,27 @@ impl PortmanteauApp {
         ui.menu_button(menu_text("Edit"), |ui| {
             if ui.button("Search manuscript").clicked() {
                 self.focus_search = true;
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Take snapshot").clicked() {
                 self.take_snapshot();
-                ui.close_menu();
+                ui.close();
             }
             ui.separator();
             if ui.button("Move document up").clicked() {
                 self.move_selected(-1);
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Move document down").clicked() {
                 self.move_selected(1);
-                ui.close_menu();
+                ui.close();
             }
         });
         ui.menu_button(menu_text("View"), |ui| {
             for v in View::all() {
                 if ui.selectable_label(self.view == v, v.label()).clicked() {
                     self.view = v;
-                    ui.close_menu();
+                    ui.close();
                 }
             }
             // The Command desk is deliberately kept out of the rail and
@@ -663,26 +661,26 @@ impl PortmanteauApp {
                 .clicked()
             {
                 self.view = View::Agent;
-                ui.close_menu();
+                ui.close();
             }
             ui.separator();
             if ui.button("Focus mode").clicked() {
                 self.focus_mode = !self.focus_mode;
-                ui.close_menu();
+                ui.close();
             }
         });
         ui.menu_button(menu_text("Insert"), |ui| {
             if ui.button("New chapter").clicked() {
                 self.new_chapter();
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("New research note").clicked() {
                 self.view = View::Research;
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("New character").clicked() {
                 self.view = View::Database;
-                ui.close_menu();
+                ui.close();
             }
         });
         ui.add_space(2.0);
@@ -710,7 +708,7 @@ impl PortmanteauApp {
                         TextEdit::singleline(&mut self.search)
                             .hint_text(RichText::new("Search manuscript…").font(sans(11.5)).color(FAINT))
                             .desired_width(190.0)
-                            .frame(false)
+                            .frame(Frame::NONE)
                             .font(sans(11.5)),
                     );
                     if self.focus_search {
@@ -726,16 +724,16 @@ impl PortmanteauApp {
             });
     }
 
-    fn rail(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("rail")
-            .exact_width(62.0)
+    fn rail(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::left("rail")
+            .exact_size(62.0)
             .resizable(false)
             .frame(
                 Frame::new()
                     .fill(RAIL)
                     .inner_margin(Margin::symmetric(8, 12)),
             )
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(2.0);
                     let (logo, _) = ui.allocate_exact_size(Vec2::new(36.0, 36.0), egui::Sense::hover());
@@ -792,15 +790,15 @@ impl PortmanteauApp {
             });
     }
 
-    fn status_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::bottom("statusbar")
-            .exact_height(27.0)
+    fn status_bar(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::bottom("statusbar")
+            .exact_size(27.0)
             .frame(
                 Frame::new()
                     .fill(Color32::from_rgb(15, 17, 20))
                     .inner_margin(Margin::symmetric(14, 4)),
             )
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let color = if self.ws.dirty { ACCENT } else { SAGE };
                     let (dot_rect, _) =
@@ -858,7 +856,7 @@ impl PortmanteauApp {
             ToastKind::Error => RED,
             ToastKind::Info => BLUE,
         };
-        egui::Area::new(Id::new("toast"))
+        egui::Area::new(Id::unique("toast"))
             .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-22.0, -42.0))
             .show(ctx, |ui| {
                 Frame::new()
@@ -1430,35 +1428,23 @@ impl PortmanteauApp {
         ctx.request_repaint();
         if self.frame_no >= 120 && !self.screenshot_requested {
             self.screenshot_requested = true;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
-        }
-        let mut save: Option<std::sync::Arc<egui::ColorImage>> = None;
-        ctx.input(|i| {
-            for event in &i.events {
-                if let egui::Event::Screenshot { image, .. } = event {
-                    save = Some(image.clone());
+            let shot_ctx = ctx.clone();
+            ctx.request_screenshot(move |image| {
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
                 }
-            }
-        });
-        if let Some(image) = save {
-            if self.screenshot_saved {
-                return;
-            }
-            self.screenshot_saved = true;
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let [w, h] = image.size;
-            let mut rgba = Vec::with_capacity(w * h * 4);
-            for px in &image.pixels {
-                let [r, g, b, a] = px.to_array();
-                rgba.extend_from_slice(&[r, g, b, a]);
-            }
-            match image::save_buffer(&path, &rgba, w as u32, h as u32, image::ColorType::Rgba8) {
-                Ok(_) => eprintln!("screenshot saved to {}", path.display()),
-                Err(e) => eprintln!("could not save screenshot: {e}"),
-            }
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                let [w, h] = image.size;
+                let mut rgba = Vec::with_capacity(w * h * 4);
+                for px in &image.pixels {
+                    let [r, g, b, a] = px.to_array();
+                    rgba.extend_from_slice(&[r, g, b, a]);
+                }
+                match image::save_buffer(&path, &rgba, w as u32, h as u32, image::ColorType::Rgba8) {
+                    Ok(_) => eprintln!("screenshot saved to {}", path.display()),
+                    Err(e) => eprintln!("could not save screenshot: {e}"),
+                }
+                shot_ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            });
         }
     }
 }
@@ -1477,64 +1463,65 @@ fn slug(title: &str) -> String {
 }
 
 impl eframe::App for PortmanteauApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.handle_shortcuts(ctx);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        self.handle_shortcuts(&ctx);
 
-        self.top_bar(ctx);
-        self.status_bar(ctx);
-        self.rail(ctx);
-        self.toast_ui(ctx);
+        self.top_bar(ui);
+        self.status_bar(ui);
+        self.rail(ui);
+        self.toast_ui(&ctx);
 
         if self.view == View::Write {
             if !self.focus_mode {
-                self.binder(ctx);
+                self.binder(ui);
             }
             if !self.focus_mode {
-                self.inspector(ctx);
+                self.inspector(ui);
             }
             egui::CentralPanel::default()
                 .frame(Frame::new().fill(BG))
-                .show(ctx, |ui| {
+                .show(ui, |ui| {
                     ui::editor::show(self, ui);
                 });
         } else {
             egui::CentralPanel::default()
                 .frame(Frame::new().fill(BG))
-                .show(ctx, |ui| {
+                .show(ui, |ui| {
                     ui::views::show(self, ui);
                 });
         }
 
-        self.modals(ctx);
-        self.screenshot_tick(ctx);
+        self.modals(&ctx);
+        self.screenshot_tick(&ctx);
     }
 }
 
 impl PortmanteauApp {
-    fn binder(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("binder")
-            .exact_width(272.0)
+    fn binder(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::left("binder")
+            .exact_size(272.0)
             .resizable(false)
             .frame(
                 Frame::new()
                     .fill(PANEL)
                     .inner_margin(Margin::symmetric(12, 10)),
             )
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 ui::binder::show(self, ui);
             });
     }
 
-    fn inspector(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::right("inspector")
-            .exact_width(304.0)
+    fn inspector(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::right("inspector")
+            .exact_size(304.0)
             .resizable(false)
             .frame(
                 Frame::new()
                     .fill(PANEL)
                     .inner_margin(Margin::symmetric(14, 10)),
             )
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 ui::inspector::show(self, ui);
             });
     }

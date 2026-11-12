@@ -79,7 +79,7 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 TextEdit::singleline(&mut doc.title)
                     .desired_width(f32::INFINITY)
                     .font(serif(16.0))
-                    .frame(false),
+                    .frame(Frame::NONE),
             )
             .changed()
         {

@@ -376,7 +376,7 @@ fn output_field(ui: &mut egui::Ui, value: &mut String, hint: &str) {
                 TextEdit::singleline(value)
                     .hint_text(hint)
                     .font(mono(10.0))
-                    .frame(false)
+                    .frame(Frame::NONE)
                     .desired_width((ui.available_width() - 4.0).max(120.0)),
             );
         });

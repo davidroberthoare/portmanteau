@@ -20,9 +20,9 @@ name = "portmanteau"
 path = "src/main.rs"
 
 [dependencies]
-eframe = "0.31.1"
-egui = "0.31.1"
-egui_extras = { version = "0.31.1", default-features = false, features = ["image"] }
+eframe = { version = "0.37", features = ["glow"] }
+egui = "0.37"
+egui_extras = { version = "0.37", default-features = false, features = ["image"] }
 arboard = "3"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 serde = { version = "1", features = ["derive"] }
@@ -33,7 +33,7 @@ portmanteau-export = { path = "crates/portmanteau-export" }
 portmanteau-api = { path = "crates/portmanteau-api" }
 
 [dev-dependencies]
-egui_kittest = "0.31"
+egui_kittest = "0.37"
 
 [profile.dev]
 opt-level = 1

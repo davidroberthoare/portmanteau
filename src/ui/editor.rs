@@ -714,7 +714,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                 TextEdit::singleline(&mut doc.title)
                     .font(serif(29.0))
                     .text_color(PAPER_TEXT)
-                    .frame(false)
+                    .frame(Frame::NONE)
                     .desired_width(f32::INFINITY),
             )
             .changed()
@@ -727,9 +727,9 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         ui.add_space(14.0);
 
         let rows = ((doc.text.chars().count() as f32) / 72.0).ceil().max(18.0) as usize;
-        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+        let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
             let mut job = egui::text::LayoutJob::single_section(
-                text.to_owned(),
+                text.as_str().to_owned(),
                 egui::TextFormat {
                     font_id: FontId::new(text_size, family.clone()),
                     color: PAPER_TEXT,
@@ -738,13 +738,13 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                 },
             );
             job.wrap.max_width = wrap_width;
-            ui.fonts(|f| f.layout_job(job))
+            ui.ctx().fonts_mut(|f| f.layout_job(job))
         };
         let edit = TextEdit::multiline(&mut doc.text)
             .font(FontId::new(text_size, family.clone()))
             .layouter(&mut layouter)
             .text_color(PAPER_TEXT)
-            .frame(false)
+            .frame(Frame::NONE)
             .desired_width(f32::INFINITY)
             .desired_rows(rows.min(120))
             .margin(Margin::same(0))
@@ -900,7 +900,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         let mut scene_no = first_scene_number;
         let content_width = ui.available_width();
         for i in 0..doc.blocks.len() {
-            let block_id = Id::new(("script_block", doc_id, i));
+            let block_id = Id::unique(("script_block", doc_id, i));
             if app.block_focus == Some(i) {
                 ui.memory_mut(|m| m.request_focus(block_id));
             }
@@ -983,7 +983,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     .id(block_id)
                     .font(FontId::new(font_size, family.clone()))
                     .text_color(text_color)
-                    .frame(false)
+                    .frame(Frame::NONE)
                     .desired_width(width)
                     .desired_rows(rows)
                     .margin(Margin::symmetric(2, 1))
@@ -993,7 +993,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                             .color(PAPER_MUTED),
                     );
                 if kind == ElementKind::Transition {
-                    edit = edit.horizontal_align(Align::RIGHT);
+                    edit = edit.align(egui::Align2::RIGHT_TOP);
                 }
                 if kind.is_uppercase() && kind != ElementKind::Character {
                     edit = edit.text_color(Color32::from_rgb(44, 40, 33));
@@ -1220,7 +1220,7 @@ fn character_assist(
         .collect();
 
     let area_pos = egui::pos2(rect.left(), rect.bottom() + 3.0);
-    egui::Area::new(Id::new(("character_autocomplete", doc_id, index)))
+    egui::Area::new(Id::unique(("character_autocomplete", doc_id, index)))
         .order(egui::Order::Foreground)
         .fixed_pos(area_pos)
         .show(ui.ctx(), |ui| {
@@ -1281,7 +1281,7 @@ fn character_assist(
     if text.trim().is_empty() {
         if let Some(speaker) = next_speaker(blocks, index) {
             let pos = egui::pos2(rect.right() + 8.0, rect.top() + 1.0);
-            egui::Area::new(Id::new(("next_speaker", doc_id, index)))
+            egui::Area::new(Id::unique(("next_speaker", doc_id, index)))
                 .order(egui::Order::Foreground)
                 .fixed_pos(pos)
                 .show(ui.ctx(), |ui| {
@@ -1481,11 +1481,14 @@ mod ui_tests {
             events,
             ..Default::default()
         };
-        let _ = ctx.run(input, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let output = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 editor::show(app, ui);
             });
         });
+        // No renderer applies the font atlas here; clear the deltas so egui
+        // does not panic on drop.
+        output.drop_without_applying_deltas();
     }
 
     /// Run enough empty frames for `request_focus` to land and for the
@@ -1508,7 +1511,7 @@ mod ui_tests {
     }
 
     fn block_id(doc_id: &str, index: usize) -> Id {
-        Id::new(("script_block", doc_id, index))
+        Id::unique(("script_block", doc_id, index))
     }
 
     fn block_kind(app: &PortmanteauApp, doc_id: &str, index: usize) -> ElementKind {
@@ -1697,16 +1700,17 @@ mod ui_tests {
         let mut harness = Harness::builder()
             .with_size(SCREEN)
             .with_max_steps(64)
-            .build(move |ctx| {
+            .with_accessibility_check(false)
+            .build_ui(move |ui| {
                 if !themed {
-                    crate::theme::install(ctx);
+                    crate::theme::install(ui.ctx());
                     themed = true;
                 }
                 if !ready {
                     ready = true;
                     return;
                 }
-                egui::CentralPanel::default().show(ctx, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
                     editor::show(&mut ui_app.borrow_mut(), ui);
                 });
             });

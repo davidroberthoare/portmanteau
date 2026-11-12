@@ -231,7 +231,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         ]
                     };
                     let chev_rect = egui::Rect::from_center_size(c, Vec2::splat(14.0));
-                    let chev_resp = ui.interact(chev_rect, egui::Id::new(("chev", &row.id)), Sense::click());
+                    let chev_resp = ui.interact(chev_rect, egui::Id::unique(("chev", &row.id)), Sense::click());
                     let color = if chev_resp.hovered() { TEXT } else { FAINT };
                     ui.painter().add(egui::Shape::convex_polygon(pts, color, Stroke::NONE));
                     if chev_resp.clicked() {
@@ -306,27 +306,27 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 resp.context_menu(|ui| {
                     if ui.button("Open").clicked() {
                         action = Some(Action::Select(row.id.clone()));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("New inside").clicked() {
                         action = Some(Action::NewUnder(Some(row.id.clone())));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("New folder").clicked() {
                         action = Some(Action::NewFolder(Some(row.id.clone())));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Move up").clicked() {
                         action = Some(Action::Move(row.id.clone(), -1));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Move down").clicked() {
                         action = Some(Action::Move(row.id.clone(), 1));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if !row.kind.is_folder() && ui.button("Take snapshot").clicked() {
                         action = Some(Action::Snapshot(row.id.clone()));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui
                         .button(if row.include {
@@ -337,12 +337,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         .clicked()
                     {
                         action = Some(Action::ToggleInclude(row.id.clone()));
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Delete").clicked() {
                         action = Some(Action::Delete(row.id.clone()));
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
             }

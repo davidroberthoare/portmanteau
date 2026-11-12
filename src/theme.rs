@@ -113,7 +113,7 @@ pub fn install(ctx: &egui::Context) {
     // Keep the default emoji/symbol fonts available behind the Latin faces.
     ctx.set_fonts(fonts);
 
-    let mut style = (*ctx.style()).clone();
+    let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
     style.text_styles = [
         (TextStyle::Heading, serif(26.0)),
         (TextStyle::Body, sans(14.0)),
@@ -174,7 +174,9 @@ pub fn install(ctx: &egui::Context) {
     };
     visuals.popup_shadow = visuals.window_shadow;
     style.visuals = visuals;
-    ctx.set_style(style);
+    // The application is always dark, independent of the OS theme.
+    ctx.set_theme(egui::Theme::Dark);
+    ctx.set_style_of(egui::Theme::Dark, style);
 }
 
 pub fn section_label(ui: &mut egui::Ui, text: &str) {

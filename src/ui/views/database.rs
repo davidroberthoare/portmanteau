@@ -298,7 +298,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                     TextEdit::singleline(&mut draft.title)
                                         .font(serif(23.0))
                                         .hint_text("Title")
-                                        .frame(false)
+                                        .frame(Frame::NONE)
                                         .desired_width(340.0),
                                 )
                                 .changed()

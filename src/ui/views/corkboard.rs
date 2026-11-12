@@ -294,15 +294,15 @@ fn group_ranges(cards: &[Card]) -> Vec<(String, usize, usize)> {
 }
 
 fn pending_focus_id() -> egui::Id {
-    egui::Id::new("corkboard_pending_focus")
+    egui::Id::unique("corkboard_pending_focus")
 }
 
 fn title_edit_id(card_id: &str) -> egui::Id {
-    egui::Id::new(("corkboard_title", card_id))
+    egui::Id::unique(("corkboard_title", card_id))
 }
 
 fn synopsis_edit_id(card_id: &str) -> egui::Id {
-    egui::Id::new(("corkboard_synopsis", card_id))
+    egui::Id::unique(("corkboard_synopsis", card_id))
 }
 
 fn record_edit(
@@ -343,7 +343,7 @@ fn card_ui(
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
     let resp = ui.interact(
         rect,
-        egui::Id::new(("corkboard_card", card.id.as_str())),
+        egui::Id::unique(("corkboard_card", card.id.as_str())),
         Sense::click_and_drag(),
     );
     let is_selected = selected == Some(card.id.as_str());
@@ -449,7 +449,7 @@ fn card_ui(
                     .id(title_id)
                     .font(serif(15.0))
                     .text_color(TEXT)
-                    .frame(false)
+                    .frame(Frame::NONE)
                     .hint_text("Untitled")
                     .desired_width(f32::INFINITY),
             );
@@ -467,7 +467,7 @@ fn card_ui(
                     .id(synopsis_edit_id(&card.id))
                     .font(sans(10.0))
                     .text_color(MUTED)
-                    .frame(false)
+                    .frame(Frame::NONE)
                     .hint_text("Add a synopsis…")
                     .desired_rows(3)
                     .desired_width(f32::INFINITY),

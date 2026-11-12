@@ -209,7 +209,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                 .add(
                     TextEdit::singleline(&mut title)
                         .font(serif(22.0))
-                        .frame(false)
+                        .frame(Frame::NONE)
                         .desired_width(f32::INFINITY),
                 )
                 .changed()
@@ -257,7 +257,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         .font(serif(13.5))
                         .desired_rows(rows.min(40))
                         .desired_width(f32::INFINITY)
-                        .frame(false)
+                        .frame(Frame::NONE)
                         .hint_text("What did you find, and why does it matter to the story?"),
                 )
                 .changed()
@@ -319,7 +319,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
             }
 
             ui.add_space(8.0);
-            let draft_id = egui::Id::new(("research_attachment_path", id));
+            let draft_id = egui::Id::unique(("research_attachment_path", id));
             let mut attach_path = ui
                 .ctx()
                 .data(|d| d.get_temp::<String>(draft_id))

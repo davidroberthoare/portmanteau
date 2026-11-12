@@ -1042,3 +1042,36 @@ clicking `+ New character…` opens the new-character modal; and clicking the
 quirk: `Context::set_fonts` applies at the next pass, so the harness closure
 installs the bundled font families and skips drawing on its first frame.
 
+
+## Round 34 — egui 0.37 migration
+
+The desktop shell and tests moved from egui/eframe 0.31.1 to 0.37.0. This was a
+dependency upgrade only: no screen, feature or visual token changed. The
+mechanical API updates were:
+
+- `eframe::App::update(ctx, frame)` is now `App::ui(ui, frame)`. The root `Ui`
+  is handed to the app, and `egui::Panel::{top, bottom, left, right}` replaces
+  `TopBottomPanel` / `SidePanel`; panels now show into a `Ui`, not a `Context`.
+  `exact_width` / `exact_height` became `exact_size`.
+- `TextEdit::frame(bool)` takes a `Frame`; `frame(false)` is now
+  `frame(Frame::NONE)`. The custom prose layouter now receives a
+  `&dyn TextBuffer` rather than `&str`, and font layout uses `fonts_mut`.
+- Menus close with `ui.close()` instead of `ui.close_menu()`;
+  `Response::horizontal_align` became `align(Align2)`.
+- `Context::style` / `set_style` became the theme-aware
+  `style_of` / `set_style_of`. The app pins `Theme::Dark` so the ink-and-paper
+  palette is independent of the host OS theme.
+- Screenshots are delivered by callback (`Context::request_screenshot`) rather
+  than an `Event::Screenshot`; `--screenshot` still draws 120 frames, saves the
+  PNG and closes the window.
+- Headless tests call `Context::run_ui` (the `run` helper was removed) and
+  explicitly clear the unapplied texture deltas. `egui_kittest`'s harness now
+  builds a `Ui` closure (`build_ui`) and enables an accessibility check by
+  default; the click tests opt out because the editor's medium `ComboBox` has no
+  accessible name, exactly as it had none in 0.31.
+- `Id::new` is deprecated for `Id::unique`, and the glow backend is an explicit
+  eframe feature in 0.37 so `--screenshot` keeps using the same renderer.
+
+`Cargo.lock` carries eframe, egui, egui_extras and egui_kittest 0.37.0, with no
+0.31 copies left. Build, 93 tests, all seven workspace screenshots and the CLI
+stats/PDF export were re-run after the upgrade.
