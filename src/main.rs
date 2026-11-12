@@ -33,6 +33,10 @@ fn screenshot_path() -> Option<PathBuf> {
 }
 
 fn main() -> eframe::Result<()> {
+    // Build the spell-check engines on a background thread while the window is
+    // coming up, so the first debounced check in the prose editor does not stall
+    // the UI. Idempotent; harmless if the engine is otherwise built on demand.
+    egui_spellcheck::prewarm();
     let screenshot = screenshot_path();
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()

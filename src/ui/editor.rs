@@ -727,36 +727,66 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         ui.add_space(14.0);
 
         let rows = ((doc.text.chars().count() as f32) / 72.0).ceil().max(18.0) as usize;
-        let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
-            let mut job = egui::text::LayoutJob::single_section(
-                text.as_str().to_owned(),
-                egui::TextFormat {
-                    font_id: FontId::new(text_size, family.clone()),
-                    color: PAPER_TEXT,
-                    line_height: Some(line_height),
-                    ..Default::default()
-                },
-            );
-            job.wrap.max_width = wrap_width;
-            ui.ctx().fonts_mut(|f| f.layout_job(job))
-        };
-        let edit = TextEdit::multiline(&mut doc.text)
-            .font(FontId::new(text_size, family.clone()))
-            .layouter(&mut layouter)
-            .text_color(PAPER_TEXT)
-            .frame(Frame::NONE)
-            .desired_width(f32::INFINITY)
-            .desired_rows(rows.min(120))
-            .margin(Margin::same(0))
-            .hint_text(
-                RichText::new("Begin at the beginning…")
-                    .font(FontId::new(text_size, family.clone()))
-                    .color(PAPER_MUTED),
-            );
-        let response = ui.add(edit);
-        if response.changed() {
-            doc.touch();
-            dirty = true;
+        if app.settings.spellcheck {
+            // TRIAL: the vendored egui_spellcheck widget owns the layouter, so
+            // its spelling spans are painted in the same pass as the text. Its
+            // builder has no text-colour, frame or margin methods: the paper
+            // palette and the frameless look are applied by scoping the visuals
+            // around just this widget.
+            let output = ui
+                .scope(|ui| {
+                    let visuals = ui.visuals_mut();
+                    visuals.override_text_color = Some(PAPER_TEXT);
+                    visuals.text_edit_bg_color = Some(PAPER);
+                    visuals.widgets.inactive.bg_stroke = Stroke::NONE;
+                    visuals.widgets.hovered.bg_stroke = Stroke::NONE;
+                    visuals.widgets.active.bg_stroke = Stroke::NONE;
+                    visuals.widgets.open.bg_stroke = Stroke::NONE;
+                    visuals.selection.stroke = Stroke::NONE;
+                    egui_spellcheck::SpellCheckTextEdit::multiline(&mut doc.text)
+                        .font(FontId::new(text_size, family.clone()))
+                        .desired_width(f32::INFINITY)
+                        .desired_rows(rows.min(120))
+                        .hint_text("Begin at the beginning…")
+                        .show(ui)
+                })
+                .inner;
+            if output.response.changed() {
+                doc.touch();
+                dirty = true;
+            }
+        } else {
+            let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                let mut job = egui::text::LayoutJob::single_section(
+                    text.as_str().to_owned(),
+                    egui::TextFormat {
+                        font_id: FontId::new(text_size, family.clone()),
+                        color: PAPER_TEXT,
+                        line_height: Some(line_height),
+                        ..Default::default()
+                    },
+                );
+                job.wrap.max_width = wrap_width;
+                ui.ctx().fonts_mut(|f| f.layout_job(job))
+            };
+            let edit = TextEdit::multiline(&mut doc.text)
+                .font(FontId::new(text_size, family.clone()))
+                .layouter(&mut layouter)
+                .text_color(PAPER_TEXT)
+                .frame(Frame::NONE)
+                .desired_width(f32::INFINITY)
+                .desired_rows(rows.min(120))
+                .margin(Margin::same(0))
+                .hint_text(
+                    RichText::new("Begin at the beginning…")
+                        .font(FontId::new(text_size, family.clone()))
+                        .color(PAPER_MUTED),
+                );
+            let response = ui.add(edit);
+            if response.changed() {
+                doc.touch();
+                dirty = true;
+            }
         }
         ui.add_space(26.0);
         let words = doc.words();

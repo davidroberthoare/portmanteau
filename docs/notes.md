@@ -1075,3 +1075,45 @@ mechanical API updates were:
 `Cargo.lock` carries eframe, egui, egui_extras and egui_kittest 0.37.0, with no
 0.31 copies left. Build, 93 tests, all seven workspace screenshots and the CLI
 stats/PDF export were re-run after the upgrade.
+
+## Round 35 — egui_spellcheck trial (prose only)
+
+The vendored `vendor/egui_spellcheck` crate (0.36.3 with its `egui` dependency
+bumped to 0.37) is wired into the prose surface as a trial. `main` calls
+`egui_spellcheck::prewarm()` once before `eframe::run_native`; on native targets
+that spawns a short-lived background thread which builds the dictionary engine,
+so start-up does not block and the first debounced check is fast. In
+`src/ui/editor.rs`, `prose_page` now draws
+`SpellCheckTextEdit::multiline(&mut doc.text)` when Settings → "Spell-checking
+in editors" is on, and keeps the old plain `TextEdit` when it is off. The crate's
+`show(ui)` returns `TextEditOutput`; `output.response.changed()` is what marks
+the document touched and the workspace dirty, the same rule as before. The
+crate supports only `multiline` / `singleline`, `hint_text` (plain `String`),
+`desired_width`, `desired_rows`, `font`, `id_salt`, `interactive` and `show`.
+
+Visible differences and limits of the trial:
+
+- The crate owns its layouter, so the builder has no `text_color`, `frame`,
+  `margin` or custom-layouter method. The paper look is kept by scoping
+  `override_text_color`, `text_edit_bg_color` and the widget strokes to
+  `PAPER` / `PAPER_TEXT` around just this widget. The project's body
+  `line_height`/leading is therefore not applied on the spell-checked path;
+  lines use egui's default spacing, which is slightly tighter. The hint text is
+  also a plain string (sans, weak text colour) rather than a serif `RichText`.
+- Spelling spans come from the crate's own `spellbook` dictionary, not the
+  existing zspell `SpellChecker`. Both engines are compiled in for now: the
+  toolbar's **Spelling · n** panel and the suggestion buttons still use zspell,
+  so the two can disagree until the panel is retired or re-pointed.
+- The crate's personal dictionary ("Add to dictionary") lives in egui's
+  persisted memory. The desktop shell does not enable eframe's `persistence`
+  feature and implements no `App::save`, so words added there survive the
+  session but are lost on restart. Moving to the crate's dictionary for good
+  means either enabling eframe persistence or writing the word list into the
+  project file.
+- The script editor is deliberately untouched: its per-block `TextEdit::id`,
+  focus hand-off and Tab/Enter element logic do not map onto the crate's
+  single-widget API, so screenplay blocks keep the existing plain editor. There
+  is no per-block integration yet.
+- Underlines appear after the crate's short typing debounce; the screenshot at
+  frame 120 already shows them (for example "harbour", "licence").
+

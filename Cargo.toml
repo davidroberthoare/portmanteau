@@ -6,6 +6,7 @@ members = [
     "crates/portmanteau-mcp",
     "crates/portmanteau-cli",
 ]
+exclude = ["vendor/egui_spellcheck"]
 resolver = "2"
 
 [package]
@@ -23,6 +24,9 @@ path = "src/main.rs"
 eframe = { version = "0.37", features = ["glow"] }
 egui = "0.37"
 egui_extras = { version = "0.37", default-features = false, features = ["image"] }
+# TRIAL: vendored from crates.io 0.36.3 with its egui dependency bumped to 0.37.
+# Grammar is disabled; the crate still ships its own spellbook dictionary.
+egui_spellcheck = { path = "vendor/egui_spellcheck", default-features = false }
 arboard = "3"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 serde = { version = "1", features = ["derive"] }
