@@ -1551,3 +1551,246 @@ impl PortmanteauApp {
             });
     }
 }
+
+/// Capability probes that drive the *whole* shell, not just `editor::show`.
+///
+/// The editor probes in `src/ui/editor.rs` render the writing surface alone, so
+/// they cannot see a regression caused by the real chrome: the top bar, rail,
+/// status bar, binder and inspector panels, toasts, focus order between panels
+/// or the narrower editor column. These probes reproduce the body of
+/// [`eframe::App::ui`] inside an `egui_kittest` harness so the script
+/// autocomplete and arrow-key focus can be checked against the shell a writer
+/// actually uses.
+///
+/// Diagnostics only: they do not replace the behaviour tests next to the code
+/// they exercise.
+#[cfg(test)]
+mod shell_probe {
+    use super::*;
+    use eframe::egui::accesskit::Role;
+    use eframe::egui::{Event, Rect};
+    use egui_kittest::kittest::{NodeT, Queryable};
+    use egui_kittest::Harness;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    /// The real app window: 1440x930.
+    const SHELL: Vec2 = Vec2::new(1440.0, 930.0);
+
+    /// The editor column sits between the 62 px rail + 272 px binder on the
+    /// left and the 304 px inspector on the right. Anything inside this band is
+    /// the writing surface, so the inspector's own text fields are excluded.
+    fn in_editor_column(rect: Rect) -> bool {
+        let x = rect.center().x;
+        (340.0..1130.0).contains(&x)
+    }
+
+    /// A demo project open on its first script document, with view = Write and
+    /// the first Character cue blanked so the probe types into a known empty
+    /// box. Returns the document id and the cue's block index.
+    fn shell_fixture() -> (PortmanteauApp, String, usize) {
+        let mut app = PortmanteauApp::new(None);
+        app.settings.spellcheck = false;
+        app.show_spelling = false;
+        app.view = View::Write;
+        app.write_mode = WriteMode::Continuous;
+        app.focus_mode = false;
+        let doc_id = app
+            .ws
+            .project
+            .documents
+            .iter()
+            .find(|d| d.medium.is_script())
+            .map(|d| d.id.clone())
+            .expect("the demonstration project has a script document");
+        app.selected = Some(doc_id.clone());
+        app.selected_block = 0;
+        let cue = app
+            .ws
+            .project
+            .document_mut(&doc_id)
+            .and_then(|doc| {
+                doc.blocks
+                    .iter()
+                    .position(|b| b.kind == ElementKind::Character)
+                    .map(|index| {
+                        doc.blocks[index].text.clear();
+                        index
+                    })
+            })
+            .expect("the script fixture should keep its Character cue");
+        (app, doc_id, cue)
+    }
+
+    /// The script block's widget id, matching the expression `editor::show`
+    /// uses (`Id::unique(("script_block", doc_id, index))`).
+    fn block_id(doc_id: &str, index: usize) -> Id {
+        Id::unique(("script_block", doc_id, index))
+    }
+
+    /// Draw the shell exactly as `eframe::App::ui` does, without the modal and
+    /// screenshot calls (the fixture opens no modal and has no screenshot).
+    /// Font installation happens on the first, discarded frame.
+    fn shell_harness(app: PortmanteauApp) -> (Harness<'static>, Rc<RefCell<PortmanteauApp>>) {
+        let app = Rc::new(RefCell::new(app));
+        let ui_app = Rc::clone(&app);
+        let mut themed = false;
+        let mut ready = false;
+        let mut harness = Harness::builder()
+            .with_size(SHELL)
+            .with_max_steps(96)
+            .with_accessibility_check(false)
+            // The binder paints ⌕ (U+2315) for research rows, and none of the
+            // bundled fonts carries it (see AGENTS.md, "missing glyphs"). The
+            // real binary draws tofu; kittest panics on missing glyphs by
+            // default, which would hide every shell-level finding behind it.
+            .allow_missing_glyphs()
+            .build_ui(move |ui| {
+                if !themed {
+                    crate::theme::install(ui.ctx());
+                    themed = true;
+                    return;
+                }
+                if !ready {
+                    ready = true;
+                    return;
+                }
+                let ctx = ui.ctx().clone();
+                let mut app = ui_app.borrow_mut();
+                app.top_bar(ui);
+                app.status_bar(ui);
+                app.rail(ui);
+                app.toast_ui(&ctx);
+                if app.view == View::Write {
+                    if !app.focus_mode {
+                        app.binder(ui);
+                    }
+                    if !app.focus_mode {
+                        app.inspector(ui);
+                    }
+                    egui::CentralPanel::default()
+                        .frame(Frame::new().fill(BG))
+                        .show(ui, |ui| {
+                            crate::ui::editor::show(&mut app, ui);
+                        });
+                }
+            });
+        harness.run_steps(6);
+        (harness, app)
+    }
+
+    #[test]
+    fn shell_character_menu_fills_the_block_from_a_pointer_click() {
+        let (app, doc_id, cue) = shell_fixture();
+        let (mut harness, app) = shell_harness(app);
+
+        harness
+            .get_all_by_role(Role::MultilineTextInput)
+            .find(|node| in_editor_column(node.rect()) && node.value().as_deref() == Some(""))
+            .expect("the blank script cue should be a multiline input in the editor column")
+            .click();
+        harness.run_steps(2);
+
+        let id = block_id(&doc_id, cue);
+        assert!(
+            harness.ctx.memory(|memory| memory.has_focus(id)),
+            "a real pointer click in the full shell should focus the script block"
+        );
+
+        harness.input_mut().events.push(Event::Text("ma".into()));
+        harness.run_steps(2);
+        assert_eq!(
+            app.borrow().character_menu,
+            Some((doc_id.clone(), cue)),
+            "typing into the clicked cue should open the autocomplete in the full shell"
+        );
+
+        let labels: Vec<String> = harness
+            .get_all_by_role(Role::Button)
+            .filter_map(|node| node.accesskit_node().label())
+            .collect();
+        assert!(
+            labels.iter().any(|label| label == "Mara Venn"),
+            "the full-shell dropdown should expose Mara Venn; saw {labels:?}"
+        );
+
+        harness
+            .get_by_role_and_label(Role::Button, "Mara Venn")
+            .click();
+        harness.run_steps(2);
+        let text = app.borrow().ws.project.document(&doc_id).unwrap().blocks[cue]
+            .text
+            .clone();
+        assert_eq!(
+            text, "Mara Venn",
+            "clicking a name in the full shell should fill the Character block"
+        );
+        assert_eq!(
+            app.borrow().character_menu,
+            None,
+            "choosing a name should close the full-shell dropdown"
+        );
+    }
+
+    #[test]
+    fn shell_arrows_stay_inside_the_clicked_block() {
+        let (app, doc_id, _cue) = shell_fixture();
+        let (mut harness, app) = shell_harness(app);
+
+        harness
+            .get_all_by_role(Role::MultilineTextInput)
+            .find(|node| in_editor_column(node.rect()) && node.value().as_deref().is_some())
+            .expect("the script should expose a multiline block in the editor column")
+            .click();
+        harness.run_steps(2);
+
+        let id = block_id(&doc_id, 0);
+        assert!(
+            harness.ctx.memory(|memory| memory.has_focus(id)),
+            "the click should focus block 0 in the full shell"
+        );
+
+        harness.key_press(Key::ArrowDown);
+        harness.run_steps(2);
+        assert!(
+            harness.ctx.memory(|memory| memory.has_focus(id)),
+            "ArrowDown in the full shell must not move focus out of the block"
+        );
+
+        harness.key_press(Key::ArrowUp);
+        harness.run_steps(2);
+        assert!(
+            harness.ctx.memory(|memory| memory.has_focus(id)),
+            "ArrowUp in the full shell must not move focus out of the block"
+        );
+        assert_eq!(app.borrow().selected_block, 0);
+    }
+
+    /// The shell-level version of the first-focus-frame bug: the app asks for
+    /// block 0's focus (as `+ Add element`, a click into a cue or a menu action
+    /// does) in the same frame an unmodified arrow arrives. egui reads the
+    /// focused widget's event filter at the start of the pass, so the freshly
+    /// requested focus has none yet; without the editor's cancellation the
+    /// arrow would hand focus to the next widget in the shell's focus order.
+    #[test]
+    fn shell_arrow_in_the_first_focus_frame_stays_in_the_block() {
+        let (app, doc_id, _cue) = shell_fixture();
+        let (mut harness, app) = shell_harness(app);
+        let id = block_id(&doc_id, 0);
+        assert!(
+            !harness.ctx.memory(|memory| memory.has_focus(id)),
+            "the fixture should start with no block focused"
+        );
+
+        app.borrow_mut().block_focus = Some(0);
+        harness.key_press(Key::ArrowDown);
+        harness.run_steps(1);
+
+        assert!(
+            harness.ctx.memory(|memory| memory.has_focus(id)),
+            "an arrow in the frame that first focuses the block must stay in it \
+             even with the full shell's focus order"
+        );
+        assert_eq!(app.borrow().selected_block, 0);
+    }
+}

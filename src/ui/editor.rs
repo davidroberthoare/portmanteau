@@ -1157,6 +1157,16 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             // the text caret.
             let focused = ui.memory(|m| m.has_focus(block_id));
             if focused {
+                // egui resolved this pass's focus direction at `begin_pass`
+                // from the event filter stored with the focused widget. A block
+                // that has only just been given focus has no filter yet:
+                // `set_focus_lock_filter` only takes effect once the widget has
+                // held focus for a whole frame, so an unmodified arrow (or Tab)
+                // on the first focused frames was already recorded as "move to
+                // the next widget". The block owns those keys — the TextEdit
+                // moves the caret and the type cycle below claims Tab — so drop
+                // the pending directional move and keep focus here.
+                ui.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
                 let enter = ui.input_mut(|inp| {
                     inp.consume_key(Modifiers::NONE, Key::Enter)
                 });
@@ -2934,12 +2944,12 @@ mod ui_tests {
         }
 
         /// The frame that first focuses the block has no stored EventFilter
-        /// yet: egui reads the filter at the *start* of a frame, and the app
-        /// installs it after the TextEdit has drawn. An unmodified arrow in
-        /// that same frame therefore falls through to egui's directional focus
-        /// navigation.
+        /// yet: egui reads the filter at the *start* of a frame, and a freshly
+        /// requested focus carries a default filter until the widget has held
+        /// focus for one full frame. The editor cancels the pending directional
+        /// move for a focused block, so an unmodified arrow in that frame stays
+        /// in the text.
         #[test]
-        #[ignore = "reproduces known bug: an arrow key in the first focus frame moves focus to the next block"]
         fn arrow_down_in_the_first_focus_frame_stays_in_the_block() {
             let (mut app, doc_id) = script_fixture();
             if let Some(doc) = app.ws.project.document_mut(&doc_id) {
@@ -2958,6 +2968,62 @@ mod ui_tests {
                 ctx.memory(|memory| memory.has_focus(id)),
                 "an arrow in the frame that first focuses the block must leave \
                  focus in the block; it moved to another element instead"
+            );
+            assert_eq!(app.selected_block, 0);
+        }
+
+        #[test]
+        fn tab_in_the_first_focus_frame_cycles_the_element() {
+            let (mut app, doc_id) = script_fixture();
+            app.block_focus = Some(0);
+            let ctx = headless_ctx();
+            let id = block_id(&doc_id, 0);
+            let medium = app.ws.project.document(&doc_id).unwrap().medium;
+            let before = block_kind(&app, &doc_id, 0);
+            let forward = before.next(medium);
+            assert_ne!(before, forward, "the demo medium has more than one kind");
+
+            // The same stale-filter frame as the arrow probe: Tab must cycle the
+            // element instead of handing focus to the next widget.
+            frame(&mut app, &ctx, vec![key(Key::Tab, Modifiers::NONE)]);
+            assert_eq!(
+                block_kind(&app, &doc_id, 0),
+                forward,
+                "Tab in the first focus frame should advance the element type"
+            );
+            assert!(
+                ctx.memory(|memory| memory.has_focus(id)),
+                "Tab in the first focus frame must not move focus out of the block"
+            );
+        }
+
+        /// The frame after the focus request is the second stale-filter frame:
+        /// egui resolved the arrow from the default filter at `begin_pass`
+        /// before the TextEdit could install its own, so the editor's
+        /// cancellation has to cover it too.
+        #[test]
+        fn arrow_down_on_the_second_frame_after_focus_stays_in_the_block() {
+            let (mut app, doc_id) = script_fixture();
+            if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+                doc.blocks[0].kind = ElementKind::Action;
+                doc.blocks[0].text = "one\ntwo".into();
+            }
+            app.selected_block = 0;
+            app.block_focus = Some(0);
+            let ctx = headless_ctx();
+            let id = block_id(&doc_id, 0);
+
+            // Frame one requests focus; no event yet.
+            frame(&mut app, &ctx, Vec::new());
+            assert!(
+                ctx.memory(|memory| memory.has_focus(id)),
+                "the first frame should focus the block"
+            );
+
+            frame(&mut app, &ctx, vec![key(Key::ArrowDown, Modifiers::NONE)]);
+            assert!(
+                ctx.memory(|memory| memory.has_focus(id)),
+                "an arrow on the frame after the focus request must not move focus"
             );
             assert_eq!(app.selected_block, 0);
         }
