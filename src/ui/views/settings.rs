@@ -114,6 +114,38 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.add_space(10.0);
             hairline(ui);
             ui.add_space(8.0);
+            section_label(ui, "Spelling language");
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let current = app.settings.language.clone();
+                let selected_label = crate::spellcheck::LANGUAGES
+                    .iter()
+                    .find(|(code, _)| *code == current)
+                    .map(|(_, label)| *label)
+                    .unwrap_or("English (US)");
+                let mut change: Option<&'static str> = None;
+                egui::ComboBox::from_id_salt("spelling_language")
+                    .selected_text(RichText::new(selected_label).font(sans(10.5)).color(TEXT))
+                    .width(180.0)
+                    .show_ui(ui, |ui| {
+                        for (code, label) in crate::spellcheck::LANGUAGES {
+                            if ui.selectable_label(current == *code, *label).clicked() {
+                                change = Some(*code);
+                            }
+                        }
+                    });
+                if let Some(code) = change {
+                    app.set_spell_language(code);
+                }
+                ui.label(
+                    RichText::new("Applies to every editor and new projects.")
+                        .font(sans(9.5))
+                        .color(FAINT),
+                );
+            });
+            ui.add_space(10.0);
+            hairline(ui);
+            ui.add_space(8.0);
             ui.label(
                 RichText::new("More preferences coming soon.")
                     .font(sans(9.5))

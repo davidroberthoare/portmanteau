@@ -11,10 +11,13 @@
 
 use std::collections::HashSet;
 
-/// A Hunspell dictionary plus a word list for edit-distance suggestions.
+/// A Hunspell dictionary plus a word list for edit-distance suggestions, the
+/// writer's personal dictionary and words ignored for this session.
 pub struct SpellChecker {
     dict: zspell::Dictionary,
     words: HashSet<String>,
+    custom: HashSet<String>,
+    ignored: HashSet<String>,
 }
 
 impl SpellChecker {
@@ -32,46 +35,127 @@ impl SpellChecker {
             .map(|line| line.trim().to_lowercase())
             .filter(|word| !word.is_empty())
             .collect();
-        Self { dict, words }
+        Self {
+            dict,
+            words,
+            custom: HashSet::new(),
+            ignored: HashSet::new(),
+        }
+    }
+
+    /// Replace the personal dictionary with `words`.
+    pub fn set_custom(&mut self, words: impl IntoIterator<Item = String>) {
+        self.custom = words
+            .into_iter()
+            .map(|word| normalise(&word))
+            .filter(|word| !word.is_empty())
+            .collect();
+    }
+
+    /// Add one word to the personal dictionary.
+    pub fn add_custom(&mut self, word: &str) {
+        let word = normalise(word);
+        if !word.is_empty() {
+            self.custom.insert(word);
+        }
+    }
+
+    /// Ignore a word for the rest of this session. Ignored words are not
+    /// persisted; use [`SpellChecker::add_custom`] for that.
+    pub fn ignore(&mut self, word: &str) {
+        let word = normalise(word);
+        if !word.is_empty() {
+            self.ignored.insert(word);
+        }
+    }
+
+    /// Is `word` correct? Leading/trailing punctuation is ignored, the personal
+    /// dictionary and session-ignored words are accepted, and possessives,
+    /// inflections and hyphenated compounds are handled by Hunspell.
+    pub fn is_correct(&self, word: &str) -> bool {
+        let word = normalise(word);
+        if word.is_empty() {
+            return true;
+        }
+        self.known(&word)
+    }
+
+    /// Is the normalised `word` known to one of our sources?
+    fn known(&self, word: &str) -> bool {
+        if self.custom.contains(word) || self.ignored.contains(word) {
+            return true;
+        }
+        if self.dict.check_word(word) {
+            return true;
+        }
+        // Hunspell's splitter used to verify hyphenated compounds part by part;
+        // do the same here now that tokenisation keeps the hyphen.
+        if word.contains('-') {
+            let mut parts = 0;
+            for part in word.split('-').filter(|part| !part.is_empty()) {
+                parts += 1;
+                if !self.custom.contains(part)
+                    && !self.ignored.contains(part)
+                    && !self.dict.check_word(part)
+                {
+                    return false;
+                }
+            }
+            return parts >= 2;
+        }
+        false
     }
 
     /// Is `word` in the dictionary? Leading/trailing punctuation is ignored;
     /// possessives and inflections are handled by Hunspell.
     pub fn check_word(&self, word: &str) -> bool {
-        let word = normalize_word(word);
-        if word.is_empty() {
-            return true;
-        }
-        self.dict.check_word(&word)
+        self.is_correct(word)
+    }
+
+    /// Byte ranges of misspelled word tokens.
+    ///
+    /// Tokens keep internal apostrophes and hyphens (`cat's`, `well-known`);
+    /// a token with fewer than two alphabetic characters is never reported.
+    /// Offsets come from `char_indices`, so they are exact UTF-8 byte ranges.
+    pub fn misspelled_spans(&self, text: &str) -> Vec<(usize, usize)> {
+        word_tokens(text)
+            .into_iter()
+            .filter(|(start, end)| {
+                let token = &text[*start..*end];
+                alphabetic_count(token) >= 2 && !self.is_correct(token)
+            })
+            .collect()
     }
 
     /// Unique misspelled words in first-seen order.
     ///
-    /// Hunspell's own word splitter drives tokenisation, so contractions are
-    /// left alone and hyphenated compounds are split into parts the dictionary
-    /// can verify.
+    /// Uses the same tokeniser as [`SpellChecker::misspelled_spans`]. Each
+    /// alphabetic part of an incorrect compound is reported separately, so
+    /// `qik's` reports `qik` rather than the possessive form.
     pub fn misspellings(&self, text: &str) -> Vec<String> {
         let mut seen: HashSet<String> = HashSet::new();
         let mut out = Vec::new();
-        for (_, token) in self.dict.check_indices(text) {
-            let word = normalize_word(token);
-            // Skip empty fragments and single letters. Hunspell's splitter
-            // leaves the `s` of a possessive on its own, and one-letter words
-            // are never worth underlining.
-            if word.chars().filter(|c| c.is_alphabetic()).count() <= 1 {
+        for (start, end) in word_tokens(text) {
+            let token = &text[start..end];
+            if alphabetic_count(token) < 2 || self.is_correct(token) {
                 continue;
             }
-            if !seen.insert(word.clone()) {
-                continue;
+            for piece in token.split(|c| c == '\'' || c == '-') {
+                let word = normalise(piece);
+                if alphabetic_count(&word) < 2 || self.is_correct(&word) {
+                    continue;
+                }
+                if seen.insert(word.clone()) {
+                    out.push(word);
+                }
             }
-            out.push(word);
         }
         out
     }
 
     /// Words within edit distance two, sorted by distance then alphabetically.
     pub fn suggest(&self, word: &str, limit: usize) -> Vec<String> {
-        let target = normalize_word(word);
+        let target = normalise(word);
         if target.is_empty() {
             return Vec::new();
         }
@@ -98,12 +182,51 @@ impl SpellChecker {
 
 /// Lowercase a token and strip punctuation from its edges while keeping
 /// internal apostrophes and hyphens (`cat's`, `well-known`).
-fn normalize_word(word: &str) -> String {
+pub fn normalise(word: &str) -> String {
     let lower = word.to_lowercase();
     let trimmed = lower.trim_matches(|c: char| !c.is_alphabetic() && c != '\'' && c != '-');
     trimmed
         .trim_matches(|c: char| c == '\'' || c == '-')
         .to_string()
+}
+
+/// Number of alphabetic characters in a token. Single letters are not worth
+/// reporting, and the `s` left over by a possessive is never a word.
+fn alphabetic_count(word: &str) -> usize {
+    word.chars().filter(|c| c.is_alphabetic()).count()
+}
+
+/// Word token byte ranges. A token starts on an alphabetic character and keeps
+/// internal apostrophes and hyphens only when another letter follows, so
+/// trailing punctuation stays outside the span (`foxx.`, `foxx—`).
+fn word_tokens(text: &str) -> Vec<(usize, usize)> {
+    let mut tokens = Vec::new();
+    let mut start: Option<usize> = None;
+    let mut chars = text.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
+        match start {
+            None => {
+                if ch.is_alphabetic() {
+                    start = Some(index);
+                }
+            }
+            Some(begin) => {
+                let internal = (ch == '\'' || ch == '-')
+                    && chars
+                        .peek()
+                        .map(|(_, next)| next.is_alphabetic())
+                        .unwrap_or(false);
+                if !ch.is_alphabetic() && !internal {
+                    tokens.push((begin, index));
+                    start = None;
+                }
+            }
+        }
+    }
+    if let Some(begin) = start {
+        tokens.push((begin, text.len()));
+    }
+    tokens
 }
 
 /// Levenshtein edit distance, two rolling rows so memory stays linear.
@@ -192,8 +315,8 @@ mod tests {
     fn contractions_and_hyphenated_words_do_not_false_positive() {
         let spell = bundled();
         let miss = spell.misspellings("don't well-known qik's qik");
-        // Hunspell's splitter leaves contractions alone and splits a
-        // hyphenated compound into words it can verify.
+        // Contractions are left alone and a hyphenated compound is verified
+        // part by part.
         assert!(!miss.contains(&"don't".to_string()));
         assert!(!miss.contains(&"well-known".to_string()));
         assert!(!miss.contains(&"well".to_string()));
@@ -203,5 +326,34 @@ mod tests {
         assert!(!miss.contains(&"s".to_string()));
         assert!(miss.contains(&"qik".to_string()));
         assert!(!miss.contains(&"-".to_string()));
+    }
+
+    #[test]
+    fn custom_and_ignored_words_are_accepted() {
+        let mut spell = bundled();
+        spell.add_custom("Zorbatrix");
+        assert!(spell.is_correct("zorbatrix"));
+        assert!(spell.check_word("Zorbatrix,"));
+        spell.ignore("zzzzqqq");
+        assert!(spell.is_correct("zzzzqqq"));
+        // A rebuilt personal dictionary replaces the old entries.
+        spell.set_custom(["saltroadish".to_string()]);
+        assert!(spell.is_correct("saltroadish"));
+        assert!(!spell.is_correct("zorbatrix"));
+    }
+
+    #[test]
+    fn misspelled_spans_report_exact_byte_ranges() {
+        let spell = bundled();
+        assert_eq!(
+            spell.misspelled_spans("the qik brown foxx"),
+            vec![(4, 7), (14, 18)]
+        );
+    }
+
+    #[test]
+    fn misspelled_spans_are_empty_for_correct_text() {
+        let spell = bundled();
+        assert!(spell.misspelled_spans("the brown fox jumps").is_empty());
     }
 }

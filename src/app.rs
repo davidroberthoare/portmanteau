@@ -292,6 +292,8 @@ impl PortmanteauApp {
             collapsed.remove(&draft);
         }
         let settings = crate::settings::load_settings();
+        let mut spell = crate::spellcheck::load(&settings.language);
+        spell.set_custom(settings.custom_words.clone());
         let mut app = Self {
             ws,
             settings,
@@ -336,7 +338,7 @@ impl PortmanteauApp {
             screenshot_requested: false,
             editor_zoom: 1.0,
             corkboard_zoom: 1.0,
-            spell: crate::spellcheck::load(),
+            spell,
             show_spelling: false,
         };
         // Development aid: open the first available comparison so the diff
@@ -366,6 +368,29 @@ impl PortmanteauApp {
             at: Instant::now(),
             kind,
         });
+    }
+
+    /// Switch the spelling dictionary and remember the choice as a global
+    /// default.
+    pub fn set_spell_language(&mut self, language: &str) {
+        self.settings.language = language.to_string();
+        self.spell = crate::spellcheck::load(&self.settings.language);
+        self.spell.set_custom(self.settings.custom_words.clone());
+        let _ = crate::settings::save_settings(&self.settings);
+    }
+
+    /// Add a word to the global personal dictionary. The word is normalised and
+    /// deduplicated, then saved with the other defaults.
+    pub fn add_to_dictionary(&mut self, word: &str) {
+        let word = portmanteau_core::spell::normalise(word);
+        if word.is_empty() {
+            return;
+        }
+        if !self.settings.custom_words.contains(&word) {
+            self.settings.custom_words.push(word.clone());
+        }
+        self.spell.add_custom(&word);
+        let _ = crate::settings::save_settings(&self.settings);
     }
 
     pub fn open_doc(&mut self, id: String) {

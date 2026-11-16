@@ -804,6 +804,12 @@ pub struct AppSettings {
     /// Show the spelling panel and check words in the editors.
     #[serde(default = "default_true")]
     pub spellcheck: bool,
+    /// The writer's personal dictionary, shared by every project.
+    #[serde(default)]
+    pub custom_words: Vec<String>,
+    /// Spelling dictionary code, matching `spellcheck::LANGUAGES`.
+    #[serde(default = "default_language")]
+    pub language: String,
 }
 
 impl Default for AppSettings {
@@ -811,12 +817,18 @@ impl Default for AppSettings {
         Self {
             styles: ElementStyles::default(),
             spellcheck: true,
+            custom_words: Vec::new(),
+            language: default_language(),
         }
     }
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_language() -> String {
+    "en_US".to_string()
 }
 
 /// How page numbers are written in a compiled PDF.
