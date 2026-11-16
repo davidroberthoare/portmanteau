@@ -956,6 +956,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             ui.ctx().fonts_mut(|f| f.layout_job(job))
         };
         let edit = TextEdit::multiline(&mut doc.text)
+            .id(Id::unique(("prose_body", doc_id)))
             .font(FontId::new(text_size, family.clone()))
             .layouter(&mut layouter)
             .text_color(PAPER_TEXT)
@@ -1027,7 +1028,6 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut add_at: Option<usize> = None;
     let mut remove_at: Option<usize> = None;
     let mut cycle_at: Option<(usize, bool)> = None;
-    let mut set_text_at: Option<(usize, String)> = None;
     let mut new_character: Option<NewCharacterState> = None;
     let project_title = app.ws.project.title.clone();
     // Clone the element styles before the document is borrowed mutably. Each
@@ -1055,13 +1055,6 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
         names
     };
-    // Escape closes the character popup even though it also surrenders the
-    // text widget's focus. The filter below leaves `escape: false`, so egui
-    // clears the focus before the widget sees the key; reading the raw input
-    // here is what keeps the popup's own dismissal working.
-    if ui.input(|i| i.key_pressed(Key::Escape)) {
-        app.character_menu = None;
-    }
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
         paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), doc.pages());
@@ -1149,6 +1142,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         let content_width = ui.available_width();
         for i in 0..doc.blocks.len() {
             let block_id = Id::unique(("script_block", doc_id, i));
+            let kind = doc.blocks[i].kind;
             if app.block_focus == Some(i) {
                 ui.memory_mut(|m| m.request_focus(block_id));
             }
@@ -1167,11 +1161,17 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 // moves the caret and the type cycle below claims Tab — so drop
                 // the pending directional move and keep focus here.
                 ui.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
-                let enter = ui.input_mut(|inp| {
-                    inp.consume_key(Modifiers::NONE, Key::Enter)
-                });
-                if enter {
-                    add_at = Some(i);
+                // A Character cue hands Enter to its CompletionPopup (see
+                // below), which consumes the key before the TextEdit sees it.
+                // Reading it here would steal the accept key, so a Character
+                // block checks the leftover Enter after the popup has run.
+                if kind != ElementKind::Character {
+                    let enter = ui.input_mut(|inp| {
+                        inp.consume_key(Modifiers::NONE, Key::Enter)
+                    });
+                    if enter {
+                        add_at = Some(i);
+                    }
                 }
                 // Shift+Tab has to be matched before plain Tab: `consume_key`
                 // ignores extra Shift/Alt modifiers, so a `NONE` pattern would
@@ -1194,7 +1194,6 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 }
             }
 
-            let kind = doc.blocks[i].kind;
             let is_scene = kind == ElementKind::SceneHeading;
             let scene_label = if is_scene {
                 let label = format!("{scene_no}");
@@ -1259,8 +1258,13 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     job.wrap.max_width = wrap_width;
                     ui.ctx().fonts_mut(|f| f.layout_job(job))
                 };
+                let before = doc.blocks[i].text.clone();
+                let character_hint = if kind == ElementKind::Character {
+                    next_speaker(&doc.blocks, i)
+                } else {
+                    None
+                };
                 let mut edit = TextEdit::multiline(&mut doc.blocks[i].text)
-                    .id(block_id)
                     .font(FontId::new(font_size, family.clone()))
                     .layouter(&mut layouter)
                     .text_color(text_color)
@@ -1276,7 +1280,91 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 if kind == ElementKind::Transition {
                     edit = edit.align(egui::Align2::RIGHT_TOP);
                 }
-                let output = edit.show(ui);
+                let mut accepted_dirty = false;
+                let mut new_character_name: Option<String> = None;
+                let output: egui::text_edit::TextEditOutput =
+                    if kind == ElementKind::Character {
+                        // The popup owns the TextEdit's id and its keyboard
+                        // handling: unmodified Up/Down move the highlighted
+                        // suggestion, Enter accepts, and Escape dismisses.
+                        // Shift/Ctrl+arrows keep reaching the TextEdit, so
+                        // word-processor selection and word jumps still work.
+                        let mut typed_word = String::new();
+                        let completion = egui::CompletionPopup::new(block_id)
+                            // A cue is one line; newlines do not occur inside it,
+                            // so the whole line is the word the popup filters on.
+                            .word_boundary(|c| c == '\n')
+                            // Tab is the element-type cycle, so only Enter accepts.
+                            .accept_keys(vec![egui::Key::Enter])
+                            .align(egui::RectAlign::BOTTOM_START)
+                            .max_height(240.0)
+                            .show(ui, edit, |query| {
+                                typed_word = query.word.to_string();
+                                let mut suggestions: Vec<egui::Suggestion> = Vec::new();
+                                let hint = if query.word.is_empty() {
+                                    character_hint.as_deref()
+                                } else {
+                                    None
+                                };
+                                if let Some(speaker) = hint {
+                                    suggestions.push(
+                                        egui::Suggestion::new(speaker)
+                                            .content(format!("↺ {speaker}")),
+                                    );
+                                } else {
+                                    let needle = query.word.to_lowercase();
+                                    suggestions.extend(
+                                        character_names
+                                            .iter()
+                                            .filter(|name| {
+                                                name.to_lowercase().contains(&needle)
+                                            })
+                                            .map(|name| egui::Suggestion::new(name.clone())),
+                                    );
+                                }
+                                suggestions.push(
+                                    egui::Suggestion::new(NEW_CHARACTER_SENTINEL)
+                                        .content("+ New character…"),
+                                );
+                                suggestions
+                            });
+                        if let Some(accepted) = &completion.accepted {
+                            if accepted.insert == NEW_CHARACTER_SENTINEL {
+                                // The popup has already replaced the cue with the
+                                // sentinel; undo that and open the modal instead.
+                                new_character_name = Some(typed_word.clone());
+                            } else {
+                                // The popup inserted the name itself, but the
+                                // TextEdit did not process the key, so mark the
+                                // document dirty here.
+                                accepted_dirty = true;
+                            }
+                        }
+                        completion.text_edit
+                    } else {
+                        edit.id(block_id).show(ui)
+                    };
+                if let Some(name) = new_character_name {
+                    doc.blocks[i].text = before;
+                    new_character = Some(NewCharacterState {
+                        doc_id: doc_id.to_string(),
+                        block: i,
+                        name,
+                        role: String::new(),
+                    });
+                } else if accepted_dirty {
+                    doc.touch();
+                    dirty = true;
+                }
+                if kind == ElementKind::Character
+                    && focused
+                    && ui.input_mut(|inp| inp.consume_key(Modifiers::NONE, Key::Enter))
+                {
+                    // The popup was not open (a freshly focused block, or one
+                    // dismissed with Escape), so Enter still starts a new
+                    // element as it does on every other kind.
+                    add_at = Some(i);
+                }
                 if spell_on {
                     let key = Id::unique(("spell_menu", doc_id, i));
                     let byte = spell_menu_byte(
@@ -1327,13 +1415,6 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 }
                 if resp.clicked() {
                     app.selected_block = i;
-                    // Clicking a block owns the popup: open it on a Character
-                    // element, close it for anything else.
-                    app.character_menu = if kind == ElementKind::Character {
-                        Some((doc_id.to_string(), i))
-                    } else {
-                        None
-                    };
                 }
                 if resp.changed() {
                     if style.uppercase {
@@ -1341,29 +1422,6 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     }
                     doc.touch();
                     dirty = true;
-                    if kind == ElementKind::Character {
-                        app.character_menu = Some((doc_id.to_string(), i));
-                    }
-                }
-                // The popup is drawn from view state, not from text focus, so
-                // it stays on screen while the pointer travels to it. Clicking
-                // a name then registers instead of unmounting the widget first.
-                let menu_open = matches!(
-                    app.character_menu.as_ref(),
-                    Some((id, index)) if id == doc_id && *index == i
-                );
-                if kind == ElementKind::Character && menu_open {
-                    character_assist(
-                        ui,
-                        doc_id,
-                        i,
-                        resp.rect,
-                        &character_names,
-                        doc.blocks[i].text.as_str(),
-                        &doc.blocks,
-                        &mut set_text_at,
-                        &mut new_character,
-                    );
                 }
                 if kind == ElementKind::Transition {
                     ui.add_space(4.0);
@@ -1439,27 +1497,8 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             }
         }
     }
-    if let Some((i, text)) = set_text_at {
-        if let Some(doc) = app.ws.project.document_mut(doc_id) {
-            let mut changed = false;
-            if let Some(block) = doc.blocks.get_mut(i) {
-                if block.text != text {
-                    block.text = text;
-                    changed = true;
-                }
-            }
-            if changed {
-                doc.touch();
-                app.selected_block = i;
-                app.block_focus = Some(i);
-                app.ws.dirty = true;
-            }
-        }
-        app.character_menu = None;
-    }
     if let Some(state) = new_character {
         app.new_character = Some(state);
-        app.character_menu = None;
     }
     apply_spell_actions(app, spell_actions);
     if dirty {
@@ -1497,118 +1536,9 @@ fn ctrl_digit_element(ui: &mut egui::Ui, medium: Medium) -> Option<ElementKind> 
     None
 }
 
-/// The autocomplete dropdown and next-speaker hint for one focused Character
-/// element. Anything that needs a mutation is collected into the two `Option`
-/// out-parameters, because `doc` is borrowed for the draw.
-#[allow(clippy::too_many_arguments)]
-fn character_assist(
-    ui: &mut egui::Ui,
-    doc_id: &str,
-    index: usize,
-    rect: egui::Rect,
-    names: &[String],
-    text: &str,
-    blocks: &[portmanteau_core::Block],
-    set_text_at: &mut Option<(usize, String)>,
-    new_character: &mut Option<NewCharacterState>,
-) {
-    let query = text.trim().to_lowercase();
-    let matches: Vec<&String> = names
-        .iter()
-        .filter(|name| {
-            if query.is_empty() {
-                true
-            } else {
-                let lower = name.to_lowercase();
-                lower.contains(&query) && lower != query
-            }
-        })
-        .take(6)
-        .collect();
-
-    let area_pos = egui::pos2(rect.left(), rect.bottom() + 3.0);
-    egui::Area::new(Id::unique(("character_autocomplete", doc_id, index)))
-        .order(egui::Order::Foreground)
-        .fixed_pos(area_pos)
-        .show(ui.ctx(), |ui| {
-            Frame::new()
-                .fill(Color32::from_rgb(247, 243, 233))
-                .stroke(Stroke::new(1.0, PAPER_EDGE))
-                .corner_radius(CornerRadius::same(5))
-                .shadow(egui::epaint::Shadow {
-                    offset: [0, 6],
-                    blur: 18,
-                    spread: 0,
-                    color: Color32::from_black_alpha(60),
-                })
-                .inner_margin(Margin::symmetric(5, 5))
-                .show(ui, |ui| {
-                    ui.set_min_width(190.0);
-                    ui.spacing_mut().item_spacing.y = 1.0;
-                    for name in &matches {
-                        let btn = egui::Button::new(
-                            RichText::new(name.as_str())
-                                .font(sans(10.5))
-                                .color(PAPER_TEXT),
-                        )
-                        .frame(false)
-                        .min_size(Vec2::new(180.0, 20.0));
-                        if ui.add(btn).clicked() {
-                            *set_text_at = Some((index, (*name).clone()));
-                        }
-                    }
-                    if !matches.is_empty() {
-                        ui.add_space(2.0);
-                        let (rule, _) =
-                            ui.allocate_exact_size(Vec2::new(180.0, 1.0), Sense::hover());
-                        ui.painter().line_segment(
-                            [rule.left_center(), rule.right_center()],
-                            Stroke::new(1.0, PAPER_EDGE),
-                        );
-                        ui.add_space(2.0);
-                    }
-                    let new = egui::Button::new(
-                        RichText::new("+ New character…")
-                            .font(sans(10.0))
-                            .color(PAPER_MUTED),
-                    )
-                    .frame(false)
-                    .min_size(Vec2::new(180.0, 20.0));
-                    if ui.add(new).clicked() {
-                        *new_character = Some(NewCharacterState {
-                            doc_id: doc_id.to_string(),
-                            block: index,
-                            name: text.trim().to_string(),
-                            role: String::new(),
-                        });
-                    }
-                });
-        });
-
-    if text.trim().is_empty() {
-        if let Some(speaker) = next_speaker(blocks, index) {
-            let pos = egui::pos2(rect.right() + 8.0, rect.top() + 1.0);
-            egui::Area::new(Id::unique(("next_speaker", doc_id, index)))
-                .order(egui::Order::Foreground)
-                .fixed_pos(pos)
-                .show(ui.ctx(), |ui| {
-                    let hint = egui::Button::new(
-                        RichText::new(format!("↺ {speaker}"))
-                            .font(mono(8.5))
-                            .color(PAPER_MUTED),
-                    )
-                    .frame(false);
-                    if ui
-                        .add(hint)
-                        .on_hover_text("Fill the next speaker")
-                        .clicked()
-                    {
-                        *set_text_at = Some((index, speaker.clone()));
-                    }
-                });
-        }
-    }
-}
+/// The `insert` text behind the popup's "New character" row. U+0001 cannot be
+/// typed into a cue, so an accepted suggestion carrying it is never a name.
+const NEW_CHARACTER_SENTINEL: &str = "\u{1}new-character";
 
 /// In a back-and-forth, the next speaker is the other half of the last two
 /// distinct Character names before `index`. Repeated or one-sided names give no
@@ -1906,21 +1836,97 @@ mod ui_tests {
     }
 
     #[test]
-    fn typing_into_a_character_cue_opens_the_character_menu() {
-        let (mut app, doc_id) = script_fixture();
-        let ctx = headless_ctx();
-        if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-            doc.blocks[0].kind = ElementKind::Character;
-            doc.blocks[0].text.clear();
-        }
-        settle(&mut app, &ctx);
-        assert_eq!(app.character_menu, None, "the menu starts closed");
+    fn typing_into_a_character_cue_opens_the_character_popup() {
+        let mut fixture = click_harness();
+        assert_eq!(fixture.text(), "");
 
-        frame(&mut app, &ctx, vec![Event::Text("ma".into())]);
+        fixture
+            .harness
+            .input_mut()
+            .events
+            .push(Event::Text("ma".into()));
+        fixture.harness.run_steps(2);
+
+        assert_eq!(fixture.text(), "MA", "the cue stores all-caps text");
+        assert!(
+            fixture
+                .harness
+                .query_by_role_and_label(Role::Button, "Mara Venn")
+                .is_some(),
+            "typing a character cue should open the completion popup with matching names"
+        );
+    }
+
+    #[test]
+    fn popup_arrow_down_then_enter_inserts_the_second_suggestion() {
+        let mut fixture = click_harness();
+        // The demo characters sort as Elias Rook, Mara Venn, Ruth Alder, The Boy.
+        assert!(
+            fixture
+                .harness
+                .query_by_role_and_label(Role::Button, "Elias Rook")
+                .is_some(),
+            "the popup should start on the first suggestion"
+        );
+
+        fixture.harness.key_press(Key::ArrowDown);
+        fixture.harness.run_steps(2);
         assert_eq!(
-            app.character_menu,
-            Some((doc_id.clone(), 0)),
-            "typing a character cue should open the autocomplete for that block"
+            fixture.text(),
+            "",
+            "ArrowDown while the popup is open selects a row, it does not edit the text"
+        );
+
+        fixture.harness.key_press(Key::Enter);
+        fixture.harness.run_steps(2);
+        assert_eq!(
+            fixture.text(),
+            "Mara Venn",
+            "ArrowDown moved the selection to the second suggestion, so Enter inserted it"
+        );
+    }
+
+    #[test]
+    fn popup_escape_closes_it_and_leaves_the_text_alone() {
+        let mut fixture = click_harness();
+        assert!(
+            fixture
+                .harness
+                .query_by_role_and_label(Role::Button, "Mara Venn")
+                .is_some(),
+            "the popup should be open before Escape"
+        );
+
+        fixture.harness.key_press(Key::Escape);
+        fixture.harness.run_steps(2);
+
+        assert_eq!(fixture.text(), "", "Escape must not change the cue");
+        assert!(
+            fixture
+                .harness
+                .query_by_role_and_label(Role::Button, "Mara Venn")
+                .is_none(),
+            "Escape should close the popup (no suggestion buttons in the tree)"
+        );
+    }
+
+    #[test]
+    fn popup_enter_on_a_filtered_single_name_inserts_it() {
+        let mut fixture = click_harness();
+        fixture
+            .harness
+            .input_mut()
+            .events
+            .push(Event::Text("ma".into()));
+        fixture.harness.run_steps(2);
+        assert_eq!(fixture.text(), "MA");
+
+        fixture.harness.key_press(Key::Enter);
+        fixture.harness.run_steps(2);
+        assert_eq!(
+            fixture.text(),
+            "Mara Venn",
+            "Enter accepts the only matching name"
         );
     }
 
@@ -2040,16 +2046,17 @@ mod ui_tests {
             block_kind(&self.app.borrow(), &self.doc_id, 0)
         }
 
-        fn open_character_menu(&mut self) {
+        fn open_character_popup(&mut self) {
             self.harness
                 .input_mut()
                 .events
                 .push(Event::Text("ma".into()));
             self.harness.run();
-            assert_eq!(
-                self.app.borrow().character_menu,
-                Some((self.doc_id.clone(), 0)),
-                "typing should open the character autocomplete"
+            assert!(
+                self.harness
+                    .query_by_role_and_label(Role::Button, "Mara Venn")
+                    .is_some(),
+                "typing should open the character completion popup"
             );
         }
     }
@@ -2057,7 +2064,7 @@ mod ui_tests {
     #[test]
     fn clicking_an_autocomplete_name_fills_the_block() {
         let mut fixture = click_harness();
-        fixture.open_character_menu();
+        fixture.open_character_popup();
 
         fixture
             .harness
@@ -2070,17 +2077,17 @@ mod ui_tests {
             "Mara Venn",
             "clicking a suggested name should store it in the Character block"
         );
-        assert_eq!(
-            fixture.app.borrow().character_menu,
-            None,
-            "the autocomplete should close after a name is chosen"
+        assert!(
+            fixture.app.borrow().new_character.is_none(),
+            "choosing a name must not open the new-character modal"
         );
     }
 
     #[test]
     fn clicking_new_character_opens_the_modal() {
         let mut fixture = click_harness();
-        fixture.open_character_menu();
+        fixture.open_character_popup();
+        let before = fixture.text();
 
         fixture
             .harness
@@ -2089,16 +2096,17 @@ mod ui_tests {
         fixture.harness.run();
 
         let app = fixture.app.borrow();
-        assert_eq!(
-            app.character_menu, None,
-            "the autocomplete should close when the new-character modal opens"
-        );
         let state = app
             .new_character
             .as_ref()
             .expect("clicking '+ New character…' should open the modal state");
         assert_eq!(state.doc_id, fixture.doc_id);
         assert_eq!(state.block, 0);
+        assert_eq!(
+            fixture.text(),
+            before,
+            "the sentinel the popup inserted must be undone before the modal opens"
+        );
     }
 
     #[test]
@@ -2364,6 +2372,13 @@ mod ui_tests {
                 .expect("the text edit should have stored a caret")
         }
 
+        /// Read the full selection range (primary and secondary cursors).
+        fn caret_range(harness: &Harness<'_>, id: Id) -> egui::text::CCursorRange {
+            egui::text_edit::TextEditState::load(&harness.ctx, id)
+                .and_then(|state| state.cursor.char_range())
+                .expect("the text edit should have stored a caret range")
+        }
+
         #[test]
         fn mouse_opens_reads_and_selects_the_spelling_language_combo() {
             let mut app = PortmanteauApp::new(None);
@@ -2484,13 +2499,7 @@ mod ui_tests {
                 .type_text("e");
             fixture.harness.run_steps(2);
 
-            assert_eq!(
-                fixture.app.borrow().character_menu,
-                Some((fixture.doc_id.clone(), 0)),
-                "typing should open the character dropdown"
-            );
-
-            // Read the accessible menu contents.
+            // Read the accessible popup contents.
             let labels: Vec<String> = fixture
                 .harness
                 .get_all_by_role(Role::Button)
@@ -2498,15 +2507,15 @@ mod ui_tests {
                 .collect();
             assert!(
                 labels.iter().any(|label| label == "Mara Venn"),
-                "the character dropdown should expose Mara Venn; saw {labels:?}"
+                "the character popup should expose Mara Venn; saw {labels:?}"
             );
             assert!(
                 labels.iter().any(|label| label == "Elias Rook"),
-                "the character dropdown should expose Elias Rook; saw {labels:?}"
+                "the character popup should expose Elias Rook; saw {labels:?}"
             );
             assert!(
                 labels.iter().any(|label| label == "+ New character…"),
-                "the character dropdown should expose the new-character action; saw {labels:?}"
+                "the character popup should expose the new-character action; saw {labels:?}"
             );
 
             fixture
@@ -2519,10 +2528,50 @@ mod ui_tests {
                 "Mara Venn",
                 "clicking a name should fill the Character block"
             );
+            assert!(
+                fixture.app.borrow().new_character.is_none(),
+                "choosing a name must not open the new-character modal"
+            );
+        }
+
+        /// An empty cue in a back-and-forth offers the other half of the last
+        /// two distinct speakers as the single suggestion.
+        #[test]
+        fn popup_offers_the_next_speaker_for_an_empty_cue() {
+            use portmanteau_core::Block;
+
+            let (mut app, doc_id) = script_fixture();
+            if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+                doc.blocks = vec![
+                    Block::new(ElementKind::Character, "MARA"),
+                    Block::new(ElementKind::Dialogue, "One."),
+                    Block::new(ElementKind::Character, "BOY"),
+                    Block::new(ElementKind::Dialogue, "Two."),
+                    Block::new(ElementKind::Character, ""),
+                ];
+            }
+            app.selected_block = 4;
+            app.block_focus = Some(4);
+            let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
+
+            let id = block_id(&doc_id, 4);
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "the empty cue should hold focus"
+            );
+            assert!(
+                harness
+                    .query_by_role_and_label(Role::Button, "↺ MARA")
+                    .is_some(),
+                "an empty cue should offer the next speaker as its suggestion"
+            );
+
+            harness.key_press(Key::Enter);
+            harness.run_steps(2);
             assert_eq!(
-                fixture.app.borrow().character_menu,
-                None,
-                "choosing a name should close the dropdown"
+                block_text(&app.borrow(), &doc_id, 4),
+                "MARA",
+                "Enter on the next-speaker suggestion fills the cue"
             );
         }
 
@@ -2690,11 +2739,7 @@ mod ui_tests {
         }
 
         /// Focus a script block with a real click and type a character cue.
-        fn click_into_empty_character_block(
-            harness: &mut Harness<'_>,
-            app: &Rc<RefCell<PortmanteauApp>>,
-            doc_id: &str,
-        ) {
+        fn click_into_empty_character_block(harness: &mut Harness<'_>, doc_id: &str) {
             let pos = empty_multiline_center(harness)
                 .expect("the fixture should expose one empty Character input");
             pointer_move(harness, pos);
@@ -2712,10 +2757,11 @@ mod ui_tests {
 
             harness.input_mut().events.push(Event::Text("ma".into()));
             harness.run_steps(2);
-            assert_eq!(
-                app.borrow().character_menu,
-                Some((doc_id.to_string(), 0)),
-                "typing into the clicked cue should open the autocomplete"
+            assert!(
+                harness
+                    .query_by_role_and_label(Role::Button, "Mara Venn")
+                    .is_some(),
+                "typing into the clicked cue should open the completion popup"
             );
         }
 
@@ -2735,7 +2781,7 @@ mod ui_tests {
             // No queued focus: the pointer click has to do the focusing.
             app.block_focus = None;
             let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
-            click_into_empty_character_block(&mut harness, &app, &doc_id);
+            click_into_empty_character_block(&mut harness, &doc_id);
 
             real_click(&mut harness, Role::Button, "Mara Venn", 2);
             harness.run_steps(2);
@@ -2745,10 +2791,9 @@ mod ui_tests {
                 "Mara Venn",
                 "a real pointer click on the suggestion should fill the cue"
             );
-            assert_eq!(
-                app.borrow().character_menu,
-                None,
-                "choosing a name with the pointer should close the autocomplete"
+            assert!(
+                app.borrow().new_character.is_none(),
+                "choosing a name with the pointer must not open the new-character modal"
             );
         }
 
@@ -2758,7 +2803,7 @@ mod ui_tests {
             let mut app = app;
             app.block_focus = None;
             let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
-            click_into_empty_character_block(&mut harness, &app, &doc_id);
+            click_into_empty_character_block(&mut harness, &doc_id);
 
             real_click(&mut harness, Role::Button, "+ New character…", 2);
             harness.run_steps(2);
@@ -2770,32 +2815,38 @@ mod ui_tests {
                 .expect("a real pointer click should open the new-character modal");
             assert_eq!(state.doc_id, doc_id);
             assert_eq!(state.block, 0);
-            assert_eq!(borrowed.character_menu, None);
+            assert_eq!(
+                block_text(&borrowed, &doc_id, 0),
+                "MA",
+                "the popup's sentinel insert must be undone before the modal opens"
+            );
         }
 
         #[test]
-        fn real_pointer_hover_does_not_dismiss_the_character_menu() {
+        fn real_pointer_hover_does_not_dismiss_the_character_popup() {
             let (app, doc_id) = click_fixture();
             let mut app = app;
             app.block_focus = None;
             let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
-            click_into_empty_character_block(&mut harness, &app, &doc_id);
+            click_into_empty_character_block(&mut harness, &doc_id);
 
             // A human moves the pointer onto the popup and dwells there before
-            // pressing. The popup is view state, so hovering must not close it.
+            // pressing. CompletionPopup disables focus surrender while hovered,
+            // so the widget must keep focus and the popup must stay open.
             let pos = center_of(&harness, Role::Button, "Mara Venn")
-                .expect("Mara Venn should be in the open menu");
+                .expect("Mara Venn should be in the open popup");
             pointer_move(&mut harness, pos);
             harness.run_steps(6);
-            assert_eq!(
-                app.borrow().character_menu,
-                Some((doc_id.clone(), 0)),
+            assert!(
+                harness
+                    .query_by_role_and_label(Role::Button, "Mara Venn")
+                    .is_some(),
                 "hovering the popup for several frames must not dismiss it"
             );
 
             // Finish the click from where the pointer already is.
             let pos = center_of(&harness, Role::Button, "Mara Venn")
-                .expect("Mara Venn should still be in the open menu");
+                .expect("Mara Venn should still be in the open popup");
             pointer_button(&mut harness, pos, true);
             pointer_button(&mut harness, pos, false);
             harness.run_steps(2);
@@ -2803,14 +2854,14 @@ mod ui_tests {
         }
 
         #[test]
-        fn real_pointer_character_menu_works_at_the_real_editor_width() {
+        fn real_pointer_character_popup_works_at_the_real_editor_width() {
             let (app, doc_id) = click_fixture();
             let mut app = app;
             app.block_focus = None;
             // 1440x930 window with ~800 px left for the editor once the rail,
             // binder and inspector are drawn.
             let (mut harness, app) = real_harness(app, REAL_SCREEN, Some(800.0), 4, editor::show);
-            click_into_empty_character_block(&mut harness, &app, &doc_id);
+            click_into_empty_character_block(&mut harness, &doc_id);
 
             real_click(&mut harness, Role::Button, "Mara Venn", 2);
             harness.run_steps(2);
@@ -2904,6 +2955,151 @@ mod ui_tests {
                 caret_index(&harness, id),
                 0,
                 "ArrowUp should return the caret to the start of the first line"
+            );
+            assert_eq!(app.borrow().selected_block, 0);
+        }
+
+        /// Word-processor modifiers must keep working in a script block:
+        /// Shift+Arrow selects, Ctrl+Arrow jumps a whole word, and a plain
+        /// arrow only moves the caret (never focus or the selected block).
+        #[test]
+        fn script_shift_ctrl_and_plain_arrows_move_the_caret_not_the_focus() {
+            let (mut harness, app, _doc_id, id) = settled_multiline("one two three");
+            set_caret(&harness, id, 0);
+            harness.run_steps(1);
+            assert_eq!(caret_index(&harness, id), 0);
+
+            harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowRight);
+            harness.run_steps(2);
+            let range = caret_range(&harness, id);
+            assert_eq!(
+                (range.primary.index.0, range.secondary.index.0),
+                (1, 0),
+                "Shift+ArrowRight should extend a selection one character"
+            );
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "Shift+ArrowRight must not move focus"
+            );
+            assert_eq!(app.borrow().selected_block, 0);
+
+            set_caret(&harness, id, 0);
+            harness.run_steps(1);
+            harness.key_press_modifiers(Modifiers::CTRL, Key::ArrowRight);
+            harness.run_steps(2);
+            let range = caret_range(&harness, id);
+            assert_eq!(
+                (range.primary.index.0, range.secondary.index.0),
+                (3, 3),
+                "Ctrl+ArrowRight should jump to the end of the whole word"
+            );
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "Ctrl+ArrowRight must not move focus"
+            );
+            assert_eq!(app.borrow().selected_block, 0);
+
+            set_caret(&harness, id, 4);
+            harness.run_steps(1);
+            harness.key_press(Key::ArrowLeft);
+            harness.run_steps(2);
+            assert_eq!(
+                caret_index(&harness, id),
+                3,
+                "a plain arrow moves the caret one character"
+            );
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "a plain arrow must not move focus"
+            );
+            assert_eq!(app.borrow().selected_block, 0);
+
+            harness.key_press(Key::ArrowRight);
+            harness.run_steps(2);
+            assert_eq!(caret_index(&harness, id), 4);
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "a plain arrow must not move focus"
+            );
+            assert_eq!(app.borrow().selected_block, 0);
+        }
+
+        /// The same word-processor keys on the prose body.
+        #[test]
+        fn prose_shift_ctrl_and_plain_arrows_move_the_caret_not_the_focus() {
+            let mut app = PortmanteauApp::new(None);
+            app.settings.spellcheck = false;
+            app.show_spelling = false;
+            app.view = View::Write;
+            app.write_mode = WriteMode::Continuous;
+            let doc_id = app
+                .ws
+                .project
+                .documents
+                .iter()
+                .find(|d| d.kind == DocKind::Chapter)
+                .map(|d| d.id.clone())
+                .expect("the demo has a prose chapter");
+            if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+                doc.text = "one two three".into();
+            }
+            app.selected = Some(doc_id.clone());
+            let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
+            let id = Id::unique(("prose_body", doc_id.as_str()));
+
+            harness
+                .get_all_by_value("one two three")
+                .find(|node| node.accesskit_node().role() == Role::MultilineTextInput)
+                .expect("the prose body should be a multiline input holding the seed text")
+                .focus();
+            harness.run_steps(2);
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "the prose body should accept focus"
+            );
+
+            set_caret(&harness, id, 0);
+            harness.run_steps(1);
+            harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowRight);
+            harness.run_steps(2);
+            let range = caret_range(&harness, id);
+            assert_eq!(
+                (range.primary.index.0, range.secondary.index.0),
+                (1, 0),
+                "Shift+ArrowRight should extend a selection in prose"
+            );
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "Shift+ArrowRight must not move focus"
+            );
+
+            set_caret(&harness, id, 0);
+            harness.run_steps(1);
+            harness.key_press_modifiers(Modifiers::CTRL, Key::ArrowRight);
+            harness.run_steps(2);
+            let range = caret_range(&harness, id);
+            assert_eq!(
+                (range.primary.index.0, range.secondary.index.0),
+                (3, 3),
+                "Ctrl+ArrowRight should jump to the end of the whole word in prose"
+            );
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "Ctrl+ArrowRight must not move focus"
+            );
+
+            set_caret(&harness, id, 4);
+            harness.run_steps(1);
+            harness.key_press(Key::ArrowLeft);
+            harness.run_steps(2);
+            assert_eq!(
+                caret_index(&harness, id),
+                3,
+                "a plain arrow moves the prose caret one character"
+            );
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "a plain arrow must not move focus"
             );
             assert_eq!(app.borrow().selected_block, 0);
         }
@@ -3094,7 +3290,7 @@ mod ui_tests {
                 "Mara Venn",
                 "the AccessKit action reaches the same button handler"
             );
-            assert_eq!(app.borrow().character_menu, None);
+            assert!(app.borrow().new_character.is_none());
         }
 
         #[test]

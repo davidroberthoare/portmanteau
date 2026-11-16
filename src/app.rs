@@ -243,11 +243,6 @@ pub struct PortmanteauApp {
     pub path_dialog: Option<PathDialog>,
     pub path_draft: String,
     pub new_character: Option<NewCharacterState>,
-    /// The character autocomplete that is currently drawn, as
-    /// `(document id, block index)`. It lives outside the text widget so the
-    /// popup survives the block losing focus when the pointer moves onto it to
-    /// click a name.
-    pub character_menu: Option<(String, usize)>,
     pub diff: Option<DiffState>,
     pub outline_filter: usize,
     pub screenshot: Option<PathBuf>,
@@ -330,7 +325,6 @@ impl PortmanteauApp {
             path_dialog: None,
             path_draft: String::new(),
             new_character: None,
-            character_menu: None,
             diff: None,
             outline_filter: 0,
             screenshot,
@@ -1569,7 +1563,7 @@ mod shell_probe {
     use super::*;
     use eframe::egui::accesskit::Role;
     use eframe::egui::{Event, Rect};
-    use egui_kittest::kittest::{NodeT, Queryable};
+    use egui_kittest::kittest::Queryable;
     use egui_kittest::Harness;
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -1680,7 +1674,7 @@ mod shell_probe {
     }
 
     #[test]
-    fn shell_character_menu_fills_the_block_from_a_pointer_click() {
+    fn shell_character_popup_fills_the_block_from_a_pointer_click() {
         let (app, doc_id, cue) = shell_fixture();
         let (mut harness, app) = shell_harness(app);
 
@@ -1699,19 +1693,11 @@ mod shell_probe {
 
         harness.input_mut().events.push(Event::Text("ma".into()));
         harness.run_steps(2);
-        assert_eq!(
-            app.borrow().character_menu,
-            Some((doc_id.clone(), cue)),
-            "typing into the clicked cue should open the autocomplete in the full shell"
-        );
-
-        let labels: Vec<String> = harness
-            .get_all_by_role(Role::Button)
-            .filter_map(|node| node.accesskit_node().label())
-            .collect();
         assert!(
-            labels.iter().any(|label| label == "Mara Venn"),
-            "the full-shell dropdown should expose Mara Venn; saw {labels:?}"
+            harness
+                .query_by_role_and_label(Role::Button, "Mara Venn")
+                .is_some(),
+            "typing into the clicked cue should open the completion popup in the full shell"
         );
 
         harness
@@ -1725,10 +1711,9 @@ mod shell_probe {
             text, "Mara Venn",
             "clicking a name in the full shell should fill the Character block"
         );
-        assert_eq!(
-            app.borrow().character_menu,
-            None,
-            "choosing a name should close the full-shell dropdown"
+        assert!(
+            app.borrow().new_character.is_none(),
+            "choosing a name must not open the new-character modal"
         );
     }
 

@@ -1075,3 +1075,36 @@ mechanical API updates were:
 `Cargo.lock` carries eframe, egui, egui_extras and egui_kittest 0.37.0, with no
 0.31 copies left. Build, 93 tests, all seven workspace screenshots and the CLI
 stats/PDF export were re-run after the upgrade.
+
+## Round 35 — egui `CompletionPopup` replaces the custom character menu
+
+The screenplay character autocomplete is now `egui::CompletionPopup` (0.37) over
+the cue's `TextEdit`, instead of the painted `egui::Area` of buttons driven by
+`PortmanteauApp::character_menu`. That view-state field is gone. The popup lives
+with the text widget's id `script_block/<doc>/<index>` and gets:
+
+- `word_boundary(|c| c == '\n')`: a cue is one line, so the whole line filters
+  the list. Matching is a case-insensitive `contains` over the project's
+  `ItemKind::Character` titles.
+- an empty cue in a back-and-forth offers `↺ <next speaker>` as its only name
+  suggestion (the pure `next_speaker` helper is unchanged);
+- a final `+ New character…` row whose `insert` is the sentinel
+  `"\u{1}new-character"`. Accepting it makes the editor restore the cue text
+  captured before `.show(..)` and open the existing new-character modal, so the
+  sentinel never reaches the document.
+
+The popup keeps focus in the `TextEdit`, consumes only unmodified
+Up/Down/Enter/Escape, and therefore leaves Shift+Arrow (selection) and
+Ctrl+Arrow (word jumps) to the widget. Enter accepts; Tab still cycles the
+element type because the editor consumes it before the TextEdit. The editor
+reads Enter after the popup for a Character cue: if the popup did not consume
+it, Enter still starts the next element as before. Escape closes the popup and
+leaves the text untouched.
+
+Tests now drive the popup through AccessKit: Up+Enter inserts the second
+suggestion, Escape removes the suggestion buttons without changing the text,
+Enter accepts a filtered single name, the next-speaker row fills an empty cue,
+and script/prose tests pin Shift+Arrow selection, Ctrl+Arrow whole-word moves
+and plain-arrow caret movement without focus or `selected_block` changes. The
+prose body gained a stable `prose_body/<doc>` id so those tests can read its
+`TextEditState`.
