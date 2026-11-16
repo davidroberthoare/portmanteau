@@ -4,6 +4,7 @@ use eframe::egui::{
     self, Align, Color32, ComboBox, CornerRadius, FontId, Frame, Id, Key, Layout, Margin,
     Modifiers, RichText, ScrollArea, Sense, Stroke, TextEdit, Vec2,
 };
+use portmanteau_core::spell::{byte_offset, word_at, SpellChecker};
 use portmanteau_core::{DocKind, ElementKind, ItemKind, Medium};
 
 use crate::app::{NewCharacterState, PortmanteauApp, WriteMode};
@@ -694,6 +695,211 @@ fn match_initial_case(original: &str, replacement: &str) -> String {
     }
 }
 
+/// Colour of the squiggle under a misspelled word. Deliberately softer than
+/// pure red so it reads on the warm paper background.
+const SPELL_UNDERLINE: Color32 = Color32::from_rgb(196, 64, 64);
+
+/// Build the text layout for an editor surface, underlining the misspelled
+/// byte ranges.
+///
+/// `base` carries the element's font, colour and line height; only the
+/// underline differs on a misspelled range. Ranges are clamped and must fall
+/// on char boundaries (they come from the tokeniser, but a stale span must
+/// never panic). An empty text still gets one section so the layout matches
+/// the old `single_section` path exactly.
+fn spell_layout_job(
+    text: &str,
+    spans: &[(usize, usize)],
+    base: &egui::TextFormat,
+) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    if text.is_empty() {
+        job.append("", 0.0, base.clone());
+        return job;
+    }
+    let underline = egui::TextFormat {
+        underline: Stroke::new(1.4, SPELL_UNDERLINE),
+        ..base.clone()
+    };
+    let mut cursor = 0usize;
+    for &(start, end) in spans {
+        let start = start.min(text.len());
+        let end = end.min(text.len());
+        if start < cursor
+            || start >= end
+            || !text.is_char_boundary(start)
+            || !text.is_char_boundary(end)
+        {
+            continue;
+        }
+        if cursor < start {
+            job.append(&text[cursor..start], 0.0, base.clone());
+        }
+        job.append(&text[start..end], 0.0, underline.clone());
+        cursor = end;
+    }
+    if cursor < text.len() {
+        job.append(&text[cursor..], 0.0, base.clone());
+    }
+    job
+}
+
+/// What a right-click choice in the spelling menu asks the editor to do.
+enum SpellAction {
+    Replace {
+        doc_id: String,
+        /// `Some(index)` for a screenplay block, `None` for the prose body.
+        block: Option<usize>,
+        range: std::ops::Range<usize>,
+        replacement: String,
+    },
+    Ignore(String),
+    Add(String),
+}
+
+/// A choice made in the spelling context menu, before it is attached to a
+/// document or block.
+enum SpellChoice {
+    Replace(std::ops::Range<usize>, String),
+    Ignore(String),
+    Add(String),
+}
+
+/// Draw the spelling context menu for the word at `byte` and report the
+/// choice. Labels are the visible button text, which also keeps the menu
+/// drivable by `egui_kittest`'s AccessKit queries.
+fn spell_menu_ui(
+    ui: &mut egui::Ui,
+    checker: &SpellChecker,
+    text: &str,
+    byte: usize,
+) -> Option<SpellChoice> {
+    let Some((range, word)) = word_at(text, byte) else {
+        ui.label(RichText::new("No word here").font(sans(9.5)).color(FAINT));
+        return None;
+    };
+    if checker.is_correct(&word) {
+        ui.label(
+            RichText::new(format!("“{word}” is spelled correctly"))
+                .font(sans(9.5))
+                .color(FAINT),
+        );
+        return None;
+    }
+    ui.label(
+        RichText::new(format!("Correct “{word}”"))
+            .font(sans(10.0))
+            .color(MUTED)
+            .strong(),
+    );
+    let suggestions = checker.suggest(&word, 6);
+    if suggestions.is_empty() {
+        ui.label(RichText::new("(no suggestions)").font(sans(9.5)).color(FAINT));
+    } else {
+        for suggestion in suggestions {
+            let label = match_initial_case(&word, &suggestion);
+            let button = egui::Button::new(RichText::new(&label).font(sans(10.0)));
+            if ui.add(button).clicked() {
+                ui.close();
+                return Some(SpellChoice::Replace(range, label));
+            }
+        }
+    }
+    ui.separator();
+    if ui
+        .add(egui::Button::new(
+            RichText::new("Ignore for this session").font(sans(9.5)),
+        ))
+        .clicked()
+    {
+        ui.close();
+        return Some(SpellChoice::Ignore(word));
+    }
+    if ui
+        .add(egui::Button::new(
+            RichText::new("Add to dictionary").font(sans(9.5)),
+        ))
+        .clicked()
+    {
+        ui.close();
+        return Some(SpellChoice::Add(word));
+    }
+    None
+}
+
+/// Byte offset the spelling menu should inspect for `text`.
+///
+/// The offset is captured on the frame of the secondary click and stashed in
+/// egui's temporary data, because the popup's contents also run on later
+/// frames when `interact_pointer_pos` is no longer set. Without a stored
+/// offset the caret (or the widget centre) is used as a fallback.
+fn spell_menu_byte(
+    ctx: &egui::Context,
+    key: Id,
+    response: &egui::Response,
+    galley: &egui::Galley,
+    galley_pos: egui::Pos2,
+    text: &str,
+) -> usize {
+    if response.secondary_clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let cursor = galley.cursor_from_pos(pos - galley_pos);
+            let byte = byte_offset(text, cursor.index.0);
+            ctx.data_mut(|data| data.insert_temp(key, byte));
+        }
+    }
+    if let Some(byte) = ctx.data(|data| data.get_temp::<usize>(key)) {
+        return byte.min(text.len());
+    }
+    let pos = response
+        .interact_pointer_pos()
+        .unwrap_or_else(|| response.rect.center());
+    let cursor = galley.cursor_from_pos(pos - galley_pos);
+    byte_offset(text, cursor.index.0)
+}
+
+/// Apply the menu's choices after the document borrow has ended, so the
+/// document is never borrowed while a widget runs (AGENTS.md §8).
+fn apply_spell_actions(app: &mut PortmanteauApp, actions: Vec<SpellAction>) {
+    for action in actions {
+        match action {
+            SpellAction::Replace {
+                doc_id,
+                block,
+                range,
+                replacement,
+            } => {
+                let Some(doc) = app.ws.project.document_mut(&doc_id) else {
+                    continue;
+                };
+                let mut changed = false;
+                {
+                    let target = match block {
+                        Some(index) => doc.blocks.get_mut(index).map(|b| &mut b.text),
+                        None => Some(&mut doc.text),
+                    };
+                    if let Some(target) = target {
+                        if range.start <= range.end
+                            && range.end <= target.len()
+                            && target.is_char_boundary(range.start)
+                            && target.is_char_boundary(range.end)
+                        {
+                            target.replace_range(range, &replacement);
+                            changed = true;
+                        }
+                    }
+                }
+                if changed {
+                    doc.touch();
+                    app.ws.dirty = true;
+                }
+            }
+            SpellAction::Ignore(word) => app.spell.ignore(&word),
+            SpellAction::Add(word) => app.add_to_dictionary(&word),
+        }
+    }
+}
+
 fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_snapshot: &mut bool) {
     let mut dirty = false;
     let zoom = app.editor_zoom.clamp(0.7, 1.6);
@@ -704,6 +910,11 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
     let text_size = body.size.max(6.0) * zoom;
     let line_height = (body.size.max(6.0) * body.leading.max(0.85) * zoom).max(text_size);
     let project_title = app.ws.project.title.clone();
+    let spell_on = app.settings.spellcheck;
+    // Disjoint borrow of the checker, taken before the project's document is
+    // borrowed mutably, so the layouter and menu can read live suggestions.
+    let checker = &app.spell;
+    let mut spell_actions: Vec<SpellAction> = Vec::new();
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
         paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), doc.pages());
@@ -727,16 +938,20 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         ui.add_space(14.0);
 
         let rows = ((doc.text.chars().count() as f32) / 72.0).ceil().max(18.0) as usize;
+        // One dictionary pass per frame, reused by every layouter call.
+        let spans = if spell_on {
+            checker.misspelled_spans(&doc.text)
+        } else {
+            Vec::new()
+        };
+        let base_format = egui::TextFormat {
+            font_id: FontId::new(text_size, family.clone()),
+            color: PAPER_TEXT,
+            line_height: Some(line_height),
+            ..Default::default()
+        };
         let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
-            let mut job = egui::text::LayoutJob::single_section(
-                text.as_str().to_owned(),
-                egui::TextFormat {
-                    font_id: FontId::new(text_size, family.clone()),
-                    color: PAPER_TEXT,
-                    line_height: Some(line_height),
-                    ..Default::default()
-                },
-            );
+            let mut job = spell_layout_job(text.as_str(), &spans, &base_format);
             job.wrap.max_width = wrap_width;
             ui.ctx().fonts_mut(|f| f.layout_job(job))
         };
@@ -753,10 +968,37 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                     .font(FontId::new(text_size, family.clone()))
                     .color(PAPER_MUTED),
             );
-        let response = ui.add(edit);
-        if response.changed() {
+        let output = edit.show(ui);
+        if output.response.changed() {
             doc.touch();
             dirty = true;
+        }
+        if spell_on {
+            let key = Id::unique(("spell_menu", doc_id));
+            let byte = spell_menu_byte(
+                ui.ctx(),
+                key,
+                &output.response,
+                &output.galley,
+                output.galley_pos,
+                &doc.text,
+            );
+            let mut choice = None;
+            output.response.context_menu(|ui| {
+                choice = spell_menu_ui(ui, checker, &doc.text, byte);
+            });
+            if let Some(choice) = choice {
+                spell_actions.push(match choice {
+                    SpellChoice::Replace(range, replacement) => SpellAction::Replace {
+                        doc_id: doc_id.to_string(),
+                        block: None,
+                        range,
+                        replacement,
+                    },
+                    SpellChoice::Ignore(word) => SpellAction::Ignore(word),
+                    SpellChoice::Add(word) => SpellAction::Add(word),
+                });
+            }
         }
         ui.add_space(26.0);
         let words = doc.words();
@@ -773,6 +1015,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         });
         let _ = take_snapshot;
     }
+    apply_spell_actions(app, spell_actions);
     if dirty {
         app.ws.dirty = true;
     }
@@ -791,6 +1034,11 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     // block takes its type and indent from the matching script element style,
     // the same table the paged preview and compile use.
     let styles = app.ws.project.styles.clone();
+    let spell_on = app.settings.spellcheck;
+    // Disjoint borrow of the checker, taken before the document is borrowed
+    // mutably, so every block's layouter and menu can consult it live.
+    let checker = &app.spell;
+    let mut spell_actions: Vec<SpellAction> = Vec::new();
     // Character names are read before the document is borrowed mutably: the
     // autocomplete only needs owned strings from the project.
     let character_names: Vec<String> = {
@@ -974,14 +1222,37 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     / width.max(80.0))
                 .ceil()
                 .clamp(1.0, 8.0) as usize;
-                let text_color = if kind == ElementKind::SceneHeading {
+                let mut text_color = if kind == ElementKind::SceneHeading {
                     Color32::from_rgb(31, 29, 24)
                 } else {
                     PAPER_TEXT
                 };
+                // Uppercase elements (scene headings, transitions, action cues)
+                // get the darker ink; the layouter must use the same colour.
+                if kind.is_uppercase() && kind != ElementKind::Character {
+                    text_color = Color32::from_rgb(44, 40, 33);
+                }
+                let base_format = egui::TextFormat {
+                    font_id: FontId::new(font_size, family.clone()),
+                    color: text_color,
+                    ..Default::default()
+                };
+                // One dictionary pass per block per frame, shared by the
+                // layouter's measuring and drawing passes.
+                let spans = if spell_on {
+                    checker.misspelled_spans(&doc.blocks[i].text)
+                } else {
+                    Vec::new()
+                };
+                let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                    let mut job = spell_layout_job(text.as_str(), &spans, &base_format);
+                    job.wrap.max_width = wrap_width;
+                    ui.ctx().fonts_mut(|f| f.layout_job(job))
+                };
                 let mut edit = TextEdit::multiline(&mut doc.blocks[i].text)
                     .id(block_id)
                     .font(FontId::new(font_size, family.clone()))
+                    .layouter(&mut layouter)
                     .text_color(text_color)
                     .frame(Frame::NONE)
                     .desired_width(width)
@@ -995,10 +1266,35 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 if kind == ElementKind::Transition {
                     edit = edit.align(egui::Align2::RIGHT_TOP);
                 }
-                if kind.is_uppercase() && kind != ElementKind::Character {
-                    edit = edit.text_color(Color32::from_rgb(44, 40, 33));
+                let output = edit.show(ui);
+                if spell_on {
+                    let key = Id::unique(("spell_menu", doc_id, i));
+                    let byte = spell_menu_byte(
+                        ui.ctx(),
+                        key,
+                        &output.response,
+                        &output.galley,
+                        output.galley_pos,
+                        doc.blocks[i].text.as_str(),
+                    );
+                    let mut choice = None;
+                    output.response.context_menu(|ui| {
+                        choice = spell_menu_ui(ui, checker, &doc.blocks[i].text, byte);
+                    });
+                    if let Some(choice) = choice {
+                        spell_actions.push(match choice {
+                            SpellChoice::Replace(range, replacement) => SpellAction::Replace {
+                                doc_id: doc_id.to_string(),
+                                block: Some(i),
+                                range,
+                                replacement,
+                            },
+                            SpellChoice::Ignore(word) => SpellAction::Ignore(word),
+                            SpellChoice::Add(word) => SpellAction::Add(word),
+                        });
+                    }
                 }
-                let resp = ui.add(edit);
+                let resp = &output.response;
                 // Tab is screenplay input, not focus navigation. egui reads the
                 // focused widget's `EventFilter` at the start of every pass, so
                 // the lock must be installed after the TextEdit has drawn: the
@@ -1155,6 +1451,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         app.new_character = Some(state);
         app.character_menu = None;
     }
+    apply_spell_actions(app, spell_actions);
     if dirty {
         app.ws.dirty = true;
     }
@@ -1811,5 +2108,198 @@ mod ui_tests {
             "clicking a palette element should retype the selected block"
         );
         assert_eq!(fixture.app.borrow().selected_block, 0);
+    }
+
+    #[test]
+    fn layouter_underlines_misspelled_words_and_not_correct_ones() {
+        let checker = crate::spellcheck::load("en_US");
+        let text = "the qik brown foxx";
+        let spans = checker.misspelled_spans(text);
+        assert_eq!(spans, vec![(4, 7), (14, 18)]);
+        let job = spell_layout_job(text, &spans, &egui::TextFormat::default());
+        assert_eq!(job.text, text, "the layouter must preserve the text");
+        let underlined: Vec<&str> = job
+            .sections
+            .iter()
+            .filter(|section| section.format.underline != Stroke::NONE)
+            .map(|section| &text[section.byte_range.start.0..section.byte_range.end.0])
+            .collect();
+        assert_eq!(
+            underlined,
+            vec!["qik", "foxx"],
+            "only misspelled words get the squiggle"
+        );
+
+        let clean = "the brown fox jumps";
+        let spans = checker.misspelled_spans(clean);
+        assert!(spans.is_empty());
+        let job = spell_layout_job(clean, &spans, &egui::TextFormat::default());
+        assert!(
+            job.sections
+                .iter()
+                .all(|section| section.format.underline == Stroke::NONE),
+            "correct prose must produce no underline sections"
+        );
+
+        // Empty text still yields one section, like `single_section`.
+        let job = spell_layout_job("", &[], &egui::TextFormat::default());
+        assert_eq!(job.sections.len(), 1);
+        assert_eq!(job.text, "");
+    }
+
+    #[test]
+    fn spell_menu_draws_without_a_click() {
+        let checker = crate::spellcheck::load("en_US");
+        let ctx = headless_ctx();
+        let mut seen = Vec::new();
+        ctx.run_ui(RawInput::default(), |ui| {
+            seen.push(spell_menu_ui(ui, &checker, "helo", 2).is_none());
+        })
+        .drop_without_applying_deltas();
+        // The menu was drawn without a click; no choice is made.
+        assert_eq!(seen, vec![true]);
+    }
+
+    #[test]
+    fn right_click_menu_ignores_a_word_for_the_session() {
+        let mut app = PortmanteauApp::new(None);
+        app.settings.spellcheck = true;
+        app.show_spelling = false;
+        app.view = View::Write;
+        app.write_mode = WriteMode::Continuous;
+        let doc_id = app
+            .ws
+            .project
+            .documents
+            .iter()
+            .find(|d| d.kind == DocKind::Chapter)
+            .map(|d| d.id.clone())
+            .expect("the demo has a prose chapter");
+        if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+            doc.text = "qik".into();
+        }
+        app.selected = Some(doc_id.clone());
+        assert!(!app.spell.is_correct("qik"), "the fixture word is misspelled");
+
+        let app = Rc::new(RefCell::new(app));
+        let ui_app = Rc::clone(&app);
+        let mut themed = false;
+        let mut ready = false;
+        let mut harness = Harness::builder()
+            .with_size(SCREEN)
+            .with_max_steps(64)
+            .with_accessibility_check(false)
+            .build_ui(move |ui| {
+                if !themed {
+                    crate::theme::install(ui.ctx());
+                    themed = true;
+                }
+                if !ready {
+                    ready = true;
+                    return;
+                }
+                egui::CentralPanel::default().show(ui, |ui| {
+                    editor::show(&mut ui_app.borrow_mut(), ui);
+                });
+            });
+        harness.run_steps(4);
+
+        // The prose body is the only multiline text input on the page.
+        harness
+            .get_by_role(Role::MultilineTextInput)
+            .click_secondary();
+        harness.run();
+
+        harness
+            .get_by_role_and_label(Role::Button, "Ignore for this session")
+            .click();
+        harness.run();
+
+        assert!(
+            app.borrow().spell.is_correct("qik"),
+            "the right-click menu should ignore the word for this session"
+        );
+    }
+
+    #[test]
+    fn spell_actions_edit_prose_script_and_ignore_a_word() {
+        let mut app = PortmanteauApp::new(None);
+        let prose_id = app
+            .ws
+            .project
+            .documents
+            .iter()
+            .find(|d| d.kind == DocKind::Chapter)
+            .map(|d| d.id.clone())
+            .expect("the demo has a prose chapter");
+        let script_id = app
+            .ws
+            .project
+            .documents
+            .iter()
+            .find(|d| d.medium.is_script())
+            .map(|d| d.id.clone())
+            .expect("the demo has a script document");
+
+        if let Some(doc) = app.ws.project.document_mut(&prose_id) {
+            doc.text = "the qik brown foxx".into();
+        }
+        if let Some(doc) = app.ws.project.document_mut(&script_id) {
+            doc.blocks[0].text = "the qik brown foxx".into();
+        }
+        app.ws.dirty = false;
+
+        apply_spell_actions(
+            &mut app,
+            vec![SpellAction::Replace {
+                doc_id: prose_id.clone(),
+                block: None,
+                range: 4..7,
+                replacement: "quick".into(),
+            }],
+        );
+        assert_eq!(
+            app.ws.project.document(&prose_id).unwrap().text,
+            "the quick brown foxx",
+            "the prose body should take the suggestion"
+        );
+        assert!(app.ws.dirty, "a replacement marks the workspace dirty");
+
+        apply_spell_actions(
+            &mut app,
+            vec![SpellAction::Replace {
+                doc_id: script_id.clone(),
+                block: Some(0),
+                range: 4..7,
+                replacement: "quick".into(),
+            }],
+        );
+        assert_eq!(
+            app.ws.project.document(&script_id).unwrap().blocks[0].text,
+            "the quick brown foxx",
+            "the screenplay block should take the suggestion"
+        );
+
+        // An out-of-range span is ignored rather than panicking or corrupting
+        // the text.
+        apply_spell_actions(
+            &mut app,
+            vec![SpellAction::Replace {
+                doc_id: prose_id.clone(),
+                block: None,
+                range: 999..1002,
+                replacement: "x".into(),
+            }],
+        );
+        assert_eq!(
+            app.ws.project.document(&prose_id).unwrap().text,
+            "the quick brown foxx"
+        );
+
+        apply_spell_actions(
+            &mut app,
+            vec![SpellAction::Ignore("zzzzqqq".into())],
+        );
+        assert!(app.spell.is_correct("zzzzqqq"), "ignored words are accepted");
     }
 }

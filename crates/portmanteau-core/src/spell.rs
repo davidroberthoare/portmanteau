@@ -10,6 +10,7 @@
 //! misspellings and suggestions while drawing an editor.
 
 use std::collections::HashSet;
+use std::ops::Range;
 
 /// A Hunspell dictionary plus a word list for edit-distance suggestions, the
 /// writer's personal dictionary and words ignored for this session.
@@ -190,6 +191,40 @@ pub fn normalise(word: &str) -> String {
         .to_string()
 }
 
+/// The word that a caret at UTF-8 byte offset `byte` sits in or touches.
+///
+/// Used by the editor's right-click menu: egui reports the click as a
+/// character offset, which is converted with [`byte_offset`] first. A caret
+/// exactly at a word's start or end still selects that word, so clicking the
+/// left half of the first letter or the right half of the last letter behaves
+/// like a word processor. Punctuation away from any word returns `None`.
+/// `byte` is clamped to the text and snapped back to a char boundary so a
+/// stale offset can never panic on a multi-byte character.
+pub fn word_at(text: &str, byte: usize) -> Option<(Range<usize>, String)> {
+    if text.is_empty() {
+        return None;
+    }
+    let mut byte = byte.min(text.len());
+    while byte > 0 && !text.is_char_boundary(byte) {
+        byte -= 1;
+    }
+    word_tokens(text)
+        .into_iter()
+        .find(|(start, end)| *start <= byte && byte <= *end)
+        .map(|(start, end)| (start..end, text[start..end].to_string()))
+}
+
+/// Byte offset of the `char_index`-th character in `text`.
+///
+/// egui's text cursor reports a char index, not a byte offset; slicing needs
+/// bytes. An index at or past the end maps to `text.len()`.
+pub fn byte_offset(text: &str, char_index: usize) -> usize {
+    text.char_indices()
+        .nth(char_index)
+        .map(|(offset, _)| offset)
+        .unwrap_or(text.len())
+}
+
 /// Number of alphabetic characters in a token. Single letters are not worth
 /// reporting, and the `s` left over by a possessive is never a word.
 fn alphabetic_count(word: &str) -> usize {
@@ -355,5 +390,57 @@ mod tests {
     fn misspelled_spans_are_empty_for_correct_text() {
         let spell = bundled();
         assert!(spell.misspelled_spans("the brown fox jumps").is_empty());
+    }
+
+    #[test]
+    fn word_at_finds_the_word_under_a_caret() {
+        let text = "the qik brown foxx";
+        assert_eq!(word_at(text, 4), Some((4..7, "qik".to_string())));
+        assert_eq!(word_at(text, 5), Some((4..7, "qik".to_string())));
+        assert_eq!(word_at(text, 6), Some((4..7, "qik".to_string())));
+        // A caret just after the word (its end byte) still targets it.
+        assert_eq!(word_at(text, 7), Some((4..7, "qik".to_string())));
+        // The first and last characters are boundaries too.
+        assert_eq!(word_at(text, 0), Some((0..3, "the".to_string())));
+        assert_eq!(word_at(text, text.len()), Some((14..18, "foxx".to_string())));
+        // Past the end clamps to the last word rather than panicking.
+        assert_eq!(word_at(text, 999), Some((14..18, "foxx".to_string())));
+    }
+
+    #[test]
+    fn word_at_returns_none_on_standalone_punctuation() {
+        // The comma sits between two spaces, touching neither word.
+        assert_eq!(word_at("a , b", 2), None);
+        assert_eq!(word_at("( )", 1), None);
+        assert_eq!(word_at("", 0), None);
+        // Punctuation inside a token stays part of it.
+        assert_eq!(
+            word_at("cat's", 4),
+            Some((0..5, "cat's".to_string()))
+        );
+        assert_eq!(
+            word_at("well-known", 6),
+            Some((0..10, "well-known".to_string()))
+        );
+    }
+
+    #[test]
+    fn word_at_snaps_to_char_boundaries_for_multibyte_text() {
+        let text = "héllo wörld";
+        // "é" is two bytes, so the caret at char 2 is byte 3.
+        assert_eq!(byte_offset(text, 2), 3);
+        assert_eq!(word_at(text, 3), Some((0..6, "héllo".to_string())));
+        // A mid-character byte (2, inside "é") snaps back to the word start.
+        assert_eq!(word_at(text, 2), Some((0..6, "héllo".to_string())));
+    }
+
+    #[test]
+    fn byte_offset_is_multibyte_safe() {
+        let text = "héllo";
+        assert_eq!(byte_offset(text, 0), 0);
+        assert_eq!(byte_offset(text, 1), 1); // after 'h'
+        assert_eq!(byte_offset(text, 2), 3); // after 'é'
+        assert_eq!(byte_offset(text, 5), text.len());
+        assert_eq!(byte_offset(text, 99), text.len());
     }
 }
