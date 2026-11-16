@@ -2564,5 +2564,510 @@ mod ui_tests {
                 "ArrowDown should move the caret to the start of the second line"
             );
         }
+
+        // ---- Real-pointer probes ---------------------------------------
+        //
+        // The probes above use `Node::click()`. In egui_kittest 0.37 that is
+        // *already* a real pointer sequence (PointerMoved, then a primary
+        // button press, then the release), because `Harness::step` gives every
+        // queued event its own frame. `Node::click_accesskit()` is the API that
+        // sends `accesskit::Action::Click` and bypasses the pointer. This
+        // version of kittest has no `simulate_click()`; the helpers below spell
+        // the pointer sequence out event by event and, unlike `Node::click()`,
+        // re-read the target's rect between frames so a popup that moves or
+        // closes is observed rather than clicked at a stale position.
+
+        /// Real app window: the shell is 1440x930.
+        const REAL_SCREEN: Vec2 = Vec2::new(1440.0, 930.0);
+
+        /// A harness that can also narrow the drawing column, mimicking the
+        /// real shell where the rail, binder and inspector leave the editor
+        /// roughly 800 px of the 1440 px window.
+        fn real_harness(
+            app: PortmanteauApp,
+            size: Vec2,
+            editor_width: Option<f32>,
+            settle: usize,
+            draw: fn(&mut PortmanteauApp, &mut egui::Ui),
+        ) -> (Harness<'static>, Rc<RefCell<PortmanteauApp>>) {
+            let app = Rc::new(RefCell::new(app));
+            let ui_app = Rc::clone(&app);
+            let mut themed = false;
+            let mut ready = false;
+            let mut harness = Harness::builder()
+                .with_size(size)
+                .with_max_steps(96)
+                .with_accessibility_check(false)
+                .build_ui(move |ui| {
+                    if !themed {
+                        crate::theme::install(ui.ctx());
+                        themed = true;
+                    }
+                    if !ready {
+                        ready = true;
+                        return;
+                    }
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        let Some(width) = editor_width else {
+                            draw(&mut ui_app.borrow_mut(), ui);
+                            return;
+                        };
+                        // Centre the editor column, leaving the rest for the
+                        // shell's rail/binder/inspector.
+                        ui.vertical_centered(|ui| {
+                            ui.set_max_width(width);
+                            ui.allocate_ui_with_layout(
+                                Vec2::new(width, ui.available_height()),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    draw(&mut ui_app.borrow_mut(), ui);
+                                },
+                            );
+                        });
+                    });
+                });
+            harness.run_steps(settle);
+            (harness, app)
+        }
+
+        fn pointer_move(harness: &mut Harness<'_>, pos: Pos2) {
+            harness.input_mut().events.push(Event::PointerMoved(pos));
+            harness.run_steps(1);
+        }
+
+        fn pointer_button(harness: &mut Harness<'_>, pos: Pos2, pressed: bool) {
+            harness.input_mut().events.push(Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+            harness.run_steps(1);
+        }
+
+        fn center_of(harness: &Harness<'_>, role: Role, label: &str) -> Option<Pos2> {
+            harness
+                .query_by_role_and_label(role, label)
+                .map(|node| node.rect().center())
+        }
+
+        /// A real primary click: move, re-read the rect, press, hold for
+        /// `hold_frames`, re-read, release. The re-reads are the point: a real
+        /// pointer cannot click a node that has already disappeared.
+        fn real_click(
+            harness: &mut Harness<'_>,
+            role: Role,
+            label: &str,
+            hold_frames: usize,
+        ) {
+            let pos = center_of(harness, role, label)
+                .unwrap_or_else(|| panic!("{role:?} {label:?} is not in the tree before the click"));
+            pointer_move(harness, pos);
+            let down = center_of(harness, role, label).unwrap_or(pos);
+            pointer_button(harness, down, true);
+            if hold_frames > 0 {
+                harness.run_steps(hold_frames);
+            }
+            let up = center_of(harness, role, label).unwrap_or(down);
+            pointer_button(harness, up, false);
+        }
+
+        fn empty_multiline_center(harness: &Harness<'_>) -> Option<Pos2> {
+            harness
+                .get_all_by_role(Role::MultilineTextInput)
+                .find(|node| node.value().as_deref() == Some(""))
+                .map(|node| node.rect().center())
+        }
+
+        /// Focus a script block with a real click and type a character cue.
+        fn click_into_empty_character_block(
+            harness: &mut Harness<'_>,
+            app: &Rc<RefCell<PortmanteauApp>>,
+            doc_id: &str,
+        ) {
+            let pos = empty_multiline_center(harness)
+                .expect("the fixture should expose one empty Character input");
+            pointer_move(harness, pos);
+            let pos = empty_multiline_center(harness)
+                .expect("the empty Character input should survive the pointer move");
+            pointer_button(harness, pos, true);
+            pointer_button(harness, pos, false);
+            harness.run_steps(2);
+            assert!(
+                harness
+                    .ctx
+                    .memory(|memory| memory.has_focus(block_id(doc_id, 0))),
+                "a real pointer click should focus the Character block"
+            );
+
+            harness.input_mut().events.push(Event::Text("ma".into()));
+            harness.run_steps(2);
+            assert_eq!(
+                app.borrow().character_menu,
+                Some((doc_id.to_string(), 0)),
+                "typing into the clicked cue should open the autocomplete"
+            );
+        }
+
+        fn set_caret(harness: &Harness<'_>, id: Id, index: usize) {
+            let mut state =
+                egui::text_edit::TextEditState::load(&harness.ctx, id).unwrap_or_default();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+                egui::text::CCursor::new(index),
+            )));
+            state.store(&harness.ctx, id);
+        }
+
+        #[test]
+        fn real_pointer_click_on_a_character_name_fills_the_block() {
+            let (app, doc_id) = click_fixture();
+            let mut app = app;
+            // No queued focus: the pointer click has to do the focusing.
+            app.block_focus = None;
+            let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
+            click_into_empty_character_block(&mut harness, &app, &doc_id);
+
+            real_click(&mut harness, Role::Button, "Mara Venn", 2);
+            harness.run_steps(2);
+
+            assert_eq!(
+                block_text(&app.borrow(), &doc_id, 0),
+                "Mara Venn",
+                "a real pointer click on the suggestion should fill the cue"
+            );
+            assert_eq!(
+                app.borrow().character_menu,
+                None,
+                "choosing a name with the pointer should close the autocomplete"
+            );
+        }
+
+        #[test]
+        fn real_pointer_click_on_new_character_opens_the_modal() {
+            let (app, doc_id) = click_fixture();
+            let mut app = app;
+            app.block_focus = None;
+            let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
+            click_into_empty_character_block(&mut harness, &app, &doc_id);
+
+            real_click(&mut harness, Role::Button, "+ New character…", 2);
+            harness.run_steps(2);
+
+            let borrowed = app.borrow();
+            let state = borrowed
+                .new_character
+                .as_ref()
+                .expect("a real pointer click should open the new-character modal");
+            assert_eq!(state.doc_id, doc_id);
+            assert_eq!(state.block, 0);
+            assert_eq!(borrowed.character_menu, None);
+        }
+
+        #[test]
+        fn real_pointer_hover_does_not_dismiss_the_character_menu() {
+            let (app, doc_id) = click_fixture();
+            let mut app = app;
+            app.block_focus = None;
+            let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
+            click_into_empty_character_block(&mut harness, &app, &doc_id);
+
+            // A human moves the pointer onto the popup and dwells there before
+            // pressing. The popup is view state, so hovering must not close it.
+            let pos = center_of(&harness, Role::Button, "Mara Venn")
+                .expect("Mara Venn should be in the open menu");
+            pointer_move(&mut harness, pos);
+            harness.run_steps(6);
+            assert_eq!(
+                app.borrow().character_menu,
+                Some((doc_id.clone(), 0)),
+                "hovering the popup for several frames must not dismiss it"
+            );
+
+            // Finish the click from where the pointer already is.
+            let pos = center_of(&harness, Role::Button, "Mara Venn")
+                .expect("Mara Venn should still be in the open menu");
+            pointer_button(&mut harness, pos, true);
+            pointer_button(&mut harness, pos, false);
+            harness.run_steps(2);
+            assert_eq!(block_text(&app.borrow(), &doc_id, 0), "Mara Venn");
+        }
+
+        #[test]
+        fn real_pointer_character_menu_works_at_the_real_editor_width() {
+            let (app, doc_id) = click_fixture();
+            let mut app = app;
+            app.block_focus = None;
+            // 1440x930 window with ~800 px left for the editor once the rail,
+            // binder and inspector are drawn.
+            let (mut harness, app) = real_harness(app, REAL_SCREEN, Some(800.0), 4, editor::show);
+            click_into_empty_character_block(&mut harness, &app, &doc_id);
+
+            real_click(&mut harness, Role::Button, "Mara Venn", 2);
+            harness.run_steps(2);
+            assert_eq!(
+                block_text(&app.borrow(), &doc_id, 0),
+                "Mara Venn",
+                "the narrowed editor column should behave like the full-width harness"
+            );
+        }
+
+        #[test]
+        fn real_pointer_selects_the_spelling_language() {
+            let mut app = PortmanteauApp::new(None);
+            app.settings.spellcheck = false;
+            app.settings.language = "en_US".into();
+            app.view = View::Settings;
+            app.settings_tab = 0;
+            let (mut harness, app) = real_harness(app, REAL_SCREEN, None, 4, crate::ui::views::show);
+
+            // Open the ComboBox with the pointer, then pick an item with it.
+            // The ComboBox node is unlabelled in older egui builds, so click
+            // by role rather than by label.
+            let combo = harness.get_by_role(Role::ComboBox).rect().center();
+            pointer_move(&mut harness, combo);
+            let combo = harness.get_by_role(Role::ComboBox).rect().center();
+            pointer_button(&mut harness, combo, true);
+            pointer_button(&mut harness, combo, false);
+            harness.run_steps(2);
+            real_click(&mut harness, Role::Button, "English (UK)", 2);
+            harness.run_steps(2);
+
+            assert_eq!(
+                app.borrow().settings.language,
+                "en_GB",
+                "a real pointer click on English (UK) should update the stored language"
+            );
+        }
+
+        /// Build the multiline fixture and settle it so the focus-lock filter
+        /// has been installed by a prior frame.
+        fn settled_multiline(
+            text: &str,
+        ) -> (Harness<'static>, Rc<RefCell<PortmanteauApp>>, String, Id) {
+            let (mut app, doc_id) = script_fixture();
+            if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+                doc.blocks[0].kind = ElementKind::Action;
+                doc.blocks[0].text = text.into();
+            }
+            app.selected_block = 0;
+            app.block_focus = Some(0);
+            let (harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
+            let id = block_id(&doc_id, 0);
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "the block should hold focus after the settle frames"
+            );
+            (harness, app, doc_id, id)
+        }
+
+        #[test]
+        fn arrow_down_and_up_stay_in_a_multiline_script_block() {
+            let (mut harness, app, _doc_id, id) = settled_multiline("one\ntwo");
+            set_caret(&harness, id, 0);
+            harness.run_steps(1);
+            assert_eq!(caret_index(&harness, id), 0, "caret starts on line one");
+
+            harness.key_press(Key::ArrowDown);
+            harness.run_steps(2);
+            assert_eq!(
+                app.borrow().selected_block,
+                0,
+                "ArrowDown must not change the selected block"
+            );
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "ArrowDown must not move focus to another block"
+            );
+            assert_eq!(
+                caret_index(&harness, id),
+                4,
+                "ArrowDown should move the caret to the start of the second line"
+            );
+
+            harness.key_press(Key::ArrowUp);
+            harness.run_steps(2);
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "ArrowUp must not move focus to another block"
+            );
+            assert_eq!(
+                caret_index(&harness, id),
+                0,
+                "ArrowUp should return the caret to the start of the first line"
+            );
+            assert_eq!(app.borrow().selected_block, 0);
+        }
+
+        #[test]
+        fn arrow_down_on_a_single_line_script_block_keeps_focus() {
+            let (mut harness, app, _doc_id, id) = settled_multiline("solo");
+            set_caret(&harness, id, 0);
+            harness.run_steps(1);
+
+            harness.key_press(Key::ArrowDown);
+            harness.run_steps(2);
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "ArrowDown at the only line of a one-line block must not move focus"
+            );
+            assert_eq!(
+                app.borrow().selected_block,
+                0,
+                "a one-line block keeps the selection"
+            );
+            // egui puts a vertical move with no line below at the end of the
+            // only line ("solo" is four bytes). It stayed in this widget.
+            assert_eq!(
+                caret_index(&harness, id),
+                4,
+                "ArrowDown on a one-line block moves the caret to the line end"
+            );
+
+            harness.key_press(Key::ArrowUp);
+            harness.run_steps(2);
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "ArrowUp at the only line must not move focus either"
+            );
+            assert_eq!(caret_index(&harness, id), 0);
+            assert_eq!(app.borrow().selected_block, 0);
+        }
+
+        /// The frame that first focuses the block has no stored EventFilter
+        /// yet: egui reads the filter at the *start* of a frame, and the app
+        /// installs it after the TextEdit has drawn. An unmodified arrow in
+        /// that same frame therefore falls through to egui's directional focus
+        /// navigation.
+        #[test]
+        #[ignore = "reproduces known bug: an arrow key in the first focus frame moves focus to the next block"]
+        fn arrow_down_in_the_first_focus_frame_stays_in_the_block() {
+            let (mut app, doc_id) = script_fixture();
+            if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+                doc.blocks[0].kind = ElementKind::Action;
+                doc.blocks[0].text = "one\ntwo".into();
+            }
+            app.selected_block = 0;
+            app.block_focus = Some(0);
+
+            // Use the hand-driven context so no settle frame runs first.
+            let ctx = headless_ctx();
+            frame(&mut app, &ctx, vec![key(Key::ArrowDown, Modifiers::NONE)]);
+
+            let id = block_id(&doc_id, 0);
+            assert!(
+                ctx.memory(|memory| memory.has_focus(id)),
+                "an arrow in the frame that first focuses the block must leave \
+                 focus in the block; it moved to another element instead"
+            );
+            assert_eq!(app.selected_block, 0);
+        }
+
+        /// The realistic counterpart of the ignored probe above: a human clicks
+        /// into the block and presses an arrow on a later frame. The click's
+        /// frame installs the focus-lock filter, so the arrow is claimed by the
+        /// TextEdit and focus does not move.
+        #[test]
+        fn arrow_down_after_a_real_pointer_click_stays_in_the_block() {
+            let (mut app, doc_id) = script_fixture();
+            if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+                doc.blocks[0].kind = ElementKind::Action;
+                doc.blocks[0].text = "one\ntwo".into();
+            }
+            app.block_focus = None;
+            let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
+
+            let by_value = |harness: &Harness<'_>| {
+                harness
+                    .get_all_by_value("one\ntwo")
+                    .find(|node| node.accesskit_node().role() == Role::MultilineTextInput)
+                    .map(|node| node.rect().center())
+            };
+            let pos = by_value(&harness).expect("the multiline block should be in the tree");
+            pointer_move(&mut harness, pos);
+            let pos = by_value(&harness).expect("the block should survive the pointer move");
+            pointer_button(&mut harness, pos, true);
+            pointer_button(&mut harness, pos, false);
+            harness.run_steps(2);
+
+            let id = block_id(&doc_id, 0);
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "the click should focus the block"
+            );
+            set_caret(&harness, id, 0);
+            harness.run_steps(1);
+            harness.key_press(Key::ArrowDown);
+            harness.run_steps(2);
+
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "an arrow after a mouse click must stay in the block"
+            );
+            assert_eq!(app.borrow().selected_block, 0);
+            assert_eq!(caret_index(&harness, id), 4);
+        }
+
+        /// The other delivery path: `accesskit::Action::Click` with no pointer
+        /// events at all. egui routes it to the same button handler, so the
+        /// cue fills too — which is exactly why an AccessKit-driven probe
+        /// cannot prove that a *mouse* click works. Kept for comparison.
+        #[test]
+        fn accesskit_action_click_also_fills_the_block() {
+            let (app, doc_id) = click_fixture();
+            let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
+            harness.input_mut().events.push(Event::Text("ma".into()));
+            harness.run_steps(2);
+
+            harness
+                .get_by_role_and_label(Role::Button, "Mara Venn")
+                .click_accesskit();
+            harness.run_steps(2);
+
+            assert_eq!(
+                block_text(&app.borrow(), &doc_id, 0),
+                "Mara Venn",
+                "the AccessKit action reaches the same button handler"
+            );
+            assert_eq!(app.borrow().character_menu, None);
+        }
+
+        #[test]
+        fn tab_and_shift_tab_cycle_the_element_without_moving_focus() {
+            let (mut harness, app, doc_id, id) = settled_multiline("solo");
+            let medium = app
+                .borrow()
+                .ws
+                .project
+                .document(&doc_id)
+                .expect("document still exists")
+                .medium;
+            let before = block_kind(&app.borrow(), &doc_id, 0);
+            let forward = before.next(medium);
+            assert_ne!(before, forward, "the demo medium has more than one kind");
+
+            harness.key_press(Key::Tab);
+            harness.run_steps(2);
+            assert_eq!(
+                block_kind(&app.borrow(), &doc_id, 0),
+                forward,
+                "Tab should advance the element type"
+            );
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "Tab should not move focus to another widget"
+            );
+
+            harness.key_press_modifiers(Modifiers::SHIFT, Key::Tab);
+            harness.run_steps(2);
+            assert_eq!(
+                block_kind(&app.borrow(), &doc_id, 0),
+                before,
+                "Shift+Tab should return to the previous element type"
+            );
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "Shift+Tab should keep focus on the block"
+            );
+        }
     }
 }
