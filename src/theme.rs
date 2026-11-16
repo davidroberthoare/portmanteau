@@ -79,7 +79,7 @@ pub fn install(ctx: &egui::Context) {
         FontData::from_static(include_bytes!("../assets/LiberationMono-Regular.ttf")).into(),
     );
     // A broad fallback for the small set of typographic marks used in the
-    // binder and toolbars (¶, ▸, ⌕, ＋). Liberation does not carry them.
+    // binder and toolbars (¶, ▸, ✎, ＋). Liberation does not carry them.
     fonts.font_data.insert(
         "portmanteau-symbols".into(),
         FontData::from_static(include_bytes!("../assets/DejaVuSans.ttf")).into(),

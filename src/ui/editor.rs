@@ -246,7 +246,7 @@ fn folder_child_row(
         DocKind::Chapter => ("¶", ACCENT),
         DocKind::Scene if medium.is_script() => ("▶", PURPLE),
         DocKind::Scene => ("◆", SAGE),
-        DocKind::Research => ("⌕", BLUE),
+        DocKind::Research => ("✎", BLUE),
         DocKind::Character => ("☺", PURPLE),
         DocKind::FrontMatter | DocKind::BackMatter => ("▤", FAINT),
         DocKind::Text => ("◆", FAINT),
@@ -1300,33 +1300,44 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                             .max_height(240.0)
                             .show(ui, edit, |query| {
                                 typed_word = query.word.to_string();
-                                let mut suggestions: Vec<egui::Suggestion> = Vec::new();
-                                let hint = if query.word.is_empty() {
-                                    character_hint.as_deref()
-                                } else {
-                                    None
-                                };
-                                if let Some(speaker) = hint {
-                                    suggestions.push(
-                                        egui::Suggestion::new(speaker)
-                                            .content(format!("↺ {speaker}")),
-                                    );
-                                } else {
-                                    let needle = query.word.to_lowercase();
-                                    suggestions.extend(
-                                        character_names
-                                            .iter()
-                                            .filter(|name| {
-                                                name.to_lowercase().contains(&needle)
-                                            })
-                                            .map(|name| egui::Suggestion::new(name.clone())),
-                                    );
+                                let word = query.word.trim();
+                                if word.is_empty() {
+                                    // An empty cue only offers the seesaw's
+                                    // next speaker; with no such speaker there
+                                    // is nothing to suggest and the popup stays
+                                    // closed, so Enter starts a new element.
+                                    return character_hint
+                                        .as_deref()
+                                        .map(|speaker| {
+                                            vec![egui::Suggestion::new(speaker)
+                                                .content(format!("↺ {speaker}"))]
+                                        })
+                                        .unwrap_or_default();
                                 }
-                                suggestions.push(
-                                    egui::Suggestion::new(NEW_CHARACTER_SENTINEL)
-                                        .content("+ New character…"),
-                                );
-                                suggestions
+                                let needle = word.to_lowercase();
+                                // A complete, existing name means the writer is
+                                // done with this cue: close the popup so Enter
+                                // advances to the next element like every other
+                                // kind instead of re-accepting the same name.
+                                if character_names
+                                    .iter()
+                                    .any(|name| name.to_lowercase() == needle)
+                                {
+                                    return Vec::new();
+                                }
+                                let matches: Vec<egui::Suggestion> = character_names
+                                    .iter()
+                                    .filter(|name| name.to_lowercase().contains(&needle))
+                                    .map(|name| egui::Suggestion::new(name.clone()))
+                                    .collect();
+                                if matches.is_empty() {
+                                    // Nothing matches, so the only useful row
+                                    // is the one that creates a new sheet.
+                                    vec![egui::Suggestion::new(NEW_CHARACTER_SENTINEL)
+                                        .content("+ New character…")]
+                                } else {
+                                    matches
+                                }
                             });
                         if let Some(accepted) = &completion.accepted {
                             if accepted.insert == NEW_CHARACTER_SENTINEL {
@@ -1860,7 +1871,10 @@ mod ui_tests {
     #[test]
     fn popup_arrow_down_then_enter_inserts_the_second_suggestion() {
         let mut fixture = click_harness();
-        // The demo characters sort as Elias Rook, Mara Venn, Ruth Alder, The Boy.
+        // An empty cue has nothing to suggest in this fixture (no preceding
+        // speaker), so filter first. "r" keeps three demo names, ordered
+        // Elias Rook, Mara Venn, Ruth Alder.
+        fixture.type_word("r");
         assert!(
             fixture
                 .harness
@@ -1873,7 +1887,7 @@ mod ui_tests {
         fixture.harness.run_steps(2);
         assert_eq!(
             fixture.text(),
-            "",
+            "R",
             "ArrowDown while the popup is open selects a row, it does not edit the text"
         );
 
@@ -1889,6 +1903,7 @@ mod ui_tests {
     #[test]
     fn popup_escape_closes_it_and_leaves_the_text_alone() {
         let mut fixture = click_harness();
+        fixture.type_word("ma");
         assert!(
             fixture
                 .harness
@@ -1900,7 +1915,7 @@ mod ui_tests {
         fixture.harness.key_press(Key::Escape);
         fixture.harness.run_steps(2);
 
-        assert_eq!(fixture.text(), "", "Escape must not change the cue");
+        assert_eq!(fixture.text(), "MA", "Escape must not change the cue");
         assert!(
             fixture
                 .harness
@@ -1927,6 +1942,115 @@ mod ui_tests {
             fixture.text(),
             "Mara Venn",
             "Enter accepts the only matching name"
+        );
+    }
+
+    /// A complete, existing cue is finished: the popup must close so Enter
+    /// keeps its script meaning (start the next element) instead of accepting
+    /// a suggestion and rewriting the line.
+    #[test]
+    fn typing_a_full_character_name_closes_the_popup_and_enter_adds_an_element() {
+        let mut fixture = click_harness();
+        let blocks_before = fixture
+            .app
+            .borrow()
+            .ws
+            .project
+            .document(&fixture.doc_id)
+            .expect("document still exists")
+            .blocks
+            .len();
+
+        fixture.type_word("Mara Venn");
+        assert_eq!(fixture.text(), "MARA VENN", "the cue stores all-caps text");
+        assert!(
+            fixture
+                .harness
+                .query_by_role_and_label(Role::Button, "Mara Venn")
+                .is_none(),
+            "a complete name means the popup has nothing left to suggest"
+        );
+        assert!(
+            fixture
+                .harness
+                .query_by_role_and_label(Role::Button, "+ New character…")
+                .is_none(),
+            "a complete name must not fall back to the new-character row"
+        );
+
+        fixture.harness.key_press(Key::Enter);
+        fixture.harness.run_steps(2);
+
+        assert!(
+            fixture.app.borrow().new_character.is_none(),
+            "Enter on a finished cue must not open the new-character modal"
+        );
+        assert_eq!(
+            fixture.text(),
+            "MARA VENN",
+            "Enter must not replace the typed name with the suggestion's casing"
+        );
+        let blocks_after = fixture
+            .app
+            .borrow()
+            .ws
+            .project
+            .document(&fixture.doc_id)
+            .expect("document still exists")
+            .blocks
+            .len();
+        assert_eq!(
+            blocks_after,
+            blocks_before + 1,
+            "Enter should add the next element like it does on every other kind"
+        );
+        assert_eq!(
+            fixture.app.borrow().selected_block, 1,
+            "the new element becomes the selected block"
+        );
+    }
+
+    /// An unknown name offers only the new-character row; Enter opens the
+    /// modal and leaves the typed cue untouched.
+    #[test]
+    fn typing_an_unknown_name_offers_only_new_character_and_enter_opens_the_modal() {
+        use egui_kittest::kittest::NodeT;
+
+        let mut fixture = click_harness();
+        fixture.type_word("Zorbo");
+        fixture.harness.run_steps(2);
+        assert_eq!(fixture.text(), "ZORBO", "the cue stores all-caps text");
+
+        let labels: Vec<String> = fixture
+            .harness
+            .get_all_by_role(Role::Button)
+            .filter_map(|node| node.accesskit_node().label())
+            .collect();
+        assert!(
+            labels.iter().any(|label| label == "+ New character…"),
+            "an unknown name should offer the new-character row; saw {labels:?}"
+        );
+        for name in ["Mara Venn", "Elias Rook", "Ruth Alder", "The Boy"] {
+            assert!(
+                !labels.iter().any(|label| label == name),
+                "an unknown name must not list {name}; saw {labels:?}"
+            );
+        }
+
+        fixture.harness.key_press(Key::Enter);
+        fixture.harness.run_steps(2);
+
+        let app = fixture.app.borrow();
+        let state = app
+            .new_character
+            .as_ref()
+            .expect("Enter on the new-character row should open the modal");
+        assert_eq!(state.doc_id, fixture.doc_id);
+        assert_eq!(state.block, 0);
+        assert_eq!(
+            fixture.text(),
+            "ZORBO",
+            "the sentinel must be undone before the modal opens"
         );
     }
 
@@ -2046,12 +2170,18 @@ mod ui_tests {
             block_kind(&self.app.borrow(), &self.doc_id, 0)
         }
 
-        fn open_character_popup(&mut self) {
+        /// Type `word` into the focused cue and let one frame settle so the
+        /// popup has rebuilt its suggestions for the new word.
+        fn type_word(&mut self, word: &str) {
             self.harness
                 .input_mut()
                 .events
-                .push(Event::Text("ma".into()));
+                .push(Event::Text(word.into()));
             self.harness.run();
+        }
+
+        fn open_character_popup(&mut self) {
+            self.type_word("ma");
             assert!(
                 self.harness
                     .query_by_role_and_label(Role::Button, "Mara Venn")
@@ -2086,8 +2216,17 @@ mod ui_tests {
     #[test]
     fn clicking_new_character_opens_the_modal() {
         let mut fixture = click_harness();
-        fixture.open_character_popup();
+        // An unknown name leaves the sentinel as the only suggestion.
+        fixture.type_word("Zorbo");
         let before = fixture.text();
+        assert_eq!(before, "ZORBO", "the cue stores all-caps text");
+        assert!(
+            fixture
+                .harness
+                .query_by_role_and_label(Role::Button, "Mara Venn")
+                .is_none(),
+            "a name that matches no sheet must not offer characters"
+        );
 
         fixture
             .harness
@@ -2514,8 +2653,8 @@ mod ui_tests {
                 "the character popup should expose Elias Rook; saw {labels:?}"
             );
             assert!(
-                labels.iter().any(|label| label == "+ New character…"),
-                "the character popup should expose the new-character action; saw {labels:?}"
+                !labels.iter().any(|label| label == "+ New character…"),
+                "a filtered list must not also offer the new-character row; saw {labels:?}"
             );
 
             fixture
@@ -2805,6 +2944,11 @@ mod ui_tests {
             let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
             click_into_empty_character_block(&mut harness, &doc_id);
 
+            // Extend "MA" into a word that matches no sheet, so the popup's
+            // only row is the new-character action.
+            harness.input_mut().events.push(Event::Text("zz".into()));
+            harness.run_steps(2);
+
             real_click(&mut harness, Role::Button, "+ New character…", 2);
             harness.run_steps(2);
 
@@ -2817,7 +2961,7 @@ mod ui_tests {
             assert_eq!(state.block, 0);
             assert_eq!(
                 block_text(&borrowed, &doc_id, 0),
-                "MA",
+                "MAZZ",
                 "the popup's sentinel insert must be undone before the modal opens"
             );
         }

@@ -247,7 +247,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     DocKind::Chapter => ("¶", ACCENT),
                     DocKind::Scene if row.medium.is_script() => ("▶", PURPLE),
                     DocKind::Scene => ("◆", SAGE),
-                    DocKind::Research => ("⌕", BLUE),
+                    DocKind::Research => ("✎", BLUE),
                     DocKind::Character => ("☺", PURPLE),
                     DocKind::FrontMatter => ("▤", FAINT),
                     DocKind::BackMatter => ("▤", FAINT),

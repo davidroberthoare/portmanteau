@@ -1634,10 +1634,10 @@ mod shell_probe {
             .with_size(SHELL)
             .with_max_steps(96)
             .with_accessibility_check(false)
-            // The binder paints ⌕ (U+2315) for research rows, and none of the
-            // bundled fonts carries it (see AGENTS.md, "missing glyphs"). The
-            // real binary draws tofu; kittest panics on missing glyphs by
-            // default, which would hide every shell-level finding behind it.
+            // Keep the harness lenient about glyphs: the bundled families
+            // cover the current symbol set, but a mark outside Liberation and
+            // DejaVu would otherwise panic here and hide every shell-level
+            // finding behind it (see AGENTS.md, "missing glyphs").
             .allow_missing_glyphs()
             .build_ui(move |ui| {
                 if !themed {
