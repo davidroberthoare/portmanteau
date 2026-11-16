@@ -2302,4 +2302,267 @@ mod ui_tests {
         );
         assert!(app.spell.is_correct("zzzzqqq"), "ignored words are accepted");
     }
+
+    /// Capability probes for the automated UI harness.
+    ///
+    /// These do not guard product behaviour in their own right; they prove
+    /// that a headless `egui_kittest` test can simulate the mouse and keyboard
+    /// and read widget state back out. When one fails it is evidence that the
+    /// harness (or the product) cannot support the script-mode diagnostics we
+    /// need, not necessarily that the fixture is wrong.
+    #[cfg(test)]
+    mod interaction_probe {
+        use super::*;
+        use egui_kittest::kittest::NodeT;
+
+        /// Build a harness for `draw`, installing the bundled fonts on the
+        /// first (discarded) frame and letting focus and layout settle.
+        fn probe_harness(
+            app: PortmanteauApp,
+            draw: fn(&mut PortmanteauApp, &mut egui::Ui),
+        ) -> (Harness<'static>, Rc<RefCell<PortmanteauApp>>) {
+            let app = Rc::new(RefCell::new(app));
+            let ui_app = Rc::clone(&app);
+            let mut themed = false;
+            let mut ready = false;
+            let mut harness = Harness::builder()
+                .with_size(SCREEN)
+                .with_max_steps(64)
+                .with_accessibility_check(false)
+                .build_ui(move |ui| {
+                    if !themed {
+                        crate::theme::install(ui.ctx());
+                        themed = true;
+                    }
+                    if !ready {
+                        ready = true;
+                        return;
+                    }
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        draw(&mut ui_app.borrow_mut(), ui);
+                    });
+                });
+            harness.run_steps(4);
+            (harness, app)
+        }
+
+        /// Read the caret's character index from the text edit's stored state.
+        fn caret_index(harness: &Harness<'_>, id: Id) -> usize {
+            egui::text_edit::TextEditState::load(&harness.ctx, id)
+                .and_then(|state| state.cursor.char_range())
+                .map(|range| range.primary.index.0)
+                .expect("the text edit should have stored a caret")
+        }
+
+        #[test]
+        fn mouse_opens_reads_and_selects_the_spelling_language_combo() {
+            let mut app = PortmanteauApp::new(None);
+            app.settings.spellcheck = false;
+            // `new` reads the writer's saved defaults; pin the fixture so the
+            // test does not depend on the machine it runs on.
+            app.settings.language = "en_US".into();
+            app.view = View::Settings;
+            app.settings_tab = 0;
+            let (mut harness, app) = probe_harness(app, crate::ui::views::show);
+
+            // Open the ComboBox with a simulated pointer click.
+            harness.get_by_role(Role::ComboBox).click();
+            harness.run_steps(2);
+
+            // Read every option label out of the open popup. This is the
+            // capability the script-mode diagnostics need: the menu contents
+            // must be visible in the accessibility tree, not just painted.
+            let labels: Vec<String> = harness
+                .get_all_by_role(Role::Button)
+                .filter_map(|node| node.accesskit_node().label())
+                .collect();
+            assert!(
+                labels.iter().any(|label| label == "English (US)"),
+                "the open dropdown should expose English (US); saw {labels:?}"
+            );
+            assert!(
+                labels.iter().any(|label| label == "English (UK)"),
+                "the open dropdown should expose English (UK); saw {labels:?}"
+            );
+
+            // Select an item and read the resulting application state.
+            harness
+                .get_by_role_and_label(Role::Button, "English (UK)")
+                .click();
+            harness.run_steps(2);
+            assert_eq!(
+                app.borrow().settings.language,
+                "en_GB",
+                "clicking English (UK) should update the stored language"
+            );
+        }
+
+        #[test]
+        fn keyboard_types_into_a_script_block_and_arrow_left_moves_the_caret() {
+            let (mut app, doc_id) = script_fixture();
+            if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+                doc.blocks[0].kind = ElementKind::Action;
+                doc.blocks[0].text = "seed".into();
+            }
+            app.selected_block = 0;
+            app.block_focus = Some(0);
+            let (mut harness, app) = probe_harness(app, editor::show);
+
+            let id = block_id(&doc_id, 0);
+            // The value query also finds the widget's TextRun child, so pick
+            // the editable node by role.
+            harness
+                .get_all_by_value("seed")
+                .find(|node| node.accesskit_node().role() == Role::MultilineTextInput)
+                .expect("block 0 should be a multiline input holding the seed text")
+                .focus();
+            harness.run_steps(2);
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "the script block should accept focus from the accessibility tree"
+            );
+
+            // Send text through the node API. It appends at the caret, which
+            // starts at the end of the focused multiline widget.
+            harness
+                .get_all_by_value("seed")
+                .find(|node| node.accesskit_node().role() == Role::MultilineTextInput)
+                .expect("block 0 should still be a multiline input holding the seed text")
+                .type_text("hello");
+            harness.run_steps(2);
+            assert_eq!(
+                block_text(&app.borrow(), &doc_id, 0),
+                "seedhello",
+                "typed text should reach the script block"
+            );
+            assert_eq!(caret_index(&harness, id), 9, "the caret follows the text");
+
+            // A plain arrow key must move the text caret, not the widget focus.
+            harness.key_press(Key::ArrowLeft);
+            harness.run_steps(2);
+            assert_eq!(
+                caret_index(&harness, id),
+                8,
+                "ArrowLeft should move the caret one character left"
+            );
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "ArrowLeft must not move focus off the block"
+            );
+        }
+
+        #[test]
+        fn script_character_dropdown_exposes_names_and_click_fills_the_block() {
+            let mut fixture = click_harness();
+            assert_eq!(fixture.text(), "", "the probe starts from an empty cue");
+
+            // Find the empty multiline block (the fixture's block 0), focus it
+            // and type a query that matches both demo characters. "e" matches
+            // "Mara Venn" and "Elias Rook".
+            fixture
+                .harness
+                .get_all_by_role(Role::MultilineTextInput)
+                .find(|node| node.value().as_deref() == Some(""))
+                .expect("the empty Character block should be a multiline input")
+                .focus();
+            fixture.harness.run_steps(2);
+            fixture
+                .harness
+                .get_all_by_role(Role::MultilineTextInput)
+                .find(|node| node.value().as_deref() == Some(""))
+                .expect("the empty Character block should still be a multiline input")
+                .type_text("e");
+            fixture.harness.run_steps(2);
+
+            assert_eq!(
+                fixture.app.borrow().character_menu,
+                Some((fixture.doc_id.clone(), 0)),
+                "typing should open the character dropdown"
+            );
+
+            // Read the accessible menu contents.
+            let labels: Vec<String> = fixture
+                .harness
+                .get_all_by_role(Role::Button)
+                .filter_map(|node| node.accesskit_node().label())
+                .collect();
+            assert!(
+                labels.iter().any(|label| label == "Mara Venn"),
+                "the character dropdown should expose Mara Venn; saw {labels:?}"
+            );
+            assert!(
+                labels.iter().any(|label| label == "Elias Rook"),
+                "the character dropdown should expose Elias Rook; saw {labels:?}"
+            );
+            assert!(
+                labels.iter().any(|label| label == "+ New character…"),
+                "the character dropdown should expose the new-character action; saw {labels:?}"
+            );
+
+            fixture
+                .harness
+                .get_by_role_and_label(Role::Button, "Mara Venn")
+                .click();
+            fixture.harness.run_steps(2);
+            assert_eq!(
+                fixture.text(),
+                "Mara Venn",
+                "clicking a name should fill the Character block"
+            );
+            assert_eq!(
+                fixture.app.borrow().character_menu,
+                None,
+                "choosing a name should close the dropdown"
+            );
+        }
+
+        #[test]
+        fn arrow_down_stays_inside_the_focused_script_block() {
+            let (mut app, doc_id) = script_fixture();
+            if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+                doc.blocks[0].kind = ElementKind::Action;
+                doc.blocks[0].text = "one\ntwo".into();
+            }
+            app.selected_block = 0;
+            app.block_focus = Some(0);
+            let (mut harness, app) = probe_harness(app, editor::show);
+
+            let id = block_id(&doc_id, 0);
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "block 0 should be focused before the arrow key"
+            );
+            let selected_before = app.borrow().selected_block;
+
+            // Put the caret at the very start so ArrowDown has a line to enter.
+            let mut state =
+                egui::text_edit::TextEditState::load(&harness.ctx, id).unwrap_or_default();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+                egui::text::CCursor::new(0),
+            )));
+            state.store(&harness.ctx, id);
+            harness.run_steps(1);
+            assert_eq!(caret_index(&harness, id), 0, "caret starts on line one");
+
+            harness.key_press(Key::ArrowDown);
+            harness.run_steps(2);
+
+            // The bug we are probing: arrows must stay in the text, not move
+            // the editor's block selection or the keyboard focus.
+            assert_eq!(
+                app.borrow().selected_block,
+                selected_before,
+                "ArrowDown must not change the selected block"
+            );
+            assert!(
+                harness.ctx.memory(|memory| memory.has_focus(id)),
+                "ArrowDown must not move focus to another block"
+            );
+            assert_eq!(
+                caret_index(&harness, id),
+                4,
+                "ArrowDown should move the caret to the start of the second line"
+            );
+        }
+    }
 }
