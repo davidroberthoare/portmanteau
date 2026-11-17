@@ -86,6 +86,38 @@ and screenplay share the same editor/model, the sample project uses the new
 model, and Fountain/FDX conversion has round-trip tests for supported
 screenplay semantics.
 
+## Next focus: a light, quiet, Mac-native interface
+
+Move the shell from a dark, button-heavy high-tech look to a calm writing
+environment. The manuscript should dominate; chrome should recede. Vellum is
+the primary reference for editor/preview composition, with iA Writer for
+focus and restraint, Ulysses for document navigation, and Apple's Human
+Interface Guidelines for native sidebar and toolbar behavior. The full brief is
+in `docs/ui-style-guidelines.md`.
+
+**Progress on branch `ui/light-mac-redesign`**
+
+- Replaced the dark palette with a warm-gray chrome, soft-white manuscript
+  paper, charcoal text, muted blue-green accent and restrained status colors.
+- Switched egui to its light visual theme, softened window shadows, and moved
+  the top bar, status bar, rail, binder, inspector, editor toolbar, style
+  palettes and primary buttons onto the light surfaces.
+- Kept the editor as the focal point: screenplay columns and prose typography
+  are unchanged, and the page now reads as paper rather than a bright card on a
+  dark background.
+- Verified Write, Corkboard, Compile and Settings screenshots at 1440×930.
+
+**Still required**
+
+- Reduce persistent button rows further: consolidate infrequent actions into
+  menus or a compact context toolbar.
+- Make binder, inspector and preview independently collapsible, and remember
+  the writer's last layout.
+- Refine focus mode so it visibly reduces chrome without changing document
+  behavior.
+- Check contrast for muted labels and disabled states, and design the optional
+  dark theme from the same token set rather than reverting to the old palette.
+
 ## 1. Import a manuscript
 
 **Why.** Professional workflows start with a script someone else sent, or a

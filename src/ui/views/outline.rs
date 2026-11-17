@@ -41,7 +41,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::Button::new(
                             RichText::new(label)
                                 .font(sans(10.0))
-                                .color(if active { Color32::from_rgb(30, 25, 18) } else { MUTED }),
+                                .color(if active { Color32::WHITE } else { MUTED }),
                         )
                         .fill(if active { ACCENT } else { PANEL_2 })
                         .corner_radius(CornerRadius::same(12))

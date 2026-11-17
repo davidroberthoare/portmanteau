@@ -440,7 +440,7 @@ fn action_panel(
                 let btn = egui::Button::new(
                     RichText::new(label)
                         .font(sans(12.0))
-                        .color(Color32::from_rgb(29, 24, 17)),
+                        .color(Color32::WHITE),
                 )
                 .fill(ACCENT)
                 .corner_radius(CornerRadius::same(6))

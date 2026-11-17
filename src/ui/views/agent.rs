@@ -2,8 +2,8 @@
 //! exposed to a person for testing and for teaching an agent what to call.
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense,
-    Stroke, TextEdit, Vec2,
+    self, Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke,
+    TextEdit, Vec2,
 };
 
 use crate::app::{PortmanteauApp, ToastKind};
@@ -167,7 +167,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     });
                 ui.add_space(10.0);
                 Frame::new()
-                    .fill(Color32::from_rgb(13, 15, 18))
+                    .fill(PANEL_2)
                     .stroke(Stroke::new(1.0, BORDER_SOFT))
                     .corner_radius(CornerRadius::same(8))
                     .inner_margin(Margin::same(14))

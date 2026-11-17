@@ -1,8 +1,7 @@
 //! The binder: a live tree of the project with word counts and quick actions.
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke,
-    Vec2,
+    self, Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Vec2,
 };
 use portmanteau_core::{DocKind, Medium, ProjectKind};
 
@@ -105,7 +104,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 let (cover, _) = ui.allocate_exact_size(Vec2::new(30.0, 38.0), Sense::hover());
-                ui.painter().rect_filled(cover, CornerRadius::same(3), Color32::from_rgb(71, 59, 43));
+                ui.painter().rect_filled(cover, CornerRadius::same(3), PAPER_EDGE);
                 ui.painter().rect_filled(
                     egui::Rect::from_min_size(cover.min + Vec2::new(4.0, 4.0), Vec2::new(3.0, 30.0)),
                     CornerRadius::same(1),

@@ -92,7 +92,7 @@ pub fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
         egui::Button::new(
             RichText::new(text)
                 .font(sans(11.5))
-                .color(Color32::from_rgb(29, 24, 17)),
+                .color(Color32::WHITE),
         )
         .fill(ACCENT)
         .corner_radius(CornerRadius::same(6))

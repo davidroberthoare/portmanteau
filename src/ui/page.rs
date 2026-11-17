@@ -571,7 +571,7 @@ pub fn page_frame(ui: &mut egui::Ui, plan: &PagePlan, lines: &[PageLine], number
             offset: [0, 10],
             blur: 34,
             spread: 0,
-            color: Color32::from_black_alpha(90),
+            color: Color32::from_black_alpha(24),
         })
         .inner_margin(Margin {
             left: 54,

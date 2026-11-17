@@ -99,7 +99,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         offset: [0, 10],
                         blur: 34,
                         spread: 0,
-                        color: Color32::from_black_alpha(90),
+                        color: Color32::from_black_alpha(24),
                     })
                     .inner_margin(Margin {
                         left: if is_script {
@@ -307,7 +307,8 @@ fn toolbar(
     miss_count: usize,
 ) {
     Frame::new()
-        .fill(Color32::from_rgb(21, 24, 29))
+        .fill(PANEL)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
         .inner_margin(Margin::symmetric(16, 7))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -559,7 +560,8 @@ fn step_zoom(zoom: f32, direction: i32) -> f32 {
 fn spelling_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, miss: &[String]) {
     let mut action: Option<(String, String)> = None;
     Frame::new()
-        .fill(Color32::from_rgb(21, 24, 29))
+        .fill(PANEL_2)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
         .inner_margin(Margin::symmetric(16, 8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -1225,16 +1227,12 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     RichText::new(&style.name)
                         .font(sans(8.5))
                         .color(if active {
-                            Color32::from_rgb(30, 26, 19)
+                            Color32::WHITE
                         } else {
                             PAPER_MUTED
                         }),
                 )
-                .fill(if active {
-                    ACCENT
-                } else {
-                    Color32::from_rgb(235, 229, 216)
-                })
+                .fill(if active { ACCENT } else { PAPER_EDGE })
                 .corner_radius(CornerRadius::same(10))
                 .min_size(Vec2::new(0.0, 19.0));
                 if ui
@@ -2042,9 +2040,9 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                 let btn = egui::Button::new(
                     RichText::new(kind.short())
                         .font(sans(8.5))
-                        .color(if active { Color32::from_rgb(30, 26, 19) } else { PAPER_MUTED }),
+                        .color(if active { Color32::WHITE } else { PAPER_MUTED }),
                 )
-                .fill(if active { ACCENT } else { Color32::from_rgb(235, 229, 216) })
+                .fill(if active { ACCENT } else { PAPER_EDGE })
                 .corner_radius(CornerRadius::same(10))
                 .min_size(Vec2::new(0.0, 19.0));
                 if ui
@@ -2178,14 +2176,14 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                 .ceil()
                 .clamp(1.0, 8.0) as usize;
                 let mut text_color = if kind == ElementKind::SceneHeading {
-                    Color32::from_rgb(31, 29, 24)
+                    PAPER_TEXT
                 } else {
                     PAPER_TEXT
                 };
                 // Uppercase elements (scene headings, transitions, action cues)
                 // get the darker ink; the layouter must use the same colour.
                 if kind.is_uppercase() && kind != ElementKind::Character {
-                    text_color = Color32::from_rgb(44, 40, 33);
+                    text_color = PAPER_TEXT;
                 }
                 let base_format = egui::TextFormat {
                     font_id: FontId::new(font_size, family.clone()),
@@ -2635,7 +2633,7 @@ fn empty_state(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         );
         ui.add_space(16.0);
         let btn = egui::Button::new(
-            RichText::new("New chapter").font(sans(12.0)).color(Color32::from_rgb(28, 24, 17)),
+            RichText::new("New chapter").font(sans(12.0)).color(Color32::WHITE),
         )
         .fill(ACCENT)
         .corner_radius(CornerRadius::same(6))

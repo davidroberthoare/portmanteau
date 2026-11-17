@@ -547,7 +547,8 @@ impl PortmanteauApp {
             .exact_size(54.0)
             .frame(
                 Frame::new()
-                    .fill(Color32::from_rgb(15, 17, 20))
+                    .fill(PANEL)
+                    .stroke(Stroke::new(1.0, BORDER_SOFT))
                     .inner_margin(Margin::symmetric(14, 9)),
             )
             .show(ui, |ui| {
@@ -559,7 +560,7 @@ impl PortmanteauApp {
                         egui::Align2::CENTER_CENTER,
                         "S",
                         serif(18.0),
-                        Color32::from_rgb(28, 24, 18),
+                        Color32::WHITE,
                     );
                     ui.add_space(3.0);
                     ui.label(RichText::new("Portmanteau").font(serif(19.0)).color(TEXT));
@@ -571,7 +572,7 @@ impl PortmanteauApp {
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let compile = egui::Button::new(
-                            RichText::new("Compile  ▸").font(sans(12.5)).color(Color32::from_rgb(32, 26, 18)),
+                            RichText::new("Compile  ▸").font(sans(12.5)).color(Color32::WHITE),
                         )
                         .fill(ACCENT)
                         .corner_radius(CornerRadius::same(6))
@@ -848,7 +849,8 @@ impl PortmanteauApp {
             .exact_size(27.0)
             .frame(
                 Frame::new()
-                    .fill(Color32::from_rgb(15, 17, 20))
+                    .fill(PANEL)
+                    .stroke(Stroke::new(1.0, BORDER_SOFT))
                     .inner_margin(Margin::symmetric(14, 4)),
             )
             .show(ui, |ui| {
@@ -957,7 +959,7 @@ impl PortmanteauApp {
                             let selected = self.new_project_kind == kind;
                             let btn = egui::Button::new(
                                 RichText::new(kind.label()).font(sans(11.5))
-                                    .color(if selected { Color32::from_rgb(25, 21, 15) } else { TEXT }),
+                                    .color(if selected { Color32::WHITE } else { TEXT }),
                             )
                             .fill(if selected { ACCENT } else { PANEL_2 })
                             .corner_radius(CornerRadius::same(20));
@@ -970,7 +972,7 @@ impl PortmanteauApp {
                     let ready = !self.new_project_title.trim().is_empty();
                     let btn = egui::Button::new(
                         RichText::new("Create project").font(sans(12.5))
-                            .color(Color32::from_rgb(25, 21, 15)),
+                            .color(if ready { Color32::WHITE } else { MUTED }),
                     )
                     .fill(if ready { ACCENT } else { PANEL_3 })
                     .corner_radius(CornerRadius::same(6))
@@ -1085,7 +1087,7 @@ impl PortmanteauApp {
                 let ready = !state.name.trim().is_empty();
                 let btn = egui::Button::new(
                     RichText::new("Create").font(sans(12.5))
-                        .color(Color32::from_rgb(25, 21, 15)),
+                        .color(if ready { Color32::WHITE } else { MUTED }),
                 )
                 .fill(if ready { ACCENT } else { PANEL_3 })
                 .corner_radius(CornerRadius::same(6))
@@ -1389,7 +1391,7 @@ impl PortmanteauApp {
                                     ui,
                                     &format!("−{} removed", state.removed),
                                     RED,
-                                    Color32::from_rgb(58, 34, 31),
+                                    Color32::from_rgb(244, 225, 222),
                                 );
                             }
                             if state.added > 0 {
@@ -1595,7 +1597,7 @@ impl PortmanteauApp {
                     let btn = egui::Button::new(
                         RichText::new(verb)
                             .font(sans(11.5))
-                            .color(Color32::from_rgb(29, 24, 17)),
+                            .color(Color32::WHITE),
                     )
                     .fill(ACCENT)
                     .corner_radius(CornerRadius::same(6))

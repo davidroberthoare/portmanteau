@@ -5,27 +5,30 @@ use eframe::egui::{
     TextStyle, Visuals,
 };
 
-pub const BG: Color32 = Color32::from_rgb(18, 20, 24);
-pub const RAIL: Color32 = Color32::from_rgb(14, 16, 19);
-pub const PANEL: Color32 = Color32::from_rgb(25, 28, 33);
-pub const PANEL_2: Color32 = Color32::from_rgb(31, 35, 41);
-pub const PANEL_3: Color32 = Color32::from_rgb(39, 44, 51);
-pub const BORDER: Color32 = Color32::from_rgb(48, 53, 62);
-pub const BORDER_SOFT: Color32 = Color32::from_rgb(39, 43, 50);
-pub const TEXT: Color32 = Color32::from_rgb(233, 228, 218);
-pub const MUTED: Color32 = Color32::from_rgb(148, 151, 158);
-pub const FAINT: Color32 = Color32::from_rgb(104, 109, 118);
-pub const ACCENT: Color32 = Color32::from_rgb(215, 166, 92);
-pub const ACCENT_SOFT: Color32 = Color32::from_rgb(74, 60, 38);
-pub const SAGE: Color32 = Color32::from_rgb(132, 170, 145);
-pub const SAGE_SOFT: Color32 = Color32::from_rgb(36, 52, 44);
-pub const BLUE: Color32 = Color32::from_rgb(124, 156, 196);
-pub const RED: Color32 = Color32::from_rgb(201, 122, 108);
-pub const PURPLE: Color32 = Color32::from_rgb(166, 143, 185);
-pub const PAPER: Color32 = Color32::from_rgb(246, 241, 231);
-pub const PAPER_EDGE: Color32 = Color32::from_rgb(226, 219, 205);
-pub const PAPER_TEXT: Color32 = Color32::from_rgb(40, 37, 32);
-pub const PAPER_MUTED: Color32 = Color32::from_rgb(128, 119, 103);
+// Light, quiet, paper-first palette. Chrome recedes into warm gray so the
+// manuscript remains the visual focus.
+pub const BG: Color32 = Color32::from_rgb(244, 245, 246);
+pub const RAIL: Color32 = Color32::from_rgb(236, 238, 240);
+pub const PANEL: Color32 = Color32::from_rgb(248, 248, 249);
+pub const PANEL_2: Color32 = Color32::from_rgb(240, 241, 243);
+pub const PANEL_3: Color32 = Color32::from_rgb(230, 232, 235);
+pub const BORDER: Color32 = Color32::from_rgb(214, 217, 221);
+pub const BORDER_SOFT: Color32 = Color32::from_rgb(228, 230, 232);
+pub const TEXT: Color32 = Color32::from_rgb(40, 43, 48);
+pub const MUTED: Color32 = Color32::from_rgb(115, 121, 129);
+pub const FAINT: Color32 = Color32::from_rgb(154, 160, 168);
+pub const ACCENT: Color32 = Color32::from_rgb(91, 143, 138);
+pub const ACCENT_SOFT: Color32 = Color32::from_rgb(220, 235, 232);
+pub const SAGE: Color32 = Color32::from_rgb(111, 154, 127);
+pub const SAGE_SOFT: Color32 = Color32::from_rgb(227, 239, 231);
+pub const BLUE: Color32 = Color32::from_rgb(94, 135, 181);
+pub const RED: Color32 = Color32::from_rgb(180, 91, 82);
+pub const PURPLE: Color32 = Color32::from_rgb(135, 117, 163);
+// The manuscript paper stays warm and slightly distinct from the gray chrome.
+pub const PAPER: Color32 = Color32::from_rgb(251, 250, 247);
+pub const PAPER_EDGE: Color32 = Color32::from_rgb(231, 227, 218);
+pub const PAPER_TEXT: Color32 = Color32::from_rgb(44, 42, 38);
+pub const PAPER_MUTED: Color32 = Color32::from_rgb(139, 131, 119);
 
 pub fn serif(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("portmanteau-serif".into()))
@@ -119,7 +122,7 @@ pub fn install(ctx: &egui::Context) {
     // Keep the default emoji/symbol fonts available behind the Latin faces.
     ctx.set_fonts(fonts);
 
-    let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
+    let mut style = (*ctx.style_of(egui::Theme::Light)).clone();
     style.text_styles = [
         (TextStyle::Heading, serif(26.0)),
         (TextStyle::Body, sans(14.0)),
@@ -133,17 +136,17 @@ pub fn install(ctx: &egui::Context) {
     style.spacing.button_padding = egui::vec2(10.0, 5.0);
     style.spacing.interact_size.y = 26.0;
 
-    let mut visuals = Visuals::dark();
+    let mut visuals = Visuals::light();
     visuals.panel_fill = PANEL;
-    visuals.window_fill = PANEL_2;
+    visuals.window_fill = PANEL;
     visuals.extreme_bg_color = BG;
     visuals.faint_bg_color = PANEL_2;
-    visuals.code_bg_color = Color32::from_rgb(16, 18, 22);
+    visuals.code_bg_color = PANEL_2;
     visuals.override_text_color = Some(TEXT);
     visuals.hyperlink_color = ACCENT;
-    visuals.warn_fg_color = ACCENT;
+    visuals.warn_fg_color = Color32::from_rgb(166, 125, 58);
     visuals.error_fg_color = RED;
-    visuals.selection.bg_fill = Color32::from_rgb(91, 73, 42);
+    visuals.selection.bg_fill = Color32::from_rgb(205, 228, 225);
     visuals.selection.stroke = Stroke::new(1.0, ACCENT);
     visuals.widgets.noninteractive.bg_fill = PANEL;
     visuals.widgets.noninteractive.weak_bg_fill = PANEL;
@@ -173,16 +176,17 @@ pub fn install(ctx: &egui::Context) {
     visuals.window_corner_radius = CornerRadius::same(10);
     visuals.menu_corner_radius = CornerRadius::same(8);
     visuals.window_shadow = egui::epaint::Shadow {
-        offset: [0, 12],
-        blur: 40,
+        offset: [0, 8],
+        blur: 24,
         spread: 0,
-        color: Color32::from_black_alpha(110),
+        color: Color32::from_black_alpha(28),
     };
     visuals.popup_shadow = visuals.window_shadow;
     style.visuals = visuals;
-    // The application is always dark, independent of the OS theme.
-    ctx.set_theme(egui::Theme::Dark);
-    ctx.set_style_of(egui::Theme::Dark, style);
+    // Light is the application's identity; the optional dark theme can be
+    // designed later without changing this default.
+    ctx.set_theme(egui::Theme::Light);
+    ctx.set_style_of(egui::Theme::Light, style);
 }
 
 pub fn section_label(ui: &mut egui::Ui, text: &str) {
