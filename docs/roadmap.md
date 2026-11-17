@@ -105,18 +105,28 @@ in `docs/ui-style-guidelines.md`.
 - Kept the editor as the focal point: screenplay columns and prose typography
   are unchanged, and the page now reads as paper rather than a bright card on a
   dark background.
-- Verified Write, Corkboard, Compile and Settings screenshots at 1440×930.
+- Consolidated binder actions into one `+` menu; the binder and inspector can
+  each be hidden from their header or the View menu, and the last layout is
+  remembered in the program settings. Hidden panels leave a slim edge handle
+  instead of a permanent button row.
+- Focus mode now drops the rail, status bar, binder, inspector and editor
+  toolbar, leaving a single slim title bar with a visible Exit focus control.
+  Nothing about the document or its editing behaviour changes.
+- Darkened secondary text and semantic label colours to clear a comfortable
+  contrast ratio at chrome type sizes, and added ink-strength variants for
+  sage, blue, red, purple and the accent.
+- Verified Write, hidden-panel, focus-mode, Corkboard, Compile, Settings,
+  Research, Versions and Characters screenshots at 1440×930.
 
 **Still required**
 
-- Reduce persistent button rows further: consolidate infrequent actions into
-  menus or a compact context toolbar.
-- Make binder, inspector and preview independently collapsible, and remember
-  the writer's last layout.
-- Refine focus mode so it visibly reduces chrome without changing document
-  behavior.
-- Check contrast for muted labels and disabled states, and design the optional
-  dark theme from the same token set rather than reverting to the old palette.
+- Continue reducing persistent control rows in the other workspaces (Compile
+  and Settings still carry long button strips) as they are touched.
+- Check contrast for disabled states after the optional dark theme exists, and
+  keep the dark theme on the same token set rather than reverting to the old
+  palette.
+- Consider remembering editor zoom, write mode and inspector tab per project
+  alongside the panel layout.
 
 ## 1. Import a manuscript
 

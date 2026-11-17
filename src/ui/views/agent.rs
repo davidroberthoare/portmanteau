@@ -78,7 +78,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                             egui::Align2::LEFT_TOP,
                                             name,
                                             mono(9.5),
-                                            if selected { ACCENT } else { MUTED },
+                                            if selected { ACCENT_INK } else { MUTED },
                                         );
                                         let short: String = desc.chars().take(40).collect();
                                         ui.painter().text(

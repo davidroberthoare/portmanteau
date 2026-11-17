@@ -107,7 +107,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::Align2::LEFT_CENTER,
                         glyph,
                         sans(9.5),
-                        if row.medium.is_script() { PURPLE } else { ACCENT },
+                        if row.medium.is_script() { PURPLE_INK } else { ACCENT_INK },
                     );
                     let title_rect = egui::Rect::from_min_max(
                         egui::pos2(title_x + 17.0, rect.top()),

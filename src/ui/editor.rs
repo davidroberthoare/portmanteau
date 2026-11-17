@@ -26,7 +26,9 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .filter(|id| app.ws.project.document(id).is_some());
 
     let Some(doc_id) = doc_id else {
-        toolbar(app, ui, None, 0);
+        if !app.focus_mode {
+            toolbar(app, ui, None, 0);
+        }
         empty_state(app, ui);
         return;
     };
@@ -57,15 +59,17 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         WriteMode::Paged => build_page_plan(app, &doc_id),
         WriteMode::Continuous => None,
     };
-    toolbar(
-        app,
-        ui,
-        page_plan.as_ref().map(|plan| plan.pages.len()),
-        miss.len(),
-    );
+    if !app.focus_mode {
+        toolbar(
+            app,
+            ui,
+            page_plan.as_ref().map(|plan| plan.pages.len()),
+            miss.len(),
+        );
 
-    if app.settings.spellcheck && app.show_spelling {
-        spelling_panel(app, ui, &doc_id, &miss);
+        if app.settings.spellcheck && app.show_spelling {
+            spelling_panel(app, ui, &doc_id, &miss);
+        }
     }
 
     if app.write_mode == WriteMode::Paged {
@@ -261,7 +265,7 @@ fn folder_child_row(
     }
     let (glyph, color) = match kind {
         DocKind::Folder => ("▣", MUTED),
-        DocKind::Chapter => ("¶", ACCENT),
+        DocKind::Chapter => ("¶", ACCENT_INK),
         DocKind::Scene if medium.is_script() => ("▶", PURPLE),
         DocKind::Scene => ("◆", SAGE),
         DocKind::Research => ("✎", BLUE),
@@ -339,26 +343,25 @@ fn toolbar(
                     }
                 }
                 chain.reverse();
-                for (i, part) in chain.iter().enumerate() {
-                    if i > 0 {
-                        ui.label(RichText::new("/").font(sans(10.0)).color(FAINT));
-                    }
-                    ui.label(
-                        RichText::new(part)
-                            .font(sans(10.5))
-                            .color(if i + 1 == chain.len() { MUTED } else { FAINT }),
+                // One clipped breadcrumb leaves the right-hand controls a
+                // fixed lane, so a long chapter title can never overlap the
+                // word count or mode controls.
+                let crumb = chain.join("  /  ");
+                let crumb_width = (ui.available_width() - 560.0).clamp(90.0, 420.0);
+                ui.scope(|ui| {
+                    ui.set_max_width(crumb_width);
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(crumb)
+                                .font(sans(10.5))
+                                .color(MUTED),
+                        )
+                        .truncate(),
                     );
-                }
+                });
 
                 let mut new_mode = app.write_mode;
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let snap = egui::Button::new(RichText::new("Snapshot").font(sans(10.5)).color(MUTED))
-                        .fill(PANEL_2)
-                        .corner_radius(CornerRadius::same(5));
-                    if ui.add(snap).on_hover_text("Save a version of this document").clicked() {
-                        app.take_snapshot_public();
-                    }
-
                     if app.settings.spellcheck {
                         let label = if miss_count > 0 {
                             format!("Spelling · {miss_count}")
@@ -366,7 +369,7 @@ fn toolbar(
                             "Spelling".to_string()
                         };
                         let color = if app.show_spelling {
-                            ACCENT
+                            ACCENT_INK
                         } else if miss_count > 0 {
                             MUTED
                         } else {
@@ -406,7 +409,7 @@ fn toolbar(
                                     let btn = egui::Button::new(
                                         RichText::new(mode.label())
                                             .font(sans(9.5))
-                                            .color(if active { ACCENT } else { MUTED }),
+                                            .color(if active { ACCENT_INK } else { MUTED }),
                                     )
                                     .fill(if active { ACCENT_SOFT } else { PANEL_2 })
                                     .corner_radius(CornerRadius::same(4))
@@ -428,7 +431,7 @@ fn toolbar(
                     let focus = egui::Button::new(
                         RichText::new(if app.focus_mode { "Exit focus" } else { "Focus" })
                             .font(sans(10.5))
-                            .color(if app.focus_mode { ACCENT } else { MUTED }),
+                            .color(if app.focus_mode { ACCENT_INK } else { MUTED }),
                     )
                     .fill(PANEL_2)
                     .corner_radius(CornerRadius::same(5));
@@ -470,23 +473,15 @@ fn toolbar(
                         }
                     }
                     let stats = app.ws.project.document(&id).map(|d| {
-                        (d.words(), d.pages(), d.status.clone(), d.kind)
+                        (d.words(), d.pages())
                     });
-                    if let Some((words, pages, status, kind)) = stats {
+                    if let Some((words, pages)) = stats {
                         pill(
                             ui,
                             &format!("{words} words · {pages} pp"),
-                            FAINT,
+                            MUTED,
                             PANEL_2,
                         );
-                        ui.label(
-                            RichText::new(&status)
-                                .font(sans(10.0))
-                                .color(status_color(&status)),
-                        );
-                        if kind == DocKind::Scene {
-                            ui.label(RichText::new("scene").font(sans(9.5)).color(PURPLE));
-                        }
                     }
                 });
                 if new_mode != app.write_mode {
@@ -614,7 +609,7 @@ fn spelling_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, mis
                                             let button = egui::Button::new(
                                                 RichText::new(suggestion)
                                                     .font(sans(9.5))
-                                                    .color(ACCENT),
+                                                    .color(ACCENT_INK),
                                             )
                                             .fill(PANEL_2)
                                             .corner_radius(CornerRadius::same(4))

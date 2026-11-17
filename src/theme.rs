@@ -15,20 +15,31 @@ pub const PANEL_3: Color32 = Color32::from_rgb(230, 232, 235);
 pub const BORDER: Color32 = Color32::from_rgb(214, 217, 221);
 pub const BORDER_SOFT: Color32 = Color32::from_rgb(228, 230, 232);
 pub const TEXT: Color32 = Color32::from_rgb(40, 43, 48);
-pub const MUTED: Color32 = Color32::from_rgb(115, 121, 129);
-pub const FAINT: Color32 = Color32::from_rgb(154, 160, 168);
-pub const ACCENT: Color32 = Color32::from_rgb(91, 143, 138);
+// Secondary text is deliberately darker than a typical "muted gray": at the
+// small sizes used in chrome it must clear a 4.5:1 contrast ratio on PANEL.
+pub const MUTED: Color32 = Color32::from_rgb(82, 89, 98);
+pub const FAINT: Color32 = Color32::from_rgb(104, 111, 120);
+pub const ACCENT: Color32 = Color32::from_rgb(72, 122, 116);
+/// A darker teal for small accent-coloured text on light surfaces, where the
+/// fill colour alone would not reach a comfortable contrast ratio.
+pub const ACCENT_INK: Color32 = Color32::from_rgb(44, 92, 87);
 pub const ACCENT_SOFT: Color32 = Color32::from_rgb(220, 235, 232);
-pub const SAGE: Color32 = Color32::from_rgb(111, 154, 127);
+pub const SAGE: Color32 = Color32::from_rgb(96, 141, 113);
 pub const SAGE_SOFT: Color32 = Color32::from_rgb(227, 239, 231);
-pub const BLUE: Color32 = Color32::from_rgb(94, 135, 181);
-pub const RED: Color32 = Color32::from_rgb(180, 91, 82);
-pub const PURPLE: Color32 = Color32::from_rgb(135, 117, 163);
+pub const BLUE: Color32 = Color32::from_rgb(72, 111, 158);
+pub const RED: Color32 = Color32::from_rgb(158, 72, 64);
+pub const PURPLE: Color32 = Color32::from_rgb(108, 90, 137);
+// Ink-strength counterparts for small text labels. The brighter colours are
+// reserved for dots, bars and fills, where 3:1 is sufficient.
+pub const SAGE_INK: Color32 = Color32::from_rgb(52, 96, 66);
+pub const BLUE_INK: Color32 = Color32::from_rgb(50, 82, 124);
+pub const RED_INK: Color32 = Color32::from_rgb(140, 56, 50);
+pub const PURPLE_INK: Color32 = Color32::from_rgb(88, 70, 118);
 // The manuscript paper stays warm and slightly distinct from the gray chrome.
 pub const PAPER: Color32 = Color32::from_rgb(251, 250, 247);
 pub const PAPER_EDGE: Color32 = Color32::from_rgb(231, 227, 218);
 pub const PAPER_TEXT: Color32 = Color32::from_rgb(44, 42, 38);
-pub const PAPER_MUTED: Color32 = Color32::from_rgb(139, 131, 119);
+pub const PAPER_MUTED: Color32 = Color32::from_rgb(122, 114, 102);
 
 pub fn serif(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("portmanteau-serif".into()))
@@ -240,23 +251,23 @@ pub fn dot(ui: &mut egui::Ui, color: Color32) {
 
 pub fn label_color(label: &str) -> Color32 {
     match label {
-        "Opening" => ACCENT,
-        "Development" => BLUE,
-        "Reveal" => RED,
-        "Script" => PURPLE,
-        "Stage" => SAGE,
-        "Revised" => SAGE,
-        "Draft" => BLUE,
-        "To do" => FAINT,
+        "Opening" => ACCENT_INK,
+        "Development" => BLUE_INK,
+        "Reveal" => RED_INK,
+        "Script" => PURPLE_INK,
+        "Stage" => SAGE_INK,
+        "Revised" => SAGE_INK,
+        "Draft" => BLUE_INK,
+        "To do" => MUTED,
         _ => MUTED,
     }
 }
 
 pub fn status_color(status: &str) -> Color32 {
     match status {
-        "Revised" | "Final" | "Done" => SAGE,
-        "Draft" | "In progress" => ACCENT,
-        "To do" | "Outline" => FAINT,
+        "Revised" | "Final" | "Done" => SAGE_INK,
+        "Draft" | "In progress" => ACCENT_INK,
+        "To do" | "Outline" => MUTED,
         _ => MUTED,
     }
 }

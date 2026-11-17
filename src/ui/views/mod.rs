@@ -61,7 +61,7 @@ pub fn page_head<R>(
                     ui.label(
                         RichText::new(kicker.to_uppercase())
                             .font(sans(9.5))
-                            .color(ACCENT)
+                            .color(ACCENT_INK)
                             .extra_letter_spacing(1.5),
                     );
                     ui.add_space(2.0);

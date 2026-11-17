@@ -880,7 +880,7 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui) {
                     ui.label(
                         RichText::new(glyph)
                             .font(sans(8.5))
-                            .color(if d.medium.is_script() { PURPLE } else { ACCENT }),
+                            .color(if d.medium.is_script() { PURPLE_INK } else { ACCENT_INK }),
                     );
                     ui.label(
                         RichText::new(&d.title)

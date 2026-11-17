@@ -29,6 +29,7 @@ enum Action {
     Move(String, i32),
     Delete(String),
     View(View),
+    HideBinder,
 }
 
 fn collect_rows(
@@ -61,38 +62,49 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         section_label(ui, "Binder");
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let hide = egui::Button::new(
+                RichText::new("‹").font(sans(13.0)).color(FAINT),
+            )
+            .frame(false);
+            if ui
+                .add(hide)
+                .on_hover_text("Hide the binder")
+                .clicked()
+            {
+                action = Some(Action::HideBinder);
+            }
+            ui.add_space(2.0);
             let add = egui::Button::new(RichText::new("+").font(sans(15.0)).color(TEXT))
                 .fill(PANEL_2)
                 .corner_radius(CornerRadius::same(5))
                 .min_size(Vec2::new(24.0, 22.0));
-            if ui.add(add).on_hover_text("New chapter or scene").clicked() {
-                action = Some(Action::NewUnder(None));
-            }
-            let add_folder = egui::Button::new(RichText::new("▣ +").font(sans(12.0)).color(TEXT))
-                .fill(PANEL_2)
-                .corner_radius(CornerRadius::same(5))
-                .min_size(Vec2::new(32.0, 22.0));
-            if ui.add(add_folder).on_hover_text("New folder").clicked() {
-                action = Some(Action::NewFolder(None));
-            }
-            let has_selection = app.selected.is_some();
-            for (glyph, hint, direction) in [
-                ("↓", "Move selected down", 1),
-                ("↑", "Move selected up", -1),
-            ] {
-                let button = egui::Button::new(RichText::new(glyph).size(12.0).color(FAINT))
-                    .frame(false);
-                if ui
-                    .add_enabled(has_selection, button)
-                    .on_hover_text(hint)
-                    .on_disabled_hover_text("Select a document first")
-                    .clicked()
-                {
-                    if let Some(id) = app.selected.clone() {
-                        action = Some(Action::Move(id, direction));
-                    }
+            let add = ui.add(add).on_hover_text("Add to the binder");
+            egui::Popup::menu(&add).show(|ui| {
+                if ui.button("New chapter or scene").clicked() {
+                    action = Some(Action::NewUnder(None));
+                    ui.close();
                 }
-            }
+                if ui.button("New folder").clicked() {
+                    action = Some(Action::NewFolder(None));
+                    ui.close();
+                }
+                ui.separator();
+                let has_selection = app.selected.is_some();
+                let up = ui.add_enabled(has_selection, egui::Button::new("Move selected up"));
+                if up.clicked() {
+                    if let Some(id) = app.selected.clone() {
+                        action = Some(Action::Move(id, -1));
+                    }
+                    ui.close();
+                }
+                let down = ui.add_enabled(has_selection, egui::Button::new("Move selected down"));
+                if down.clicked() {
+                    if let Some(id) = app.selected.clone() {
+                        action = Some(Action::Move(id, 1));
+                    }
+                    ui.close();
+                }
+            });
         });
     });
     ui.add_space(4.0);
@@ -115,7 +127,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     egui::Align2::CENTER_CENTER,
                     "S",
                     serif(13.0),
-                    ACCENT,
+                    ACCENT_INK,
                 );
                 ui.vertical(|ui| {
                     ui.label(
@@ -243,7 +255,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
                 let (glyph, glyph_color) = match row.kind {
                     DocKind::Folder => ("▣", MUTED),
-                    DocKind::Chapter => ("¶", ACCENT),
+                    DocKind::Chapter => ("¶", ACCENT_INK),
                     DocKind::Scene if row.medium.is_script() => ("▶", PURPLE),
                     DocKind::Scene => ("◆", SAGE),
                     DocKind::Research => ("✎", BLUE),
@@ -503,6 +515,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 }
             }
             Action::View(v) => app.view = v,
+            Action::HideBinder => app.set_binder_visible(false),
         }
     }
 }
@@ -530,7 +543,7 @@ fn target_card(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.label(
                     RichText::new(today.to_string())
                         .font(serif(20.0))
-                        .color(ACCENT),
+                        .color(ACCENT_INK),
                 );
                 ui.label(
                     RichText::new(format!("of {target} words"))

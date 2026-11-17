@@ -922,6 +922,13 @@ pub struct AppSettings {
     /// Spelling dictionary code, matching `spellcheck::LANGUAGES`.
     #[serde(default = "default_language")]
     pub language: String,
+    /// Whether the binder panel is visible in the Write workspace. Remembered
+    /// across launches so the writer's layout survives a restart.
+    #[serde(default = "default_true")]
+    pub show_binder: bool,
+    /// Whether the inspector panel is visible in the Write workspace.
+    #[serde(default = "default_true")]
+    pub show_inspector: bool,
 }
 
 impl Default for AppSettings {
@@ -933,6 +940,8 @@ impl Default for AppSettings {
             spellcheck: true,
             custom_words: Vec::new(),
             language: default_language(),
+            show_binder: true,
+            show_inspector: true,
         }
     }
 }
@@ -1702,6 +1711,13 @@ mod tests {
             .size = 18.0;
         settings.sync_element_styles_from_sheets();
         assert_eq!(settings.styles.body.size, 18.0);
+    }
+
+    #[test]
+    fn app_settings_without_layout_fields_default_to_visible_panels() {
+        let settings: AppSettings = serde_json::from_str("{}").expect("empty settings parse");
+        assert!(settings.show_binder, "the binder should start visible");
+        assert!(settings.show_inspector, "the inspector should start visible");
     }
 
     #[test]

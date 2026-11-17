@@ -102,7 +102,7 @@ fn rail_view_button(ui: &mut egui::Ui, view: View, active: bool) -> bool {
         painter,
         rect.shrink(12.0),
         view.icon(),
-        if active { ACCENT } else { MUTED },
+        if active { ACCENT_INK } else { MUTED },
     );
     resp.on_hover_text(view.label()).clicked()
 }
@@ -330,7 +330,7 @@ impl PortmanteauApp {
             collapsed,
             search: String::new(),
             focus_search: false,
-            focus_mode: false,
+            focus_mode: std::env::var("PORTMANTEAU_FOCUS").is_ok(),
             snapshot_name: String::new(),
             checkpoint_label: String::new(),
             selected_research,
@@ -601,27 +601,50 @@ impl PortmanteauApp {
                             );
                         });
                         ui.add_space(10.0);
-                        let (avatar, _) = ui.allocate_exact_size(Vec2::new(28.0, 28.0), egui::Sense::click());
-                        ui.painter().circle_filled(avatar.center(), 14.0, PANEL_3);
-                        ui.painter().text(
-                            avatar.center(),
-                            egui::Align2::CENTER_CENTER,
-                            "AM",
-                            sans(10.5),
-                            TEXT,
-                        );
-                        ui.add_space(6.0);
-                        let (dir, resp) = ui.allocate_exact_size(Vec2::new(50.0, 26.0), egui::Sense::click());
-                        ui.painter().rect_filled(dir, CornerRadius::same(6), PANEL_2);
-                        ui.painter().text(
-                            dir.center(),
-                            egui::Align2::CENTER_CENTER,
-                            "focus",
-                            sans(10.0),
-                            if self.focus_mode { ACCENT } else { MUTED },
-                        );
-                        if resp.on_hover_text("Hide the binder and inspector").clicked() {
-                            self.focus_mode = !self.focus_mode;
+                    });
+                });
+            });
+    }
+
+    /// Focus mode replaces the normal chrome with one slim bar. It changes
+    /// nothing about the document; the editor keeps its own state and layout
+    /// rules.
+    fn focus_bar(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::top("focusbar")
+            .exact_size(38.0)
+            .frame(
+                Frame::new()
+                    .fill(PANEL)
+                    .stroke(Stroke::new(1.0, BORDER_SOFT))
+                    .inner_margin(Margin::symmetric(14, 4)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal_centered(|ui| {
+                    ui.label(
+                        RichText::new(&self.ws.project.title)
+                            .font(serif(13.0))
+                            .color(MUTED),
+                    );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let exit = egui::Button::new(
+                            RichText::new("Exit focus").font(sans(10.5)).color(MUTED),
+                        )
+                        .fill(PANEL_2)
+                        .corner_radius(CornerRadius::same(5));
+                        if ui
+                            .add(exit)
+                            .on_hover_text("Restore the full workspace (F11)")
+                            .clicked()
+                        {
+                            self.focus_mode = false;
+                        }
+                        if let Some(doc) = self.current_doc() {
+                            ui.add_space(8.0);
+                            ui.label(
+                                RichText::new(format!("{} · {} words", doc.title, doc.words()))
+                                    .font(sans(10.5))
+                                    .color(FAINT),
+                            );
                         }
                     });
                 });
@@ -718,7 +741,20 @@ impl PortmanteauApp {
                 ui.close();
             }
             ui.separator();
-            if ui.button("Focus mode").clicked() {
+            if ui
+                .checkbox(&mut self.settings.show_binder, "Show binder")
+                .changed()
+            {
+                let _ = crate::settings::save_settings(&self.settings);
+            }
+            if ui
+                .checkbox(&mut self.settings.show_inspector, "Show inspector")
+                .changed()
+            {
+                let _ = crate::settings::save_settings(&self.settings);
+            }
+            ui.separator();
+            if ui.button("Focus mode (F11)").clicked() {
                 self.focus_mode = !self.focus_mode;
                 ui.close();
             }
@@ -737,8 +773,6 @@ impl PortmanteauApp {
                 ui.close();
             }
         });
-        ui.add_space(2.0);
-        ui.label(RichText::new("Project").font(sans(12.0)).color(FAINT));
     }
 
     fn search_field(&mut self, ui: &mut egui::Ui) {
@@ -802,7 +836,7 @@ impl PortmanteauApp {
                         egui::Align2::CENTER_CENTER,
                         "S",
                         serif(20.0),
-                        ACCENT,
+                        ACCENT_INK,
                     );
                     ui.add_space(18.0);
                     for view in View::all() {
@@ -1764,17 +1798,29 @@ impl eframe::App for PortmanteauApp {
         let ctx = ui.ctx().clone();
         self.handle_shortcuts(&ctx);
 
-        self.top_bar(ui);
-        self.status_bar(ui);
-        self.rail(ui);
+        let focus = self.focus_mode && self.view == View::Write;
+        if focus {
+            self.focus_bar(ui);
+        } else {
+            self.top_bar(ui);
+            self.status_bar(ui);
+            self.rail(ui);
+        }
         self.toast_ui(&ctx);
 
         if self.view == View::Write {
-            if !self.focus_mode {
-                self.binder(ui);
-            }
-            if !self.focus_mode {
-                self.inspector(ui);
+            let focus = self.focus_mode;
+            if !focus {
+                if self.settings.show_binder {
+                    self.binder(ui);
+                } else {
+                    self.binder_stub(ui);
+                }
+                if self.settings.show_inspector {
+                    self.inspector(ui);
+                } else {
+                    self.inspector_stub(ui);
+                }
             }
             egui::CentralPanel::default()
                 .frame(Frame::new().fill(BG))
@@ -1821,6 +1867,74 @@ impl PortmanteauApp {
             .show(ui, |ui| {
                 ui::inspector::show(self, ui);
             });
+    }
+
+    /// A slim edge handle so a hidden panel can be brought back without
+    /// reaching for the menu. Focus mode hides the handles too.
+    fn binder_stub(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::left("binder_stub")
+            .exact_size(18.0)
+            .resizable(false)
+            .frame(
+                Frame::new()
+                    .fill(BG)
+                    .inner_margin(Margin::symmetric(1, 6)),
+            )
+            .show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(10.0);
+                    let show = egui::Button::new(
+                        RichText::new("›").font(sans(12.0)).color(FAINT),
+                    )
+                    .frame(false)
+                    .min_size(Vec2::new(16.0, 28.0));
+                    if ui
+                        .add(show)
+                        .on_hover_text("Show the binder")
+                        .clicked()
+                    {
+                        self.set_binder_visible(true);
+                    }
+                });
+            });
+    }
+
+    fn inspector_stub(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::right("inspector_stub")
+            .exact_size(18.0)
+            .resizable(false)
+            .frame(
+                Frame::new()
+                    .fill(BG)
+                    .inner_margin(Margin::symmetric(1, 6)),
+            )
+            .show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(10.0);
+                    let show = egui::Button::new(
+                        RichText::new("‹").font(sans(12.0)).color(FAINT),
+                    )
+                    .frame(false)
+                    .min_size(Vec2::new(16.0, 28.0));
+                    if ui
+                        .add(show)
+                        .on_hover_text("Show the inspector")
+                        .clicked()
+                    {
+                        self.set_inspector_visible(true);
+                    }
+                });
+            });
+    }
+
+    pub fn set_binder_visible(&mut self, visible: bool) {
+        self.settings.show_binder = visible;
+        let _ = crate::settings::save_settings(&self.settings);
+    }
+
+    pub fn set_inspector_visible(&mut self, visible: bool) {
+        self.settings.show_inspector = visible;
+        let _ = crate::settings::save_settings(&self.settings);
     }
 }
 

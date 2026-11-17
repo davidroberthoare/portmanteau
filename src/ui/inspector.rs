@@ -43,6 +43,19 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 );
             }
         }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let hide = egui::Button::new(
+                RichText::new("›").font(sans(12.0)).color(FAINT),
+            )
+            .frame(false);
+            if ui
+                .add(hide)
+                .on_hover_text("Hide the inspector")
+                .clicked()
+            {
+                app.set_inspector_visible(false);
+            }
+        });
     });
     hairline(ui);
     ui.add_space(8.0);

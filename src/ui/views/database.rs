@@ -119,7 +119,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                                             egui::Button::new(
                                                                 RichText::new("+")
                                                                     .font(sans(13.0))
-                                                                    .color(ACCENT),
+                                                                    .color(ACCENT_INK),
                                                             )
                                                             .frame(false),
                                                         )
