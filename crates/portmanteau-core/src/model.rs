@@ -3,12 +3,21 @@
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use crate::{RichDocument, StyleSheet};
 
 pub use crate::script::ElementKind;
 pub use crate::text::{count_words, reading_minutes, truncate_words};
 
 pub fn new_id(prefix: &str) -> String {
     format!("{}-{}", prefix, &Uuid::new_v4().simple().to_string()[..8])
+}
+
+fn default_prose_stylesheet() -> String {
+    "prose".into()
+}
+
+fn default_style_sheets() -> Vec<StyleSheet> {
+    StyleSheet::industry_defaults(&ElementStyles::default())
 }
 
 pub fn now_stamp() -> String {
@@ -158,8 +167,11 @@ pub struct Document {
     pub title: String,
     pub kind: DocKind,
     pub medium: Medium,
-    pub text: String,
-    pub blocks: Vec<Block>,
+    /// Project stylesheet selected for this document. Medium chooses an initial
+    /// default, but the content representation is shared across all media.
+    #[serde(default = "default_prose_stylesheet")]
+    pub style_sheet_id: String,
+    pub content: RichDocument,
     pub synopsis: String,
     pub notes: String,
     pub label: String,
@@ -188,8 +200,16 @@ impl Document {
             title: title.into(),
             kind,
             medium,
-            text: String::new(),
-            blocks: Vec::new(),
+            style_sheet_id: if medium.is_script() {
+                "film-screenplay".into()
+            } else {
+                default_prose_stylesheet()
+            },
+            content: RichDocument::empty(if medium.is_script() {
+                "action"
+            } else {
+                "body"
+            }),
             synopsis: String::new(),
             notes: String::new(),
             label: String::new(),
@@ -204,13 +224,27 @@ impl Document {
     }
 
     pub fn with_text(mut self, text: impl Into<String>) -> Self {
-        self.text = text.into();
+        self.set_plain_text(text);
         self
     }
 
     pub fn with_script(mut self, blocks: Vec<Block>) -> Self {
-        self.blocks = blocks;
+        self.set_script_blocks(blocks);
         self
+    }
+
+    pub fn set_plain_text(&mut self, text: impl Into<String>) {
+        let default_style = if self.medium.is_script() {
+            "action"
+        } else {
+            "body"
+        };
+        let text = text.into();
+        self.content = RichDocument::from_plain_text(&text, default_style);
+    }
+
+    pub fn set_script_blocks(&mut self, blocks: Vec<Block>) {
+        self.content = RichDocument::from_script_blocks(&blocks);
     }
 
     pub fn with_synopsis(mut self, synopsis: impl Into<String>) -> Self {
@@ -232,29 +266,19 @@ impl Document {
 
     /// Authoritative body text, whatever the medium.
     pub fn body_text(&self) -> String {
-        if self.medium.is_script() {
-            self.blocks
-                .iter()
-                .map(|b| b.text.as_str())
-                .collect::<Vec<_>>()
-                .join("\n\n")
-        } else {
-            self.text.clone()
-        }
+        self.content.plain_text()
     }
 
     pub fn words(&self) -> u32 {
-        count_words(&self.body_text())
+        count_words(&self.content.text_only())
     }
 
     pub fn pages(&self) -> u32 {
         if self.medium.is_script() {
             // One screenplay page is roughly 55 lines.
-            let lines: usize = self
-                .blocks
-                .iter()
-                .map(|b| 1 + (b.text.len() / 60))
-                .sum();
+            let lines: usize = self.content.paragraphs.iter().map(|p| {
+                1 + (p.text_only().chars().count() / 60)
+            }).sum();
             ((lines.max(1) as f32) / 55.0).ceil() as u32
         } else {
             ((self.words() as f32) / 280.0).ceil().max(1.0) as u32
@@ -271,8 +295,7 @@ impl Document {
             name: name.into(),
             created: now_stamp(),
             note: note.into(),
-            text: self.text.clone(),
-            blocks: self.blocks.clone(),
+            content: self.content.clone(),
             words: self.words(),
         };
         self.snapshots.insert(0, snap);
@@ -283,8 +306,7 @@ impl Document {
 
     pub fn restore_snapshot(&mut self, snapshot_id: &str) -> bool {
         if let Some(snap) = self.snapshots.iter().find(|s| s.id == snapshot_id).cloned() {
-            self.text = snap.text;
-            self.blocks = snap.blocks;
+            self.content = snap.content;
             self.touch();
             true
         } else {
@@ -299,14 +321,16 @@ impl Document {
         }
         let body = self.body_text();
         self.medium = medium;
-        if medium.is_script() {
-            self.blocks = if self.blocks.is_empty() {
-                crate::script::parse_loose(&body)
-            } else {
-                std::mem::take(&mut self.blocks)
-            };
+        self.style_sheet_id = if medium.is_script() {
+            "film-screenplay".into()
         } else {
-            self.text = body;
+            default_prose_stylesheet()
+        };
+        if medium.is_script() {
+            let blocks = crate::script::parse_loose(&body);
+            self.content = RichDocument::from_script_blocks(&blocks);
+        } else {
+            self.content = RichDocument::from_plain_text(&body, "body");
         }
         self.touch();
     }
@@ -318,8 +342,7 @@ pub struct Snapshot {
     pub name: String,
     pub created: String,
     pub note: String,
-    pub text: String,
-    pub blocks: Vec<Block>,
+    pub content: RichDocument,
     pub words: u32,
 }
 
@@ -327,15 +350,7 @@ impl Snapshot {
     /// Reconstruct the saved body for comparison with the current document.
     /// A script snapshot stores typed blocks; a prose snapshot stores text.
     pub fn body_text(&self) -> String {
-        if self.blocks.is_empty() {
-            self.text.clone()
-        } else {
-            self.blocks
-                .iter()
-                .map(|b| b.text.as_str())
-                .collect::<Vec<_>>()
-                .join("\n\n")
-        }
+        self.content.plain_text()
     }
 }
 
@@ -801,6 +816,10 @@ impl ElementStyles {
 pub struct AppSettings {
     #[serde(default)]
     pub styles: ElementStyles,
+    /// Program-wide stylesheet templates copied into projects when they are
+    /// created. Existing project sheets remain independent.
+    #[serde(default = "default_style_sheets")]
+    pub style_sheets: Vec<StyleSheet>,
     /// Show the spelling panel and check words in the editors.
     #[serde(default = "default_true")]
     pub spellcheck: bool,
@@ -814,12 +833,43 @@ pub struct AppSettings {
 
 impl Default for AppSettings {
     fn default() -> Self {
+        let styles = ElementStyles::default();
         Self {
-            styles: ElementStyles::default(),
+            styles: styles.clone(),
+            style_sheets: StyleSheet::industry_defaults(&styles),
             spellcheck: true,
             custom_words: Vec::new(),
             language: default_language(),
         }
+    }
+}
+
+impl AppSettings {
+    /// Build the style sheets a newly created project receives. The existing
+    /// global element-style controls update the visual portions; style names,
+    /// semantic roles and next-style rules remain stylesheet data.
+    pub fn style_sheets_for_new_project(&self) -> Vec<StyleSheet> {
+        let mut sheets = if self.style_sheets.is_empty() {
+            default_style_sheets()
+        } else {
+            self.style_sheets.clone()
+        };
+        for sheet in &mut sheets {
+            for style in &mut sheet.styles {
+                if let Some(kind) = style.semantic_kind {
+                    style.format = self.styles.style_for_kind(kind).clone();
+                } else if sheet.id == "prose" {
+                    match style.id.as_str() {
+                        "body" => style.format = self.styles.body.clone(),
+                        "chapter-heading" => {
+                            style.format = self.styles.chapter_heading.clone()
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        sheets
     }
 }
 
@@ -1026,6 +1076,9 @@ pub struct Project {
     pub export: ExportSettings,
     #[serde(default)]
     pub styles: ElementStyles,
+    /// Project-owned prose and screenplay paragraph style sheets.
+    #[serde(default = "default_style_sheets")]
+    pub style_sheets: Vec<StyleSheet>,
     #[serde(default)]
     pub formats: Vec<ExportSettings>,
 }
@@ -1033,6 +1086,7 @@ pub struct Project {
 impl Project {
     pub fn new(title: impl Into<String>, kind: ProjectKind) -> Self {
         let stamp = now_stamp();
+        let styles = ElementStyles::default();
         let mut project = Self {
             schema: 1,
             id: new_id("proj"),
@@ -1051,7 +1105,8 @@ impl Project {
             session_log: Vec::new(),
             daily_target: 1200,
             export: ExportSettings::default(),
-            styles: ElementStyles::default(),
+            style_sheets: StyleSheet::industry_defaults(&styles),
+            styles,
             formats: Vec::new(),
         };
         project.ensure_folders();
@@ -1353,19 +1408,26 @@ impl Project {
         }
     }
 
-    pub fn locations(&self) -> Vec<&str> {
-        let mut seen: Vec<&str> = Vec::new();
+    pub fn locations(&self) -> Vec<String> {
+        let mut seen: Vec<String> = Vec::new();
         for doc in &self.documents {
-            for block in &doc.blocks {
-                if block.kind == ElementKind::SceneHeading {
-                    let loc = block
-                        .text
+            let sheet = self
+                .style_sheets
+                .iter()
+                .find(|sheet| sheet.id == doc.style_sheet_id);
+            for paragraph in &doc.content.paragraphs {
+                let kind = sheet
+                    .and_then(|sheet| sheet.style(&paragraph.style_id))
+                    .and_then(|style| style.semantic_kind);
+                if kind == Some(ElementKind::SceneHeading) {
+                    let text = paragraph.text_only();
+                    let loc = text
                         .split(|c| c == '-' || c == '—')
                         .next()
                         .unwrap_or("")
                         .trim();
-                    if !loc.is_empty() && !seen.contains(&loc) {
-                        seen.push(loc);
+                    if !loc.is_empty() && !seen.iter().any(|item| item == loc) {
+                        seen.push(loc.to_owned());
                     }
                 }
             }
@@ -1442,6 +1504,43 @@ mod tests {
         let p = Project::new("Test", ProjectKind::Novel);
         assert_eq!(p.documents.len(), 4);
         assert!(p.folder_id("Draft").is_some());
+        assert!(p.style_sheets.iter().any(|sheet| sheet.id == "prose"));
+        assert!(
+            p.style_sheets
+                .iter()
+                .any(|sheet| sheet.id == "film-screenplay")
+        );
+    }
+
+    #[test]
+    fn new_documents_select_a_stylesheet_by_medium() {
+        let prose = Document::new(None, 0, "Chapter", DocKind::Chapter, Medium::Prose);
+        let screenplay = Document::new(
+            None,
+            0,
+            "Scene",
+            DocKind::Scene,
+            Medium::Screenplay,
+        );
+        assert_eq!(prose.style_sheet_id, "prose");
+        assert_eq!(screenplay.style_sheet_id, "film-screenplay");
+    }
+
+    #[test]
+    fn global_element_defaults_seed_new_project_style_sheets() {
+        let mut settings = AppSettings::default();
+        settings.styles.body.size = 13.0;
+        let sheets = settings.style_sheets_for_new_project();
+        let body = sheets
+            .iter()
+            .find(|sheet| sheet.id == "prose")
+            .and_then(|sheet| sheet.style("body"))
+            .expect("the prose sheet should include a body style");
+        assert_eq!(body.format.size, 13.0);
+
+        let mut project_copy = sheets;
+        project_copy[0].styles[0].format.size = 17.0;
+        assert_eq!(settings.styles.body.size, 13.0);
     }
 
     #[test]
@@ -1449,12 +1548,12 @@ mod tests {
         let mut p = Project::new("Test", ProjectKind::Novel);
         let parent = p.folder_id("Draft");
         let id = p.add_document(parent, "Chapter", DocKind::Chapter, Medium::Prose);
-        p.document_mut(&id).unwrap().text = "one two three".into();
+        p.document_mut(&id).unwrap().set_plain_text("one two three");
         p.document_mut(&id).unwrap().snapshot("First pass", "rough");
-        p.document_mut(&id).unwrap().text = "changed".into();
+        p.document_mut(&id).unwrap().set_plain_text("changed");
         let snap = p.document(&id).unwrap().snapshots[0].id.clone();
         assert!(p.document_mut(&id).unwrap().restore_snapshot(&snap));
-        assert_eq!(p.document(&id).unwrap().text, "one two three");
+        assert_eq!(p.document(&id).unwrap().body_text(), "one two three");
     }
 
     #[test]
@@ -1542,7 +1641,10 @@ mod tests {
         let parent = p.folder_id("Draft");
         let id = p.add_document(parent, "Scene", DocKind::Scene, Medium::Screenplay);
         let doc = p.document_mut(&id).unwrap();
-        doc.blocks = vec![Block::new(ElementKind::Action, "The tide went out.")];
+        doc.set_script_blocks(vec![Block::new(
+            ElementKind::Action,
+            "The tide went out.",
+        )]);
         doc.snapshot("First", "");
         assert_eq!(p.document(&id).unwrap().snapshots[0].body_text(), "The tide went out.");
     }

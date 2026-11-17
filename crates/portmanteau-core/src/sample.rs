@@ -32,7 +32,7 @@ pub fn demo() -> Project {
     );
     {
         let doc = p.document_mut(&chapter_one).unwrap();
-        doc.text = chapter_one_text.into();
+        doc.set_plain_text(chapter_one_text);
         doc.synopsis = "Mara arrives at low tide, meets a boy who knows a road that is not on her father's chart, and begins to suspect the survey is a confession.".into();
         doc.notes = "Opening should feel like a survey report that keeps losing its nerve. Keep the compass and the red bucket. The boy is not named until chapter four.".into();
         doc.label = "Opening".into();
@@ -41,11 +41,11 @@ pub fn demo() -> Project {
         doc.pinned = true;
         // Two earlier drafts in the version history.
         let first_draft = "The tide was out when Mara arrived.\n\nShe had not been back to the harbour in eleven years, and the first thing she noticed was the smell: salt, diesel, and something older underneath, like a cellar opened after rain. Her father's compass was in her pocket. She did not take it out.\n\nThe ferry office was closed. A notice taped to the glass said the service would resume when the water did.";
-        doc.text = first_draft.into();
+        doc.set_plain_text(first_draft);
         doc.snapshot("First pass · arrival", "Original opening, too much weather.");
-        doc.text = "The tide went out that morning and did not come back.\n\nMara Venn stood at the end of the harbour wall with her father's compass in her fist. The town had not changed. That was the first lie.".into();
+        doc.set_plain_text("The tide went out that morning and did not come back.\n\nMara Venn stood at the end of the harbour wall with her father's compass in her fist. The town had not changed. That was the first lie.");
         doc.snapshot("Second pass · the boy", "Cut the ferry office; brought the boy in earlier.");
-        doc.text = chapter_one_text.into();
+        doc.set_plain_text(chapter_one_text);
     }
 
     let chapter_two = p.add_document(
@@ -56,7 +56,7 @@ pub fn demo() -> Project {
     );
     {
         let doc = p.document_mut(&chapter_two).unwrap();
-        doc.text = "By noon the mud had begun to steam.\n\nMara walked the old road with the boy behind her, keeping a distance that was not quite respect and not quite fear. He carried the red bucket. It held a knife, a length of string, and a brass key the size of her thumb.\n\nThe road was made of ballast and crushed shell. It held her weight. Out here, where the chart showed twelve fathoms of water, she could see the walls of gardens, a doorstep, a boot.\n\n“What happened here?” she asked.\n\n“It went out,” the boy said.\n\n“The sea doesn't just go out.”\n\nHe considered this with the patience of someone who had been told otherwise all his life.\n\n“This one did.”\n\nAt the turn, where the road bent north, Mara stopped. A line of iron posts marked the edge of something. She knelt and brushed the mud away with her thumb. Underneath was a plate, riveted to the post, and on the plate was a number: 14.\n\nHer father's chart had a plate 14. It was three miles away, on the other side of the headland.\n\nShe took out her phone. No signal, of course. She took out the compass instead. The needle found east and stayed there, steady as an accusation.".into();
+        doc.set_plain_text("By noon the mud had begun to steam.\n\nMara walked the old road with the boy behind her, keeping a distance that was not quite respect and not quite fear. He carried the red bucket. It held a knife, a length of string, and a brass key the size of her thumb.\n\nThe road was made of ballast and crushed shell. It held her weight. Out here, where the chart showed twelve fathoms of water, she could see the walls of gardens, a doorstep, a boot.\n\n“What happened here?” she asked.\n\n“It went out,” the boy said.\n\n“The sea doesn't just go out.”\n\nHe considered this with the patience of someone who had been told otherwise all his life.\n\n“This one did.”\n\nAt the turn, where the road bent north, Mara stopped. A line of iron posts marked the edge of something. She knelt and brushed the mud away with her thumb. Underneath was a plate, riveted to the post, and on the plate was a number: 14.\n\nHer father's chart had a plate 14. It was three miles away, on the other side of the headland.\n\nShe took out her phone. No signal, of course. She took out the compass instead. The needle found east and stayed there, steady as an accusation.");
         doc.synopsis = "The old road leads somewhere the chart insists cannot exist; a numbered plate puts the whole survey in question.".into();
         doc.notes = "The key should not be explained until Part Two. Every object the boy carries must return.".into();
         doc.label = "Development".into();
@@ -82,7 +82,7 @@ pub fn demo() -> Project {
     );
     {
         let doc = p.document_mut(&chapter_three).unwrap();
-        doc.text = "The other harbour had no name on any chart she owned.\n\nIt had a name on the sign above the customs house, but the sign had been painted over twice, and the last coat was the colour of wet slate. Mara could read the older letters only by the shadows they cast in the paint.\n\nShe read: VENN.\n\nHer father had signed every chart in the survey office with his full name, in ink that faded to brown. Here the name was a place.\n\nAn old woman was sitting on the customs steps, shelling peas into a bowl.\n\n“You'll want the key,” the woman said, without looking up.\n\n“I don't have a key.”\n\n“Then you'll want the one the boy has.”\n\nThe woman held out a pea pod, split it with her thumbnail, and let the peas fall.\n\n“Tell him the tide is coming back,” she said. “It always comes back when the map is finished.”".into();
+        doc.set_plain_text("The other harbour had no name on any chart she owned.\n\nIt had a name on the sign above the customs house, but the sign had been painted over twice, and the last coat was the colour of wet slate. Mara could read the older letters only by the shadows they cast in the paint.\n\nShe read: VENN.\n\nHer father had signed every chart in the survey office with his full name, in ink that faded to brown. Here the name was a place.\n\nAn old woman was sitting on the customs steps, shelling peas into a bowl.\n\n“You'll want the key,” the woman said, without looking up.\n\n“I don't have a key.”\n\n“Then you'll want the one the boy has.”\n\nThe woman held out a pea pod, split it with her thumbnail, and let the peas fall.\n\n“Tell him the tide is coming back,” she said. “It always comes back when the map is finished.”");
         doc.synopsis = "The town on the other side of the headland carries Mara's family name, and an old woman knows about the boy's key.".into();
         doc.label = "Reveal".into();
         doc.status = "Draft".into();
@@ -103,7 +103,7 @@ pub fn demo() -> Project {
         doc.label = "Script".into();
         doc.status = "Revised".into();
         doc.word_target = 8000;
-        doc.blocks = vec![
+        doc.set_script_blocks(vec![
             block(ElementKind::Transition, "FADE IN:"),
             block(ElementKind::SceneHeading, "EXT. COLD HARBOR BREAKWATER — DAWN"),
             block(ElementKind::Action, "The sea has gone out. Not a tide: a withdrawal. The harbour lies open like an unfinished sentence, ribs of boats showing in the mud."),
@@ -137,7 +137,7 @@ pub fn demo() -> Project {
             block(ElementKind::Dialogue, "Then we have a problem."),
             block(ElementKind::Transition, "SMASH CUT TO BLACK."),
             block(ElementKind::Transition, "TITLE CARD: COLD HARBOR"),
-        ];
+        ]);
         doc.snapshot("Read-through draft", "Trimmed the teaser by two pages.");
     }
 
@@ -153,7 +153,7 @@ pub fn demo() -> Project {
         doc.notes = "One set: the lamp room. Two chairs, a table, the lamp. No interval.".into();
         doc.label = "Stage".into();
         doc.status = "Draft".into();
-        doc.blocks = vec![
+        doc.set_script_blocks(vec![
             block(ElementKind::Act, "ACT ONE"),
             block(ElementKind::Scene, "The lamp room. Night. The lamp is lit, though the glass is cracked."),
             block(ElementKind::StageDirection, "NELL (60s) winds the mechanism. RUTH (50s) watches the sea through binoculars that are held together with tape."),
@@ -176,7 +176,7 @@ pub fn demo() -> Project {
             block(ElementKind::Dialogue, "It was a Tuesday."),
             block(ElementKind::StageDirection, "The lamp gutters, then holds."),
             block(ElementKind::Transition, "BLACKOUT."),
-        ];
+        ]);
     }
 
     // ---- Research ---------------------------------------------------------
@@ -189,7 +189,7 @@ pub fn demo() -> Project {
             Medium::Note,
         );
         let doc = p.document_mut(&id).unwrap();
-        doc.text = body.into();
+        doc.set_plain_text(body);
         doc.synopsis = body.chars().take(120).collect();
         doc.include_in_export = false;
         p.research.push(ResearchItem {
@@ -285,21 +285,27 @@ pub fn demo() -> Project {
     // ---- Front and back matter -------------------------------------------
     let front = p.folder_id("Front Matter").unwrap();
     let copyright = p.add_document(Some(front.clone()), "Copyright", DocKind::FrontMatter, Medium::Prose);
-    p.document_mut(&copyright).unwrap().text =
-        "Copyright © 2026 Ada Marlowe\n\nAll rights reserved. No part of this book may be reproduced without written permission, except brief quotations in a review.\n\nThis is a work of fiction. Names, characters, places and incidents are products of the author's imagination.".into();
+    p.document_mut(&copyright).unwrap().set_plain_text(
+        "Copyright © 2026 Ada Marlowe\n\nAll rights reserved. No part of this book may be reproduced without written permission, except brief quotations in a review.\n\nThis is a work of fiction. Names, characters, places and incidents are products of the author's imagination.",
+    );
     let dedication = p.add_document(Some(front.clone()), "Dedication", DocKind::FrontMatter, Medium::Prose);
-    p.document_mut(&dedication).unwrap().text = "For everyone who has ever drawn a coastline from memory.".into();
+    p.document_mut(&dedication)
+        .unwrap()
+        .set_plain_text("For everyone who has ever drawn a coastline from memory.");
     let preface = p.add_document(Some(front.clone()), "Author's note", DocKind::FrontMatter, Medium::Prose);
-    p.document_mut(&preface).unwrap().text =
-        "This book began with a map that was wrong in a way I could not explain. I have tried to be faithful to the coast, and to the people who keep its records.".into();
+    p.document_mut(&preface).unwrap().set_plain_text(
+        "This book began with a map that was wrong in a way I could not explain. I have tried to be faithful to the coast, and to the people who keep its records.",
+    );
 
     let back = p.folder_id("Back Matter").unwrap();
     let acknowledgements = p.add_document(Some(back.clone()), "Acknowledgements", DocKind::BackMatter, Medium::Prose);
-    p.document_mut(&acknowledgements).unwrap().text =
-        "With thanks to the harbour archivists, the patient readers, and the people of a town that would prefer not to be named.".into();
+    p.document_mut(&acknowledgements)
+        .unwrap()
+        .set_plain_text("With thanks to the harbour archivists, the patient readers, and the people of a town that would prefer not to be named.");
     let about = p.add_document(Some(back.clone()), "About the author", DocKind::BackMatter, Medium::Prose);
-    p.document_mut(&about).unwrap().text =
-        "Ada Marlowe is a writer and former coastal surveyor. She lives within sight of the sea, which is not always a comfort.".into();
+    p.document_mut(&about)
+        .unwrap()
+        .set_plain_text("Ada Marlowe is a writer and former coastal surveyor. She lives within sight of the sea, which is not always a comfort.");
 
     // ---- Session history --------------------------------------------------
     let words = [820, 1140, 420, 1360, 980, 0, 0, 1180, 1510, 640, 1220, 890, 1440, 760];

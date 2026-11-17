@@ -96,12 +96,18 @@ pub fn install(ctx: &egui::Context) {
         .insert(0, "portmanteau-sans".into());
     fonts
         .families
+        .entry(FontFamily::Name("portmanteau-sans-bold".into()))
+        .or_default()
+        .insert(0, "portmanteau-sans-bold".into());
+    fonts
+        .families
         .entry(FontFamily::Monospace)
         .or_default()
         .insert(0, "portmanteau-mono".into());
     for family in [
         FontFamily::Name("portmanteau-serif".into()),
         FontFamily::Name("portmanteau-sans".into()),
+        FontFamily::Name("portmanteau-sans-bold".into()),
         FontFamily::Monospace,
     ] {
         fonts

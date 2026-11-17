@@ -13,7 +13,7 @@ use eframe::egui::{
 };
 use portmanteau_core::{
     Alignment, DocKind, Document, ElementKind, ElementStyle, ElementStyles, ExportSettings,
-    Project,
+    Project, StyleSheet,
 };
 
 use crate::app::PortmanteauApp;
@@ -221,7 +221,9 @@ pub fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
     let mut pages: Vec<Vec<PageLine>> = vec![Vec::new()];
     let mut used = 0.0f32;
 
-    for (index, block) in doc.blocks.iter().enumerate() {
+    let default_sheet = StyleSheet::film_screenplay(&settings.styles);
+    let blocks = doc.content.to_script_blocks(&default_sheet);
+    for (index, block) in blocks.iter().enumerate() {
         let style = script_element_style(&settings.styles, block.kind);
         let size = style.size.max(6.0);
         let lead = (size * style.leading.max(0.85)).max(8.0);

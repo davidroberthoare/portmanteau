@@ -426,7 +426,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
             .find(|d| d.kind == portmanteau_core::DocKind::Research && d.title == old_title)
         {
             doc.title = title;
-            doc.text = body;
+            doc.set_plain_text(body);
             doc.touch();
         }
         app.ws.dirty = true;

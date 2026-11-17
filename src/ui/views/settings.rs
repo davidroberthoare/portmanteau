@@ -282,6 +282,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
     if reset {
         app.settings.styles = ElementStyles::default();
+        app.settings.style_sheets = app.settings.style_sheets_for_new_project();
         app.toast(
             "Defaults reset",
             "Built-in element styles restored — save to keep them",
@@ -300,6 +301,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     }
     if apply {
         app.ws.project.styles = app.settings.styles.clone();
+        app.ws.project.style_sheets = app.settings.style_sheets_for_new_project();
         app.ws.dirty = true;
         app.toast(
             "Defaults applied",

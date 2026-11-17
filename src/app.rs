@@ -474,7 +474,10 @@ impl PortmanteauApp {
         let id = self.ws.project.add_document(parent, title, kind, medium);
         if medium.is_script() {
             if let Some(doc) = self.ws.project.document_mut(&id) {
-                doc.blocks.push(portmanteau_core::Block::new(ElementKind::SceneHeading, "INT. LOCATION — DAY"));
+                doc.set_script_blocks(vec![portmanteau_core::Block::new(
+                    ElementKind::SceneHeading,
+                    "INT. LOCATION — DAY",
+                )]);
             }
         }
         self.ws.dirty = true;
@@ -945,6 +948,8 @@ impl PortmanteauApp {
                         let title = self.new_project_title.trim().to_string();
                         self.ws = Workspace::new_project(&title, self.new_project_kind);
                         self.ws.project.styles = self.settings.styles.clone();
+                        self.ws.project.style_sheets =
+                            self.settings.style_sheets_for_new_project();
                         let parent = self.ws.project.folder_id("Draft");
                         let id = self.ws.project.add_document(
                             parent,
@@ -1069,8 +1074,13 @@ impl PortmanteauApp {
             self.ws.dirty = true;
             if self.selected.as_deref() == Some(state.doc_id.as_str()) {
                 if let Some(doc) = self.ws.project.document_mut(&state.doc_id) {
-                    if let Some(block) = doc.blocks.get_mut(state.block) {
-                        block.text = name.clone();
+                    if let Some(paragraph) = doc.content.paragraphs.get_mut(state.block) {
+                        *paragraph = portmanteau_core::RichParagraph {
+                            style_id: paragraph.style_id.clone(),
+                            content: vec![portmanteau_core::InlineContent::Text(
+                                portmanteau_core::TextRun::plain(name.clone()),
+                            )],
+                        };
                     }
                     doc.touch();
                 }
@@ -1604,11 +1614,12 @@ mod shell_probe {
             .project
             .document_mut(&doc_id)
             .and_then(|doc| {
-                doc.blocks
+                doc.content
+                    .paragraphs
                     .iter()
-                    .position(|b| b.kind == ElementKind::Character)
+                    .position(|paragraph| paragraph.style_id == "character")
                     .map(|index| {
-                        doc.blocks[index].text.clear();
+                        doc.content.paragraphs[index].set_plain_text("");
                         index
                     })
             })
@@ -1619,7 +1630,18 @@ mod shell_probe {
     /// The script block's widget id, matching the expression `editor::show`
     /// uses (`Id::unique(("script_block", doc_id, index))`).
     fn block_id(doc_id: &str, index: usize) -> Id {
-        Id::unique(("script_block", doc_id, index))
+        let _ = index;
+        Id::unique(("script_flow", doc_id))
+    }
+
+    fn paragraph_start(document: &portmanteau_core::Document, index: usize) -> usize {
+        document
+            .content
+            .paragraphs
+            .iter()
+            .take(index)
+            .map(|paragraph| paragraph.editor_text().chars().count() + 1)
+            .sum()
     }
 
     /// Draw the shell exactly as `eframe::App::ui` does, without the modal and
@@ -1680,8 +1702,8 @@ mod shell_probe {
 
         harness
             .get_all_by_role(Role::MultilineTextInput)
-            .find(|node| in_editor_column(node.rect()) && node.value().as_deref() == Some(""))
-            .expect("the blank script cue should be a multiline input in the editor column")
+            .find(|node| in_editor_column(node.rect()) && node.value().is_some())
+            .expect("the script flow should be a multiline input in the editor column")
             .click();
         harness.run_steps(2);
 
@@ -1690,23 +1712,51 @@ mod shell_probe {
             harness.ctx.memory(|memory| memory.has_focus(id)),
             "a real pointer click in the full shell should focus the script block"
         );
+        let caret = paragraph_start(
+            app.borrow().ws.project.document(&doc_id).unwrap(),
+            cue,
+        );
+        let mut state =
+            egui::text_edit::TextEditState::load(&harness.ctx, id).unwrap_or_default();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+            egui::text::CCursor::new(caret),
+        )));
+        state.store(&harness.ctx, id);
+        harness.run_steps(1);
 
         harness.input_mut().events.push(Event::Text("ma".into()));
         harness.run_steps(2);
+        let body_after_type = app
+            .borrow()
+            .ws
+            .project
+            .document(&doc_id)
+            .unwrap()
+            .content
+            .editor_text();
+        let selected_after_type = app.borrow().selected_block;
         assert!(
             harness
                 .query_by_role_and_label(Role::Button, "Mara Venn")
                 .is_some(),
-            "typing into the clicked cue should open the completion popup in the full shell"
+            "typing into the clicked cue should open the completion popup in the full shell; \
+             selected={selected_after_type}, body={body_after_type:?}"
         );
 
         harness
             .get_by_role_and_label(Role::Button, "Mara Venn")
             .click();
         harness.run_steps(2);
-        let text = app.borrow().ws.project.document(&doc_id).unwrap().blocks[cue]
-            .text
-            .clone();
+        let doc = app.borrow();
+        let document = doc.ws.project.document(&doc_id).unwrap();
+        let sheet = doc
+            .ws
+            .project
+            .style_sheets
+            .iter()
+            .find(|sheet| sheet.id == document.style_sheet_id)
+            .unwrap();
+        let text = document.content.to_script_blocks(sheet)[cue].text.clone();
         assert_eq!(
             text, "Mara Venn",
             "clicking a name in the full shell should fill the Character block"
@@ -1719,7 +1769,15 @@ mod shell_probe {
 
     #[test]
     fn shell_arrows_stay_inside_the_clicked_block() {
-        let (app, doc_id, _cue) = shell_fixture();
+        let (mut app, doc_id, _cue) = shell_fixture();
+        app.ws
+            .project
+            .document_mut(&doc_id)
+            .unwrap()
+            .set_script_blocks(vec![
+                portmanteau_core::Block::new(ElementKind::Action, "one\ntwo"),
+                portmanteau_core::Block::new(ElementKind::Dialogue, "three"),
+            ]);
         let (mut harness, app) = shell_harness(app);
 
         harness
@@ -1732,27 +1790,44 @@ mod shell_probe {
         let id = block_id(&doc_id, 0);
         assert!(
             harness.ctx.memory(|memory| memory.has_focus(id)),
-            "the click should focus block 0 in the full shell"
+            "the click should focus the script flow in the full shell"
         );
+        let mut state =
+            egui::text_edit::TextEditState::load(&harness.ctx, id).unwrap_or_default();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+            egui::text::CCursor::new(0),
+        )));
+        state.store(&harness.ctx, id);
+        harness.run_steps(1);
 
         harness.key_press(Key::ArrowDown);
         harness.run_steps(2);
         assert!(
             harness.ctx.memory(|memory| memory.has_focus(id)),
-            "ArrowDown in the full shell must not move focus out of the block"
+            "ArrowDown in the full shell must not move focus out of the flow"
         );
+        let down = egui::text_edit::TextEditState::load(&harness.ctx, id)
+            .and_then(|state| state.cursor.char_range())
+            .map(|range| range.primary.index.0)
+            .expect("the flow editor should expose its caret");
+        assert_eq!(down, 4, "ArrowDown should enter the second visual line");
 
         harness.key_press(Key::ArrowUp);
         harness.run_steps(2);
         assert!(
             harness.ctx.memory(|memory| memory.has_focus(id)),
-            "ArrowUp in the full shell must not move focus out of the block"
+            "ArrowUp in the full shell must not move focus out of the flow"
         );
-        assert_eq!(app.borrow().selected_block, 0);
+        let up = egui::text_edit::TextEditState::load(&harness.ctx, id)
+            .and_then(|state| state.cursor.char_range())
+            .map(|range| range.primary.index.0)
+            .expect("the flow editor should expose its caret");
+        assert_eq!(up, 0, "ArrowUp should return to the first visual line");
+        assert!(app.borrow().selected_block < 2);
     }
 
     /// The shell-level version of the first-focus-frame bug: the app asks for
-    /// block 0's focus (as `+ Add element`, a click into a cue or a menu action
+    /// paragraph 0's focus (as `+ Add element`, a click into a cue or a menu action
     /// does) in the same frame an unmodified arrow arrives. egui reads the
     /// focused widget's event filter at the start of the pass, so the freshly
     /// requested focus has none yet; without the editor's cancellation the
@@ -1773,9 +1848,12 @@ mod shell_probe {
 
         assert!(
             harness.ctx.memory(|memory| memory.has_focus(id)),
-            "an arrow in the frame that first focuses the block must stay in it \
+            "an arrow in the frame that first focuses the flow must stay in it \
              even with the full shell's focus order"
         );
-        assert_eq!(app.borrow().selected_block, 0);
+        assert!(
+            app.borrow().selected_block < app.borrow().current_doc().unwrap().content.paragraphs.len(),
+            "the caret should remain on a paragraph in the flow"
+        );
     }
 }

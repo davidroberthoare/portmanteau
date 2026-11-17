@@ -39,6 +39,19 @@ fn roundtrip_doc(doc: &Document) -> Document {
         .expect("the probed document came back")
 }
 
+fn script_blocks(doc: &Document) -> Vec<Block> {
+    let sheet = doc
+        .style_sheet_id
+        .as_str();
+    let styles = portmanteau_core::ElementStyles::default();
+    let style_sheet = if sheet == "film-screenplay" {
+        portmanteau_core::StyleSheet::film_screenplay(&styles)
+    } else {
+        portmanteau_core::StyleSheet::film_screenplay(&styles)
+    };
+    doc.content.to_script_blocks(&style_sheet)
+}
+
 const ALL_KINDS: [ElementKind; 12] = [
     ElementKind::SceneHeading,
     ElementKind::Action,
@@ -76,15 +89,16 @@ fn script_document_blocks_survive_a_folder_roundtrip_unchanged() {
         Block { kind: ElementKind::Dialogue, text: "The chart's wrong.".into() },
     ];
     let mut doc = make_doc("doc-script-probe", "Probe Script", Medium::Screenplay);
-    doc.blocks = blocks;
+    doc.set_script_blocks(blocks.clone());
     let back = roundtrip_doc(&doc);
+    let back_blocks = script_blocks(&back);
     assert_eq!(
-        back.blocks.len(),
-        doc.blocks.len(),
+        back_blocks.len(),
+        blocks.len(),
         "block count changed: {:?}",
-        back.blocks
+        back_blocks
     );
-    for (i, (before, after)) in doc.blocks.iter().zip(back.blocks.iter()).enumerate() {
+    for (i, (before, after)) in blocks.iter().zip(back_blocks.iter()).enumerate() {
         assert_eq!(before.kind, after.kind, "block {i} kind changed");
         assert_eq!(before.text, after.text, "block {i} text changed");
     }
@@ -115,11 +129,12 @@ fn every_element_kind_roundtrips_in_isolation() {
     for kind in ALL_KINDS {
         let mut doc = make_doc("doc-kind-probe", "Kind Probe", Medium::Screenplay);
         let body = representative_text(kind);
-        doc.blocks = vec![Block { kind, text: body.clone() }];
+        doc.set_script_blocks(vec![Block { kind, text: body.clone() }]);
         let back = roundtrip_doc(&doc);
-        assert_eq!(back.blocks.len(), 1, "{kind:?} lost: {:?}", back.blocks);
-        assert_eq!(back.blocks[0].kind, kind, "{kind:?} changed kind");
-        assert_eq!(back.blocks[0].text, body, "{kind:?} changed text");
+        let blocks = script_blocks(&back);
+        assert_eq!(blocks.len(), 1, "{kind:?} lost: {blocks:?}");
+        assert_eq!(blocks[0].kind, kind, "{kind:?} changed kind");
+        assert_eq!(blocks[0].text, body, "{kind:?} changed text");
     }
 }
 
@@ -128,14 +143,15 @@ fn every_element_kind_roundtrips_in_isolation() {
 fn scene_heading_without_int_ext_shorthand_keeps_its_kind() {
     for body in ["COLD HARBOR - DAY", "THE HARBOUR - NIGHT", "EXT/INT. THE WRECK - CONTINUOUS"] {
         let mut doc = make_doc("doc-scene-probe", "Scene Probe", Medium::Screenplay);
-        doc.blocks = vec![Block { kind: ElementKind::SceneHeading, text: body.into() }];
+        doc.set_script_blocks(vec![Block { kind: ElementKind::SceneHeading, text: body.into() }]);
         let back = roundtrip_doc(&doc);
-        assert_eq!(back.blocks.len(), 1, "{body}: lost the block");
+        let blocks = script_blocks(&back);
+        assert_eq!(blocks.len(), 1, "{body}: lost the block");
         assert_eq!(
-            back.blocks[0].kind,
+            blocks[0].kind,
             ElementKind::SceneHeading,
             "{body}: came back as {:?}",
-            back.blocks[0].kind
+            blocks[0].kind
         );
     }
 }
@@ -144,14 +160,15 @@ fn scene_heading_without_int_ext_shorthand_keeps_its_kind() {
 #[test]
 fn action_written_in_capitals_keeps_its_kind() {
     let mut doc = make_doc("doc-action-probe", "Action Probe", Medium::Screenplay);
-    doc.blocks = vec![Block { kind: ElementKind::Action, text: "THE SEA HAS GONE OUT".into() }];
+    doc.set_script_blocks(vec![Block { kind: ElementKind::Action, text: "THE SEA HAS GONE OUT".into() }]);
     let back = roundtrip_doc(&doc);
-    assert_eq!(back.blocks.len(), 1, "the action block was lost");
+    let blocks = script_blocks(&back);
+    assert_eq!(blocks.len(), 1, "the action block was lost");
     assert_eq!(
-        back.blocks[0].kind,
+        blocks[0].kind,
         ElementKind::Action,
         "an ALL-CAPS action came back as {:?}",
-        back.blocks[0].kind
+        blocks[0].kind
     );
 }
 
@@ -159,10 +176,9 @@ fn action_written_in_capitals_keeps_its_kind() {
 fn prose_document_text_is_verbatim() {
     let original = "The tide went out that morning, and did not come back.\n\nLine two stays.";
     let mut doc = make_doc("doc-prose-probe", "Prose Probe", Medium::Prose);
-    doc.text = original.into();
+    doc.set_plain_text(original);
     let back = roundtrip_doc(&doc);
-    assert_eq!(back.text, original, "prose body was not verbatim");
-    assert!(back.blocks.is_empty(), "prose document grew blocks");
+    assert_eq!(back.body_text(), original, "prose body was not verbatim");
 }
 
 #[test]
@@ -177,21 +193,19 @@ fn manifest_carries_no_long_bodies() {
         "a document body leaked into project.json"
     );
 
-    // Every body must be externalised: no non-empty text/blocks/payload.
+    // Rich document bodies must be externalised from the manifest.
     let value: serde_json::Value = serde_json::from_str(&manifest).expect("manifest is JSON");
     for doc in value["documents"].as_array().expect("documents array") {
-        assert_eq!(doc["text"], "", "document text not emptied in manifest");
         assert_eq!(
-            doc["blocks"].as_array().expect("blocks array").len(),
+            doc["content"]["paragraphs"].as_array().expect("paragraphs").len(),
             0,
-            "document blocks not emptied in manifest"
+            "document content not emptied in manifest"
         );
         for snap in doc["snapshots"].as_array().expect("snapshots array") {
-            assert_eq!(snap["text"], "", "snapshot text not emptied in manifest");
             assert_eq!(
-                snap["blocks"].as_array().expect("blocks array").len(),
+                snap["content"]["paragraphs"].as_array().expect("paragraphs").len(),
                 0,
-                "snapshot blocks not emptied in manifest"
+                "snapshot content not emptied in manifest"
             );
         }
     }
@@ -202,19 +216,22 @@ fn manifest_carries_no_long_bodies() {
         assert_eq!(cp["payload"], "", "checkpoint payload not emptied in manifest");
     }
 
-    // The phrase must live in a documents/*.md file instead.
+    // The phrase must live in a rich-document body file instead.
     let docs_dir = dir.join("documents");
     let mut found_in_a_body_file = false;
     for entry in std::fs::read_dir(&docs_dir).expect("read documents dir") {
         let path = entry.expect("dir entry").path();
-        if path.extension().and_then(|e| e.to_str()) == Some("md") {
+        if path.extension().and_then(|e| e.to_str()) == Some("json") {
             let body = std::fs::read_to_string(&path).expect("read body");
             if body.contains("The tide went out") {
                 found_in_a_body_file = true;
             }
         }
     }
-    assert!(found_in_a_body_file, "the prose body was not written to documents/*.md");
+    assert!(
+        found_in_a_body_file,
+        "the prose body was not written to documents/*.rich.json"
+    );
 
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -389,8 +406,10 @@ fn snapshot_body_is_externalised_and_restored() {
         name: "First Pass".into(),
         created: portmanteau_core::now_stamp(),
         note: String::new(),
-        text: "A distinctive snapshot body sentence.".into(),
-        blocks: vec![],
+        content: portmanteau_core::RichDocument::from_plain_text(
+            "A distinctive snapshot body sentence.",
+            "body",
+        ),
         words: 6,
     });
     project.documents.push(doc);
@@ -407,7 +426,10 @@ fn snapshot_body_is_externalised_and_restored() {
         .iter()
         .find(|d| d.id == "doc-snap-probe")
         .expect("the probed document came back");
-    assert_eq!(doc.snapshots[0].text, "A distinctive snapshot body sentence.");
+    assert_eq!(
+        doc.snapshots[0].body_text(),
+        "A distinctive snapshot body sentence."
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -460,18 +482,14 @@ fn folder_package_contains_every_expected_file_type() {
     assert!(dir.join("project.json").is_file(), "no project.json manifest");
     assert!(dir.join("assets").is_dir(), "no assets directory");
 
-    let mut md = 0;
-    let mut fountain = 0;
+    let mut rich_docs = 0;
     for entry in std::fs::read_dir(dir.join("documents")).expect("documents dir") {
         let path = entry.expect("entry").path();
-        match path.extension().and_then(|e| e.to_str()) {
-            Some("md") => md += 1,
-            Some("fountain") => fountain += 1,
-            other => panic!("unexpected extension in documents/: {other:?}"),
-        }
+        assert_eq!(path.extension().and_then(|e| e.to_str()), Some("json"));
+        assert!(path.file_name().unwrap().to_string_lossy().ends_with(".rich.json"));
+        rich_docs += 1;
     }
-    assert!(md > 0, "no prose documents written");
-    assert!(fountain > 0, "no script documents written");
+    assert!(rich_docs > 0, "no rich document bodies written");
 
     let mut research = 0;
     for entry in std::fs::read_dir(dir.join("research")).expect("research dir") {
@@ -488,7 +506,13 @@ fn folder_package_contains_every_expected_file_type() {
         for snap in std::fs::read_dir(&doc_dir).expect("snapshot dir") {
             let path = snap.expect("entry").path();
             let ext = path.extension().and_then(|e| e.to_str()).expect("snapshot extension");
-            assert!(ext == "md" || ext == "fountain", "unexpected snapshot extension {ext}");
+            assert_eq!(ext, "json", "unexpected snapshot extension {ext}");
+            assert!(
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .ends_with(".rich.json")
+            );
             snapshots += 1;
         }
     }

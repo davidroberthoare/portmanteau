@@ -54,17 +54,11 @@ fn id8(id: &str) -> String {
 }
 
 fn document_name(doc: &Document) -> String {
-    let ext = if doc.medium.is_script() {
-        "fountain"
-    } else {
-        "md"
-    };
     format!(
-        "{:02}-{}-{}.{}",
+        "{:02}-{}-{}.rich.json",
         doc.order,
         slugify(&doc.title),
-        id8(&doc.id),
-        ext
+        id8(&doc.id)
     )
 }
 
@@ -140,11 +134,9 @@ fn write_package(project: &Project, dir: &Path) -> Result<(), String> {
 
     let mut manifest = project.clone();
     for doc in &mut manifest.documents {
-        doc.text.clear();
-        doc.blocks.clear();
+        doc.content = RichDocument::default();
         for snap in &mut doc.snapshots {
-            snap.text.clear();
-            snap.blocks.clear();
+            snap.content = RichDocument::default();
         }
     }
     for item in &mut manifest.research {
@@ -158,11 +150,8 @@ fn write_package(project: &Project, dir: &Path) -> Result<(), String> {
     write_file(&dir.join("project.json"), manifest_text)?;
 
     for doc in &project.documents {
-        let body = if doc.medium.is_script() {
-            script::to_storage_fountain(&doc.blocks, doc.medium)
-        } else {
-            doc.text.clone()
-        };
+        let body = serde_json::to_string_pretty(&doc.content)
+            .map_err(|e| format!("Could not serialise {}: {e}", doc.title))?;
         write_file(&documents.join(document_name(doc)), body)?;
     }
 
@@ -178,15 +167,9 @@ fn write_package(project: &Project, dir: &Path) -> Result<(), String> {
         std::fs::create_dir_all(&doc_dir)
             .map_err(|e| format!("Could not create {}: {e}", doc_dir.display()))?;
         for snap in &doc.snapshots {
-            let (ext, body) = if snap.blocks.is_empty() {
-                ("md", snap.text.clone())
-            } else {
-                (
-                    "fountain",
-                    script::to_storage_fountain(&snap.blocks, doc.medium),
-                )
-            };
-            let name = format!("{}.{}", snapshot_stem(snap), ext);
+            let body = serde_json::to_string_pretty(&snap.content)
+                .map_err(|e| format!("Could not serialise snapshot {}: {e}", snap.name))?;
+            let name = format!("{}.rich.json", snapshot_stem(snap));
             write_file(&doc_dir.join(name), body)?;
         }
     }
@@ -297,13 +280,8 @@ pub fn load_folder(dir: &Path) -> Result<Project, String> {
     for doc in &mut project.documents {
         let path = documents.join(document_name(doc));
         if let Ok(body) = std::fs::read_to_string(&path) {
-            if doc.medium.is_script() {
-                doc.blocks = script::parse_fountain(&body, doc.medium);
-                doc.text.clear();
-            } else {
-                doc.text = body;
-                doc.blocks.clear();
-            }
+            doc.content = serde_json::from_str(&body)
+                .map_err(|e| format!("Could not read rich text for {}: {e}", doc.title))?;
         }
     }
 
@@ -322,15 +300,11 @@ pub fn load_folder(dir: &Path) -> Result<Project, String> {
         }
         let doc_dir = snapshots.join(id8(&doc.id));
         for snap in &mut doc.snapshots {
-            let stem = snapshot_stem(snap);
-            let fountain = doc_dir.join(format!("{stem}.fountain"));
-            let markdown = doc_dir.join(format!("{stem}.md"));
-            if let Ok(body) = std::fs::read_to_string(&fountain) {
-                snap.blocks = script::parse_fountain(&body, doc.medium);
-                snap.text.clear();
-            } else if let Ok(body) = std::fs::read_to_string(&markdown) {
-                snap.text = body;
-                snap.blocks.clear();
+            let path = doc_dir.join(format!("{}.rich.json", snapshot_stem(snap)));
+            if let Ok(body) = std::fs::read_to_string(&path) {
+                snap.content = serde_json::from_str(&body).map_err(|e| {
+                    format!("Could not read snapshot {}: {e}", snap.name)
+                })?;
             }
         }
     }

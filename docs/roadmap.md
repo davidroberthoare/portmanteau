@@ -4,6 +4,66 @@ Ordered by useful-to-the-writer, then by how much structure it needs. Each item
 names an entry point and a way to know it is done. Read `AGENTS.md` first for
 the architecture and the rules.
 
+## Current focus: one rich-text flow for every long-form field
+
+Replace the prose `text` / screenplay `blocks` split with one shared content
+model and editing surface. Paragraphs keep semantic styles, while caret
+movement, selection, clipboard operations and deletion flow continuously across
+paragraph boundaries. Inline text marks include bold, italic, underline and
+strikethrough; images can be inline or standalone with alt text/captions.
+
+- Start with Novel/Prose and Film Screenplay style sheets. A style carries its
+  visual formatting and configurable next-style behavior (for example,
+  Character Name → Dialogue on Enter).
+- Projects own editable style sheets. Program-wide defaults are copied into a
+  new project; changing those defaults does not silently restyle existing
+  projects. No legacy-document migration is required for this fresh project.
+- Use the same content model for manuscript bodies and other long-form fields.
+  Store image binaries as project assets referenced from the content.
+- Treat Fountain and FDX as critical import/export formats, not as the
+  canonical model. Map their screenplay semantics to/from internal styles. When
+  export cannot represent content faithfully, warn and include a placeholder.
+
+### Progress log — 2026-11-16
+
+**Implemented foundation**
+
+- Added a shared `RichDocument` model with styled paragraphs, inline text marks,
+  image objects, a single document-wide position space, and cross-paragraph
+  range replacement.
+- Added a selection-based B/I/U/strikethrough toolbar in prose and screenplay;
+  the marks render from rich-text runs and a UI probe checks applying Bold to
+  a text selection.
+- Added Novel/Prose and Film Screenplay default style sheets, semantic script
+  styles, next-style rules, and canonical-case storage with uppercase display
+  transforms for screenplay cues. New projects copy the program's style-sheet
+  defaults.
+- Replaced the screenplay's per-paragraph TextEdits with one TextEdit for the
+  complete flow. Prose also edits its `RichDocument` through one flow. The
+  project package stores rich bodies and snapshots as `.rich.json`.
+- Added headless probes for cross-style drag selection, paragraph navigation,
+  and Enter applying Character Name → Dialogue. Character completion remains
+  in the flow and stores the canonical character name.
+- Added screenshot verification for the unified screenplay flow. The latest
+  workspace run passes 148 tests.
+
+**Still required**
+
+- Inline/standalone image insertion, asset loading/rendering, captions and
+  export placeholders/warnings.
+- Extend the shared model/editor to notes, synopsis, research and other
+  long-form fields.
+- Add project/program stylesheet editing for custom styles and next-style
+  rules; complete prose and screenplay style selection controls.
+- Finish Fountain/FDX adapters and round-trip coverage. The reusable FDX import
+  style/object mapping dialog remains deferred below.
+
+**Done when** headless UI tests can drag-select and edit across different
+paragraph styles, script Enter follows the stylesheet's next-style rule, prose
+and screenplay share the same editor/model, the sample project uses the new
+model, and Fountain/FDX conversion has round-trip tests for supported
+screenplay semantics.
+
 ## 1. Import a manuscript
 
 **Why.** Professional workflows start with a script someone else sent, or a
@@ -22,6 +82,12 @@ novel in Word. Exporting without importing is a one-way door.
 **Done when** real `.fountain`, `.fdx`, `.docx` and plain-text files round-trip
 through import and export without losing scene headings, character/dialogue
 pairing or transitions, and a manuscript becomes chapters with readable prose.
+
+**Deferred import workflow.** When FDX import is implemented, include a review
+dialog for mapping unknown paragraph styles/objects to built-in or project
+custom styles. Let writers revise those mappings, create custom styles, and save
+mapping profiles for reuse on future imports. This is recorded for later; do not
+build the dialog as part of the unified-editor work.
 
 ## 2. Drag-and-drop binder
 

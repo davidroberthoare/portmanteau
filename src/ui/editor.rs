@@ -617,18 +617,11 @@ fn spelling_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, mis
     if let Some((word, replacement)) = action {
         if let Some(doc) = app.ws.project.document_mut(doc_id) {
             let mut changed = false;
-            if doc.medium.is_script() {
-                for block in &mut doc.blocks {
-                    let next = replace_word_in_text(&block.text, &word, &replacement);
-                    if next != block.text {
-                        block.text = next;
-                        changed = true;
-                    }
-                }
-            } else {
-                let next = replace_word_in_text(&doc.text, &word, &replacement);
-                if next != doc.text {
-                    doc.text = next;
+            for paragraph in &mut doc.content.paragraphs {
+                let current = paragraph.plain_text();
+                let next = replace_word_in_text(&current, &word, &replacement);
+                if next != current {
+                    paragraph.set_plain_text(next);
                     changed = true;
                 }
             }
@@ -869,27 +862,69 @@ fn apply_spell_actions(app: &mut PortmanteauApp, actions: Vec<SpellAction>) {
                 range,
                 replacement,
             } => {
+                let Some(sheet) = app
+                    .ws
+                    .project
+                    .style_sheets
+                    .iter()
+                    .find(|sheet| {
+                        app.ws
+                            .project
+                            .document(&doc_id)
+                            .is_some_and(|doc| doc.style_sheet_id == sheet.id)
+                    })
+                    .cloned()
+                else {
+                    continue;
+                };
                 let Some(doc) = app.ws.project.document_mut(&doc_id) else {
                     continue;
                 };
-                let mut changed = false;
-                {
-                    let target = match block {
-                        Some(index) => doc.blocks.get_mut(index).map(|b| &mut b.text),
-                        None => Some(&mut doc.text),
+                let text = doc.content.editor_text();
+                let (start_byte, end_byte) = if let Some(index) = block {
+                    let Some(paragraph) = doc.content.paragraphs.get(index) else {
+                        continue;
                     };
-                    if let Some(target) = target {
-                        if range.start <= range.end
-                            && range.end <= target.len()
-                            && target.is_char_boundary(range.start)
-                            && target.is_char_boundary(range.end)
-                        {
-                            target.replace_range(range, &replacement);
-                            changed = true;
-                        }
+                    let local = paragraph.editor_text();
+                    if range.start > range.end
+                        || range.end > local.len()
+                        || !local.is_char_boundary(range.start)
+                        || !local.is_char_boundary(range.end)
+                    {
+                        continue;
                     }
-                }
-                if changed {
+                    let prefix_chars: usize = doc.content.paragraphs[..index]
+                        .iter()
+                        .map(|p| p.editor_text().chars().count() + 1)
+                        .sum();
+                    let start_chars = prefix_chars + local[..range.start].chars().count();
+                    let end_chars = prefix_chars + local[..range.end].chars().count();
+                    let start_byte = text
+                        .char_indices()
+                        .nth(start_chars)
+                        .map(|(byte, _)| byte)
+                        .unwrap_or(text.len());
+                    let end_byte = text
+                        .char_indices()
+                        .nth(end_chars)
+                        .map(|(byte, _)| byte)
+                        .unwrap_or(text.len());
+                    (start_byte, end_byte)
+                } else {
+                    if range.start > range.end
+                        || range.end > text.len()
+                        || !text.is_char_boundary(range.start)
+                        || !text.is_char_boundary(range.end)
+                    {
+                        continue;
+                    }
+                    (range.start, range.end)
+                };
+                if text.is_char_boundary(start_byte) && text.is_char_boundary(end_byte) {
+                    let start = text[..start_byte].chars().count();
+                    let end = text[..end_byte].chars().count();
+                    doc.content
+                        .replace_range(start..end, &replacement, &sheet);
                     doc.touch();
                     app.ws.dirty = true;
                 }
@@ -905,11 +940,24 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
     let zoom = app.editor_zoom.clamp(0.7, 1.6);
     // The prose surface takes its type from the project's body element style,
     // the same style the compiled page and preview use.
-    let body = app.ws.project.styles.body.clone();
+    let styles = app.ws.project.styles.clone();
+    let body = styles.body.clone();
     let family = family_for_font(&body.font);
     let text_size = body.size.max(6.0) * zoom;
-    let line_height = (body.size.max(6.0) * body.leading.max(0.85) * zoom).max(text_size);
     let project_title = app.ws.project.title.clone();
+    let sheet = app
+        .ws
+        .project
+        .document(doc_id)
+        .and_then(|doc| {
+            app.ws
+                .project
+                .style_sheets
+                .iter()
+                .find(|sheet| sheet.id == doc.style_sheet_id)
+                .cloned()
+        })
+        .unwrap_or_else(|| portmanteau_core::StyleSheet::novel_prose(&styles));
     let spell_on = app.settings.spellcheck;
     // Disjoint borrow of the checker, taken before the project's document is
     // borrowed mutably, so the layouter and menu can read live suggestions.
@@ -936,27 +984,38 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         ui.add_space(6.0);
         paper_rule(ui);
         ui.add_space(14.0);
+        let prose_id = Id::unique(("prose_body", doc_id));
+        let ctx = ui.ctx().clone();
+        if inline_format_toolbar(ui, &ctx, prose_id, &mut doc.content) {
+            doc.touch();
+            dirty = true;
+        }
 
-        let rows = ((doc.text.chars().count() as f32) / 72.0).ceil().max(18.0) as usize;
+        let mut edit_text = doc.content.editor_text();
+        let rows = ((edit_text.chars().count() as f32) / 72.0).ceil().max(18.0) as usize;
         // One dictionary pass per frame, reused by every layouter call.
         let spans = if spell_on {
-            checker.misspelled_spans(&doc.text)
+            checker.misspelled_spans(&edit_text)
         } else {
             Vec::new()
         };
-        let base_format = egui::TextFormat {
-            font_id: FontId::new(text_size, family.clone()),
-            color: PAPER_TEXT,
-            line_height: Some(line_height),
-            ..Default::default()
-        };
+        let content_for_layout = doc.content.clone();
+        let sheet_for_layout = sheet.clone();
+        let styles_for_layout = styles.clone();
         let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
-            let mut job = spell_layout_job(text.as_str(), &spans, &base_format);
-            job.wrap.max_width = wrap_width;
-            ui.ctx().fonts_mut(|f| f.layout_job(job))
+            let job = script_flow_layout_job(
+                text.as_str(),
+                &content_for_layout,
+                &sheet_for_layout,
+                &styles_for_layout,
+                zoom,
+                wrap_width,
+                &spans,
+            );
+            ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
         };
-        let edit = TextEdit::multiline(&mut doc.text)
-            .id(Id::unique(("prose_body", doc_id)))
+        let edit = TextEdit::multiline(&mut edit_text)
+            .id(prose_id)
             .font(FontId::new(text_size, family.clone()))
             .layouter(&mut layouter)
             .text_color(PAPER_TEXT)
@@ -971,6 +1030,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             );
         let output = edit.show(ui);
         if output.response.changed() {
+            doc.content.sync_editor_text(&edit_text, &sheet);
             doc.touch();
             dirty = true;
         }
@@ -982,11 +1042,11 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                 &output.response,
                 &output.galley,
                 output.galley_pos,
-                &doc.text,
+                &edit_text,
             );
             let mut choice = None;
             output.response.context_menu(|ui| {
-                choice = spell_menu_ui(ui, checker, &doc.text, byte);
+                choice = spell_menu_ui(ui, checker, &edit_text, byte);
             });
             if let Some(choice) = choice {
                 spell_actions.push(match choice {
@@ -1023,6 +1083,614 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
 }
 
 fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
+    script_flow_page(app, ui, doc_id);
+}
+
+/// Screenplay view over the same single flowing rich-text buffer used by
+/// prose. Paragraph style ids carry screenplay semantics; the one TextEdit
+/// owns the caret and selection for the complete document.
+fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
+    let zoom = app.editor_zoom.clamp(0.7, 1.6);
+    let project_title = app.ws.project.title.clone();
+    let styles = app.ws.project.styles.clone();
+    let sheet = app
+        .ws
+        .project
+        .document(doc_id)
+        .and_then(|doc| {
+            app.ws
+                .project
+                .style_sheets
+                .iter()
+                .find(|sheet| sheet.id == doc.style_sheet_id)
+                .cloned()
+        })
+        .unwrap_or_else(|| portmanteau_core::StyleSheet::film_screenplay(&styles));
+    let mut character_names = app
+        .ws
+        .project
+        .items
+        .iter()
+        .filter(|item| item.kind == ItemKind::Character)
+        .map(|item| item.title.trim().to_owned())
+        .filter(|name| !name.is_empty())
+        .collect::<Vec<_>>();
+    character_names.sort_by(|left, right| left.to_lowercase().cmp(&right.to_lowercase()));
+    character_names.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    let checker = &app.spell;
+    let spell_on = app.settings.spellcheck;
+    let flow_id = Id::unique(("script_flow", doc_id));
+    let mut spell_action: Option<SpellChoice> = None;
+    let mut new_character: Option<NewCharacterState> = None;
+    let mut dirty = false;
+
+    {
+        let Some(doc) = app.ws.project.document_mut(doc_id) else {
+            return;
+        };
+        paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), doc.pages());
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(doc.title.to_uppercase())
+                    .font(mono(10.0))
+                    .color(PAPER_MUTED),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(
+                    RichText::new(format!("{} paragraphs", doc.content.paragraphs.len()))
+                        .font(mono(8.5))
+                        .color(PAPER_MUTED),
+                );
+            });
+        });
+        ui.add_space(4.0);
+        paper_rule(ui);
+        ui.add_space(10.0);
+
+        if doc.content.paragraphs.is_empty() {
+            doc.content = portmanteau_core::RichDocument::empty(sheet.default_style.clone());
+        }
+        let mut caret = egui::text_edit::TextEditState::load(ui.ctx(), flow_id)
+            .and_then(|state| state.cursor.char_range())
+            .map(|range| range.primary.index.0)
+            .unwrap_or(0);
+        let selected = doc.content.position_at(caret).paragraph;
+        app.selected_block = selected;
+        let selected_style = doc
+            .content
+            .paragraphs
+            .get(selected)
+            .map(|paragraph| paragraph.style_id.clone())
+            .unwrap_or_else(|| sheet.default_style.clone());
+        let selected_kind = sheet
+            .style(&selected_style)
+            .and_then(|style| style.semantic_kind)
+            .unwrap_or(ElementKind::Action);
+
+        let mut chosen_style = None;
+        ui.horizontal_wrapped(|ui| {
+            for (index, kind) in ElementKind::all(doc.medium).into_iter().enumerate() {
+                let style_id = portmanteau_core::rich_text::script_style_id(kind);
+                let active = selected_kind == kind;
+                let button = egui::Button::new(
+                    RichText::new(kind.short())
+                        .font(sans(8.5))
+                        .color(if active {
+                            Color32::from_rgb(30, 26, 19)
+                        } else {
+                            PAPER_MUTED
+                        }),
+                )
+                .fill(if active {
+                    ACCENT
+                } else {
+                    Color32::from_rgb(235, 229, 216)
+                })
+                .corner_radius(CornerRadius::same(10))
+                .min_size(Vec2::new(0.0, 19.0));
+                if ui
+                    .add(button)
+                    .on_hover_text(format!("{} · Ctrl+{}", kind.label(), index + 1))
+                    .clicked()
+                {
+                    chosen_style = Some(style_id.to_owned());
+                }
+            }
+            ui.add_space(6.0);
+            if ui
+                .add(
+                    egui::Button::new(RichText::new("+ paragraph").font(sans(8.5)).color(PAPER_MUTED))
+                        .frame(false),
+                )
+                .clicked()
+            {
+                let end = doc.content.char_count();
+                doc.content.replace_range(end..end, "\n", &sheet);
+                caret = doc.content.char_count();
+                app.block_focus = Some(0);
+                dirty = true;
+            }
+        });
+
+        if let Some(style_id) = chosen_style.take() {
+            if let Some(paragraph) = doc.content.paragraphs.get_mut(selected) {
+                paragraph.style_id = style_id;
+                doc.touch();
+                dirty = true;
+            }
+        }
+
+        if let Some(focus_paragraph) = app.block_focus {
+            ui.memory_mut(|memory| memory.request_focus(flow_id));
+            let focus_char = rich_paragraph_start(&doc.content, focus_paragraph)
+                + doc
+                    .content
+                    .paragraphs
+                    .get(focus_paragraph)
+                    .map(|paragraph| paragraph.editor_text().chars().count())
+                    .unwrap_or(0);
+            let mut state =
+                egui::text_edit::TextEditState::load(ui.ctx(), flow_id).unwrap_or_default();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+                egui::text::CCursor::new(focus_char),
+            )));
+            state.store(ui.ctx(), flow_id);
+        }
+        // A style change can be selected with the palette or by the familiar
+        // screenplay shortcut. Tab remains a paragraph-style cycle; arrows
+        // remain owned by this one TextEdit and move through the whole flow.
+        if ui.memory(|memory| memory.has_focus(flow_id)) {
+            ui.memory_mut(|memory| memory.move_focus(egui::FocusDirection::None));
+            let backwards =
+                ui.input_mut(|input| input.consume_key(Modifiers::SHIFT, Key::Tab));
+            let forwards = ui.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Tab));
+            let kind = ctrl_digit_element(ui, doc.medium);
+            if backwards || forwards {
+                let kinds = ElementKind::all(doc.medium);
+                if let Some(position) = kinds.iter().position(|kind| *kind == selected_kind) {
+                    let next = if forwards {
+                        (position + 1) % kinds.len()
+                    } else {
+                        (position + kinds.len() - 1) % kinds.len()
+                    };
+                    chosen_style = Some(
+                        portmanteau_core::rich_text::script_style_id(kinds[next]).to_owned(),
+                    );
+                }
+            } else if let Some(kind) = kind {
+                chosen_style =
+                    Some(portmanteau_core::rich_text::script_style_id(kind).to_owned());
+            }
+            if let Some(style_id) = chosen_style.take() {
+                if let Some(paragraph) = doc.content.paragraphs.get_mut(selected) {
+                    paragraph.style_id = style_id;
+                    doc.touch();
+                    dirty = true;
+                }
+            }
+        }
+
+        ui.add_space(8.0);
+        let ctx = ui.ctx().clone();
+        if inline_format_toolbar(ui, &ctx, flow_id, &mut doc.content) {
+            doc.touch();
+            dirty = true;
+        }
+        ui.add_space(4.0);
+        let before = doc.content.editor_text();
+        let mut edit_text = before.clone();
+        let spans = if spell_on {
+            checker.misspelled_spans(&edit_text)
+        } else {
+            Vec::new()
+        };
+        let content_for_layout = doc.content.clone();
+        let sheet_for_layout = sheet.clone();
+        let styles_for_layout = styles.clone();
+        let desired_rows = edit_text.lines().count().clamp(1, 2000);
+        let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+            let job = script_flow_layout_job(
+                text.as_str(),
+                &content_for_layout,
+                &sheet_for_layout,
+                &styles_for_layout,
+                zoom,
+                wrap_width,
+                &spans,
+            );
+            ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
+        };
+        let edit = TextEdit::multiline(&mut edit_text)
+            .id(flow_id)
+            .font(mono(12.0 * zoom))
+            .layouter(&mut layouter)
+            .text_color(PAPER_TEXT)
+            .frame(Frame::NONE)
+            .desired_width(f32::INFINITY)
+            .desired_rows(desired_rows)
+            .margin(Margin::symmetric(2, 1))
+            .event_filter(egui::EventFilter {
+                horizontal_arrows: true,
+                vertical_arrows: true,
+                tab: true,
+                ..Default::default()
+            })
+            .hint_text(
+                RichText::new("Action")
+                    .font(mono(12.0 * zoom))
+                    .color(PAPER_MUTED),
+            );
+
+        let mut typed_word = String::new();
+        let mut typed_caret = 0usize;
+        let mut text_before_completion = String::new();
+        let mut character_paragraph = 0usize;
+        let completion = egui::CompletionPopup::new(flow_id)
+            .word_boundary(|ch| ch == '\n')
+            .accept_keys(vec![Key::Enter])
+            .align(egui::RectAlign::BOTTOM_START)
+            .max_height(260.0)
+            .show(ui, edit, |query| {
+                typed_word = query.word.to_owned();
+                typed_caret = query.word_range.end.0;
+                text_before_completion = query.text.to_owned();
+                let position = query
+                    .text
+                    .chars()
+                    .take(typed_caret)
+                    .filter(|ch| *ch == '\n')
+                    .count();
+                character_paragraph = position;
+                let is_character = doc
+                    .content
+                    .paragraphs
+                    .get(position)
+                    .and_then(|paragraph| sheet.style(&paragraph.style_id))
+                    .and_then(|style| style.semantic_kind)
+                    == Some(ElementKind::Character);
+                if !is_character {
+                    return Vec::new();
+                }
+
+                let word = query.word.trim();
+                if word.is_empty() {
+                    let blocks = doc.content.to_script_blocks(&sheet);
+                    return next_speaker(&blocks, position)
+                        .map(|speaker| {
+                            vec![egui::Suggestion::new(speaker.clone())
+                                .content(format!("↺ {speaker}"))]
+                        })
+                        .unwrap_or_default();
+                }
+                let needle = word.to_lowercase();
+                if character_names
+                    .iter()
+                    .any(|name| name.to_lowercase() == needle)
+                {
+                    return Vec::new();
+                }
+                let matches = character_names
+                    .iter()
+                    .filter(|name| name.to_lowercase().contains(&needle))
+                    .map(|name| egui::Suggestion::new(name.clone()))
+                    .collect::<Vec<_>>();
+                if matches.is_empty() {
+                    vec![egui::Suggestion::new(NEW_CHARACTER_SENTINEL)
+                        .content("+ New character…")]
+                } else {
+                    matches
+                }
+            });
+
+        if let Some(accepted) = &completion.accepted {
+            if accepted.insert == NEW_CHARACTER_SENTINEL {
+                edit_text = text_before_completion.clone();
+                if let Some(mut state) =
+                    egui::text_edit::TextEditState::load(ui.ctx(), flow_id)
+                {
+                    state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+                        egui::text::CCursor::new(typed_caret),
+                    )));
+                    state.store(ui.ctx(), flow_id);
+                }
+                new_character = Some(NewCharacterState {
+                    doc_id: doc_id.to_owned(),
+                    block: character_paragraph,
+                    name: typed_word,
+                    role: String::new(),
+                });
+            } else {
+                dirty = true;
+            }
+        }
+
+        if completion.text_edit.response.changed() || completion.accepted.is_some() {
+            doc.content.sync_editor_text(&edit_text, &sheet);
+            doc.touch();
+            dirty = true;
+        }
+        if completion.text_edit.response.has_focus() {
+            ui.memory_mut(|memory| {
+                memory.set_focus_lock_filter(
+                    flow_id,
+                    egui::EventFilter {
+                        horizontal_arrows: true,
+                        vertical_arrows: true,
+                        tab: true,
+                        escape: false,
+                    },
+                )
+            });
+        }
+        if let Some(range) = completion
+            .text_edit
+            .cursor_range
+            .map(|range| range.primary.index.0)
+        {
+            app.selected_block = doc.content.position_at(range).paragraph;
+        }
+        if spell_on {
+            let key = Id::unique(("script_spell_menu", doc_id));
+            let byte = spell_menu_byte(
+                ui.ctx(),
+                key,
+                &completion.text_edit.response,
+                &completion.text_edit.galley,
+                completion.text_edit.galley_pos,
+                &edit_text,
+            );
+            completion.text_edit.response.context_menu(|ui| {
+                if let Some(choice) = spell_menu_ui(ui, checker, &edit_text, byte) {
+                    spell_action = Some(choice);
+                }
+            });
+        }
+        app.block_focus = None;
+        ui.add_space(10.0);
+        ui.label(
+            RichText::new(format!(
+                "{} paragraphs · {} words",
+                doc.content.paragraphs.len(),
+                doc.words()
+            ))
+            .font(sans(8.5))
+            .color(PAPER_MUTED),
+        );
+    }
+
+    if let Some(state) = new_character {
+        app.new_character = Some(state);
+    }
+    if let Some(choice) = spell_action {
+        match choice {
+            SpellChoice::Replace(range, replacement) => apply_spell_actions(
+                app,
+                vec![SpellAction::Replace {
+                    doc_id: doc_id.to_owned(),
+                    block: None,
+                    range,
+                    replacement,
+                }],
+            ),
+            SpellChoice::Ignore(word) => app.spell.ignore(&word),
+            SpellChoice::Add(word) => app.add_to_dictionary(&word),
+        }
+        dirty = true;
+    }
+    if dirty {
+        app.ws.dirty = true;
+    }
+}
+
+fn script_flow_layout_job(
+    text: &str,
+    content: &portmanteau_core::RichDocument,
+    sheet: &portmanteau_core::StyleSheet,
+    styles: &portmanteau_core::ElementStyles,
+    zoom: f32,
+    wrap_width: f32,
+    misspelled: &[(usize, usize)],
+) -> egui::text::LayoutJob {
+    use egui::text::LayoutJob;
+
+    let mut job = LayoutJob::default();
+    job.wrap.max_width = wrap_width;
+    let mut byte_start = 0usize;
+    let lines = if text.is_empty() {
+        vec![""]
+    } else {
+        text.split_inclusive('\n').collect::<Vec<_>>()
+    };
+    for (index, line) in lines.into_iter().enumerate() {
+        let style_id = content
+            .paragraphs
+            .get(index)
+            .map(|paragraph| paragraph.style_id.as_str())
+            .unwrap_or(sheet.default_style.as_str());
+        let paragraph_style = sheet.style(style_id);
+        let kind = paragraph_style
+            .and_then(|style| style.semantic_kind)
+            .unwrap_or(ElementKind::Action);
+        let element_style = paragraph_style
+            .map(|style| style.format.clone())
+            .unwrap_or_else(|| styles.style_for_kind(kind).clone());
+        let family = family_for_font(&element_style.font);
+        let font_size = element_style.size.max(6.0) * zoom;
+        let format = egui::TextFormat {
+            font_id: FontId::new(font_size, family),
+            color: if kind.is_uppercase() {
+                Color32::from_rgb(44, 40, 33)
+            } else {
+                PAPER_TEXT
+            },
+            line_height: Some(font_size * element_style.leading.max(0.85)),
+            ..Default::default()
+        };
+        let uppercase = paragraph_style
+            .is_some_and(|style| style.text_transform == portmanteau_core::TextTransform::Uppercase)
+            || element_style.uppercase;
+        let display_line = transform_for_display(line, uppercase);
+        let leading = (element_style.indent + element_style.first_line_indent).max(0.0) * zoom;
+        let paragraph = content.paragraphs.get(index);
+        let raw_char_bytes: Vec<usize> = line.char_indices().map(|(byte, _)| byte).collect();
+        let display_char_bytes: Vec<usize> =
+            display_line.char_indices().map(|(byte, _)| byte).collect();
+        let mut keys = Vec::with_capacity(raw_char_bytes.len());
+        for (char_index, raw_byte) in raw_char_bytes.iter().enumerate() {
+            let global_byte = byte_start + raw_byte;
+            let char_end = raw_char_bytes
+                .get(char_index + 1)
+                .copied()
+                .unwrap_or(line.len());
+            let misspelled_char = !uppercase
+                && misspelled
+                    .iter()
+                    .any(|span| span.0 < byte_start + char_end && span.1 > global_byte);
+            let marks = paragraph
+                .map(|paragraph| inline_marks_at(&paragraph.content, char_index))
+                .unwrap_or_default();
+            keys.push((marks, misspelled_char));
+        }
+        let mut first = true;
+        let mut start_char = 0usize;
+        while start_char < keys.len() {
+            let key = keys[start_char].clone();
+            let mut end_char = start_char + 1;
+            while end_char < keys.len() && keys[end_char] == key {
+                end_char += 1;
+            }
+            let start_byte = display_char_bytes[start_char];
+            let end_byte = display_char_bytes
+                .get(end_char)
+                .copied()
+                .unwrap_or(display_line.len());
+            let mut run_format = format.clone();
+            apply_inline_marks(&mut run_format, &key.0);
+            if key.1 {
+                run_format.underline = Stroke::new(1.4, Color32::from_rgb(196, 64, 64));
+            }
+            job.append(
+                &display_line[start_byte..end_byte],
+                if first { leading } else { 0.0 },
+                run_format,
+            );
+            first = false;
+            start_char = end_char;
+        }
+        byte_start += line.len();
+    }
+    job
+}
+
+fn inline_marks_at(
+    content: &[portmanteau_core::InlineContent],
+    char_index: usize,
+) -> Vec<portmanteau_core::InlineMark> {
+    let mut offset = 0usize;
+    for item in content {
+        match item {
+            portmanteau_core::InlineContent::Text(run) => {
+                let length = run.text.chars().count();
+                if char_index < offset + length {
+                    return run.marks.clone();
+                }
+                offset += length;
+            }
+            portmanteau_core::InlineContent::HardBreak
+            | portmanteau_core::InlineContent::Image(_) => offset += 1,
+        }
+    }
+    Vec::new()
+}
+
+fn apply_inline_marks(
+    format: &mut egui::TextFormat,
+    marks: &[portmanteau_core::InlineMark],
+) {
+    use portmanteau_core::InlineMark;
+    if marks.contains(&InlineMark::Bold) {
+        format.font_id.family = egui::FontFamily::Name("portmanteau-sans-bold".into());
+    }
+    format.italics = marks.contains(&InlineMark::Italic);
+    format.underline = if marks.contains(&InlineMark::Underline) {
+        Stroke::new(1.0, format.color)
+    } else {
+        Stroke::NONE
+    };
+    format.strikethrough = if marks.contains(&InlineMark::Strikethrough) {
+        Stroke::new(1.0, format.color)
+    } else {
+        Stroke::NONE
+    };
+}
+
+fn rich_paragraph_start(content: &portmanteau_core::RichDocument, index: usize) -> usize {
+    content
+        .paragraphs
+        .iter()
+        .take(index)
+        .map(|paragraph| paragraph.editor_text().chars().count() + 1)
+        .sum()
+}
+
+fn inline_format_toolbar(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    id: Id,
+    content: &mut portmanteau_core::RichDocument,
+) -> bool {
+    let selection = egui::text_edit::TextEditState::load(ctx, id)
+        .and_then(|state| state.cursor.char_range())
+        .map(|range| {
+            range
+                .primary
+                .index
+                .0
+                .min(range.secondary.index.0)
+                ..range
+                    .primary
+                    .index
+                    .0
+                    .max(range.secondary.index.0)
+        });
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        for (label, mark) in [
+            ("B", portmanteau_core::InlineMark::Bold),
+            ("I", portmanteau_core::InlineMark::Italic),
+            ("U", portmanteau_core::InlineMark::Underline),
+            ("S", portmanteau_core::InlineMark::Strikethrough),
+        ] {
+            let button = egui::Button::new(RichText::new(label).font(sans(9.5)).strong())
+                .fill(PANEL_2)
+                .corner_radius(CornerRadius::same(3))
+                .min_size(Vec2::new(22.0, 19.0));
+            let enabled = selection.as_ref().is_some_and(|range| range.start < range.end);
+            if ui
+                .add_enabled(enabled, button)
+                .on_hover_text(match mark {
+                    portmanteau_core::InlineMark::Bold => "Bold selected text",
+                    portmanteau_core::InlineMark::Italic => "Italic selected text",
+                    portmanteau_core::InlineMark::Underline => "Underline selected text",
+                    portmanteau_core::InlineMark::Strikethrough => "Strike through selected text",
+                })
+                .clicked()
+            {
+                if let Some(range) = &selection {
+                    changed |= content.toggle_mark(range.clone(), mark);
+                }
+            }
+        }
+    });
+    changed
+}
+
+/// Transitional reference implementation retained while the flow editor is
+/// built out. The live editor above uses one shared TextEdit for the entire
+/// screenplay document.
+#[allow(dead_code)]
+fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut dirty = false;
     let zoom = app.editor_zoom.clamp(0.7, 1.6);
     let mut add_at: Option<usize> = None;
@@ -1034,6 +1702,19 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     // block takes its type and indent from the matching script element style,
     // the same table the paged preview and compile use.
     let styles = app.ws.project.styles.clone();
+    let style_sheet = app
+        .ws
+        .project
+        .document(doc_id)
+        .and_then(|doc| {
+            app.ws
+                .project
+                .style_sheets
+                .iter()
+                .find(|sheet| sheet.id == doc.style_sheet_id)
+                .cloned()
+        })
+        .unwrap_or_else(|| portmanteau_core::StyleSheet::film_screenplay(&styles));
     let spell_on = app.settings.spellcheck;
     // Disjoint borrow of the checker, taken before the document is borrowed
     // mutably, so every block's layouter and menu can consult it live.
@@ -1057,6 +1738,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     };
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
+        let mut blocks = doc.content.to_script_blocks(&style_sheet);
         paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), doc.pages());
         ui.add_space(14.0);
 
@@ -1085,8 +1767,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         ui.add_space(10.0);
 
         // Element palette for the selected block.
-        let selected_kind = doc
-            .blocks
+        let selected_kind = blocks
             .get(app.selected_block)
             .map(|b| b.kind)
             .unwrap_or(ElementKind::Action);
@@ -1106,7 +1787,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     .on_hover_text(format!("{} · Ctrl+{}", kind.label(), index + 1))
                     .clicked()
                 {
-                    if let Some(block) = doc.blocks.get_mut(app.selected_block) {
+                    if let Some(block) = blocks.get_mut(app.selected_block) {
                         block.kind = kind;
                         dirty = true;
                     }
@@ -1118,19 +1799,19 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             )
             .frame(false);
             if ui.add(add).clicked() {
-                doc.blocks.push(portmanteau_core::Block::new(
+                blocks.push(portmanteau_core::Block::new(
                     doc.medium.default_element(),
                     "",
                 ));
-                app.selected_block = doc.blocks.len().saturating_sub(1);
+                app.selected_block = blocks.len().saturating_sub(1);
                 app.block_focus = Some(app.selected_block);
                 dirty = true;
             }
         });
         ui.add_space(12.0);
 
-        if doc.blocks.is_empty() {
-            doc.blocks.push(portmanteau_core::Block::new(
+        if blocks.is_empty() {
+            blocks.push(portmanteau_core::Block::new(
                 doc.medium.default_element(),
                 "",
             ));
@@ -1140,9 +1821,9 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         let first_scene_number = 1usize;
         let mut scene_no = first_scene_number;
         let content_width = ui.available_width();
-        for i in 0..doc.blocks.len() {
+        for i in 0..blocks.len() {
             let block_id = Id::unique(("script_block", doc_id, i));
-            let kind = doc.blocks[i].kind;
+            let kind = blocks[i].kind;
             if app.block_focus == Some(i) {
                 ui.memory_mut(|m| m.request_focus(block_id));
             }
@@ -1182,13 +1863,13 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     cycle_at = Some((i, tab));
                 }
                 if let Some(kind) = ctrl_digit_element(ui, doc.medium) {
-                    doc.blocks[i].kind = kind;
+                    blocks[i].kind = kind;
                     app.selected_block = i;
                     dirty = true;
                 }
                 if ui.input(|inp| inp.key_pressed(Key::Backspace))
-                    && doc.blocks[i].text.is_empty()
-                    && doc.blocks.len() > 1
+                    && blocks[i].text.is_empty()
+                    && blocks.len() > 1
                 {
                     remove_at = Some(i);
                 }
@@ -1227,7 +1908,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 let width = (content_width - indent - 46.0).max(80.0);
                 let family = family_for_font(&style.font);
                 let font_size = style.size.max(6.0) * zoom;
-                let rows = ((doc.blocks[i].text.chars().count() as f32 * font_size * 0.62)
+                let rows = ((blocks[i].text.chars().count() as f32 * font_size * 0.62)
                     / width.max(80.0))
                 .ceil()
                 .clamp(1.0, 8.0) as usize;
@@ -1249,22 +1930,29 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 // One dictionary pass per block per frame, shared by the
                 // layouter's measuring and drawing passes.
                 let spans = if spell_on {
-                    checker.misspelled_spans(&doc.blocks[i].text)
+                    checker.misspelled_spans(&blocks[i].text)
                 } else {
                     Vec::new()
                 };
                 let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
-                    let mut job = spell_layout_job(text.as_str(), &spans, &base_format);
+                    let display_text =
+                        transform_for_display(text.as_str(), style.uppercase || kind.is_uppercase());
+                    let display_spans = if style.uppercase || kind.is_uppercase() {
+                        Vec::new()
+                    } else {
+                        spans.clone()
+                    };
+                    let mut job = spell_layout_job(&display_text, &display_spans, &base_format);
                     job.wrap.max_width = wrap_width;
                     ui.ctx().fonts_mut(|f| f.layout_job(job))
                 };
-                let before = doc.blocks[i].text.clone();
+                let before = blocks[i].text.clone();
                 let character_hint = if kind == ElementKind::Character {
-                    next_speaker(&doc.blocks, i)
+                    next_speaker(&blocks, i)
                 } else {
                     None
                 };
-                let mut edit = TextEdit::multiline(&mut doc.blocks[i].text)
+                let mut edit = TextEdit::multiline(&mut blocks[i].text)
                     .font(FontId::new(font_size, family.clone()))
                     .layouter(&mut layouter)
                     .text_color(text_color)
@@ -1356,7 +2044,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                         edit.id(block_id).show(ui)
                     };
                 if let Some(name) = new_character_name {
-                    doc.blocks[i].text = before;
+                    blocks[i].text = before;
                     new_character = Some(NewCharacterState {
                         doc_id: doc_id.to_string(),
                         block: i,
@@ -1384,11 +2072,11 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                         &output.response,
                         &output.galley,
                         output.galley_pos,
-                        doc.blocks[i].text.as_str(),
+                        blocks[i].text.as_str(),
                     );
                     let mut choice = None;
                     output.response.context_menu(|ui| {
-                        choice = spell_menu_ui(ui, checker, &doc.blocks[i].text, byte);
+                        choice = spell_menu_ui(ui, checker, &blocks[i].text, byte);
                     });
                     if let Some(choice) = choice {
                         spell_actions.push(match choice {
@@ -1428,9 +2116,6 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     app.selected_block = i;
                 }
                 if resp.changed() {
-                    if style.uppercase {
-                        doc.blocks[i].text = doc.blocks[i].text.to_uppercase();
-                    }
                     doc.touch();
                     dirty = true;
                 }
@@ -1456,9 +2141,9 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             )
             .frame(false);
             if ui.add(add).clicked() {
-                let last_kind = doc.blocks.last().map(|b| b.kind).unwrap_or(ElementKind::Action);
-                doc.blocks.push(portmanteau_core::Block::new(next_kind(last_kind, doc.medium), ""));
-                app.selected_block = doc.blocks.len() - 1;
+                let last_kind = blocks.last().map(|b| b.kind).unwrap_or(ElementKind::Action);
+                blocks.push(portmanteau_core::Block::new(next_kind(last_kind, doc.medium), ""));
+                app.selected_block = blocks.len() - 1;
                 app.block_focus = Some(app.selected_block);
                 dirty = true;
             }
@@ -1470,16 +2155,19 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 );
             });
         });
+        doc.content = portmanteau_core::RichDocument::from_script_blocks(&blocks);
     }
 
     if let Some((i, forward)) = cycle_at {
         if let Some(doc) = app.ws.project.document_mut(doc_id) {
-            if let Some(block) = doc.blocks.get_mut(i) {
+            let mut blocks = doc.content.to_script_blocks(&style_sheet);
+            if let Some(block) = blocks.get_mut(i) {
                 block.kind = if forward {
                     block.kind.next(doc.medium)
                 } else {
                     block.kind.prev(doc.medium)
                 };
+                doc.content = portmanteau_core::RichDocument::from_script_blocks(&blocks);
                 app.selected_block = i;
                 app.ws.dirty = true;
             }
@@ -1487,11 +2175,13 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     }
     if let Some(i) = add_at {
         if let Some(doc) = app.ws.project.document_mut(doc_id) {
-            if let Some(block) = doc.blocks.get_mut(i) {
+            let mut blocks = doc.content.to_script_blocks(&style_sheet);
+            if let Some(block) = blocks.get_mut(i) {
                 block.text = block.text.trim_end_matches('\n').to_string();
                 let next = next_kind(block.kind, doc.medium);
-                doc.blocks.insert(i + 1, portmanteau_core::Block::new(next, ""));
+                blocks.insert(i + 1, portmanteau_core::Block::new(next, ""));
             }
+            doc.content = portmanteau_core::RichDocument::from_script_blocks(&blocks);
             app.selected_block = i + 1;
             app.block_focus = Some(i + 1);
             app.ws.dirty = true;
@@ -1499,8 +2189,10 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     }
     if let Some(i) = remove_at {
         if let Some(doc) = app.ws.project.document_mut(doc_id) {
-            if doc.blocks.len() > 1 {
-                doc.blocks.remove(i);
+            let mut blocks = doc.content.to_script_blocks(&style_sheet);
+            if blocks.len() > 1 {
+                blocks.remove(i);
+                doc.content = portmanteau_core::RichDocument::from_script_blocks(&blocks);
                 let next = i.saturating_sub(1);
                 app.selected_block = next;
                 app.block_focus = Some(next);
@@ -1515,6 +2207,24 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     if dirty {
         app.ws.dirty = true;
     }
+}
+
+/// Apply an all-caps paragraph style for display without changing the
+/// canonical text. Avoid Unicode expansions that would desynchronise egui's
+/// character-index caret positions from the stored buffer.
+fn transform_for_display(text: &str, uppercase: bool) -> String {
+    if !uppercase {
+        return text.to_owned();
+    }
+    text.chars()
+        .map(|ch| {
+            let mut upper = ch.to_uppercase();
+            match (upper.next(), upper.next()) {
+                (Some(first), None) => first,
+                _ => ch,
+            }
+        })
+        .collect()
 }
 
 /// Consume Ctrl/Cmd+1…8 while an element has focus and map it onto the
@@ -1759,26 +2469,48 @@ mod ui_tests {
     }
 
     fn block_id(doc_id: &str, index: usize) -> Id {
-        Id::unique(("script_block", doc_id, index))
+        let _ = index;
+        Id::unique(("script_flow", doc_id))
     }
 
     fn block_kind(app: &PortmanteauApp, doc_id: &str, index: usize) -> ElementKind {
-        app.ws
+        let doc = app.ws
             .project
             .document(doc_id)
-            .expect("document still exists")
-            .blocks[index]
-            .kind
+            .expect("document still exists");
+        let sheet = app
+            .ws
+            .project
+            .style_sheets
+            .iter()
+            .find(|sheet| sheet.id == doc.style_sheet_id)
+            .expect("document stylesheet exists");
+        doc.content.to_script_blocks(sheet)[index].kind
     }
 
     fn block_text(app: &PortmanteauApp, doc_id: &str, index: usize) -> String {
-        app.ws
+        let doc = app.ws
             .project
             .document(doc_id)
-            .expect("document still exists")
-            .blocks[index]
-            .text
-            .clone()
+            .expect("document still exists");
+        let sheet = app
+            .ws
+            .project
+            .style_sheets
+            .iter()
+            .find(|sheet| sheet.id == doc.style_sheet_id)
+            .expect("document stylesheet exists");
+        doc.content.to_script_blocks(sheet)[index].text.clone()
+    }
+
+    fn set_script_block(
+        doc: &mut portmanteau_core::Document,
+        index: usize,
+        kind: ElementKind,
+        text: &str,
+    ) {
+        assert_eq!(index, 0, "single-paragraph fixtures use index zero");
+        doc.set_script_blocks(vec![portmanteau_core::Block::new(kind, text)]);
     }
 
     #[test]
@@ -1828,12 +2560,11 @@ mod ui_tests {
     }
 
     #[test]
-    fn typing_into_a_character_cue_uppercases_the_stored_text() {
+    fn character_style_displays_uppercase_without_mutating_canonical_text() {
         let (mut app, doc_id) = script_fixture();
         let ctx = headless_ctx();
         if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-            doc.blocks[0].kind = ElementKind::Character;
-            doc.blocks[0].text.clear();
+            set_script_block(doc, 0, ElementKind::Character, "");
         }
         settle(&mut app, &ctx);
         assert!(ctx.memory(|m| m.has_focus(block_id(&doc_id, 0))));
@@ -1841,9 +2572,10 @@ mod ui_tests {
         frame(&mut app, &ctx, vec![Event::Text("mara".into())]);
         assert_eq!(
             block_text(&app, &doc_id, 0),
-            "MARA",
-            "a Character block should store all-caps text"
+            "mara",
+            "the canonical character name should preserve its proper case"
         );
+        assert_eq!(transform_for_display("mara", true), "MARA");
     }
 
     #[test]
@@ -1858,7 +2590,7 @@ mod ui_tests {
             .push(Event::Text("ma".into()));
         fixture.harness.run_steps(2);
 
-        assert_eq!(fixture.text(), "MA", "the cue stores all-caps text");
+        assert_eq!(fixture.text(), "ma", "the canonical cue preserves typed case");
         assert!(
             fixture
                 .harness
@@ -1887,7 +2619,7 @@ mod ui_tests {
         fixture.harness.run_steps(2);
         assert_eq!(
             fixture.text(),
-            "R",
+            "r",
             "ArrowDown while the popup is open selects a row, it does not edit the text"
         );
 
@@ -1915,7 +2647,7 @@ mod ui_tests {
         fixture.harness.key_press(Key::Escape);
         fixture.harness.run_steps(2);
 
-        assert_eq!(fixture.text(), "MA", "Escape must not change the cue");
+        assert_eq!(fixture.text(), "ma", "Escape must not change the cue");
         assert!(
             fixture
                 .harness
@@ -1934,7 +2666,7 @@ mod ui_tests {
             .events
             .push(Event::Text("ma".into()));
         fixture.harness.run_steps(2);
-        assert_eq!(fixture.text(), "MA");
+        assert_eq!(fixture.text(), "ma");
 
         fixture.harness.key_press(Key::Enter);
         fixture.harness.run_steps(2);
@@ -1958,11 +2690,12 @@ mod ui_tests {
             .project
             .document(&fixture.doc_id)
             .expect("document still exists")
-            .blocks
+            .content
+            .paragraphs
             .len();
 
         fixture.type_word("Mara Venn");
-        assert_eq!(fixture.text(), "MARA VENN", "the cue stores all-caps text");
+        assert_eq!(fixture.text(), "Mara Venn", "the cue preserves canonical case");
         assert!(
             fixture
                 .harness
@@ -1987,8 +2720,8 @@ mod ui_tests {
         );
         assert_eq!(
             fixture.text(),
-            "MARA VENN",
-            "Enter must not replace the typed name with the suggestion's casing"
+            "Mara Venn",
+            "Enter must not replace the typed name with another casing"
         );
         let blocks_after = fixture
             .app
@@ -1997,7 +2730,8 @@ mod ui_tests {
             .project
             .document(&fixture.doc_id)
             .expect("document still exists")
-            .blocks
+            .content
+            .paragraphs
             .len();
         assert_eq!(
             blocks_after,
@@ -2019,7 +2753,7 @@ mod ui_tests {
         let mut fixture = click_harness();
         fixture.type_word("Zorbo");
         fixture.harness.run_steps(2);
-        assert_eq!(fixture.text(), "ZORBO", "the cue stores all-caps text");
+        assert_eq!(fixture.text(), "Zorbo", "the cue preserves typed case");
 
         let labels: Vec<String> = fixture
             .harness
@@ -2049,7 +2783,7 @@ mod ui_tests {
         assert_eq!(state.block, 0);
         assert_eq!(
             fixture.text(),
-            "ZORBO",
+            "Zorbo",
             "the sentinel must be undone before the modal opens"
         );
     }
@@ -2110,8 +2844,7 @@ mod ui_tests {
     fn click_fixture() -> (PortmanteauApp, String) {
         let (mut app, doc_id) = script_fixture();
         if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-            doc.blocks[0].kind = ElementKind::Character;
-            doc.blocks[0].text.clear();
+            set_script_block(doc, 0, ElementKind::Character, "");
         }
         app.selected_block = 0;
         app.block_focus = Some(0);
@@ -2219,7 +2952,7 @@ mod ui_tests {
         // An unknown name leaves the sentinel as the only suggestion.
         fixture.type_word("Zorbo");
         let before = fixture.text();
-        assert_eq!(before, "ZORBO", "the cue stores all-caps text");
+        assert_eq!(before, "Zorbo", "the cue preserves typed case");
         assert!(
             fixture
                 .harness
@@ -2333,7 +3066,7 @@ mod ui_tests {
             .map(|d| d.id.clone())
             .expect("the demo has a prose chapter");
         if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-            doc.text = "qik".into();
+            doc.set_plain_text("qik");
         }
         app.selected = Some(doc_id.clone());
         assert!(!app.spell.is_correct("qik"), "the fixture word is misspelled");
@@ -2399,10 +3132,10 @@ mod ui_tests {
             .expect("the demo has a script document");
 
         if let Some(doc) = app.ws.project.document_mut(&prose_id) {
-            doc.text = "the qik brown foxx".into();
+            doc.set_plain_text("the qik brown foxx");
         }
         if let Some(doc) = app.ws.project.document_mut(&script_id) {
-            doc.blocks[0].text = "the qik brown foxx".into();
+            set_script_block(doc, 0, ElementKind::Action, "the qik brown foxx");
         }
         app.ws.dirty = false;
 
@@ -2416,7 +3149,7 @@ mod ui_tests {
             }],
         );
         assert_eq!(
-            app.ws.project.document(&prose_id).unwrap().text,
+            app.ws.project.document(&prose_id).unwrap().body_text(),
             "the quick brown foxx",
             "the prose body should take the suggestion"
         );
@@ -2432,7 +3165,7 @@ mod ui_tests {
             }],
         );
         assert_eq!(
-            app.ws.project.document(&script_id).unwrap().blocks[0].text,
+            block_text(&app, &script_id, 0),
             "the quick brown foxx",
             "the screenplay block should take the suggestion"
         );
@@ -2449,7 +3182,7 @@ mod ui_tests {
             }],
         );
         assert_eq!(
-            app.ws.project.document(&prose_id).unwrap().text,
+            app.ws.project.document(&prose_id).unwrap().body_text(),
             "the quick brown foxx"
         );
 
@@ -2565,8 +3298,7 @@ mod ui_tests {
         fn keyboard_types_into_a_script_block_and_arrow_left_moves_the_caret() {
             let (mut app, doc_id) = script_fixture();
             if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-                doc.blocks[0].kind = ElementKind::Action;
-                doc.blocks[0].text = "seed".into();
+                set_script_block(doc, 0, ElementKind::Action, "seed");
             }
             app.selected_block = 0;
             app.block_focus = Some(0);
@@ -2677,17 +3409,15 @@ mod ui_tests {
         /// two distinct speakers as the single suggestion.
         #[test]
         fn popup_offers_the_next_speaker_for_an_empty_cue() {
-            use portmanteau_core::Block;
-
             let (mut app, doc_id) = script_fixture();
             if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-                doc.blocks = vec![
-                    Block::new(ElementKind::Character, "MARA"),
-                    Block::new(ElementKind::Dialogue, "One."),
-                    Block::new(ElementKind::Character, "BOY"),
-                    Block::new(ElementKind::Dialogue, "Two."),
-                    Block::new(ElementKind::Character, ""),
-                ];
+                doc.set_script_blocks(vec![
+                    portmanteau_core::Block::new(ElementKind::Character, "MARA"),
+                    portmanteau_core::Block::new(ElementKind::Dialogue, "One."),
+                    portmanteau_core::Block::new(ElementKind::Character, "BOY"),
+                    portmanteau_core::Block::new(ElementKind::Dialogue, "Two."),
+                    portmanteau_core::Block::new(ElementKind::Character, ""),
+                ]);
             }
             app.selected_block = 4;
             app.block_focus = Some(4);
@@ -2718,8 +3448,7 @@ mod ui_tests {
         fn arrow_down_stays_inside_the_focused_script_block() {
             let (mut app, doc_id) = script_fixture();
             if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-                doc.blocks[0].kind = ElementKind::Action;
-                doc.blocks[0].text = "one\ntwo".into();
+                set_script_block(doc, 0, ElementKind::Action, "one\ntwo");
             }
             app.selected_block = 0;
             app.block_focus = Some(0);
@@ -2961,7 +3690,7 @@ mod ui_tests {
             assert_eq!(state.block, 0);
             assert_eq!(
                 block_text(&borrowed, &doc_id, 0),
-                "MAZZ",
+                "mazz",
                 "the popup's sentinel insert must be undone before the modal opens"
             );
         }
@@ -3051,8 +3780,7 @@ mod ui_tests {
         ) -> (Harness<'static>, Rc<RefCell<PortmanteauApp>>, String, Id) {
             let (mut app, doc_id) = script_fixture();
             if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-                doc.blocks[0].kind = ElementKind::Action;
-                doc.blocks[0].text = text.into();
+                set_script_block(doc, 0, ElementKind::Action, text);
             }
             app.selected_block = 0;
             app.block_focus = Some(0);
@@ -3168,6 +3896,117 @@ mod ui_tests {
             assert_eq!(app.borrow().selected_block, 0);
         }
 
+        #[test]
+        fn inline_format_toolbar_applies_bold_to_selected_prose() {
+            let mut app = PortmanteauApp::new(None);
+            app.settings.spellcheck = false;
+            app.show_spelling = false;
+            app.view = View::Write;
+            let doc_id = app
+                .ws
+                .project
+                .documents
+                .iter()
+                .find(|document| document.kind == DocKind::Chapter)
+                .map(|document| document.id.clone())
+                .expect("the demo has a prose chapter");
+            app.ws
+                .project
+                .document_mut(&doc_id)
+                .unwrap()
+                .set_plain_text("hello world");
+            app.selected = Some(doc_id.clone());
+            let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
+            let id = Id::unique(("prose_body", doc_id.as_str()));
+
+            harness
+                .get_all_by_value("hello world")
+                .find(|node| node.accesskit_node().role() == Role::MultilineTextInput)
+                .expect("the prose flow should be in the accessibility tree")
+                .focus();
+            harness.run_steps(2);
+            let mut state =
+                egui::text_edit::TextEditState::load(&harness.ctx, id).unwrap_or_default();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(5),
+            )));
+            state.store(&harness.ctx, id);
+            harness.run_steps(1);
+            harness.get_by_role_and_label(Role::Button, "B").click();
+            harness.run_steps(2);
+
+            let borrowed = app.borrow();
+            let content = &borrowed.ws.project.document(&doc_id).unwrap().content;
+            let first = match &content.paragraphs[0].content[0] {
+                portmanteau_core::InlineContent::Text(run) => run,
+                _ => panic!("the first paragraph should begin with a text run"),
+            };
+            assert_eq!(first.text, "hello");
+            assert!(
+                first.marks.contains(&portmanteau_core::InlineMark::Bold),
+                "the toolbar should apply Bold to the selected text range"
+            );
+        }
+
+        #[test]
+        fn arrow_down_navigates_to_the_next_styled_paragraph_in_one_flow() {
+            let (mut app, doc_id) = script_fixture();
+            if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+                doc.set_script_blocks(vec![
+                    portmanteau_core::Block::new(ElementKind::Action, "first line"),
+                    portmanteau_core::Block::new(ElementKind::Dialogue, "next paragraph"),
+                ]);
+            }
+            app.block_focus = Some(0);
+            let (mut harness, app) = probe_harness(app, editor::show);
+            let id = block_id(&doc_id, 0);
+            assert!(harness.ctx.memory(|memory| memory.has_focus(id)));
+            set_caret(&harness, id, 0);
+            harness.run_steps(1);
+
+            harness.key_press(Key::ArrowDown);
+            harness.run_steps(2);
+
+            assert!(harness.ctx.memory(|memory| memory.has_focus(id)));
+            assert!(
+                caret_index(&harness, id) > 0,
+                "ArrowDown should move through the shared styled-text flow"
+            );
+            assert!(app.borrow().selected_block < 2);
+        }
+
+        #[test]
+        fn enter_applies_the_current_paragraphs_next_style() {
+            let (mut app, doc_id) = script_fixture();
+            if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+                doc.set_script_blocks(vec![portmanteau_core::Block::new(
+                    ElementKind::Character,
+                    "Mara Venn",
+                )]);
+            }
+            app.block_focus = Some(0);
+            let (mut harness, app) = probe_harness(app, editor::show);
+            let id = block_id(&doc_id, 0);
+            assert!(harness.ctx.memory(|memory| memory.has_focus(id)));
+
+            harness.key_press(Key::Enter);
+            harness.run_steps(2);
+
+            let borrowed = app.borrow();
+            let paragraph_styles: Vec<&str> = borrowed
+                .ws
+                .project
+                .document(&doc_id)
+                .unwrap()
+                .content
+                .paragraphs
+                .iter()
+                .map(|paragraph| paragraph.style_id.as_str())
+                .collect();
+            assert_eq!(paragraph_styles, vec!["character", "dialogue"]);
+        }
+
         /// The same word-processor keys on the prose body.
         #[test]
         fn prose_shift_ctrl_and_plain_arrows_move_the_caret_not_the_focus() {
@@ -3185,7 +4024,7 @@ mod ui_tests {
                 .map(|d| d.id.clone())
                 .expect("the demo has a prose chapter");
             if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-                doc.text = "one two three".into();
+                doc.set_plain_text("one two three");
             }
             app.selected = Some(doc_id.clone());
             let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
@@ -3293,8 +4132,7 @@ mod ui_tests {
         fn arrow_down_in_the_first_focus_frame_stays_in_the_block() {
             let (mut app, doc_id) = script_fixture();
             if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-                doc.blocks[0].kind = ElementKind::Action;
-                doc.blocks[0].text = "one\ntwo".into();
+                set_script_block(doc, 0, ElementKind::Action, "one\ntwo");
             }
             app.selected_block = 0;
             app.block_focus = Some(0);
@@ -3345,8 +4183,7 @@ mod ui_tests {
         fn arrow_down_on_the_second_frame_after_focus_stays_in_the_block() {
             let (mut app, doc_id) = script_fixture();
             if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-                doc.blocks[0].kind = ElementKind::Action;
-                doc.blocks[0].text = "one\ntwo".into();
+                set_script_block(doc, 0, ElementKind::Action, "one\ntwo");
             }
             app.selected_block = 0;
             app.block_focus = Some(0);
@@ -3376,8 +4213,7 @@ mod ui_tests {
         fn arrow_down_after_a_real_pointer_click_stays_in_the_block() {
             let (mut app, doc_id) = script_fixture();
             if let Some(doc) = app.ws.project.document_mut(&doc_id) {
-                doc.blocks[0].kind = ElementKind::Action;
-                doc.blocks[0].text = "one\ntwo".into();
+                set_script_block(doc, 0, ElementKind::Action, "one\ntwo");
             }
             app.block_focus = None;
             let (mut harness, app) = real_harness(app, SCREEN, None, 4, editor::show);
@@ -3473,6 +4309,59 @@ mod ui_tests {
             assert!(
                 harness.ctx.memory(|memory| memory.has_focus(id)),
                 "Shift+Tab should keep focus on the block"
+            );
+        }
+
+        #[test]
+        fn pointer_drag_selection_crosses_script_paragraph_styles() {
+            let (mut app, doc_id) = script_fixture();
+            if let Some(doc) = app.ws.project.document_mut(&doc_id) {
+                doc.set_script_blocks(vec![
+                    portmanteau_core::Block::new(ElementKind::Action, "alpha beta"),
+                    portmanteau_core::Block::new(ElementKind::Dialogue, "gamma delta"),
+                ]);
+            }
+            app.block_focus = None;
+            let (mut harness, _app) = real_harness(app, SCREEN, None, 4, editor::show);
+
+            let input_rect = |harness: &Harness<'_>| {
+                harness
+                    .get_all_by_value("alpha beta\ngamma delta")
+                    .find(|node| {
+                        node.accesskit_node().role() == Role::MultilineTextInput
+                    })
+                    .map(|node| node.rect())
+            };
+            let rect = input_rect(&harness).expect("the rich flow input should be exposed");
+            let start = Pos2::new(rect.left() + 12.0, rect.top() + 9.0);
+            let end = Pos2::new(rect.left() + 210.0, rect.top() + 27.0);
+
+            // Start in the first styled paragraph and release in the second.
+            pointer_move(&mut harness, start);
+            pointer_button(&mut harness, start, true);
+            pointer_move(&mut harness, end);
+            pointer_button(&mut harness, end, false);
+            harness.run_steps(2);
+
+            let selection = caret_range(&harness, block_id(&doc_id, 0));
+            let low = selection
+                .primary
+                .index
+                .0
+                .min(selection.secondary.index.0);
+            let high = selection
+                .primary
+                .index
+                .0
+                .max(selection.secondary.index.0);
+            assert_ne!(
+                low, high,
+                "a real drag across screenplay paragraphs should select text"
+            );
+            assert!(
+                low < "alpha beta".chars().count()
+                    && high > "alpha beta\ngamma".chars().count() - "gamma".chars().count(),
+                "the selection should include characters from both paragraphs; got {low}..{high}"
             );
         }
     }

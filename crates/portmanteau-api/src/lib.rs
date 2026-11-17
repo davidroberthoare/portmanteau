@@ -276,9 +276,9 @@ impl Workspace {
                 }
                 if let Some(v) = payload.get("text").and_then(|v| v.as_str()) {
                     if doc.medium.is_script() {
-                        doc.blocks = script::parse_loose(v);
+                        doc.set_script_blocks(script::parse_loose(v));
                     } else {
-                        doc.text = v.into();
+                        doc.set_plain_text(v);
                     }
                 }
                 if let Some(v) = payload.get("label").and_then(|v| v.as_str()) {
@@ -489,7 +489,7 @@ impl Workspace {
                         self.project
                             .add_document(Some(folder), &title, DocKind::Research, Medium::Note);
                     if let Some(doc) = self.project.document_mut(&doc_id) {
-                        doc.text = body;
+                        doc.set_plain_text(body);
                         doc.include_in_export = false;
                     }
                 }

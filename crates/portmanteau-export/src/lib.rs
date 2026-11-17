@@ -117,6 +117,16 @@ fn manuscript_sections(project: &Project) -> Vec<Section<'_>> {
         .collect()
 }
 
+fn screenplay_blocks(project: &Project, doc: &Document) -> Vec<Block> {
+    let fallback = StyleSheet::film_screenplay(&project.styles);
+    let sheet = project
+        .style_sheets
+        .iter()
+        .find(|sheet| sheet.id == doc.style_sheet_id)
+        .unwrap_or(&fallback);
+    doc.content.to_script_blocks(sheet)
+}
+
 fn front_matter(project: &Project) -> Vec<&Document> {
     project
         .ordered_documents()
@@ -729,7 +739,8 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                     12.0,
                     false,
                 );
-                for block in &doc.blocks {
+                let blocks = screenplay_blocks(project, doc);
+                for block in &blocks {
                     let style = script_style(&settings.styles, block.kind);
                     let block_size = style.size.max(8.0);
                     let indent_mm = style.indent / 2.834645;
@@ -929,7 +940,8 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             // the surrounding manuscript is prose. This is what makes a novel
             // with a companion pilot read correctly in one PDF.
             let mut scene_number = 1usize;
-            for block in &section.doc.blocks {
+            let blocks = screenplay_blocks(project, section.doc);
+            for block in &blocks {
                 let style = script_style(&settings.styles, block.kind);
                 let block_size = style.size.max(8.0);
                 let indent_mm = style.indent / 2.834645;
@@ -1216,7 +1228,7 @@ p.first {{ text-indent: 0; }}
             files.push((
                 format!("front-{}.xhtml", slugify(&doc.title)),
                 doc.title.clone(),
-                xhtml_body(doc, None, settings),
+                xhtml_body(project, doc, None, settings),
             ));
         }
         for (i, section) in manuscript_sections(project).iter().enumerate() {
@@ -1225,14 +1237,14 @@ p.first {{ text-indent: 0; }}
             files.push((
                 format!("chapter-{:03}.xhtml", chapter_no),
                 title.clone(),
-                xhtml_body(section.doc, Some(&title), settings),
+                xhtml_body(project, section.doc, Some(&title), settings),
             ));
         }
         for doc in back_matter(project) {
             files.push((
                 format!("back-{}.xhtml", slugify(&doc.title)),
                 doc.title.clone(),
-                xhtml_body(doc, None, settings),
+                xhtml_body(project, doc, None, settings),
             ));
         }
 
@@ -1287,7 +1299,12 @@ p.first {{ text-indent: 0; }}
     buf
 }
 
-fn xhtml_body(doc: &Document, heading: Option<&str>, settings: &ExportSettings) -> String {
+fn xhtml_body(
+    project: &Project,
+    doc: &Document,
+    heading: Option<&str>,
+    settings: &ExportSettings,
+) -> String {
     let mut out = String::new();
     if let Some(h) = heading {
         out.push_str(&format!("<h1>{}</h1>\n", xml_escape(h)));
@@ -1295,7 +1312,8 @@ fn xhtml_body(doc: &Document, heading: Option<&str>, settings: &ExportSettings) 
         out.push_str(&format!("<h2>{}</h2>\n", xml_escape(&doc.title)));
     }
     if doc.medium.is_script() {
-        for block in &doc.blocks {
+        let blocks = screenplay_blocks(project, doc);
+        for block in &blocks {
             let class = match block.kind {
                 ElementKind::SceneHeading => "scene",
                 ElementKind::Action | ElementKind::Shot => "action",
@@ -1379,7 +1397,8 @@ fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         let title = section_title(project, section.doc, i, settings);
         add_para(&title, "Heading1", true, false, false, 0);
         if section.doc.medium.is_script() {
-            for block in &section.doc.blocks {
+            let blocks = screenplay_blocks(project, section.doc);
+            for block in &blocks {
                 let (indent, mono, bold) = match block.kind {
                     ElementKind::Character => (4320, true, false),
                     ElementKind::Parenthetical => (3240, true, false),
@@ -1517,7 +1536,8 @@ fn fdx_manuscript(project: &Project, settings: &ExportSettings) -> String {
     out.push_str("  <Content>\n");
     for section in manuscript_sections(project) {
         if section.doc.medium.is_script() {
-            for block in &section.doc.blocks {
+            let blocks = screenplay_blocks(project, section.doc);
+            for block in &blocks {
                 let text = if settings.styles.style_for_kind(block.kind).uppercase {
                     block.text.to_uppercase()
                 } else {
@@ -1554,7 +1574,8 @@ fn fountain_manuscript(project: &Project, settings: &ExportSettings) -> String {
     for section in manuscript_sections(project) {
         if section.doc.medium.is_script() {
             out.push_str(&format!("# {}\n\n", section.heading));
-            out.push_str(&script::to_fountain(&section.doc.blocks, section.doc.medium));
+            let blocks = screenplay_blocks(project, section.doc);
+            out.push_str(&script::to_fountain(&blocks, section.doc.medium));
             out.push('\n');
         } else {
             out.push_str(&format!("# {}\n\n", section.heading));
@@ -1608,7 +1629,8 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
         ));
         if section.doc.medium.is_script() {
             body.push_str("<div class=\"script\">\n");
-            for block in &section.doc.blocks {
+            let blocks = screenplay_blocks(project, section.doc);
+            for block in &blocks {
                 let class = match block.kind {
                     ElementKind::SceneHeading => "scene",
                     ElementKind::Character => "character",
@@ -1707,7 +1729,8 @@ fn markdown_manuscript(project: &Project, settings: &ExportSettings) -> String {
         out.push_str(&format!("## {}\n\n", title));
         if section.doc.medium.is_script() {
             out.push_str("```fountain\n");
-            out.push_str(&script::to_fountain(&section.doc.blocks, section.doc.medium));
+            let blocks = screenplay_blocks(project, section.doc);
+            out.push_str(&script::to_fountain(&blocks, section.doc.medium));
             out.push_str("```\n\n");
         } else {
             for para in paragraphs(&section.doc.body_text()) {
@@ -1771,7 +1794,8 @@ fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
             rtf_escape(&title)
         ));
         if section.doc.medium.is_script() {
-            for block in &section.doc.blocks {
+            let blocks = screenplay_blocks(project, section.doc);
+            for block in &blocks {
                 let indent = match block.kind {
                     ElementKind::Character => 4400,
                     ElementKind::Parenthetical => 3200,
@@ -1829,7 +1853,8 @@ fn txt_manuscript(project: &Project, settings: &ExportSettings) -> String {
         let title = section_title(project, section.doc, i, settings);
         out.push_str(&format!("\n{}\n{}\n\n", title.to_uppercase(), "-".repeat(title.len())));
         if section.doc.medium.is_script() {
-            for block in &section.doc.blocks {
+            let blocks = screenplay_blocks(project, section.doc);
+            for block in &blocks {
                 out.push_str(&script::block_to_plain(block));
                 out.push_str("\n\n");
             }
