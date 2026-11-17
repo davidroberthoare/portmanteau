@@ -116,13 +116,17 @@ in `docs/ui-style-guidelines.md`.
 - Darkened secondary text and semantic label colours to clear a comfortable
   contrast ratio at chrome type sizes, and added ink-strength variants for
   sage, blue, red, purple and the accent.
+- Rebuilt the Settings → Preferences card around Writing, Spelling language and
+  Workspace sections, with panel visibility stored alongside the other global
+  defaults. Unit tests no longer write to the writer's real config file.
 - Verified Write, hidden-panel, focus-mode, Corkboard, Compile, Settings,
   Research, Versions and Characters screenshots at 1440×930.
 
 **Still required**
 
-- Continue reducing persistent control rows in the other workspaces (Compile
-  and Settings still carry long button strips) as they are touched.
+- Continue reducing persistent control rows in the remaining workspaces
+  (Compile still carries a long format list and export action) as they are
+  touched.
 - Check contrast for disabled states after the optional dark theme exists, and
   keep the dark theme on the same token set rather than reverting to the old
   palette.

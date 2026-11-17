@@ -89,25 +89,29 @@ fn settings_tab_button(ui: &mut egui::Ui, text: &str, selected: bool) -> bool {
 }
 
 fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
+    let mut changed = false;
+    let width = ui.available_width().min(704.0);
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            section_label(ui, "Preferences");
+            ui.set_width(width);
+            section_label(ui, "Writing");
             ui.add_space(4.0);
-            ui.checkbox(
-                &mut app.settings.spellcheck,
-                RichText::new("Spell-checking in editors")
-                    .font(sans(10.5))
-                    .color(MUTED),
-            );
+            changed |= ui
+                .checkbox(
+                    &mut app.settings.spellcheck,
+                    RichText::new("Spell-checking in editors")
+                        .font(sans(10.5))
+                        .color(MUTED),
+                )
+                .changed();
             ui.add_space(2.0);
             ui.label(
                 RichText::new(
-                    "The Write toolbar shows a Spelling panel with suggestions. Save defaults to keep this setting.",
+                    "The Write toolbar shows a Spelling panel with suggestions. Changes here are saved automatically.",
                 )
                 .font(sans(9.5))
                 .color(FAINT),
@@ -147,12 +151,42 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.add_space(10.0);
             hairline(ui);
             ui.add_space(8.0);
+            section_label(ui, "Workspace");
+            ui.add_space(4.0);
+            changed |= ui
+                .checkbox(
+                    &mut app.settings.show_binder,
+                    RichText::new("Show the binder in Write")
+                        .font(sans(10.5))
+                        .color(MUTED),
+                )
+                .changed();
+            changed |= ui
+                .checkbox(
+                    &mut app.settings.show_inspector,
+                    RichText::new("Show the inspector in Write")
+                        .font(sans(10.5))
+                        .color(MUTED),
+                )
+                .changed();
+            ui.add_space(2.0);
             ui.label(
-                RichText::new("More preferences coming soon.")
-                    .font(sans(9.5))
-                    .color(FAINT),
+                RichText::new(
+                    "The sidebar layout is remembered between launches. Focus mode (F11) hides both panels without changing this preference.",
+                )
+                .font(sans(9.5))
+                .color(FAINT),
             );
         });
+    if changed {
+        if crate::settings::save_settings(&app.settings).is_ok() {
+            app.toast(
+                "Preferences saved",
+                crate::settings::config_path().display().to_string(),
+                ToastKind::Info,
+            );
+        }
+    }
 }
 
 /// Two columns, mirroring Compile: the default element styles on the left and
