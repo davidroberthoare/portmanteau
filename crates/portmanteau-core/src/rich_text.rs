@@ -208,6 +208,91 @@ pub fn script_kind_for_style_id(style_id: &str) -> Option<ElementKind> {
     })
 }
 
+/// Parse the known screenplay paragraph types from Final Draft XML. Unknown
+/// paragraph/object types fail explicitly for now; the reusable mapping dialog
+/// is a later import feature, so this parser never silently discards them.
+pub fn parse_fdx(xml: &str) -> Result<RichDocument, String> {
+    let xml = roxmltree::Document::parse(xml)
+        .map_err(|error| format!("Could not parse FDX XML: {error}"))?;
+    let mut paragraphs = Vec::new();
+    for node in xml.descendants().filter(|node| node.has_tag_name("Paragraph")) {
+        if node.ancestors().any(|ancestor| ancestor.has_tag_name("TitlePage")) {
+            continue;
+        }
+        if node.descendants().any(|child| child.has_tag_name("Image")) {
+            return Err("FDX images require the deferred image/object import workflow".into());
+        }
+        let fdx_type = node.attribute("Type").unwrap_or("General");
+        let kind = parse_fdx_element_kind(fdx_type).ok_or_else(|| {
+            format!("Unsupported FDX paragraph type {fdx_type:?}; map it during import")
+        })?;
+        let mut paragraph = RichParagraph::empty(script_style_id(kind));
+        let text_nodes: Vec<_> = node
+            .descendants()
+            .filter(|child| child.has_tag_name("Text"))
+            .collect();
+        for text_node in text_nodes {
+            let text = text_node.text().unwrap_or_default();
+            if !text.is_empty() {
+                paragraph.content.push(InlineContent::Text(TextRun::with_marks(
+                    text,
+                    parse_fdx_marks(text_node.attribute("Style")),
+                )));
+            }
+        }
+        paragraphs.push(paragraph);
+    }
+    if paragraphs.is_empty() {
+        return Err("FDX file contains no screenplay paragraphs".into());
+    }
+    Ok(RichDocument { paragraphs })
+}
+
+fn parse_fdx_element_kind(fdx_type: &str) -> Option<ElementKind> {
+    let normalized = fdx_type
+        .chars()
+        .filter(|ch| *ch != ' ' && *ch != '-' && *ch != '_')
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    Some(match normalized.as_str() {
+        "sceneheading" | "slugline" => ElementKind::SceneHeading,
+        "action" => ElementKind::Action,
+        "character" | "charactername" => ElementKind::Character,
+        "parenthetical" => ElementKind::Parenthetical,
+        "dialogue" => ElementKind::Dialogue,
+        "transition" => ElementKind::Transition,
+        "shot" => ElementKind::Shot,
+        "extension" => ElementKind::Extension,
+        "intercut" => ElementKind::Intercut,
+        "subheading" => ElementKind::Subheading,
+        "act" => ElementKind::Act,
+        "scene" => ElementKind::Scene,
+        "stagedirection" => ElementKind::StageDirection,
+        "lyric" => ElementKind::Lyric,
+        "general" => ElementKind::General,
+        _ => return None,
+    })
+}
+
+fn parse_fdx_marks(style: Option<&str>) -> Vec<InlineMark> {
+    let Some(style) = style else {
+        return Vec::new();
+    };
+    let lower = style.to_lowercase();
+    let mut marks = Vec::new();
+    for (needle, mark) in [
+        ("bold", InlineMark::Bold),
+        ("italic", InlineMark::Italic),
+        ("underline", InlineMark::Underline),
+        ("strike", InlineMark::Strikethrough),
+    ] {
+        if lower.contains(needle) {
+            marks.push(mark);
+        }
+    }
+    marks
+}
+
 fn default_next_style(kind: ElementKind) -> Option<&'static str> {
     match kind {
         ElementKind::SceneHeading => Some("action"),
@@ -411,6 +496,11 @@ impl RichDocument {
         Self { paragraphs }
     }
 
+    pub fn from_fountain(text: &str, medium: Medium) -> Self {
+        let blocks = crate::script::parse_fountain(text, medium);
+        Self::from_script_blocks(&blocks)
+    }
+
     /// Convert screenplay paragraphs back to the semantic element list used
     /// by Fountain and FDX writers. Unknown custom styles fall back to General
     /// until an import/export mapping profile supplies a semantic mapping.
@@ -426,6 +516,11 @@ impl RichDocument {
                 crate::Block::new(kind, paragraph_plain_export_text(paragraph))
             })
             .collect()
+    }
+
+    pub fn to_fountain(&self, sheet: &StyleSheet, medium: Medium) -> String {
+        let blocks = self.to_script_blocks(sheet);
+        crate::script::to_fountain(&blocks, medium)
     }
 
     /// Flatten the flow to text for search, word counts and plain-text
@@ -997,6 +1092,70 @@ mod tests {
         );
         assert_eq!(document.paragraphs[1].editor_text(), "\u{FFFC}");
         assert_eq!(document.paragraphs[2].plain_text(), "The harbor, 1987");
+    }
+
+    #[test]
+    fn fdx_import_maps_known_script_styles_and_inline_marks() {
+        let xml = r#"
+            <FinalDraft DocumentType="Script">
+              <TitlePage><Content><Paragraph Type="Title"><Text>Ignore title</Text></Paragraph></Content></TitlePage>
+              <Content>
+                <Paragraph Type="Character"><Text>MAR</Text><Text Style="Bold">A VENN</Text></Paragraph>
+                <Paragraph Type="Dialogue"><Text Style="Italic">The chart is wrong.</Text></Paragraph>
+              </Content>
+            </FinalDraft>
+        "#;
+        let document = parse_fdx(xml).expect("known FDX paragraph types should parse");
+        assert_eq!(document.paragraphs.len(), 2);
+        assert_eq!(document.paragraphs[0].style_id, "character");
+        assert_eq!(document.paragraphs[0].plain_text(), "MARA VENN");
+        assert!(matches!(
+            &document.paragraphs[0].content[1],
+            InlineContent::Text(run) if run.marks.contains(&InlineMark::Bold)
+        ));
+        assert_eq!(document.paragraphs[1].style_id, "dialogue");
+        assert!(matches!(
+            &document.paragraphs[1].content[0],
+            InlineContent::Text(run) if run.marks.contains(&InlineMark::Italic)
+        ));
+    }
+
+    #[test]
+    fn fdx_import_does_not_silently_drop_unknown_types_or_image_objects() {
+        let unknown = r#"<FinalDraft><Content><Paragraph Type="Mystery"><Text>x</Text></Paragraph></Content></FinalDraft>"#;
+        assert!(parse_fdx(unknown).unwrap_err().contains("Mystery"));
+        let image = r#"<FinalDraft><Content><Paragraph Type="Action"><Image/></Paragraph></Content></FinalDraft>"#;
+        assert!(parse_fdx(image).unwrap_err().contains("images"));
+    }
+
+    #[test]
+    fn fountain_roundtrip_preserves_screenplay_structure() {
+        let blocks = vec![
+            crate::Block::new(ElementKind::SceneHeading, "INT. HARBOR - DAWN"),
+            crate::Block::new(ElementKind::Action, "The lamp swings over the chart."),
+            crate::Block::new(ElementKind::Character, "MARA"),
+            crate::Block::new(ElementKind::Dialogue, "We missed the tide."),
+            crate::Block::new(ElementKind::Transition, "CUT TO:"),
+        ];
+        let sheet = StyleSheet::film_screenplay(&ElementStyles::default());
+        let document = RichDocument::from_script_blocks(&blocks);
+        let fountain = document.to_fountain(&sheet, Medium::Screenplay);
+        let reparsed = RichDocument::from_fountain(&fountain, Medium::Screenplay);
+        let kinds: Vec<ElementKind> = reparsed
+            .to_script_blocks(&sheet)
+            .iter()
+            .map(|block| block.kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                ElementKind::SceneHeading,
+                ElementKind::Action,
+                ElementKind::Character,
+                ElementKind::Dialogue,
+                ElementKind::Transition,
+            ]
+        );
     }
 
     #[test]

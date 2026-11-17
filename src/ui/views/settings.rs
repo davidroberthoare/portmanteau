@@ -242,17 +242,23 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 hairline(ui);
                                 ui.add_space(8.0);
 
-                                element_styles_editor(
+                                let mut base_styles_changed = element_styles_editor(
                                     ui,
                                     &mut app.settings.styles,
                                     false,
                                     false,
                                 );
                                 ui.add_space(2.0);
-                                custom_styles_editor(ui, &mut app.settings.styles);
+                                base_styles_changed |=
+                                    custom_styles_editor(ui, &mut app.settings.styles);
+                                if base_styles_changed {
+                                    app.settings.sync_sheet_formats_from_element_styles();
+                                }
                                 ui.add_space(8.0);
                                 section_label(ui, "Writing behavior");
-                                style_sheets_editor(ui, &mut app.settings.style_sheets);
+                                if style_sheets_editor(ui, &mut app.settings.style_sheets) {
+                                    app.settings.sync_element_styles_from_sheets();
+                                }
                             });
                     });
             },
@@ -304,7 +310,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         }
     }
     if apply {
-        app.ws.project.styles = app.settings.styles.clone();
+        app.ws.project.styles = app.settings.element_styles_for_new_project();
         app.ws.project.style_sheets = app.settings.style_sheets_for_new_project();
         app.ws.dirty = true;
         app.toast(

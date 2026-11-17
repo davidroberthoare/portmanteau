@@ -6,9 +6,11 @@ use eframe::egui::{
 };
 use portmanteau_core::StyleSheet;
 
-use crate::app::{PortmanteauApp, ToastKind};
+use crate::app::{ImageInsertState, PortmanteauApp, RichTextTarget, ToastKind};
 use crate::theme::*;
-use crate::ui::editor::{inline_format_toolbar, script_flow_layout_job};
+use crate::ui::editor::{
+    inline_format_toolbar, load_rich_image_textures, paint_rich_images, script_flow_layout_job,
+};
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
@@ -179,6 +181,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
     let old_title = app.ws.project.research[pos].title.clone();
     let mut rich_body = app.ws.project.research[pos].body.clone();
     let old_body = rich_body.editor_text();
+    let body_images = load_rich_image_textures(app, ui.ctx(), &rich_body);
     let html = app.ws.project.research[pos].html.clone();
     let attachments = app.ws.project.research[pos].attachments.clone();
     let mut title = old_title.clone();
@@ -259,8 +262,20 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
             let rows = ((body.chars().count() as f32) / 75.0).ceil().max(16.0) as usize;
             let body_id = egui::Id::unique(("research_body", id));
             let ctx = ui.ctx().clone();
-            if inline_format_toolbar(ui, &ctx, body_id, &mut rich_body) {
+            let toolbar = inline_format_toolbar(ui, &ctx, body_id, &mut rich_body);
+            if toolbar.changed {
                 changed = true;
+            }
+            if let Some(range) = toolbar.insert_image {
+                app.image_insert = Some(ImageInsertState {
+                    target: RichTextTarget::ResearchBody(id.to_owned()),
+                    range,
+                    path: String::new(),
+                    alt_text: String::new(),
+                    caption: String::new(),
+                    standalone: false,
+                    error: String::new(),
+                });
             }
             let rich_body_layout = rich_body.clone();
             let styles_layout = styles.clone();
@@ -279,22 +294,28 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                 );
                 ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
             };
-            if ui
-                .add(
-                    TextEdit::multiline(&mut body)
-                        .id(body_id)
-                        .layouter(&mut layouter)
-                        .font(serif(13.5))
-                        .desired_rows(rows.min(40))
-                        .desired_width(f32::INFINITY)
-                        .frame(Frame::NONE)
-                        .hint_text("What did you find, and why does it matter to the story?"),
-                )
-                .changed()
-            {
+            let body_output = TextEdit::multiline(&mut body)
+                .id(body_id)
+                .layouter(&mut layouter)
+                .font(serif(13.5))
+                .desired_rows(rows.min(40))
+                .desired_width(f32::INFINITY)
+                .frame(Frame::NONE)
+                .hint_text("What did you find, and why does it matter to the story?")
+                .show(ui);
+            if body_output.response.changed() {
                 rich_body.sync_editor_text(&body, &sheet);
                 changed = true;
             }
+            paint_rich_images(
+                ui,
+                &body_output.galley,
+                body_output.galley_pos,
+                body_output.response.rect,
+                &rich_body,
+                &body_images,
+                1.0,
+            );
 
             // ---- Attachments -------------------------------------------------
             ui.add_space(14.0);

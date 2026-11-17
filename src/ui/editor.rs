@@ -1,5 +1,8 @@
 //! The writing surface: a paper-like prose editor and a typed screenplay editor.
 
+use std::collections::HashMap;
+use std::ops::Range;
+
 use eframe::egui::{
     self, Align, Color32, ComboBox, CornerRadius, FontId, Frame, Id, Key, Layout, Margin,
     Modifiers, RichText, ScrollArea, Sense, Stroke, TextEdit, Vec2,
@@ -7,7 +10,9 @@ use eframe::egui::{
 use portmanteau_core::spell::{byte_offset, word_at, SpellChecker};
 use portmanteau_core::{DocKind, ElementKind, ItemKind, Medium};
 
-use crate::app::{NewCharacterState, PortmanteauApp, WriteMode};
+use crate::app::{
+    ImageInsertState, NewCharacterState, PortmanteauApp, RichTextTarget, WriteMode,
+};
 use crate::theme::*;
 use crate::ui::page::{
     empty_page_plan, paged_view, prose_plan, script_element_style, script_plan, PagePlan,
@@ -971,6 +976,13 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                 .cloned()
         })
         .unwrap_or_else(|| portmanteau_core::StyleSheet::novel_prose(&styles));
+    let content_snapshot = app
+        .ws
+        .project
+        .document(doc_id)
+        .map(|doc| doc.content.clone())
+        .unwrap_or_default();
+    let image_textures = load_rich_image_textures(app, ui.ctx(), &content_snapshot);
     let spell_on = app.settings.spellcheck;
     // Disjoint borrow of the checker, taken before the project's document is
     // borrowed mutably, so the layouter and menu can read live suggestions.
@@ -999,9 +1011,21 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         ui.add_space(14.0);
         let prose_id = Id::unique(("prose_body", doc_id));
         let ctx = ui.ctx().clone();
-        if inline_format_toolbar(ui, &ctx, prose_id, &mut doc.content) {
+        let toolbar = inline_format_toolbar(ui, &ctx, prose_id, &mut doc.content);
+        if toolbar.changed {
             doc.touch();
             dirty = true;
+        }
+        if let Some(range) = toolbar.insert_image {
+            app.image_insert = Some(ImageInsertState {
+                target: RichTextTarget::DocumentBody(doc_id.to_owned()),
+                range,
+                path: String::new(),
+                alt_text: String::new(),
+                caption: String::new(),
+                standalone: false,
+                error: String::new(),
+            });
         }
 
         let mut edit_text = doc.content.editor_text();
@@ -1047,6 +1071,15 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             doc.touch();
             dirty = true;
         }
+        paint_rich_images(
+            ui,
+            &output.galley,
+            output.galley_pos,
+            output.response.rect,
+            &doc.content,
+            &image_textures,
+            zoom,
+        );
         if spell_on {
             let key = Id::unique(("spell_menu", doc_id));
             let byte = spell_menu_byte(
@@ -1130,6 +1163,13 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         .collect::<Vec<_>>();
     character_names.sort_by(|left, right| left.to_lowercase().cmp(&right.to_lowercase()));
     character_names.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    let content_snapshot = app
+        .ws
+        .project
+        .document(doc_id)
+        .map(|doc| doc.content.clone())
+        .unwrap_or_default();
+    let image_textures = load_rich_image_textures(app, ui.ctx(), &content_snapshot);
     let checker = &app.spell;
     let spell_on = app.settings.spellcheck;
     let flow_id = Id::unique(("script_flow", doc_id));
@@ -1283,9 +1323,21 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
 
         ui.add_space(8.0);
         let ctx = ui.ctx().clone();
-        if inline_format_toolbar(ui, &ctx, flow_id, &mut doc.content) {
+        let toolbar = inline_format_toolbar(ui, &ctx, flow_id, &mut doc.content);
+        if toolbar.changed {
             doc.touch();
             dirty = true;
+        }
+        if let Some(range) = toolbar.insert_image {
+            app.image_insert = Some(ImageInsertState {
+                target: RichTextTarget::DocumentBody(doc_id.to_owned()),
+                range,
+                path: String::new(),
+                alt_text: String::new(),
+                caption: String::new(),
+                standalone: false,
+                error: String::new(),
+            });
         }
         ui.add_space(4.0);
         let before = doc.content.editor_text();
@@ -1420,6 +1472,15 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             doc.touch();
             dirty = true;
         }
+        paint_rich_images(
+            ui,
+            &completion.text_edit.galley,
+            completion.text_edit.galley_pos,
+            completion.text_edit.response.rect,
+            &doc.content,
+            &image_textures,
+            zoom,
+        );
         if completion.text_edit.response.has_focus() {
             ui.memory_mut(|memory| {
                 memory.set_focus_lock_filter(
@@ -1591,6 +1652,16 @@ pub(crate) fn script_flow_layout_job(
                 .unwrap_or(display_line.len());
             let mut run_format = format.clone();
             apply_inline_marks(&mut run_format, &key.0);
+            if end_char == start_char + 1 {
+                if let Some(image) = paragraph
+                    .and_then(|paragraph| inline_image_at(&paragraph.content, start_char))
+                {
+                    let image_height = image.height.unwrap_or(20.0) * zoom;
+                    run_format.font_id.size = image_height.max(font_size);
+                    run_format.line_height = Some(image_height.max(font_size));
+                    run_format.color = Color32::TRANSPARENT;
+                }
+            }
             if key.1 {
                 run_format.underline = Stroke::new(1.4, Color32::from_rgb(196, 64, 64));
             }
@@ -1628,6 +1699,28 @@ fn inline_marks_at(
     Vec::new()
 }
 
+fn inline_image_at(
+    content: &[portmanteau_core::InlineContent],
+    char_index: usize,
+) -> Option<&portmanteau_core::ImageObject> {
+    let mut offset = 0usize;
+    for item in content {
+        match item {
+            portmanteau_core::InlineContent::Text(run) => {
+                offset += run.text.chars().count();
+            }
+            portmanteau_core::InlineContent::HardBreak => offset += 1,
+            portmanteau_core::InlineContent::Image(image) => {
+                if offset == char_index {
+                    return Some(image);
+                }
+                offset += 1;
+            }
+        }
+    }
+    None
+}
+
 fn apply_inline_marks(
     format: &mut egui::TextFormat,
     marks: &[portmanteau_core::InlineMark],
@@ -1649,6 +1742,129 @@ fn apply_inline_marks(
     };
 }
 
+fn image_cache_key(project_id: &str, asset_id: &str) -> String {
+    format!("{project_id}:{asset_id}")
+}
+
+pub(crate) fn load_rich_image_textures(
+    app: &mut PortmanteauApp,
+    ctx: &egui::Context,
+    content: &portmanteau_core::RichDocument,
+) -> HashMap<String, egui::TextureHandle> {
+    let Some(root) = app.ws.path.clone() else {
+        return HashMap::new();
+    };
+    let project_id = app.ws.project.id.clone();
+    let images = content
+        .paragraphs
+        .iter()
+        .flat_map(|paragraph| paragraph.content.iter())
+        .filter_map(|item| match item {
+            portmanteau_core::InlineContent::Image(image) => Some(image.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut loaded = HashMap::new();
+    for image in images {
+        let key = image_cache_key(&project_id, &image.asset_id);
+        if let Some(texture) = app.image_textures.get(&key) {
+            loaded.insert(image.asset_id, texture.clone());
+            continue;
+        }
+        let relative = std::path::Path::new(&image.asset_id);
+        if relative.is_absolute()
+            || relative.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::RootDir
+                )
+            })
+        {
+            continue;
+        }
+        let path = root.join("assets").join(relative);
+        let Ok(decoded) = image::open(path) else {
+            continue;
+        };
+        let rgba = decoded.to_rgba8();
+        let size = [rgba.width() as usize, rgba.height() as usize];
+        let color = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+        let texture = ctx.load_texture(key.clone(), color, egui::TextureOptions::LINEAR);
+        app.image_textures.insert(key, texture.clone());
+        loaded.insert(image.asset_id, texture);
+    }
+    loaded
+}
+
+pub(crate) fn paint_rich_images(
+    ui: &egui::Ui,
+    galley: &egui::Galley,
+    galley_pos: egui::Pos2,
+    widget_rect: egui::Rect,
+    content: &portmanteau_core::RichDocument,
+    textures: &HashMap<String, egui::TextureHandle>,
+    zoom: f32,
+) {
+    let mut char_offset = 0usize;
+    for paragraph in &content.paragraphs {
+        for item in &paragraph.content {
+            match item {
+                portmanteau_core::InlineContent::Text(run) => {
+                    char_offset += run.text.chars().count();
+                }
+                portmanteau_core::InlineContent::HardBreak => char_offset += 1,
+                portmanteau_core::InlineContent::Image(image) => {
+                    let cursor = galley.pos_from_cursor(egui::text::CCursor::new(char_offset));
+                    let mut center = galley_pos + cursor.center().to_vec2();
+                    let standalone = paragraph.style_id == "image";
+                    if standalone {
+                        center.x = widget_rect.center().x;
+                    }
+                    let width = image
+                        .width
+                        .unwrap_or(if standalone { 240.0 } else { 20.0 })
+                        .max(12.0)
+                        * zoom;
+                    let height = image
+                        .height
+                        .unwrap_or(if standalone { 150.0 } else { 20.0 })
+                        .max(12.0)
+                        * zoom;
+                    let rect = egui::Rect::from_center_size(center, Vec2::new(width, height));
+                    if let Some(texture) = textures.get(&image.asset_id) {
+                        ui.painter().image(
+                            texture.id(),
+                            rect,
+                            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                            Color32::WHITE,
+                        );
+                    } else {
+                        ui.painter().rect_filled(
+                            rect,
+                            CornerRadius::same(3),
+                            Color32::from_rgb(227, 223, 214),
+                        );
+                        let label = if image.alt_text.is_empty() {
+                            "Image"
+                        } else {
+                            image.alt_text.as_str()
+                        };
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            label,
+                            sans(8.0),
+                            PAPER_MUTED,
+                        );
+                    }
+                    char_offset += 1;
+                }
+            }
+        }
+        char_offset += 1;
+    }
+}
+
 fn rich_paragraph_start(content: &portmanteau_core::RichDocument, index: usize) -> usize {
     content
         .paragraphs
@@ -1658,15 +1874,24 @@ fn rich_paragraph_start(content: &portmanteau_core::RichDocument, index: usize) 
         .sum()
 }
 
+pub(crate) struct InlineToolbarResult {
+    pub changed: bool,
+    pub insert_image: Option<Range<usize>>,
+}
+
 pub(crate) fn inline_format_toolbar(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
     id: Id,
     content: &mut portmanteau_core::RichDocument,
-) -> bool {
-    let selection = egui::text_edit::TextEditState::load(ctx, id)
-        .and_then(|state| state.cursor.char_range())
-        .map(|range| {
+) -> InlineToolbarResult {
+    let cursor_range = egui::text_edit::TextEditState::load(ctx, id)
+        .and_then(|state| state.cursor.char_range());
+    let cursor = cursor_range
+        .as_ref()
+        .map(|range| range.primary.index.0)
+        .unwrap_or(0);
+    let selection = cursor_range.map(|range| {
             range
                 .primary
                 .index
@@ -1679,6 +1904,7 @@ pub(crate) fn inline_format_toolbar(
                     .max(range.secondary.index.0)
         });
     let mut changed = false;
+    let mut insert_image = None;
     ui.horizontal(|ui| {
         for (label, mark) in [
             ("B", portmanteau_core::InlineMark::Bold),
@@ -1706,8 +1932,22 @@ pub(crate) fn inline_format_toolbar(
                 }
             }
         }
+        if ui
+            .add(
+                egui::Button::new(RichText::new("Image").font(sans(8.5)).color(PAPER_MUTED))
+                    .fill(PANEL_2)
+                    .corner_radius(CornerRadius::same(3)),
+            )
+            .on_hover_text("Insert an image from a project image file")
+            .clicked()
+        {
+            insert_image = Some(selection.clone().unwrap_or(cursor..cursor));
+        }
     });
-    changed
+    InlineToolbarResult {
+        changed,
+        insert_image,
+    }
 }
 
 /// Transitional reference implementation retained while the flow editor is

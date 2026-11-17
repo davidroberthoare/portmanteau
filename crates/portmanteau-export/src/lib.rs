@@ -84,12 +84,24 @@ pub fn export(
     };
 
     fs::write(&path, &bytes).map_err(|e| format!("Could not write {}: {e}", path.display()))?;
-    Ok(ExportInfo {
-        path: path.display().to_string(),
-        bytes: bytes.len(),
-        words: project.words(),
-        format: settings.kind.label().to_string(),
-        message: format!(
+    let has_images = project.documents.iter().any(|doc| {
+            doc.include_in_export
+                && (rich_document_has_images(&doc.content)
+                    || (settings.include_synopsis && rich_document_has_images(&doc.synopsis))
+                    || (settings.include_notes && rich_document_has_images(&doc.notes)))
+        });
+    let message = if has_images {
+        format!(
+            "{} exported · {} pages estimated · Images represented by alt-text placeholders; source assets are not embedded",
+            settings.kind.label(),
+            project
+                .manuscript_documents()
+                .iter()
+                .map(|d| d.pages())
+                .sum::<u32>()
+        )
+    } else {
+        format!(
             "{} exported · {} pages estimated",
             settings.kind.label(),
             project
@@ -97,8 +109,19 @@ pub fn export(
                 .iter()
                 .map(|d| d.pages())
                 .sum::<u32>()
-        ),
+        )
+    };
+    Ok(ExportInfo {
+        path: path.display().to_string(),
+        bytes: bytes.len(),
+        words: project.words(),
+        format: settings.kind.label().to_string(),
+        message,
     })
+}
+
+fn rich_document_has_images(document: &RichDocument) -> bool {
+    document.paragraphs.iter().any(|paragraph| paragraph.has_image())
 }
 
 // ---------------------------------------------------------------------------
@@ -1538,6 +1561,61 @@ fn fdx_type(kind: ElementKind) -> &'static str {
     }
 }
 
+fn fdx_style_attr(marks: &[InlineMark]) -> String {
+    let mut parts = Vec::new();
+    for (mark, name) in [
+        (InlineMark::Bold, "Bold"),
+        (InlineMark::Italic, "Italic"),
+        (InlineMark::Underline, "Underline"),
+        (InlineMark::Strikethrough, "Strikethrough"),
+    ] {
+        if marks.contains(&mark) {
+            parts.push(name);
+        }
+    }
+    parts.join("+")
+}
+
+/// Write one paragraph's runs, preserving inline emphasis in Final Draft's
+/// `<Text Style="...">` attribute. Rich images contribute an explicit
+/// placeholder because FDX cannot embed their pixels here.
+fn fdx_runs(paragraph: &RichParagraph, uppercase: bool) -> String {
+    let mut out = String::new();
+    for item in &paragraph.content {
+        match item {
+            InlineContent::Text(run) => {
+                if run.text.is_empty() {
+                    continue;
+                }
+                let text = if uppercase {
+                    run.text.to_uppercase()
+                } else {
+                    run.text.clone()
+                };
+                let style = fdx_style_attr(&run.marks);
+                if style.is_empty() {
+                    out.push_str(&format!("<Text>{}</Text>", xml_escape(&text)));
+                } else {
+                    out.push_str(&format!(
+                        "<Text Style=\"{style}\">{}</Text>",
+                        xml_escape(&text)
+                    ));
+                }
+            }
+            InlineContent::HardBreak => out.push_str("<Text> </Text>"),
+            InlineContent::Image(image) => {
+                let label = if image.alt_text.is_empty() {
+                    "[Image]".to_owned()
+                } else {
+                    format!("[Image: {}]", image.alt_text)
+                };
+                out.push_str(&format!("<Text>{}</Text>", xml_escape(&label)));
+            }
+        }
+    }
+    out
+}
+
 fn fdx_manuscript(project: &Project, settings: &ExportSettings) -> String {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n");
@@ -1563,17 +1641,32 @@ fn fdx_manuscript(project: &Project, settings: &ExportSettings) -> String {
     out.push_str("  <Content>\n");
     for section in manuscript_sections(project) {
         if section.doc.medium.is_script() {
-            let blocks = screenplay_blocks(project, section.doc);
-            for block in &blocks {
-                let text = if settings.styles.style_for_kind(block.kind).uppercase {
-                    block.text.to_uppercase()
-                } else {
-                    block.text.clone()
-                };
+            let fallback = StyleSheet::film_screenplay(&project.styles);
+            let sheet = project
+                .style_sheets
+                .iter()
+                .find(|sheet| sheet.id == section.doc.style_sheet_id)
+                .unwrap_or(&fallback);
+            for paragraph in &section.doc.content.paragraphs {
+                let style = sheet.style(&paragraph.style_id);
+                let kind = style
+                    .and_then(|style| style.semantic_kind)
+                    .or_else(|| {
+                        portmanteau_core::rich_text::script_kind_for_style_id(
+                            &paragraph.style_id,
+                        )
+                    })
+                    .unwrap_or(ElementKind::General);
+                let uppercase = style
+                    .map(|style| style.text_transform == TextTransform::Uppercase)
+                    .unwrap_or_else(|| settings.styles.style_for_kind(kind).uppercase);
+                let runs = fdx_runs(paragraph, uppercase);
+                if runs.is_empty() {
+                    continue;
+                }
                 out.push_str(&format!(
-                    "    <Paragraph Type=\"{}\"><Text>{}</Text></Paragraph>\n",
-                    fdx_type(block.kind),
-                    xml_escape(&text)
+                    "    <Paragraph Type=\"{}\">{runs}</Paragraph>\n",
+                    fdx_type(kind)
                 ));
             }
         } else {
@@ -2169,6 +2262,59 @@ mod tests {
     }
 
     #[test]
+    fn fdx_export_keeps_inline_marks_and_image_alt_text() {
+        let mut p = demo();
+        let doc_id = p
+            .documents
+            .iter()
+            .find(|doc| doc.medium.is_script() && doc.include_in_export)
+            .map(|doc| doc.id.clone())
+            .expect("demo has a screenplay document");
+        let sheet = p
+            .style_sheets
+            .iter()
+            .find(|sheet| sheet.medium == Medium::Screenplay)
+            .cloned()
+            .expect("screenplay sheet");
+        let doc = p.document_mut(&doc_id).unwrap();
+        let target = doc
+            .content
+            .paragraphs
+            .iter_mut()
+            .find(|paragraph| paragraph.style_id == "action")
+            .expect("screenplay action paragraph");
+        target.content = vec![
+            InlineContent::Text(TextRun::with_marks(
+                "Bold action",
+                vec![InlineMark::Bold],
+            )),
+            InlineContent::Text(TextRun::with_marks(
+                " and italic",
+                vec![InlineMark::Italic],
+            )),
+        ];
+        doc.content.paragraphs.push(RichParagraph {
+            style_id: "action".into(),
+            content: vec![InlineContent::Image(ImageObject {
+                asset_id: "images/chart.png".into(),
+                alt_text: "Harbor chart".into(),
+                caption: String::new(),
+                width: None,
+                height: None,
+            })],
+        });
+
+        let fdx = fdx_manuscript(&p, &p.export);
+        assert!(fdx.contains("Style=\"Bold\""), "bold run missing from FDX");
+        assert!(fdx.contains("Style=\"Italic\""), "italic run missing from FDX");
+        assert!(
+            fdx.contains("[Image: Harbor chart]"),
+            "lossy FDX export should include the image's alt text"
+        );
+        assert_eq!(sheet.medium, Medium::Screenplay);
+    }
+
+    #[test]
     fn pdf_page_numbers_follow_the_setting() {
         let p = demo();
         let mut on = p.settings_for(ExportKind::Pdf);
@@ -2266,5 +2412,45 @@ mod tests {
             assert!(path.exists());
         }
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn lossy_text_export_warns_and_uses_an_image_alt_placeholder() {
+        let mut project = Project::new("Image export", ProjectKind::Novel);
+        let doc_id = project.add_document(
+            project.folder_id("Draft"),
+            "Image scene",
+            DocKind::Chapter,
+            Medium::Prose,
+        );
+        let sheet = StyleSheet::novel_prose(&project.styles);
+        let doc = project.document_mut(&doc_id).unwrap();
+        doc.content = RichDocument::from_plain_text("before after", "body");
+        doc.content.insert_image(
+            7..7,
+            ImageObject {
+                asset_id: "images/harbor.png".into(),
+                alt_text: "Harbor map".into(),
+                caption: String::new(),
+                width: None,
+                height: None,
+            },
+            false,
+            &sheet,
+        );
+        let settings = project.settings_for(ExportKind::Txt);
+        let path = std::env::temp_dir().join(format!(
+            "portmanteau-image-export-{}.txt",
+            portmanteau_core::new_id("t")
+        ));
+
+        let info = export(&project, &settings, Some(&path)).unwrap();
+        let output = fs::read_to_string(&path).unwrap();
+        assert!(
+            info.message.contains("alt-text placeholders"),
+            "lossy image export should be reported"
+        );
+        assert!(output.contains("[Image: Harbor map]"));
+        let _ = fs::remove_file(path);
     }
 }

@@ -52,25 +52,33 @@ strikethrough; images can be inline or standalone with alt text/captions.
   with measurements based on the supplied references.
 - Applied the reference screenplay measurements to Film Screenplay defaults and
   exposed Extension, Intercut and Subheading styles in the style palette.
+- Added an image insertion dialog (for saved projects), project-local image
+  assets, inline/standalone rich image nodes, image rendering, alt text/captions,
+  and an export warning with alt-text placeholders where images are not embedded.
 - Replaced the screenplay's per-paragraph TextEdits with one TextEdit for the
   complete flow. Prose also edits its `RichDocument` through one flow. The
   project package stores rich bodies and snapshots as `.rich.json`.
 - Added headless probes for cross-style drag selection, paragraph navigation,
   and Enter applying Character Name → Dialogue. Character completion remains
   in the flow and stores the canonical character name.
+- Added `document.import` (API and `import_document` MCP tool) for Fountain and
+  FDX files, plus a File-menu import path. FDX export now preserves inline bold,
+  italic, underline and strikethrough runs and writes image alt-text placeholders.
+  Added Fountain and FDX round-trip tests.
 - Added screenshot verification for the unified screenplay flow. The latest
-  workspace run passes 151 tests.
+  workspace run passes 159 tests.
 
 **Still required**
 
-- Inline/standalone image insertion, asset loading/rendering, captions and
-  export placeholders/warnings.
+- Allow image insertion before a project has been saved, and package original
+  image assets in portable bundles. Current insertion copies into a saved
+  project's `assets/images` folder; other export formats use warned placeholders.
 - Continue polishing rich formatting in the corkboard synopsis editor and
   keep formatting/selection stable as more fields adopt the same editor.
 - Ensure stylesheet appearance edits also drive every export writer, and add
   focused UI tests for stylesheet customization.
-- Finish Fountain/FDX adapters and round-trip coverage. The reusable FDX import
-  style/object mapping dialog remains deferred below.
+- Add plain-text and DOCX import beside the Fountain/FDX importer. The reusable
+  FDX import style/object mapping dialog remains deferred below.
 
 **Done when** headless UI tests can drag-select and edit across different
 paragraph styles, script Enter follows the stylesheet's next-style rule, prose
@@ -85,13 +93,11 @@ novel in Word. Exporting without importing is a one-way door.
 
 **Start with Fountain, Final Draft and plain text**, then DOCX (confirmed future work):
 
-- `crates/portmanteau-core/src/script.rs` already parses loose text into typed blocks, and
-  `parse_fountain` now exists (it is used for project storage). Add `parse_fdx`,
-  a DOCX reader, and a plain-text importer next to it.
-- Add `project.import` in `crates/portmanteau-api/src/lib.rs` with `format` and `path`.
+- `parse_fountain` and `parse_fdx` now exist in the core, and `document.import`
+  is wired through the API, MCP and the File menu. Add a DOCX reader and a
+  plain-text importer beside them.
 - DOCX: read `word/document.xml` out of the zip (the export side already uses
   `zip`) and map paragraphs to sections. Do not pull in a full document model.
-- Surface it in the File menu beside Open/Save, and as an MCP tool.
 
 **Done when** real `.fountain`, `.fdx`, `.docx` and plain-text files round-trip
 through import and export without losing scene headings, character/dialogue

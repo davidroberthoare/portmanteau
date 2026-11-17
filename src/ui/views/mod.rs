@@ -210,7 +210,8 @@ pub fn element_styles_editor(
     styles: &mut ElementStyles,
     grey_prose: bool,
     grey_script: bool,
-) {
+) -> bool {
+    let mut changed = false;
     let sections: [(&str, &str, &str, &[(&str, &str)]); 3] = [
         (
             "Title page",
@@ -256,6 +257,7 @@ pub fn element_styles_editor(
                     if element_row(ui, key, label, &mut draft) {
                         if let Some(target) = styles.element_mut(key) {
                             *target = draft;
+                            changed = true;
                         }
                     }
                 }
@@ -265,6 +267,7 @@ pub fn element_styles_editor(
         });
         ui.add_space(2.0);
     }
+    changed
 }
 
 fn font_combo(ui: &mut egui::Ui, key: &str, element: &mut ElementStyle) -> bool {

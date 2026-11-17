@@ -159,6 +159,7 @@ A command always returns `{ ok, command, message, data }`.
 | `project.snapshots` | Every document snapshot |
 | `document.list` / `document.get` | Read the binder or one document |
 | `document.create` / `document.update` / `document.delete` | Write the binder |
+| `document.import` | Import a Fountain or Final Draft (FDX) file as a new screenplay |
 | `document.move` | Reorder within a folder, or move into one |
 | `document.snapshot` / `snapshot.restore` / `snapshot.diff` | Save, restore and compare document versions |
 | `item.add` / `item.update` | Story-database records (characters, places, events, props, custom) |
@@ -178,6 +179,7 @@ Examples:
 cargo run -p portmanteau-cli -- stats
 cargo run -p portmanteau-cli -- export.run '{"format":"EPUB","path":"exports"}'
 cargo run -p portmanteau-cli -- document.create '{"title":"New scene","kind":"Scene","medium":"Screenplay"}'
+cargo run -p portmanteau-cli -- document.import '{"path":"screenplay.fdx"}'
 cargo run -p portmanteau-cli -- document.move '{"id":"doc-…","direction":"up"}' \
   --project book.portmanteau --save
 ```

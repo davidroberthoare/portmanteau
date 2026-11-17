@@ -1,6 +1,7 @@
 //! Portmanteau desktop shell.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -177,6 +178,7 @@ pub struct DiffState {
 pub enum PathDialog {
     Open,
     SaveAs,
+    Import,
 }
 
 /// A character being created from the screenplay editor's "New character…"
@@ -188,6 +190,26 @@ pub struct NewCharacterState {
     pub block: usize,
     pub name: String,
     pub role: String,
+}
+
+#[derive(Clone, Debug)]
+pub enum RichTextTarget {
+    DocumentBody(String),
+    DocumentSynopsis(String),
+    DocumentNotes(String),
+    ResearchBody(String),
+    DatabaseNotes(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct ImageInsertState {
+    pub target: RichTextTarget,
+    pub range: Range<usize>,
+    pub path: String,
+    pub alt_text: String,
+    pub caption: String,
+    pub standalone: bool,
+    pub error: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -243,6 +265,8 @@ pub struct PortmanteauApp {
     pub path_dialog: Option<PathDialog>,
     pub path_draft: String,
     pub new_character: Option<NewCharacterState>,
+    pub image_insert: Option<ImageInsertState>,
+    pub image_textures: HashMap<String, egui::TextureHandle>,
     pub diff: Option<DiffState>,
     pub outline_filter: usize,
     pub screenshot: Option<PathBuf>,
@@ -325,6 +349,8 @@ impl PortmanteauApp {
             path_dialog: None,
             path_draft: String::new(),
             new_character: None,
+            image_insert: None,
+            image_textures: HashMap::new(),
             diff: None,
             outline_filter: 0,
             screenshot,
@@ -634,6 +660,11 @@ impl PortmanteauApp {
                     .as_ref()
                     .map(|p| p.display().to_string())
                     .unwrap_or_default();
+                ui.close();
+            }
+            if ui.button("Import Fountain or FDX…").clicked() {
+                self.path_dialog = Some(PathDialog::Import);
+                self.path_draft.clear();
                 ui.close();
             }
             if ui.button("Save checkpoint").clicked() {
@@ -947,7 +978,7 @@ impl PortmanteauApp {
                     if ui.add_enabled(ready, btn).clicked() {
                         let title = self.new_project_title.trim().to_string();
                         self.ws = Workspace::new_project(&title, self.new_project_kind);
-                        self.ws.project.styles = self.settings.styles.clone();
+                        self.ws.project.styles = self.settings.element_styles_for_new_project();
                         self.ws.project.style_sheets =
                             self.settings.style_sheets_for_new_project();
                         let parent = self.ws.project.folder_id("Draft");
@@ -1015,6 +1046,7 @@ impl PortmanteauApp {
         self.path_modal(ctx);
         self.diff_modal(ctx);
         self.new_character_modal(ctx);
+        self.image_insert_modal(ctx);
     }
 
     /// The small "New character" form opened from a Character element's
@@ -1100,6 +1132,217 @@ impl PortmanteauApp {
         if !open {
             self.new_character = None;
         }
+    }
+
+    fn image_insert_modal(&mut self, ctx: &egui::Context) {
+        let Some(mut state) = self.image_insert.clone() else {
+            return;
+        };
+        let mut open = true;
+        let mut insert = false;
+        let mut cancel = false;
+        egui::Window::new("Insert image")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .min_width(420.0)
+            .show(ctx, |ui| {
+                section_label(ui, "Image file path");
+                ui.add(
+                    TextEdit::singleline(&mut state.path)
+                        .hint_text("/path/to/image.png")
+                        .desired_width(f32::INFINITY),
+                );
+                ui.add_space(8.0);
+                section_label(ui, "Alt text");
+                ui.add(
+                    TextEdit::singleline(&mut state.alt_text)
+                        .hint_text("Describe the image")
+                        .desired_width(f32::INFINITY),
+                );
+                ui.checkbox(&mut state.standalone, "Place on its own paragraph");
+                ui.add_space(6.0);
+                section_label(ui, "Caption (standalone image)");
+                ui.add_enabled(
+                    state.standalone,
+                    TextEdit::singleline(&mut state.caption)
+                        .hint_text("Caption")
+                        .desired_width(f32::INFINITY),
+                );
+                if !state.error.is_empty() {
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(&state.error).font(sans(9.5)).color(RED));
+                }
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if crate::ui::views::quiet_button(ui, "Cancel").clicked() {
+                        cancel = true;
+                    }
+                    if crate::ui::views::primary_button(ui, "Insert image").clicked() {
+                        insert = true;
+                    }
+                });
+            });
+
+        if cancel {
+            open = false;
+        }
+        if !open {
+            self.image_insert = None;
+            return;
+        }
+        if insert {
+            if let Err(error) = self.insert_image_from_state(&state) {
+                state.error = error;
+                self.image_insert = Some(state);
+            } else {
+                self.image_insert = None;
+            }
+        } else {
+            self.image_insert = Some(state);
+        }
+    }
+
+    fn insert_image_from_state(&mut self, state: &ImageInsertState) -> Result<(), String> {
+        let root = self
+            .ws
+            .path
+            .clone()
+            .ok_or_else(|| "Save the project before inserting images.".to_string())?;
+        let source = PathBuf::from(state.path.trim());
+        if !source.is_file() {
+            return Err("Choose an existing image file.".into());
+        }
+        let (pixel_width, pixel_height) = image::image_dimensions(&source)
+            .map_err(|error| format!("Could not read image dimensions: {error}"))?;
+        let extension = source
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .filter(|extension| extension.chars().all(|ch| ch.is_ascii_alphanumeric()))
+            .ok_or_else(|| "The image file needs a normal filename extension.".to_string())?;
+        let file_name = format!("{}.{}", portmanteau_core::new_id("img"), extension);
+        let image_dir = root.join("assets").join("images");
+        std::fs::create_dir_all(&image_dir)
+            .map_err(|error| format!("Could not create the project image folder: {error}"))?;
+        std::fs::copy(&source, image_dir.join(&file_name))
+            .map_err(|error| format!("Could not copy the image into the project: {error}"))?;
+
+        let display_max = if state.standalone { 240.0 } else { 20.0 };
+        let source_max = pixel_width.max(pixel_height).max(1) as f32;
+        let image_scale = display_max / source_max;
+        let width = pixel_width as f32 * image_scale;
+        let height = pixel_height as f32 * image_scale;
+        let image = portmanteau_core::ImageObject {
+            asset_id: format!("images/{file_name}"),
+            alt_text: state.alt_text.trim().to_owned(),
+            caption: state.caption.trim().to_owned(),
+            width: Some(width),
+            height: Some(height),
+        };
+        let sheet = match &state.target {
+            RichTextTarget::DocumentBody(doc_id)
+            | RichTextTarget::DocumentSynopsis(doc_id)
+            | RichTextTarget::DocumentNotes(doc_id) => self
+                .ws
+                .project
+                .document(doc_id)
+                .and_then(|doc| {
+                    self.ws
+                        .project
+                        .style_sheets
+                        .iter()
+                        .find(|sheet| sheet.id == doc.style_sheet_id)
+                        .cloned()
+                })
+                .unwrap_or_else(|| {
+                    portmanteau_core::StyleSheet::novel_prose(&self.ws.project.styles)
+                }),
+            RichTextTarget::ResearchBody(_) | RichTextTarget::DatabaseNotes(_) => {
+                portmanteau_core::StyleSheet::novel_prose(&self.ws.project.styles)
+            }
+        };
+        let content = match &state.target {
+            RichTextTarget::DocumentBody(doc_id) => self
+                .ws
+                .project
+                .document_mut(doc_id)
+                .map(|doc| {
+                    doc.content.insert_image(
+                        state.range.clone(),
+                        image,
+                        state.standalone,
+                        &sheet,
+                    );
+                    doc.touch();
+                    &mut doc.content
+                }),
+            RichTextTarget::DocumentSynopsis(doc_id) => self
+                .ws
+                .project
+                .document_mut(doc_id)
+                .map(|doc| {
+                    doc.synopsis.insert_image(
+                        state.range.clone(),
+                        image,
+                        state.standalone,
+                        &sheet,
+                    );
+                    doc.touch();
+                    &mut doc.synopsis
+                }),
+            RichTextTarget::DocumentNotes(doc_id) => self
+                .ws
+                .project
+                .document_mut(doc_id)
+                .map(|doc| {
+                    doc.notes.insert_image(
+                        state.range.clone(),
+                        image,
+                        state.standalone,
+                        &sheet,
+                    );
+                    doc.touch();
+                    &mut doc.notes
+                }),
+            RichTextTarget::ResearchBody(item_id) => self
+                .ws
+                .project
+                .research
+                .iter_mut()
+                .find(|item| item.id == *item_id)
+                .map(|item| {
+                    item.body.insert_image(
+                        state.range.clone(),
+                        image,
+                        state.standalone,
+                        &sheet,
+                    );
+                    &mut item.body
+                }),
+            RichTextTarget::DatabaseNotes(item_id) => self
+                .ws
+                .project
+                .items
+                .iter_mut()
+                .find(|item| item.id == *item_id)
+                .map(|item| {
+                    item.notes.insert_image(
+                        state.range.clone(),
+                        image,
+                        state.standalone,
+                        &sheet,
+                    );
+                    &mut item.notes
+                }),
+        };
+        if content.is_none() {
+            return Err("The target text field no longer exists.".into());
+        }
+        self.ws.project.touch();
+        self.ws.dirty = true;
+        self.toast("Image inserted", state.alt_text.clone(), ToastKind::Ok);
+        Ok(())
     }
 
     fn diff_modal(&mut self, ctx: &egui::Context) {
@@ -1310,6 +1553,11 @@ impl PortmanteauApp {
                 "Save",
                 "Where the project folder should live (or a legacy .json file)",
             ),
+            PathDialog::Import => (
+                "Import screenplay",
+                "Import",
+                "Path to a .fountain or .fdx screenplay file",
+            ),
         };
         egui::Window::new(title)
             .open(&mut open)
@@ -1335,6 +1583,9 @@ impl PortmanteauApp {
                     RichText::new(match mode {
                         PathDialog::Open => "Unsaved changes in the current project are left untouched.",
                         PathDialog::SaveAs => "A new copy is written; the open project switches to it.",
+                        PathDialog::Import => {
+                            "Fountain and Final Draft files become new documents in the Draft folder."
+                        }
                     })
                     .font(sans(9.5))
                     .color(FAINT),
@@ -1400,6 +1651,21 @@ impl PortmanteauApp {
                         Err(e) => {
                             self.toast("Could not save project", e, ToastKind::Error);
                         }
+                    }
+                }
+                PathDialog::Import => {
+                    let path = self.path_draft.trim().to_owned();
+                    let res = self.ws.execute("document.import", serde_json::json!({
+                        "path": path,
+                    }));
+                    if res.ok {
+                        let id = res.data["id"].as_str().map(|id| id.to_owned());
+                        self.selected = id;
+                        self.view = View::Write;
+                        self.path_dialog = None;
+                        self.toast("Screenplay imported", res.message, ToastKind::Ok);
+                    } else {
+                        self.toast("Could not import screenplay", res.message, ToastKind::Error);
                     }
                 }
             }
@@ -1855,5 +2121,71 @@ mod shell_probe {
             app.borrow().selected_block < app.borrow().current_doc().unwrap().content.paragraphs.len(),
             "the caret should remain on a paragraph in the flow"
         );
+    }
+
+    #[test]
+    fn inserting_an_image_copies_asset_and_preserves_rich_document_on_save() {
+        let source_dir = std::env::temp_dir().join(portmanteau_core::new_id("image-source"));
+        let project_dir = std::env::temp_dir().join(portmanteau_core::new_id("image-project"));
+        std::fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("harbor.png");
+        image::RgbaImage::new(4, 3)
+            .save(&source)
+            .expect("write a tiny test image");
+
+        let mut app = PortmanteauApp::new(None);
+        let doc_id = app.ws.project.add_document(
+            None,
+            "Image test",
+            DocKind::Chapter,
+            Medium::Prose,
+        );
+        app.ws
+            .project
+            .document_mut(&doc_id)
+            .unwrap()
+            .set_plain_text("before after");
+        app.ws.path = Some(project_dir.clone());
+        app.insert_image_from_state(&ImageInsertState {
+            target: RichTextTarget::DocumentBody(doc_id.clone()),
+            range: 7..7,
+            path: source.display().to_string(),
+            alt_text: "Harbor map".into(),
+            caption: "Low tide".into(),
+            standalone: true,
+            error: String::new(),
+        })
+        .expect("insert image");
+
+        let document = app.ws.project.document(&doc_id).unwrap();
+        let image = document
+            .content
+            .paragraphs
+            .iter()
+            .flat_map(|paragraph| paragraph.content.iter())
+            .find_map(|item| match item {
+                portmanteau_core::InlineContent::Image(image) => Some(image),
+                _ => None,
+            })
+            .expect("rich content references the image object");
+        let asset_id = image.asset_id.clone();
+        assert_eq!(image.alt_text, "Harbor map");
+        assert_eq!(image.caption, "Low tide");
+        assert!(project_dir.join("assets").join(&asset_id).is_file());
+
+        portmanteau_api::storage::save_folder(&app.ws.project, &project_dir)
+            .expect("save image project");
+        let reopened = portmanteau_api::storage::load_folder(&project_dir)
+            .expect("reopen image project");
+        let reopened_doc = reopened.document(&doc_id).unwrap();
+        assert!(reopened_doc.content.paragraphs.iter().any(|paragraph| {
+            paragraph.content.iter().any(
+                |item| matches!(item, portmanteau_core::InlineContent::Image(image) if image.asset_id == asset_id),
+            )
+        }));
+        assert!(project_dir.join("assets").join(asset_id).is_file());
+
+        let _ = std::fs::remove_dir_all(&source_dir);
+        let _ = std::fs::remove_dir_all(&project_dir);
     }
 }

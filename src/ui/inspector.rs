@@ -6,9 +6,11 @@ use eframe::egui::{
 };
 use portmanteau_core::Medium;
 
-use crate::app::{InspectorTab, PortmanteauApp, ToastKind};
+use crate::app::{ImageInsertState, InspectorTab, PortmanteauApp, RichTextTarget, ToastKind};
 use crate::theme::*;
-use crate::ui::editor::{inline_format_toolbar, script_flow_layout_job};
+use crate::ui::editor::{
+    inline_format_toolbar, load_rich_image_textures, paint_rich_images, script_flow_layout_job,
+};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
@@ -74,6 +76,13 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let styles = app.ws.project.styles.clone();
     let prose_sheet =
         portmanteau_core::StyleSheet::novel_prose(&app.ws.project.styles);
+    let synopsis_snapshot = app
+        .ws
+        .project
+        .document(doc_id)
+        .map(|doc| doc.synopsis.clone())
+        .unwrap_or_default();
+    let synopsis_images = load_rich_image_textures(app, ui.ctx(), &synopsis_snapshot);
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
         section_label(ui, "Document");
@@ -153,9 +162,21 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         ui.add_space(3.0);
         let synopsis_id = egui::Id::unique(("inspector_synopsis", doc_id));
         let ctx = ui.ctx().clone();
-        if inline_format_toolbar(ui, &ctx, synopsis_id, &mut doc.synopsis) {
+        let toolbar = inline_format_toolbar(ui, &ctx, synopsis_id, &mut doc.synopsis);
+        if toolbar.changed {
             doc.touch();
             app.ws.dirty = true;
+        }
+        if let Some(range) = toolbar.insert_image {
+            app.image_insert = Some(ImageInsertState {
+                target: RichTextTarget::DocumentSynopsis(doc_id.to_owned()),
+                range,
+                path: String::new(),
+                alt_text: String::new(),
+                caption: String::new(),
+                standalone: false,
+                error: String::new(),
+            });
         }
         let mut synopsis = doc.synopsis.editor_text();
         let synopsis_content = doc.synopsis.clone();
@@ -185,6 +206,15 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             doc.touch();
             app.ws.dirty = true;
         }
+        paint_rich_images(
+            ui,
+            &synopsis_output.galley,
+            synopsis_output.galley_pos,
+            synopsis_output.response.rect,
+            &doc.synopsis,
+            &synopsis_images,
+            1.0,
+        );
 
         ui.add_space(12.0);
         hairline(ui);
@@ -310,15 +340,34 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let styles = app.ws.project.styles.clone();
     let prose_sheet =
         portmanteau_core::StyleSheet::novel_prose(&app.ws.project.styles);
+    let notes_snapshot = app
+        .ws
+        .project
+        .document(doc_id)
+        .map(|doc| doc.notes.clone())
+        .unwrap_or_default();
+    let notes_images = load_rich_image_textures(app, ui.ctx(), &notes_snapshot);
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
         section_label(ui, "Author's notes");
         ui.add_space(3.0);
         let notes_id = egui::Id::unique(("inspector_notes", doc_id));
         let ctx = ui.ctx().clone();
-        if inline_format_toolbar(ui, &ctx, notes_id, &mut doc.notes) {
+        let toolbar = inline_format_toolbar(ui, &ctx, notes_id, &mut doc.notes);
+        if toolbar.changed {
             doc.touch();
             app.ws.dirty = true;
+        }
+        if let Some(range) = toolbar.insert_image {
+            app.image_insert = Some(ImageInsertState {
+                target: RichTextTarget::DocumentNotes(doc_id.to_owned()),
+                range,
+                path: String::new(),
+                alt_text: String::new(),
+                caption: String::new(),
+                standalone: false,
+                error: String::new(),
+            });
         }
         let mut notes = doc.notes.editor_text();
         let notes_content = doc.notes.clone();
@@ -349,6 +398,15 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             doc.touch();
             app.ws.dirty = true;
         }
+        paint_rich_images(
+            ui,
+            &notes_output.galley,
+            notes_output.galley_pos,
+            notes_output.response.rect,
+            &doc.notes,
+            &notes_images,
+            1.0,
+        );
     }
     ui.add_space(14.0);
     hairline(ui);

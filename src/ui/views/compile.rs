@@ -299,7 +299,11 @@ fn output_tab(
 
     style_panel(ui, &mut settings.styles, app.ws.project.kind);
     ui.add_space(12.0);
-    *style_sheets_changed |= style_sheets_editor(ui, &mut app.ws.project.style_sheets);
+    if style_sheets_editor(ui, &mut app.ws.project.style_sheets) {
+        *style_sheets_changed = true;
+        app.ws.project.sync_element_styles_from_sheets();
+        settings.styles = app.ws.project.styles.clone();
+    }
     ui.add_space(8.0);
 
     type_panel(ui, kind, settings);

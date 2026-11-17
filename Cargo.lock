@@ -2813,6 +2813,7 @@ name = "portmanteau-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "roxmltree",
  "serde",
  "serde_json",
  "uuid",

@@ -258,6 +258,89 @@ impl Workspace {
                 self.dirty = true;
                 ApiResponse::ok(command, "Document created", json!({"id": id}))
             }
+            "document.import" => {
+                let inline_text = str_arg(&payload, "text");
+                let path = str_arg(&payload, "path");
+                let requested = str_arg(&payload, "format");
+                let format = requested
+                    .clone()
+                    .or_else(|| {
+                        path.as_deref()
+                            .and_then(|path| Path::new(path).extension())
+                            .and_then(|extension| extension.to_str())
+                            .map(|extension| extension.to_ascii_lowercase())
+                    })
+                    .unwrap_or_default();
+                let source = match (&inline_text, &path) {
+                    (Some(text), _) => text.clone(),
+                    (None, Some(path)) => match std::fs::read_to_string(path) {
+                        Ok(text) => text,
+                        Err(error) => {
+                            return ApiResponse::err(
+                                command,
+                                format!("Could not read {path}: {error}"),
+                            )
+                        }
+                    },
+                    (None, None) => {
+                        return ApiResponse::err(
+                            command,
+                            "A path or inline text is required to import",
+                        )
+                    }
+                };
+                let medium = payload
+                    .get("medium")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_medium)
+                    .unwrap_or(Medium::Screenplay);
+                let content = if format == "fountain" {
+                    RichDocument::from_fountain(&source, medium)
+                } else if format == "fdx" {
+                    match portmanteau_core::parse_fdx(&source) {
+                        Ok(document) => document,
+                        Err(error) => return ApiResponse::err(command, error),
+                    }
+                } else {
+                    return ApiResponse::err(
+                        command,
+                        format!(
+                            "Unsupported import format {format:?}; use Fountain or FDX"
+                        ),
+                    );
+                };
+                let paragraph_count = content.paragraphs.len();
+                if paragraph_count == 0 {
+                    return ApiResponse::err(command, "The imported file contains no text");
+                }
+                let title = str_arg(&payload, "title").or_else(|| {
+                    path.as_deref()
+                        .and_then(|path| Path::new(path).file_stem())
+                        .and_then(|stem| stem.to_str())
+                        .map(|stem| stem.to_owned())
+                });
+                let title = title.unwrap_or_else(|| "Imported screenplay".into());
+                let parent = str_arg(&payload, "parent")
+                    .or_else(|| self.project.folder_id("Draft"));
+                let kind = payload
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_doc_kind)
+                    .unwrap_or(DocKind::Chapter);
+                let id = self
+                    .project
+                    .add_document(parent, &title, kind, medium);
+                if let Some(doc) = self.project.document_mut(&id) {
+                    doc.content = content;
+                    doc.touch();
+                }
+                self.dirty = true;
+                ApiResponse::ok(
+                    command,
+                    format!("Imported {paragraph_count} paragraphs from {format}"),
+                    json!({"id": id, "paragraphs": paragraph_count, "format": format}),
+                )
+            }
             "document.update" => {
                 let Some(id) = str_arg(&payload, "id") else {
                     return ApiResponse::err(command, "A document id is required");
@@ -1014,6 +1097,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("document.list", "List every binder document", "{}"),
         ("document.get", "Read one document", r#"{"id":"doc-..."}"#),
         ("document.create", "Add a document", r#"{"parent":"doc-...","title":"...","kind":"Chapter","medium":"Prose"}"#),
+        ("document.import", "Import a Fountain or FDX file as a document", r#"{"path":"screenplay.fdx","title":"..."}"#),
         ("document.update", "Change title, text, synopsis or metadata", r#"{"id":"doc-...","text":"..."}"#),
         ("document.delete", "Delete a document and its children", r#"{"id":"doc-..."}"#),
         ("document.move", "Move a document up, down or into a folder", r#"{"id":"doc-...","direction":"up"}"#),
@@ -1057,6 +1141,35 @@ mod tests {
         );
         assert!(res.ok);
         assert_eq!(ws.project.documents.len(), before + 1);
+    }
+
+    #[test]
+    fn document_import_parses_fountain_and_fdx_into_rich_documents() {
+        let mut ws = Workspace::demo();
+        let fountain = "INT. HARBOR - DAWN\n\nMARA\nWe missed the tide.\n";
+        let res = ws.execute(
+            "document.import",
+            json!({"format":"fountain","title":"Fountain import","text":fountain}),
+        );
+        assert!(res.ok, "{}", res.message);
+        let id = res.data["id"].as_str().expect("import id").to_owned();
+        let doc = ws.project.document(&id).expect("imported document exists");
+        assert_eq!(doc.medium, Medium::Screenplay);
+        assert!(doc.content.plain_text().contains("We missed the tide."));
+
+        let fdx = r#"<FinalDraft><Content>
+            <Paragraph Type="Scene Heading"><Text>EXT. PIER - NIGHT</Text></Paragraph>
+            <Paragraph Type="Action"><Text>The lamp swings.</Text></Paragraph>
+        </Content></FinalDraft>"#;
+        let res = ws.execute(
+            "document.import",
+            json!({"format":"fdx","title":"FDX import","text":fdx}),
+        );
+        assert!(res.ok, "{}", res.message);
+        let id = res.data["id"].as_str().expect("import id").to_owned();
+        let doc = ws.project.document(&id).expect("imported FDX document exists");
+        assert_eq!(doc.content.paragraphs[0].style_id, "scene-heading");
+        assert_eq!(doc.content.paragraphs[1].plain_text(), "The lamp swings.");
     }
 
     #[test]

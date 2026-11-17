@@ -830,6 +830,51 @@ impl ElementStyles {
         }
     }
 
+    pub fn style_for_kind_mut(&mut self, kind: ElementKind) -> &mut ElementStyle {
+        match kind {
+            ElementKind::SceneHeading => &mut self.scene_heading,
+            ElementKind::Action | ElementKind::Shot => &mut self.action,
+            ElementKind::Character => &mut self.character,
+            ElementKind::Parenthetical => &mut self.parenthetical,
+            ElementKind::Dialogue | ElementKind::Lyric => &mut self.dialogue,
+            ElementKind::Transition => &mut self.transition,
+            ElementKind::Act => &mut self.act,
+            ElementKind::Scene => &mut self.scene,
+            ElementKind::StageDirection => &mut self.stage_direction,
+            ElementKind::General => &mut self.general,
+            ElementKind::Extension => &mut self.extension,
+            ElementKind::Intercut => &mut self.intercut,
+            ElementKind::Subheading => &mut self.subheading,
+        }
+    }
+
+    /// Project/export styles inherit the visible formatting from the active
+    /// writing sheets, so preview and exported pages agree with the editor.
+    pub fn update_from_sheets(&mut self, sheets: &[StyleSheet]) {
+        for sheet in sheets {
+            for style in &sheet.styles {
+                if let Some(kind) = style.semantic_kind {
+                    *self.style_for_kind_mut(kind) = style.format.clone();
+                } else if sheet.id == "prose" {
+                    match style.id.as_str() {
+                        "body" => self.body = style.format.clone(),
+                        "chapter-heading" => self.chapter_heading = style.format.clone(),
+                        _ => {}
+                    }
+                } else if !matches!(style.id.as_str(), "image" | "image-caption") {
+                    if let Some(custom) = self.custom.iter_mut().find(|custom| custom.name == style.name) {
+                        custom.style = style.format.clone();
+                    } else if !self.custom.iter().any(|custom| custom.name == style.name) {
+                        self.custom.push(CustomStyle {
+                            name: style.name.clone(),
+                            style: style.format.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     /// Look up one element by its JSON/model name.
     pub fn element_mut(&mut self, name: &str) -> Option<&mut ElementStyle> {
         Some(match name {
@@ -902,6 +947,39 @@ impl AppSettings {
         } else {
             self.style_sheets.clone()
         }
+    }
+
+    pub fn element_styles_for_new_project(&self) -> ElementStyles {
+        let mut styles = self.styles.clone();
+        styles.update_from_sheets(&self.style_sheets_for_new_project());
+        styles
+    }
+
+    /// Keep legacy export/base-style controls reflected in the built-in
+    /// stylesheet entries while preserving each style's name and next-style
+    /// rule.
+    pub fn sync_sheet_formats_from_element_styles(&mut self) {
+        for sheet in &mut self.style_sheets {
+            for style in &mut sheet.styles {
+                if let Some(kind) = style.semantic_kind {
+                    style.format = self.styles.style_for_kind(kind).clone();
+                } else if sheet.id == "prose" {
+                    match style.id.as_str() {
+                        "body" => style.format = self.styles.body.clone(),
+                        "chapter-heading" => {
+                            style.format = self.styles.chapter_heading.clone()
+                        }
+                        _ => {}
+                    }
+                } else if let Some(custom) = self.styles.custom_named(&style.name) {
+                    style.format = custom.style.clone();
+                }
+            }
+        }
+    }
+
+    pub fn sync_element_styles_from_sheets(&mut self) {
+        self.styles.update_from_sheets(&self.style_sheets);
     }
 }
 
@@ -1157,6 +1235,10 @@ impl Project {
             self.add_document(None, "Front Matter", DocKind::Folder, Medium::Prose);
             self.add_document(None, "Back Matter", DocKind::Folder, Medium::Prose);
         }
+    }
+
+    pub fn sync_element_styles_from_sheets(&mut self) {
+        self.styles.update_from_sheets(&self.style_sheets);
     }
 
     /// Per-output-format settings. A format that has never been configured is
@@ -1586,6 +1668,40 @@ mod tests {
         let mut project_copy = sheets;
         project_copy[0].styles[0].format.size = 17.0;
         assert_eq!(settings.style_sheets[0].styles[0].format.size, 13.0);
+    }
+
+    #[test]
+    fn element_styles_and_stylesheets_stay_in_sync_both_ways() {
+        let mut settings = AppSettings::default();
+        settings.styles.body.size = 15.0;
+        settings.styles.character.indent = 44.0;
+        settings.sync_sheet_formats_from_element_styles();
+        let prose = settings
+            .style_sheets
+            .iter()
+            .find(|sheet| sheet.id == "prose")
+            .and_then(|sheet| sheet.style("body"))
+            .expect("prose body style");
+        assert_eq!(prose.format.size, 15.0);
+        let cue = settings
+            .style_sheets
+            .iter()
+            .find(|sheet| sheet.id == "film-screenplay")
+            .and_then(|sheet| sheet.style("character"))
+            .expect("character style");
+        assert_eq!(cue.format.indent, 44.0);
+        assert_eq!(cue.next_style.as_deref(), Some("dialogue"));
+
+        settings
+            .style_sheets
+            .iter_mut()
+            .find(|sheet| sheet.id == "prose")
+            .unwrap()
+            .styles[0]
+            .format
+            .size = 18.0;
+        settings.sync_element_styles_from_sheets();
+        assert_eq!(settings.styles.body.size, 18.0);
     }
 
     #[test]
