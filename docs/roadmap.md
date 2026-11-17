@@ -61,12 +61,14 @@ strikethrough; images can be inline or standalone with alt text/captions.
 - Added headless probes for cross-style drag selection, paragraph navigation,
   and Enter applying Character Name → Dialogue. Character completion remains
   in the flow and stores the canonical character name.
-- Added `document.import` (API and `import_document` MCP tool) for Fountain and
-  FDX files, plus a File-menu import path. FDX export now preserves inline bold,
-  italic, underline and strikethrough runs and writes image alt-text placeholders.
-  Added Fountain and FDX round-trip tests.
+- Added `document.import` (API and `import_document` MCP tool) for Fountain,
+  FDX, Word (DOCX) and plain-text files, plus a File-menu import path. FDX
+  export now preserves inline bold, italic, underline and strikethrough runs and
+  writes image alt-text placeholders. Added Fountain and FDX round-trip tests.
+- Added a DOCX reader for `word/document.xml` with paragraph styles and inline
+  marks, and a plain-text reader that joins hard-wrapped prose into paragraphs.
 - Added screenshot verification for the unified screenplay flow. The latest
-  workspace run passes 159 tests.
+  workspace run passes 162 tests.
 
 **Still required**
 
@@ -77,8 +79,7 @@ strikethrough; images can be inline or standalone with alt text/captions.
   keep formatting/selection stable as more fields adopt the same editor.
 - Ensure stylesheet appearance edits also drive every export writer, and add
   focused UI tests for stylesheet customization.
-- Add plain-text and DOCX import beside the Fountain/FDX importer. The reusable
-  FDX import style/object mapping dialog remains deferred below.
+- The reusable FDX import style/object mapping dialog remains deferred below.
 
 **Done when** headless UI tests can drag-select and edit across different
 paragraph styles, script Enter follows the stylesheet's next-style rule, prose
@@ -135,21 +136,20 @@ novel in Word. Exporting without importing is a one-way door.
 
 **Start with Fountain, Final Draft and plain text**, then DOCX (confirmed future work):
 
-- `parse_fountain` and `parse_fdx` now exist in the core, and `document.import`
-  is wired through the API, MCP and the File menu. Add a DOCX reader and a
-  plain-text importer beside them.
-- DOCX: read `word/document.xml` out of the zip (the export side already uses
-  `zip`) and map paragraphs to sections. Do not pull in a full document model.
+- `parse_fountain`, `parse_fdx`, `parse_docx` and `parse_plain_text` now exist
+  in the core, and `document.import` is wired through the API, MCP and the File
+  menu. DOCX reads `word/document.xml` out of the zip and maps paragraph styles
+  and inline marks without pulling in a full document model.
 
 **Done when** real `.fountain`, `.fdx`, `.docx` and plain-text files round-trip
 through import and export without losing scene headings, character/dialogue
 pairing or transitions, and a manuscript becomes chapters with readable prose.
 
-**Deferred import workflow.** When FDX import is implemented, include a review
-dialog for mapping unknown paragraph styles/objects to built-in or project
-custom styles. Let writers revise those mappings, create custom styles, and save
-mapping profiles for reuse on future imports. This is recorded for later; do not
-build the dialog as part of the unified-editor work.
+**Deferred import workflow.** FDX import is in place. A later pass should add a
+review dialog for mapping unknown paragraph styles/objects to built-in or
+project custom styles. Let writers revise those mappings, create custom styles,
+and save mapping profiles for reuse on future imports. This is recorded for
+later; do not build the dialog as part of the unified-editor work.
 
 ## 2. Drag-and-drop binder
 

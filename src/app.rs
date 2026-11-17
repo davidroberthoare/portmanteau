@@ -686,7 +686,7 @@ impl PortmanteauApp {
                     .unwrap_or_default();
                 ui.close();
             }
-            if ui.button("Import Fountain or FDX…").clicked() {
+            if ui.button("Import Fountain, FDX, DOCX or Text…").clicked() {
                 self.path_dialog = Some(PathDialog::Import);
                 self.path_draft.clear();
                 ui.close();
@@ -1590,9 +1590,9 @@ impl PortmanteauApp {
                 "Where the project folder should live (or a legacy .json file)",
             ),
             PathDialog::Import => (
-                "Import screenplay",
+                "Import manuscript",
                 "Import",
-                "Path to a .fountain or .fdx screenplay file",
+                "Path to a .fountain, .fdx, .docx or .txt file",
             ),
         };
         egui::Window::new(title)
@@ -1620,7 +1620,7 @@ impl PortmanteauApp {
                         PathDialog::Open => "Unsaved changes in the current project are left untouched.",
                         PathDialog::SaveAs => "A new copy is written; the open project switches to it.",
                         PathDialog::Import => {
-                            "Fountain and Final Draft files become new documents in the Draft folder."
+                            "Fountain and FDX become screenplays; DOCX and text become prose in the Draft folder."
                         }
                     })
                     .font(sans(9.5))
@@ -1699,9 +1699,9 @@ impl PortmanteauApp {
                         self.selected = id;
                         self.view = View::Write;
                         self.path_dialog = None;
-                        self.toast("Screenplay imported", res.message, ToastKind::Ok);
+                        self.toast("Manuscript imported", res.message, ToastKind::Ok);
                     } else {
-                        self.toast("Could not import screenplay", res.message, ToastKind::Error);
+                        self.toast("Could not import manuscript", res.message, ToastKind::Error);
                     }
                 }
             }

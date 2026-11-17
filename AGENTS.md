@@ -445,8 +445,9 @@ These are documented rather than hidden:
   Save/Open commands.
 - The diff is line-level, not word-level, and does not yet offer accept/reject
   hunks or tracked changes.
-- Import is not implemented; the product currently exports. Fountain/FDX/DOCX
-  import is the most useful next addition for professional workflows.
+- Import covers Fountain, Final Draft (FDX), Word (DOCX) and plain text through
+  `document.import`, the `import_document` MCP tool and File → Import. The FDX
+  style-mapping review dialog is still deliberate later work.
 - Collaboration is out of scope for this version: no accounts, network, sync,
   comments or shared review. Keep future designs file-based and versioned so a
   writer owns their data.

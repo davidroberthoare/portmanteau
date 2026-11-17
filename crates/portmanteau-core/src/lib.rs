@@ -14,8 +14,9 @@ pub mod text;
 
 pub use model::*;
 pub use rich_text::{
-    parse_fdx, ImageObject, InlineContent, InlineMark, ParagraphStyle, RichDocument,
-    RichParagraph, StyleSheet, TextPosition, TextRun, TextTransform,
+    parse_docx, parse_fdx, parse_plain_text, ImageObject, InlineContent, InlineMark,
+    ParagraphStyle, RichDocument, RichParagraph, StyleSheet, TextPosition, TextRun,
+    TextTransform,
 };
 pub use script::ElementKind;
 pub use text::{

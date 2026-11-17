@@ -293,6 +293,189 @@ fn parse_fdx_marks(style: Option<&str>) -> Vec<InlineMark> {
     marks
 }
 
+/// Import plain text. Screenplay media go through the loose Fountain
+/// classifier, while prose keeps blank-line-separated blocks as paragraphs and
+/// joins hard-wrapped lines. A file with no blank lines is treated as one
+/// paragraph per line, which matches most plain-text exports.
+pub fn parse_plain_text(text: &str, medium: Medium) -> RichDocument {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    if medium.is_script() {
+        return RichDocument::from_fountain(&normalized, medium);
+    }
+    let mut paragraphs = Vec::new();
+    if normalized.lines().any(|line| line.trim().is_empty()) {
+        let mut block: Vec<&str> = Vec::new();
+        for line in normalized.lines().chain(std::iter::once("")) {
+            if line.trim().is_empty() {
+                if !block.is_empty() {
+                    paragraphs.push(prose_paragraph(&block.join(" ")));
+                    block.clear();
+                }
+            } else {
+                block.push(line.trim());
+            }
+        }
+    } else {
+        for line in normalized.lines() {
+            let line = line.trim();
+            if !line.is_empty() {
+                paragraphs.push(prose_paragraph(line));
+            }
+        }
+    }
+    if paragraphs.is_empty() {
+        paragraphs.push(RichParagraph::empty("body"));
+    }
+    RichDocument { paragraphs }
+}
+
+fn prose_paragraph(text: &str) -> RichParagraph {
+    RichParagraph {
+        style_id: "body".into(),
+        content: vec![InlineContent::Text(TextRun::plain(text))],
+    }
+}
+
+/// Import the main body of a Word document. This reads `word/document.xml`
+/// straight out of the `.docx` zip and keeps paragraph text plus bold, italic,
+/// underline, strikethrough and hard breaks. Images, footnotes, tables and
+/// comments are outside this first reader; an empty body is an error rather
+/// than a silently blank import.
+pub fn parse_docx(bytes: &[u8], medium: Medium) -> Result<RichDocument, String> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
+        .map_err(|error| format!("Could not open DOCX: {error}"))?;
+    let mut xml = String::new();
+    {
+        use std::io::Read;
+        let mut file = archive
+            .by_name("word/document.xml")
+            .map_err(|_| "DOCX has no word/document.xml".to_string())?;
+        file.read_to_string(&mut xml)
+            .map_err(|error| format!("Could not read DOCX body: {error}"))?;
+    }
+    let document = roxmltree::Document::parse(&xml)
+        .map_err(|error| format!("Could not parse DOCX XML: {error}"))?;
+    let mut paragraphs = Vec::new();
+    for node in document
+        .descendants()
+        .filter(|node| node.has_tag_name("p"))
+    {
+        let style_name = node
+            .children()
+            .find(|child| child.has_tag_name("pPr"))
+            .and_then(|properties| {
+                properties
+                    .children()
+                    .find(|child| child.has_tag_name("pStyle"))
+            })
+            .and_then(|style| style.attribute("val"))
+            .unwrap_or_default();
+        let mut content = Vec::new();
+        for run in node.descendants().filter(|child| child.has_tag_name("r")) {
+            let marks = run
+                .children()
+                .find(|child| child.has_tag_name("rPr"))
+                .map(|properties| docx_marks(&properties))
+                .unwrap_or_default();
+            for child in run.children() {
+                if child.has_tag_name("t") {
+                    let text = child.text().unwrap_or_default();
+                    if !text.is_empty() {
+                        content.push(InlineContent::Text(TextRun::with_marks(
+                            text,
+                            marks.clone(),
+                        )));
+                    }
+                } else if child.has_tag_name("br") {
+                    content.push(InlineContent::HardBreak);
+                } else if child.has_tag_name("tab") {
+                    content.push(InlineContent::Text(TextRun::with_marks(
+                        "\t",
+                        marks.clone(),
+                    )));
+                }
+            }
+        }
+        let has_text = content.iter().any(|item| match item {
+            InlineContent::Text(run) => !run.text.trim().is_empty(),
+            _ => false,
+        });
+        if !has_text {
+            continue;
+        }
+        let style_id = if medium.is_script() {
+            docx_screenplay_style(style_name).unwrap_or_else(|| {
+                let text: String = content
+                    .iter()
+                    .filter_map(|item| match item {
+                        InlineContent::Text(run) => Some(run.text.as_str()),
+                        InlineContent::HardBreak => Some(" "),
+                        InlineContent::Image(_) => None,
+                    })
+                    .collect();
+                script_style_id(crate::script::classify(&text))
+            })
+        } else if docx_heading(style_name) {
+            "chapter-heading"
+        } else {
+            "body"
+        };
+        paragraphs.push(RichParagraph {
+            style_id: style_id.into(),
+            content,
+        });
+    }
+    if paragraphs.is_empty() {
+        return Err("DOCX file contains no body text".into());
+    }
+    Ok(RichDocument { paragraphs })
+}
+
+fn docx_marks(properties: &roxmltree::Node) -> Vec<InlineMark> {
+    let mut marks = Vec::new();
+    for child in properties.children() {
+        let enabled = child
+            .attribute("val")
+            .map(|value| {
+                !value.eq_ignore_ascii_case("false")
+                    && !value.eq_ignore_ascii_case("off")
+                    && !value.eq_ignore_ascii_case("none")
+                    && value != "0"
+            })
+            .unwrap_or(true);
+        if !enabled {
+            continue;
+        }
+        let mark = if child.has_tag_name("b") {
+            Some(InlineMark::Bold)
+        } else if child.has_tag_name("i") {
+            Some(InlineMark::Italic)
+        } else if child.has_tag_name("u") {
+            Some(InlineMark::Underline)
+        } else if child.has_tag_name("strike") || child.has_tag_name("dstrike") {
+            Some(InlineMark::Strikethrough)
+        } else {
+            None
+        };
+        if let Some(mark) = mark {
+            if !marks.contains(&mark) {
+                marks.push(mark);
+            }
+        }
+    }
+    marks
+}
+
+fn docx_heading(style_name: &str) -> bool {
+    let lower = style_name.to_ascii_lowercase();
+    lower.contains("heading") || lower == "title" || lower == "subtitle"
+}
+
+fn docx_screenplay_style(style_name: &str) -> Option<&'static str> {
+    parse_fdx_element_kind(style_name).map(script_style_id)
+}
+
+
 fn default_next_style(kind: ElementKind) -> Option<&'static str> {
     match kind {
         ElementKind::SceneHeading => Some("action"),
@@ -979,6 +1162,69 @@ fn toggle_content_mark(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_text_import_joins_wrapped_lines_in_prose_blocks() {
+        let document = parse_plain_text(
+            "The first paragraph is\nhard wrapped.\n\nA second paragraph.\n",
+            Medium::Prose,
+        );
+        assert_eq!(document.paragraphs.len(), 2);
+        assert_eq!(
+            document.paragraphs[0].plain_text(),
+            "The first paragraph is hard wrapped."
+        );
+        assert_eq!(document.paragraphs[1].plain_text(), "A second paragraph.");
+        assert_eq!(document.paragraphs[0].style_id, "body");
+
+        let line_per_paragraph = parse_plain_text("One\nTwo\nThree", Medium::Prose);
+        assert_eq!(line_per_paragraph.paragraphs.len(), 3);
+    }
+
+    #[test]
+    fn docx_import_reads_paragraph_styles_and_inline_marks() {
+        use std::io::Write;
+        let xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Chapter One</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:rPr><w:b/></w:rPr><w:t>Bold start</w:t></w:r>
+      <w:r><w:t xml:space="preserve"> and </w:t></w:r>
+      <w:r><w:rPr><w:i/></w:rPr><w:t>italic end.</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>First line</w:t><w:br/><w:t>second line</w:t></w:r></w:p>
+    <w:p/>
+  </w:body>
+</w:document>"#;
+        let mut buffer = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buffer));
+            zip.start_file("word/document.xml", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(xml.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        let document = parse_docx(&buffer, Medium::Prose).expect("DOCX parses");
+        assert_eq!(document.paragraphs.len(), 3);
+        assert_eq!(document.paragraphs[0].style_id, "chapter-heading");
+        assert_eq!(document.paragraphs[0].plain_text(), "Chapter One");
+        assert_eq!(document.paragraphs[1].style_id, "body");
+        let runs: Vec<&TextRun> = document.paragraphs[1]
+            .content
+            .iter()
+            .filter_map(|item| match item {
+                InlineContent::Text(run) => Some(run),
+                _ => None,
+            })
+            .collect();
+        assert!(runs[0].marks.contains(&InlineMark::Bold));
+        assert!(runs[2].marks.contains(&InlineMark::Italic));
+        assert!(document.paragraphs[2]
+            .content
+            .iter()
+            .any(|item| matches!(item, InlineContent::HardBreak)));
+    }
 
     #[test]
     fn plain_text_creates_styled_paragraphs_and_preserves_empty_lines() {

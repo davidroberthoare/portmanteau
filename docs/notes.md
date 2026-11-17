@@ -181,7 +181,8 @@ thing a visual check catches.
   command bus and in the binder menus; the drag gesture is still to come.
 - Word-level changes, tracked changes and accept/reject hunks. A line-level
   comparison and restore exist; revisions are the next versioning step.
-- Import of manuscripts (Fountain, FDX, DOCX). The product currently exports.
+- Import of manuscripts: Fountain, Final Draft (FDX), Word (DOCX) and plain
+  text are supported; the FDX style-mapping review dialog is still to come.
 - Native file pickers. Paths are typed, and the default export folder works
   without one.
 - Packaging installers for Windows/macOS. The code is cross-platform; the
