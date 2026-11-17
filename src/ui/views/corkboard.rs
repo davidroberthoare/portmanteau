@@ -135,6 +135,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     });
 
     // Apply edits only after every card has finished drawing.
+    let synopsis_sheet =
+        portmanteau_core::StyleSheet::novel_prose(&app.ws.project.styles);
     for edit in edits {
         let mut changed = false;
         {
@@ -146,8 +148,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     }
                 }
                 if let Some(synopsis) = edit.synopsis {
-                    if doc.synopsis != synopsis {
-                        doc.synopsis = synopsis;
+                    if doc.synopsis.plain_text() != synopsis {
+                        doc.synopsis.sync_editor_text(&synopsis, &synopsis_sheet);
                         changed = true;
                     }
                 }
@@ -257,7 +259,7 @@ fn collect(app: &PortmanteauApp) -> Vec<Card> {
             Card {
                 id: d.id.clone(),
                 title: d.title.clone(),
-                synopsis: d.synopsis.clone(),
+                synopsis: d.synopsis.plain_text(),
                 words: d.words(),
                 status: d.status.clone(),
                 label: d.label.clone(),

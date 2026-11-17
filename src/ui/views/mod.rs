@@ -15,7 +15,8 @@ use eframe::egui::{
     Stroke, TextEdit, Vec2,
 };
 use portmanteau_core::{
-    Alignment, CustomStyle, ElementStyle, ElementStyles, ExportSettings, Project,
+    Alignment, CustomStyle, ElementStyle, ElementStyles, ExportSettings, ParagraphStyle, Project,
+    StyleSheet, TextTransform,
 };
 
 use crate::app::{PortmanteauApp, View};
@@ -132,7 +133,7 @@ const PROSE_ELEMENTS: [(&str, &str); 3] = [
     ("General", "general"),
 ];
 
-const SCRIPT_ELEMENTS: [(&str, &str); 9] = [
+const SCRIPT_ELEMENTS: [(&str, &str); 13] = [
     ("Scene heading", "scene_heading"),
     ("Action", "action"),
     ("Character", "character"),
@@ -142,11 +143,15 @@ const SCRIPT_ELEMENTS: [(&str, &str); 9] = [
     ("Act", "act"),
     ("Scene", "scene"),
     ("Stage direction", "stage_direction"),
+    ("Shot", "action"),
+    ("Extension", "extension"),
+    ("Intercut", "intercut"),
+    ("Subheading", "subheading"),
 ];
 
 /// Every built-in element in editor order, paired with its display label.
 /// The Display preview picker and the count in its header read this list.
-pub const BUILTIN_ELEMENTS: [(&str, &str); 15] = [
+pub const BUILTIN_ELEMENTS: [(&str, &str); 18] = [
     ("title_page_title", "Title page title"),
     ("title_page_subtitle", "Title page subtitle"),
     ("title_page_author", "Title page author"),
@@ -162,6 +167,9 @@ pub const BUILTIN_ELEMENTS: [(&str, &str); 15] = [
     ("scene", "Scene"),
     ("stage_direction", "Stage direction"),
     ("general", "General"),
+    ("extension", "Extension"),
+    ("intercut", "Intercut"),
+    ("subheading", "Subheading"),
 ];
 
 /// Families offered by the style editor. A project may still hold a custom
@@ -510,6 +518,152 @@ pub fn custom_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) -> bo
     changed
 }
 
+/// Edit stylesheet names, display transforms and next-style rules. Formatting
+/// fields stay in `ElementStyle` and are edited by the shared element-style
+/// editor; this panel controls the paragraph semantics used while writing.
+pub fn style_sheets_editor(ui: &mut egui::Ui, sheets: &mut Vec<StyleSheet>) -> bool {
+    let mut changed = false;
+    for sheet in sheets.iter_mut() {
+        let options: Vec<(String, String)> = sheet
+            .styles
+            .iter()
+            .map(|style| (style.id.clone(), style.name.clone()))
+            .collect();
+        egui::CollapsingHeader::new(
+            RichText::new(format!("{} stylesheet", sheet.name))
+                .font(sans(10.5))
+                .color(TEXT),
+        )
+        .id_salt(("style_sheet", sheet.id.as_str()))
+        .default_open(false)
+        .show(ui, |ui| {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Default paragraph").font(sans(9.0)).color(FAINT));
+                egui::ComboBox::from_id_salt(("default_style", sheet.id.as_str()))
+                    .selected_text(
+                        sheet
+                            .style(&sheet.default_style)
+                            .map(|style| style.name.as_str())
+                            .unwrap_or("Choose style"),
+                    )
+                    .show_ui(ui, |ui| {
+                        for (id, name) in &options {
+                            changed |= ui
+                                .selectable_value(&mut sheet.default_style, id.clone(), name)
+                                .changed();
+                        }
+                    });
+            });
+
+            let mut additions = Vec::new();
+            for index in 0..sheet.styles.len() {
+                let mut draft = sheet.styles[index].clone();
+                ui.add_space(4.0);
+                Frame::new()
+                    .fill(PANEL_2)
+                    .stroke(Stroke::new(1.0, BORDER_SOFT))
+                    .corner_radius(CornerRadius::same(5))
+                    .inner_margin(Margin::symmetric(9, 6))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Style").font(sans(8.5)).color(FAINT));
+                            changed |= ui
+                                .add(
+                                    TextEdit::singleline(&mut draft.name)
+                                        .font(sans(9.5))
+                                        .desired_width(110.0),
+                                )
+                                .changed();
+                            ui.label(RichText::new("Enter →").font(sans(8.5)).color(FAINT));
+                            egui::ComboBox::from_id_salt((
+                                "next_style",
+                                sheet.id.as_str(),
+                                draft.id.as_str(),
+                            ))
+                            .selected_text(
+                                draft
+                                    .next_style
+                                    .as_deref()
+                                    .and_then(|id| options.iter().find(|(key, _)| key == id))
+                                    .map(|(_, name)| name.as_str())
+                                    .unwrap_or("Repeat current"),
+                            )
+                            .show_ui(ui, |ui| {
+                                changed |= ui
+                                    .selectable_value(
+                                        &mut draft.next_style,
+                                        None,
+                                        "Repeat current",
+                                    )
+                                    .changed();
+                                for (id, name) in &options {
+                                    changed |= ui
+                                        .selectable_value(
+                                            &mut draft.next_style,
+                                            Some(id.clone()),
+                                            name,
+                                        )
+                                        .changed();
+                                }
+                            });
+                        });
+                        let mut uppercase = draft.text_transform == TextTransform::Uppercase;
+                        if ui.checkbox(&mut uppercase, "Display uppercase").changed() {
+                            draft.text_transform = if uppercase {
+                                TextTransform::Uppercase
+                            } else {
+                                TextTransform::None
+                            };
+                            changed = true;
+                        }
+                        egui::CollapsingHeader::new(
+                            RichText::new("Appearance")
+                                .font(sans(8.5))
+                                .color(MUTED),
+                        )
+                        .id_salt(("style_appearance", sheet.id.as_str(), draft.id.as_str()))
+                        .show(ui, |ui| {
+                            changed |= element_row(
+                                ui,
+                                &format!("sheet_{}_{}", sheet.id, draft.id),
+                                "Paragraph",
+                                &mut draft.format,
+                            );
+                        });
+                    });
+                if draft != sheet.styles[index] {
+                    sheet.styles[index] = draft;
+                    changed = true;
+                }
+            }
+
+            if quiet_button(ui, "Add custom paragraph style").clicked() {
+                let mut suffix = sheet.styles.len() + 1;
+                let mut id = format!("custom-{suffix}");
+                while sheet.styles.iter().any(|style| style.id == id) {
+                    suffix += 1;
+                    id = format!("custom-{suffix}");
+                }
+                additions.push(ParagraphStyle {
+                    id,
+                    name: "Custom style".into(),
+                    format: ElementStyle::default(),
+                    semantic_kind: None,
+                    next_style: Some(sheet.default_style.clone()),
+                    text_transform: TextTransform::None,
+                });
+            }
+            if !additions.is_empty() {
+                sheet.styles.extend(additions);
+                changed = true;
+            }
+        });
+    }
+    changed
+}
+
 /// A live single-page "print preview" of the compiled manuscript, with
 /// `‹ Prev` / page count / `Next ›` and a section picker. Shared by the Compile
 /// screen and Settings → Display so both read the same paging estimate.
@@ -652,5 +806,3 @@ fn section_for_page(starts: &[usize], page: usize) -> usize {
         .map(|(index, _)| index)
         .unwrap_or(0)
 }
-
-

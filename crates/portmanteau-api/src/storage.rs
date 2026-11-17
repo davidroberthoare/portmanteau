@@ -10,6 +10,13 @@ use std::path::Path;
 
 use portmanteau_core::*;
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DocumentBodies {
+    content: RichDocument,
+    synopsis: RichDocument,
+    notes: RichDocument,
+}
+
 /// A readable filename fragment: lowercase ASCII alphanumerics, with runs of
 /// other characters collapsed to a single dash.
 pub fn slugify(text: &str) -> String {
@@ -64,7 +71,16 @@ fn document_name(doc: &Document) -> String {
 
 fn research_name(index: usize, item: &ResearchItem) -> String {
     format!(
-        "{:02}-{}-{}.md",
+        "{:02}-{}-{}.rich.json",
+        index,
+        slugify(&item.title),
+        id8(&item.id)
+    )
+}
+
+fn item_name(index: usize, item: &DatabaseItem) -> String {
+    format!(
+        "{:02}-{}-{}.rich.json",
         index,
         slugify(&item.title),
         id8(&item.id)
@@ -123,11 +139,13 @@ fn write_package(project: &Project, dir: &Path) -> Result<(), String> {
 
     let documents = dir.join("documents");
     let research = dir.join("research");
+    let items = dir.join("items");
     let snapshots = dir.join("snapshots");
     let checkpoints = dir.join("checkpoints");
     let assets = dir.join("assets");
     reset_dir(&documents)?;
     reset_dir(&research)?;
+    reset_dir(&items)?;
     reset_dir(&snapshots)?;
     reset_dir(&checkpoints)?;
     std::fs::create_dir_all(&assets).map_err(|e| format!("Could not create assets: {e}"))?;
@@ -135,12 +153,17 @@ fn write_package(project: &Project, dir: &Path) -> Result<(), String> {
     let mut manifest = project.clone();
     for doc in &mut manifest.documents {
         doc.content = RichDocument::default();
+        doc.synopsis = RichDocument::default();
+        doc.notes = RichDocument::default();
         for snap in &mut doc.snapshots {
             snap.content = RichDocument::default();
         }
     }
     for item in &mut manifest.research {
-        item.body.clear();
+        item.body = RichDocument::default();
+    }
+    for item in &mut manifest.items {
+        item.notes = RichDocument::default();
     }
     for cp in &mut manifest.checkpoints {
         cp.payload.clear();
@@ -150,13 +173,25 @@ fn write_package(project: &Project, dir: &Path) -> Result<(), String> {
     write_file(&dir.join("project.json"), manifest_text)?;
 
     for doc in &project.documents {
-        let body = serde_json::to_string_pretty(&doc.content)
+        let body = serde_json::to_string_pretty(&DocumentBodies {
+            content: doc.content.clone(),
+            synopsis: doc.synopsis.clone(),
+            notes: doc.notes.clone(),
+        })
             .map_err(|e| format!("Could not serialise {}: {e}", doc.title))?;
         write_file(&documents.join(document_name(doc)), body)?;
     }
 
     for (index, item) in project.research.iter().enumerate() {
-        write_file(&research.join(research_name(index, item)), &item.body)?;
+        let body = serde_json::to_string_pretty(&item.body)
+            .map_err(|e| format!("Could not serialise research {}: {e}", item.title))?;
+        write_file(&research.join(research_name(index, item)), body)?;
+    }
+
+    for (index, item) in project.items.iter().enumerate() {
+        let body = serde_json::to_string_pretty(&item.notes)
+            .map_err(|e| format!("Could not serialise item {}: {e}", item.title))?;
+        write_file(&items.join(item_name(index, item)), body)?;
     }
 
     for doc in &project.documents {
@@ -280,8 +315,11 @@ pub fn load_folder(dir: &Path) -> Result<Project, String> {
     for doc in &mut project.documents {
         let path = documents.join(document_name(doc));
         if let Ok(body) = std::fs::read_to_string(&path) {
-            doc.content = serde_json::from_str(&body)
+            let bodies: DocumentBodies = serde_json::from_str(&body)
                 .map_err(|e| format!("Could not read rich text for {}: {e}", doc.title))?;
+            doc.content = bodies.content;
+            doc.synopsis = bodies.synopsis;
+            doc.notes = bodies.notes;
         }
     }
 
@@ -289,7 +327,17 @@ pub fn load_folder(dir: &Path) -> Result<Project, String> {
     for (index, item) in project.research.iter_mut().enumerate() {
         let path = research.join(research_name(index, item));
         if let Ok(body) = std::fs::read_to_string(&path) {
-            item.body = body;
+            item.body = serde_json::from_str(&body)
+                .map_err(|e| format!("Could not read rich text for research {}: {e}", item.title))?;
+        }
+    }
+
+    let items = dir.join("items");
+    for (index, item) in project.items.iter_mut().enumerate() {
+        let path = items.join(item_name(index, item));
+        if let Ok(body) = std::fs::read_to_string(&path) {
+            item.notes = serde_json::from_str(&body)
+                .map_err(|e| format!("Could not read rich text for item {}: {e}", item.title))?;
         }
     }
 

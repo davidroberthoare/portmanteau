@@ -269,10 +269,10 @@ impl Workspace {
                     doc.title = v.into();
                 }
                 if let Some(v) = payload.get("synopsis").and_then(|v| v.as_str()) {
-                    doc.synopsis = v.into();
+                    doc.set_synopsis_text(v);
                 }
                 if let Some(v) = payload.get("notes").and_then(|v| v.as_str()) {
-                    doc.notes = v.into();
+                    doc.set_notes_text(v);
                 }
                 if let Some(v) = payload.get("text").and_then(|v| v.as_str()) {
                     if doc.medium.is_script() {
@@ -423,7 +423,7 @@ impl Workspace {
                 let title = str_arg(&payload, "title").unwrap_or_else(|| "New item".into());
                 let mut item = DatabaseItem::new(kind, title);
                 if let Some(v) = payload.get("notes").and_then(|v| v.as_str()) {
-                    item.notes = v.into();
+                    item.notes.set_plain_text(v, "body");
                 }
                 if let Some(Value::Array(tags)) = payload.get("tags") {
                     item.tags = string_list(tags);
@@ -447,13 +447,11 @@ impl Workspace {
                 {
                     item.kind = kind;
                 }
-                for (key, field) in [
-                    ("title", &mut item.title),
-                    ("notes", &mut item.notes),
-                ] {
-                    if let Some(v) = payload.get(key).and_then(|v| v.as_str()) {
-                        *field = v.into();
-                    }
+                if let Some(v) = payload.get("title").and_then(|v| v.as_str()) {
+                    item.title = v.into();
+                }
+                if let Some(v) = payload.get("notes").and_then(|v| v.as_str()) {
+                    item.notes.set_plain_text(v, "body");
                 }
                 if let Some(Value::Array(tags)) = payload.get("tags") {
                     item.tags = string_list(tags);
@@ -475,7 +473,7 @@ impl Workspace {
                 let item = ResearchItem {
                     id: new_id("res"),
                     title: title.clone(),
-                    body: body.clone(),
+                    body: RichDocument::from_plain_text(&body, "body"),
                     kind,
                     source,
                     created: now_stamp(),

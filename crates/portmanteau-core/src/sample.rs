@@ -18,9 +18,9 @@ pub fn demo() -> Project {
         DocKind::Folder,
         Medium::Prose,
     );
-    p.document_mut(&part_one).unwrap().synopsis =
-        "Mara returns to finish the survey and learns the town has been quietly erased from the charts."
-            .into();
+    p.document_mut(&part_one)
+        .unwrap()
+        .set_synopsis_text("Mara returns to finish the survey and learns the town has been quietly erased from the charts.");
 
     let chapter_one_text = "The tide went out that morning and did not come back.\n\nMara Venn stood at the end of the harbour wall with her father's brass compass in her fist and watched the sea withdraw past the last black rock. It moved like something embarrassed, sliding away from a mess it had made. Where there had been water at dawn there was now a wide, shining plain of mud, and in it the ribs of boats she had only ever seen as shapes under the surface.\n\nShe had come home to finish his survey. That was the story she told the woman at the ferry office, and the woman had looked at her licence photograph for a long time, as if comparing it with a face she remembered.\n\nThe town had not changed. That was the first lie. The houses still leaned into the wind, the church still kept its one bell, and the Salt Road still ran from the square to the water in a straight line that no one could explain. But the doors had new locks, and the noticeboard carried a planning application in a font that did not belong here.\n\nAt the end of the wall, the compass needle swung once and settled on the east. Mara turned it over. Her father had scratched a date inside the lid: 14 August 1987. The day the harbour drowned, people said, though the water had been leaving for years by then.\n\nA boy was standing on the mud below her, barefoot, holding a red bucket.\n\n“You're the map girl,” he said.\n\n“I'm a surveyor.”\n\n“That's what I said.”\n\nHe pointed at a dark line in the mud, a hundred yards out. It ran straight toward the open sea, and then turned, very slightly, north.\n\n“That's the old road,” he said. “It goes to the other harbour.”\n\nMara looked at her father's chart, still furled under her arm. The other harbour was not on it.\n\nShe climbed down.";
 
@@ -33,8 +33,8 @@ pub fn demo() -> Project {
     {
         let doc = p.document_mut(&chapter_one).unwrap();
         doc.set_plain_text(chapter_one_text);
-        doc.synopsis = "Mara arrives at low tide, meets a boy who knows a road that is not on her father's chart, and begins to suspect the survey is a confession.".into();
-        doc.notes = "Opening should feel like a survey report that keeps losing its nerve. Keep the compass and the red bucket. The boy is not named until chapter four.".into();
+        doc.set_synopsis_text("Mara arrives at low tide, meets a boy who knows a road that is not on her father's chart, and begins to suspect the survey is a confession.");
+        doc.set_notes_text("Opening should feel like a survey report that keeps losing its nerve. Keep the compass and the red bucket. The boy is not named until chapter four.");
         doc.label = "Opening".into();
         doc.status = "Revised".into();
         doc.word_target = 2500;
@@ -57,8 +57,8 @@ pub fn demo() -> Project {
     {
         let doc = p.document_mut(&chapter_two).unwrap();
         doc.set_plain_text("By noon the mud had begun to steam.\n\nMara walked the old road with the boy behind her, keeping a distance that was not quite respect and not quite fear. He carried the red bucket. It held a knife, a length of string, and a brass key the size of her thumb.\n\nThe road was made of ballast and crushed shell. It held her weight. Out here, where the chart showed twelve fathoms of water, she could see the walls of gardens, a doorstep, a boot.\n\n“What happened here?” she asked.\n\n“It went out,” the boy said.\n\n“The sea doesn't just go out.”\n\nHe considered this with the patience of someone who had been told otherwise all his life.\n\n“This one did.”\n\nAt the turn, where the road bent north, Mara stopped. A line of iron posts marked the edge of something. She knelt and brushed the mud away with her thumb. Underneath was a plate, riveted to the post, and on the plate was a number: 14.\n\nHer father's chart had a plate 14. It was three miles away, on the other side of the headland.\n\nShe took out her phone. No signal, of course. She took out the compass instead. The needle found east and stayed there, steady as an accusation.");
-        doc.synopsis = "The old road leads somewhere the chart insists cannot exist; a numbered plate puts the whole survey in question.".into();
-        doc.notes = "The key should not be explained until Part Two. Every object the boy carries must return.".into();
+        doc.set_synopsis_text("The old road leads somewhere the chart insists cannot exist; a numbered plate puts the whole survey in question.");
+        doc.set_notes_text("The key should not be explained until Part Two. Every object the boy carries must return.");
         doc.label = "Development".into();
         doc.status = "Draft".into();
         doc.word_target = 2200;
@@ -71,8 +71,9 @@ pub fn demo() -> Project {
         Medium::Prose,
     );
     p.document_mut(&part_two).unwrap().order = 20;
-    p.document_mut(&part_two).unwrap().synopsis =
-        "Mara follows the old road north and finds the harbour that was taken off the map.".into();
+    p.document_mut(&part_two)
+        .unwrap()
+        .set_synopsis_text("Mara follows the old road north and finds the harbour that was taken off the map.");
 
     let chapter_three = p.add_document(
         Some(part_two.clone()),
@@ -83,7 +84,7 @@ pub fn demo() -> Project {
     {
         let doc = p.document_mut(&chapter_three).unwrap();
         doc.set_plain_text("The other harbour had no name on any chart she owned.\n\nIt had a name on the sign above the customs house, but the sign had been painted over twice, and the last coat was the colour of wet slate. Mara could read the older letters only by the shadows they cast in the paint.\n\nShe read: VENN.\n\nHer father had signed every chart in the survey office with his full name, in ink that faded to brown. Here the name was a place.\n\nAn old woman was sitting on the customs steps, shelling peas into a bowl.\n\n“You'll want the key,” the woman said, without looking up.\n\n“I don't have a key.”\n\n“Then you'll want the one the boy has.”\n\nThe woman held out a pea pod, split it with her thumbnail, and let the peas fall.\n\n“Tell him the tide is coming back,” she said. “It always comes back when the map is finished.”");
-        doc.synopsis = "The town on the other side of the headland carries Mara's family name, and an old woman knows about the boy's key.".into();
+        doc.set_synopsis_text("The town on the other side of the headland carries Mara's family name, and an old woman knows about the boy's key.");
         doc.label = "Reveal".into();
         doc.status = "Draft".into();
         doc.word_target = 2000;
@@ -98,8 +99,8 @@ pub fn demo() -> Project {
     );
     {
         let doc = p.document_mut(&cold_harbor).unwrap();
-        doc.synopsis = "A television pilot: a surveyor comes home to a harbour that has been erased from every official chart.".into();
-        doc.notes = "60-minute drama. Teaser plus four acts. Cold open on the mud, no music until the title card.".into();
+        doc.set_synopsis_text("A television pilot: a surveyor comes home to a harbour that has been erased from every official chart.");
+        doc.set_notes_text("60-minute drama. Teaser plus four acts. Cold open on the mud, no music until the title card.");
         doc.label = "Script".into();
         doc.status = "Revised".into();
         doc.word_target = 8000;
@@ -149,8 +150,8 @@ pub fn demo() -> Project {
     );
     {
         let doc = p.document_mut(&lamp_room).unwrap();
-        doc.synopsis = "A short stage play: two sisters keep a lighthouse lamp burning for a ship that has already sunk.".into();
-        doc.notes = "One set: the lamp room. Two chairs, a table, the lamp. No interval.".into();
+        doc.set_synopsis_text("A short stage play: two sisters keep a lighthouse lamp burning for a ship that has already sunk.");
+        doc.set_notes_text("One set: the lamp room. Two chairs, a table, the lamp. No interval.");
         doc.label = "Stage".into();
         doc.status = "Draft".into();
         doc.set_script_blocks(vec![
@@ -190,12 +191,12 @@ pub fn demo() -> Project {
         );
         let doc = p.document_mut(&id).unwrap();
         doc.set_plain_text(body);
-        doc.synopsis = body.chars().take(120).collect();
+        doc.set_synopsis_text(body.chars().take(120).collect::<String>());
         doc.include_in_export = false;
         p.research.push(ResearchItem {
             id: new_id("res"),
             title: title.into(),
-            body: body.into(),
+            body: RichDocument::from_plain_text(body, "body"),
             kind: kind.into(),
             source: source.into(),
             created: now_stamp(),
@@ -235,9 +236,9 @@ pub fn demo() -> Project {
     // ---- Story database ---------------------------------------------------
     let mut add_item = |title: &str, role: &str, description: &str, want: &str, need: &str, flaw: &str, arc: &str, color: u8| {
         let mut item = DatabaseItem::new(ItemKind::Character, title);
-        item.notes = format!(
+        item.notes.set_plain_text(format!(
             "Role: {role}\n\nDescription: {description}\n\nWant: {want}\n\nNeed: {need}\n\nFlaw: {flaw}\n\nArc: {arc}"
-        );
+        ), "body");
         item.color = color;
         p.items.push(item);
     };

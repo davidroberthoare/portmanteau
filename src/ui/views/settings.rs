@@ -5,13 +5,14 @@
 use eframe::egui::{
     self, Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Stroke, Vec2,
 };
-use portmanteau_core::{ElementStyles, ExportKind};
+use portmanteau_core::{ElementStyles, ExportKind, StyleSheet};
 
 use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::*;
 use crate::ui::views::{
     content_frame, custom_styles_editor, element_styles_editor, manuscript_preview_navigator,
-    meta_line, page_head, primary_button, quiet_button, section_label, BUILTIN_ELEMENTS,
+    meta_line, page_head, primary_button, quiet_button, section_label, style_sheets_editor,
+    BUILTIN_ELEMENTS,
 };
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
@@ -249,6 +250,9 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 );
                                 ui.add_space(2.0);
                                 custom_styles_editor(ui, &mut app.settings.styles);
+                                ui.add_space(8.0);
+                                section_label(ui, "Writing behavior");
+                                style_sheets_editor(ui, &mut app.settings.style_sheets);
                             });
                     });
             },
@@ -282,7 +286,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
     if reset {
         app.settings.styles = ElementStyles::default();
-        app.settings.style_sheets = app.settings.style_sheets_for_new_project();
+        app.settings.style_sheets = StyleSheet::industry_defaults(&app.settings.styles);
         app.toast(
             "Defaults reset",
             "Built-in element styles restored — save to keep them",

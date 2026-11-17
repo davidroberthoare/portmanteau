@@ -16,7 +16,7 @@ use crate::app::{CompileTab, PortmanteauApp, ToastKind};
 use crate::theme::*;
 use crate::ui::views::{
     content_frame, custom_styles_editor, element_styles_editor, manuscript_preview_navigator,
-    meta_line, page_head, quiet_button, FONT_FAMILIES,
+    meta_line, page_head, quiet_button, style_sheets_editor, FONT_FAMILIES,
 };
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
@@ -60,6 +60,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .map(|d| (d.id.clone(), d.title.clone(), d.include_in_export))
         .collect();
     let mut matter_toggles: Vec<(String, bool)> = Vec::new();
+    let mut style_sheets_changed = false;
 
     content_frame().show(ui, |ui| {
         let height = (ui.available_height() - 4.0).max(420.0);
@@ -111,6 +112,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 &back_docs,
                                 &mut matter_toggles,
                                 &mut compile,
+                                &mut style_sheets_changed,
                             );
                         });
                 },
@@ -145,6 +147,10 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     app.ws.project.set_settings(settings.clone());
     app.ws.project.export = settings.clone();
     if before != settings {
+        app.ws.dirty = true;
+    }
+    if style_sheets_changed {
+        app.ws.project.touch();
         app.ws.dirty = true;
     }
     let mut matter_changed = false;
@@ -263,6 +269,7 @@ fn output_tab(
     back_docs: &[(String, String, bool)],
     toggles: &mut Vec<(String, bool)>,
     compile: &mut bool,
+    style_sheets_changed: &mut bool,
 ) {
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
@@ -292,6 +299,8 @@ fn output_tab(
 
     style_panel(ui, &mut settings.styles, app.ws.project.kind);
     ui.add_space(12.0);
+    *style_sheets_changed |= style_sheets_editor(ui, &mut app.ws.project.style_sheets);
+    ui.add_space(8.0);
 
     type_panel(ui, kind, settings);
     ui.add_space(8.0);
@@ -931,4 +940,3 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
         app.toast("Compile failed", res.message, ToastKind::Error);
     }
 }
-

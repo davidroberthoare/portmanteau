@@ -73,6 +73,11 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
     let wide = if app.focus_mode { 860.0 } else { 780.0 };
     let page_w = (ui.available_width() - 72.0).clamp(420.0, wide);
+    let is_script = app
+        .ws
+        .project
+        .document(&doc_id)
+        .is_some_and(|document| document.medium.is_script());
     let mut take_snapshot = false;
     ScrollArea::vertical()
         .id_salt("editor_scroll")
@@ -92,19 +97,25 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         color: Color32::from_black_alpha(90),
                     })
                     .inner_margin(Margin {
-                        left: if app.focus_mode { 64 } else { 54 },
-                        right: if app.focus_mode { 64 } else { 54 },
-                        top: 44,
-                        bottom: 34,
+                        left: if is_script {
+                            108
+                        } else if app.focus_mode {
+                            64
+                        } else {
+                            54
+                        },
+                        right: if is_script {
+                            72
+                        } else if app.focus_mode {
+                            64
+                        } else {
+                            54
+                        },
+                        top: if is_script { 72 } else { 44 },
+                        bottom: if is_script { 72 } else { 34 },
                     })
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        let is_script = app
-                            .ws
-                            .project
-                            .document(&doc_id)
-                            .map(|d| d.medium.is_script())
-                            .unwrap_or(false);
                         if is_script {
                             script_page(app, ui, &doc_id);
                         } else {
@@ -123,11 +134,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 /// Folders are pure containers, so the Write view shows this panel rather than
 /// a paper page: an editable name and synopsis, then the documents inside.
 fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
+    let synopsis_sheet =
+        portmanteau_core::StyleSheet::novel_prose(&app.ws.project.styles);
     let Some(doc) = app.ws.project.document(doc_id) else {
         return;
     };
     let original_title = doc.title.clone();
-    let original_synopsis = doc.synopsis.clone();
+    let original_synopsis = doc.synopsis.editor_text();
     let children: Vec<(String, String, DocKind, Medium, u32)> = app
         .ws
         .project
@@ -217,7 +230,7 @@ fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 doc.touch();
             }
             if synopsis != original_synopsis {
-                doc.synopsis = synopsis;
+                doc.synopsis.sync_editor_text(&synopsis, &synopsis_sheet);
                 doc.touch();
             }
         }
@@ -1163,18 +1176,13 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             .get(selected)
             .map(|paragraph| paragraph.style_id.clone())
             .unwrap_or_else(|| sheet.default_style.clone());
-        let selected_kind = sheet
-            .style(&selected_style)
-            .and_then(|style| style.semantic_kind)
-            .unwrap_or(ElementKind::Action);
 
         let mut chosen_style = None;
         ui.horizontal_wrapped(|ui| {
-            for (index, kind) in ElementKind::all(doc.medium).into_iter().enumerate() {
-                let style_id = portmanteau_core::rich_text::script_style_id(kind);
-                let active = selected_kind == kind;
+            for style in &sheet.styles {
+                let active = selected_style == style.id;
                 let button = egui::Button::new(
-                    RichText::new(kind.short())
+                    RichText::new(&style.name)
                         .font(sans(8.5))
                         .color(if active {
                             Color32::from_rgb(30, 26, 19)
@@ -1191,10 +1199,10 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 .min_size(Vec2::new(0.0, 19.0));
                 if ui
                     .add(button)
-                    .on_hover_text(format!("{} · Ctrl+{}", kind.label(), index + 1))
+                    .on_hover_text(&style.name)
                     .clicked()
                 {
-                    chosen_style = Some(style_id.to_owned());
+                    chosen_style = Some(style.id.clone());
                 }
             }
             ui.add_space(6.0);
@@ -1247,16 +1255,18 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             let forwards = ui.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Tab));
             let kind = ctrl_digit_element(ui, doc.medium);
             if backwards || forwards {
-                let kinds = ElementKind::all(doc.medium);
-                if let Some(position) = kinds.iter().position(|kind| *kind == selected_kind) {
+                if let Some(position) = sheet
+                    .styles
+                    .iter()
+                    .position(|style| style.id == selected_style)
+                {
+                    let count = sheet.styles.len();
                     let next = if forwards {
-                        (position + 1) % kinds.len()
+                        (position + 1) % count
                     } else {
-                        (position + kinds.len() - 1) % kinds.len()
+                        (position + count - 1) % count
                     };
-                    chosen_style = Some(
-                        portmanteau_core::rich_text::script_style_id(kinds[next]).to_owned(),
-                    );
+                    chosen_style = Some(sheet.styles[next].id.clone());
                 }
             } else if let Some(kind) = kind {
                 chosen_style =
@@ -1483,7 +1493,7 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     }
 }
 
-fn script_flow_layout_job(
+pub(crate) fn script_flow_layout_job(
     text: &str,
     content: &portmanteau_core::RichDocument,
     sheet: &portmanteau_core::StyleSheet,
@@ -1531,7 +1541,21 @@ fn script_flow_layout_job(
             .is_some_and(|style| style.text_transform == portmanteau_core::TextTransform::Uppercase)
             || element_style.uppercase;
         let display_line = transform_for_display(line, uppercase);
-        let leading = (element_style.indent + element_style.first_line_indent).max(0.0) * zoom;
+        let measured_width = line
+            .trim_end_matches('\n')
+            .chars()
+            .count() as f32
+            * font_size
+            * 0.6;
+        let aligned_indent = match element_style.align {
+            portmanteau_core::Alignment::Left | portmanteau_core::Alignment::Justify => 0.0,
+            portmanteau_core::Alignment::Center => (wrap_width - measured_width) * 0.5,
+            portmanteau_core::Alignment::Right => wrap_width - measured_width,
+        };
+        let leading = (element_style.indent + element_style.first_line_indent)
+            .max(aligned_indent)
+            .max(0.0)
+            * zoom;
         let paragraph = content.paragraphs.get(index);
         let raw_char_bytes: Vec<usize> = line.char_indices().map(|(byte, _)| byte).collect();
         let display_char_bytes: Vec<usize> =
@@ -1634,7 +1658,7 @@ fn rich_paragraph_start(content: &portmanteau_core::RichDocument, index: usize) 
         .sum()
 }
 
-fn inline_format_toolbar(
+pub(crate) fn inline_format_toolbar(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
     id: Id,
@@ -1749,8 +1773,9 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                     .color(PAPER_MUTED),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let snippet: String = doc.synopsis.chars().take(58).collect();
-                let meta = if doc.synopsis.chars().count() > 58 {
+                let synopsis = doc.synopsis.plain_text();
+                let snippet: String = synopsis.chars().take(58).collect();
+                let meta = if synopsis.chars().count() > 58 {
                     format!("{snippet}…")
                 } else {
                     snippet

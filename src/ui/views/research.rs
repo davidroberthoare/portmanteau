@@ -4,9 +4,11 @@ use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense,
     Stroke, TextEdit, Vec2,
 };
+use portmanteau_core::StyleSheet;
 
 use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::*;
+use crate::ui::editor::{inline_format_toolbar, script_flow_layout_job};
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
@@ -175,7 +177,8 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
         return;
     };
     let old_title = app.ws.project.research[pos].title.clone();
-    let old_body = app.ws.project.research[pos].body.clone();
+    let mut rich_body = app.ws.project.research[pos].body.clone();
+    let old_body = rich_body.editor_text();
     let html = app.ws.project.research[pos].html.clone();
     let attachments = app.ws.project.research[pos].attachments.clone();
     let mut title = old_title.clone();
@@ -185,6 +188,9 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
     let mut changed = false;
     let mut open_doc: Option<String> = None;
     let mut actions: Vec<Action> = Vec::new();
+    let mut styles = app.ws.project.styles.clone();
+    styles.body.size = 13.5;
+    let sheet = StyleSheet::novel_prose(&styles);
     let assets_dir = app
         .ws
         .path
@@ -251,9 +257,33 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
             ui.add_space(10.0);
 
             let rows = ((body.chars().count() as f32) / 75.0).ceil().max(16.0) as usize;
+            let body_id = egui::Id::unique(("research_body", id));
+            let ctx = ui.ctx().clone();
+            if inline_format_toolbar(ui, &ctx, body_id, &mut rich_body) {
+                changed = true;
+            }
+            let rich_body_layout = rich_body.clone();
+            let styles_layout = styles.clone();
+            let sheet_layout = sheet.clone();
+            let mut layouter = |ui: &egui::Ui,
+                                text: &dyn egui::TextBuffer,
+                                wrap_width: f32| {
+                let job = script_flow_layout_job(
+                    text.as_str(),
+                    &rich_body_layout,
+                    &sheet_layout,
+                    &styles_layout,
+                    1.0,
+                    wrap_width,
+                    &[],
+                );
+                ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
+            };
             if ui
                 .add(
                     TextEdit::multiline(&mut body)
+                        .id(body_id)
+                        .layouter(&mut layouter)
                         .font(serif(13.5))
                         .desired_rows(rows.min(40))
                         .desired_width(f32::INFINITY)
@@ -262,6 +292,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                 )
                 .changed()
             {
+                rich_body.sync_editor_text(&body, &sheet);
                 changed = true;
             }
 
@@ -414,7 +445,8 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
     if changed {
         if let Some(item) = app.ws.project.research.get_mut(pos) {
             item.title = title.clone();
-            item.body = body.clone();
+            rich_body.sync_editor_text(&body, &sheet);
+            item.body = rich_body.clone();
             item.kind = kind;
             item.source = source;
         }
@@ -426,7 +458,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
             .find(|d| d.kind == portmanteau_core::DocKind::Research && d.title == old_title)
         {
             doc.title = title;
-            doc.set_plain_text(body);
+            doc.content = rich_body.clone();
             doc.touch();
         }
         app.ws.dirty = true;

@@ -1067,7 +1067,7 @@ impl PortmanteauApp {
             let name = state.name.trim().to_string();
             let role = state.role.trim().to_string();
             let mut character = DatabaseItem::new(ItemKind::Character, name.clone());
-            character.notes = role;
+            character.notes.set_plain_text(role, "body");
             // The Database view cycles through six record colours.
             character.color = (self.ws.project.items.len() % 6) as u8;
             self.ws.project.items.push(character);

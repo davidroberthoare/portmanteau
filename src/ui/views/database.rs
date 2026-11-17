@@ -6,10 +6,11 @@ use eframe::egui::{
     Sense, Stroke, TextEdit, Vec2,
 };
 
-use portmanteau_core::{DatabaseItem, ItemKind};
+use portmanteau_core::{DatabaseItem, ItemKind, StyleSheet};
 
 use crate::app::PortmanteauApp;
 use crate::theme::*;
+use crate::ui::editor::{inline_format_toolbar, script_flow_layout_job};
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button, section_label};
 
 const FACE_COLORS: [Color32; 6] = [
@@ -219,6 +220,11 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
         return;
     };
     let item = app.ws.project.items[pos].clone();
+    let mut rich_notes = item.notes.clone();
+    let styles = app.ws.project.styles.clone();
+    let mut note_styles = styles.clone();
+    note_styles.body.size = 11.0;
+    let sheet = StyleSheet::novel_prose(&note_styles);
     if app.database_tags_id.as_deref() != Some(id) {
         app.database_tags_id = Some(id.to_string());
         app.database_tags_text = item.tags.join(", ");
@@ -227,7 +233,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
         id: item.id.clone(),
         kind: item.kind,
         title: item.title.clone(),
-        notes: item.notes.clone(),
+        notes: rich_notes.editor_text(),
         tags_text: app.database_tags_text.clone(),
         related: item.related.clone(),
         color: item.color,
@@ -380,9 +386,33 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
 
                     section_label(ui, "Notes");
                     ui.add_space(2.0);
+                    let notes_id = egui::Id::unique(("database_notes", id));
+                    let ctx = ui.ctx().clone();
+                    if inline_format_toolbar(ui, &ctx, notes_id, &mut rich_notes) {
+                        apply = true;
+                    }
+                    let rich_notes_layout = rich_notes.clone();
+                    let styles_layout = note_styles.clone();
+                    let sheet_layout = sheet.clone();
+                    let mut layouter = |ui: &egui::Ui,
+                                        text: &dyn egui::TextBuffer,
+                                        wrap_width: f32| {
+                        let job = script_flow_layout_job(
+                            text.as_str(),
+                            &rich_notes_layout,
+                            &sheet_layout,
+                            &styles_layout,
+                            1.0,
+                            wrap_width,
+                            &[],
+                        );
+                        ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
+                    };
                     if ui
                         .add(
                             TextEdit::multiline(&mut draft.notes)
+                                .id(notes_id)
+                                .layouter(&mut layouter)
                                 .hint_text("What matters about this item?")
                                 .font(sans(11.0))
                                 .desired_rows(8)
@@ -390,6 +420,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         )
                         .changed()
                     {
+                        rich_notes.sync_editor_text(&draft.notes, &sheet);
                         apply = true;
                     }
                     ui.add_space(14.0);
@@ -529,7 +560,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
         let slot = &mut app.ws.project.items[pos];
         slot.kind = draft.kind;
         slot.title = draft.title;
-        slot.notes = draft.notes;
+        slot.notes = rich_notes;
         slot.tags = tags;
         slot.related = draft.related;
         slot.color = draft.color;

@@ -20,6 +20,9 @@ pub enum ElementKind {
     StageDirection,
     Lyric,
     General,
+    Extension,
+    Intercut,
+    Subheading,
 }
 
 impl ElementKind {
@@ -37,6 +40,9 @@ impl ElementKind {
             ElementKind::StageDirection => "Stage direction",
             ElementKind::Lyric => "Lyric",
             ElementKind::General => "General",
+            ElementKind::Extension => "Extension",
+            ElementKind::Intercut => "Intercut",
+            ElementKind::Subheading => "Subheading",
         }
     }
 
@@ -54,6 +60,9 @@ impl ElementKind {
             ElementKind::StageDirection => "Stage dir.",
             ElementKind::Lyric => "Lyric",
             ElementKind::General => "General",
+            ElementKind::Extension => "Ext.",
+            ElementKind::Intercut => "Intercut",
+            ElementKind::Subheading => "Subhead",
         }
     }
 
@@ -64,6 +73,7 @@ impl ElementKind {
                 | ElementKind::Parenthetical
                 | ElementKind::Dialogue
                 | ElementKind::Lyric
+                | ElementKind::Extension
         )
     }
 
@@ -75,6 +85,8 @@ impl ElementKind {
                 | ElementKind::Transition
                 | ElementKind::Shot
                 | ElementKind::Act
+                | ElementKind::Intercut
+                | ElementKind::Subheading
         )
     }
 
@@ -88,6 +100,7 @@ impl ElementKind {
             ElementKind::Character => 22,
             ElementKind::Parenthetical => 16,
             ElementKind::Dialogue => 10,
+            ElementKind::Extension => 22,
             ElementKind::Transition => 0,
             ElementKind::Act => 0,
             _ => 0,
@@ -113,6 +126,9 @@ impl ElementKind {
                 ElementKind::Dialogue,
                 ElementKind::Transition,
                 ElementKind::Shot,
+                ElementKind::Intercut,
+                ElementKind::Subheading,
+                ElementKind::Extension,
                 ElementKind::General,
             ],
             _ => vec![ElementKind::General],
@@ -266,6 +282,9 @@ pub fn block_to_fountain(block: &Block, medium: crate::Medium) -> String {
         ElementKind::Act => format!("\n# {}", t),
         ElementKind::Scene => format!("\n## {}", t),
         ElementKind::Lyric => format!("\n~{}", t),
+        ElementKind::Extension => format!("\n{}", t.to_uppercase()),
+        ElementKind::Intercut => format!("\n> INTERCUT: {}", t.to_uppercase()),
+        ElementKind::Subheading => format!("\n\n{}", t.to_uppercase()),
     }
 }
 
@@ -294,6 +313,9 @@ fn boneyard_marker(kind: ElementKind) -> &'static str {
         ElementKind::StageDirection => "/* @stage */",
         ElementKind::Lyric => "/* @lyric */",
         ElementKind::General => "/* @general */",
+        ElementKind::Extension => "/* @extension */",
+        ElementKind::Intercut => "/* @intercut */",
+        ElementKind::Subheading => "/* @subheading */",
     }
 }
 
@@ -311,6 +333,9 @@ fn marker_kind(line: &str) -> Option<ElementKind> {
         "/* @stage */" => Some(ElementKind::StageDirection),
         "/* @lyric */" => Some(ElementKind::Lyric),
         "/* @general */" => Some(ElementKind::General),
+        "/* @extension */" => Some(ElementKind::Extension),
+        "/* @intercut */" => Some(ElementKind::Intercut),
+        "/* @subheading */" => Some(ElementKind::Subheading),
         _ => None,
     }
 }
@@ -425,6 +450,10 @@ pub fn parse_fountain(text: &str, medium: crate::Medium) -> Vec<Block> {
             ElementKind::Act => line.strip_prefix("# ").unwrap_or(line).trim(),
             ElementKind::Scene => line.strip_prefix("## ").unwrap_or(line).trim(),
             ElementKind::Transition => line.strip_prefix("> ").unwrap_or(line).trim(),
+            ElementKind::Intercut => line
+                .strip_prefix("> INTERCUT:")
+                .unwrap_or(line)
+                .trim(),
             ElementKind::Lyric => line.strip_prefix('~').unwrap_or(line).trim(),
             _ => line,
         };
@@ -461,6 +490,7 @@ pub fn block_to_plain(block: &Block) -> String {
         ElementKind::Character => format!("{:>26}{}", "", text.to_uppercase()),
         ElementKind::Parenthetical => format!("{:>18}{}", "", text),
         ElementKind::Dialogue => format!("{:>12}{}", "", text),
+        ElementKind::Extension => format!("{:>26}{}", "", text.to_uppercase()),
         _ => text,
     }
 }

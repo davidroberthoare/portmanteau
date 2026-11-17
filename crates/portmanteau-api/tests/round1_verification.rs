@@ -52,7 +52,7 @@ fn script_blocks(doc: &Document) -> Vec<Block> {
     doc.content.to_script_blocks(&style_sheet)
 }
 
-const ALL_KINDS: [ElementKind; 12] = [
+const ALL_KINDS: [ElementKind; 15] = [
     ElementKind::SceneHeading,
     ElementKind::Action,
     ElementKind::Character,
@@ -65,6 +65,9 @@ const ALL_KINDS: [ElementKind; 12] = [
     ElementKind::Shot,
     ElementKind::StageDirection,
     ElementKind::General,
+    ElementKind::Extension,
+    ElementKind::Intercut,
+    ElementKind::Subheading,
 ];
 
 #[test]
@@ -120,12 +123,15 @@ fn representative_text(kind: ElementKind) -> String {
         ElementKind::Shot => "WIDE ON THE HARBOUR".into(),
         ElementKind::StageDirection => "The lights rise.".into(),
         ElementKind::General => "A general note.".into(),
+        ElementKind::Extension => "V.O.".into(),
+        ElementKind::Intercut => "INTERCUT WITH THE HARBOUR".into(),
+        ElementKind::Subheading => "THE OLD ROAD".into(),
     }
 }
 
 #[test]
 fn every_element_kind_roundtrips_in_isolation() {
-    assert_eq!(ALL_KINDS.len(), 12, "the spec names twelve element kinds");
+    assert_eq!(ALL_KINDS.len(), 15, "the interchange vocabulary has fifteen kinds");
     for kind in ALL_KINDS {
         let mut doc = make_doc("doc-kind-probe", "Kind Probe", Medium::Screenplay);
         let body = representative_text(kind);
@@ -201,6 +207,16 @@ fn manifest_carries_no_long_bodies() {
             0,
             "document content not emptied in manifest"
         );
+        assert_eq!(
+            doc["synopsis"]["paragraphs"].as_array().expect("paragraphs").len(),
+            0,
+            "document synopsis not emptied in manifest"
+        );
+        assert_eq!(
+            doc["notes"]["paragraphs"].as_array().expect("paragraphs").len(),
+            0,
+            "document notes not emptied in manifest"
+        );
         for snap in doc["snapshots"].as_array().expect("snapshots array") {
             assert_eq!(
                 snap["content"]["paragraphs"].as_array().expect("paragraphs").len(),
@@ -210,7 +226,18 @@ fn manifest_carries_no_long_bodies() {
         }
     }
     for item in value["research"].as_array().expect("research array") {
-        assert_eq!(item["body"], "", "research body not emptied in manifest");
+        assert_eq!(
+            item["body"]["paragraphs"].as_array().expect("paragraphs").len(),
+            0,
+            "research body not emptied in manifest"
+        );
+    }
+    for item in value["items"].as_array().expect("items array") {
+        assert_eq!(
+            item["notes"]["paragraphs"].as_array().expect("paragraphs").len(),
+            0,
+            "database item notes not emptied in manifest"
+        );
     }
     for cp in value["checkpoints"].as_array().expect("checkpoints array") {
         assert_eq!(cp["payload"], "", "checkpoint payload not emptied in manifest");
@@ -359,7 +386,10 @@ fn research_body_is_externalised_and_restored() {
     project.research.push(ResearchItem {
         id: "res-probe".into(),
         title: "Probe Note".into(),
-        body: "A distinctive research body sentence.".into(),
+        body: portmanteau_core::RichDocument::from_plain_text(
+            "A distinctive research body sentence.",
+            "body",
+        ),
         kind: "Note".into(),
         source: String::new(),
         created: portmanteau_core::now_stamp(),
@@ -374,7 +404,47 @@ fn research_body_is_externalised_and_restored() {
         "research body leaked into the manifest"
     );
     let back = storage::load_folder(&dir).expect("load");
-    assert_eq!(back.research[0].body, "A distinctive research body sentence.");
+    assert_eq!(
+        back.research[0].body.plain_text(),
+        "A distinctive research body sentence."
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn long_form_metadata_and_database_notes_roundtrip_as_rich_documents() {
+    let mut project = Project::new("Rich fields", ProjectKind::Novel);
+    let mut doc = make_doc("doc-rich-fields", "Chapter", Medium::Prose);
+    doc.set_synopsis_text("A rich synopsis.");
+    doc.set_notes_text("A rich note.");
+    assert!(doc.synopsis.toggle_mark(2..6, portmanteau_core::InlineMark::Italic));
+    project.documents.push(doc);
+
+    let mut item = portmanteau_core::DatabaseItem::new(
+        portmanteau_core::ItemKind::Character,
+        "Mara Venn",
+    );
+    item.notes.set_plain_text("A character's long note.", "body");
+    project.items.push(item);
+
+    let dir = scratch("rt1-rich-long-fields");
+    storage::save_folder(&project, &dir).expect("save");
+    let restored = storage::load_folder(&dir).expect("load");
+    let doc = restored
+        .document("doc-rich-fields")
+        .expect("document was restored");
+    assert_eq!(doc.synopsis.plain_text(), "A rich synopsis.");
+    assert_eq!(doc.notes.plain_text(), "A rich note.");
+    assert_eq!(restored.items[0].notes.plain_text(), "A character's long note.");
+    let run = doc.synopsis.paragraphs[0]
+        .content
+        .iter()
+        .find_map(|item| match item {
+            portmanteau_core::InlineContent::Text(run) if run.text == "rich" => Some(run),
+            _ => None,
+        })
+        .expect("the selected synopsis run should survive the round trip");
+    assert!(run.marks.contains(&portmanteau_core::InlineMark::Italic));
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -491,10 +561,20 @@ fn folder_package_contains_every_expected_file_type() {
     }
     assert!(rich_docs > 0, "no rich document bodies written");
 
+    let mut item_notes = 0;
+    for entry in std::fs::read_dir(dir.join("items")).expect("items dir") {
+        let path = entry.expect("entry").path();
+        assert_eq!(path.extension().and_then(|e| e.to_str()), Some("json"));
+        assert!(path.file_name().unwrap().to_string_lossy().ends_with(".rich.json"));
+        item_notes += 1;
+    }
+    assert!(item_notes > 0, "no database item rich notes written");
+
     let mut research = 0;
     for entry in std::fs::read_dir(dir.join("research")).expect("research dir") {
         let path = entry.expect("entry").path();
-        assert_eq!(path.extension().and_then(|e| e.to_str()), Some("md"));
+        assert_eq!(path.extension().and_then(|e| e.to_str()), Some("json"));
+        assert!(path.file_name().unwrap().to_string_lossy().ends_with(".rich.json"));
         research += 1;
     }
     assert!(research > 0, "no research notes written");

@@ -24,7 +24,7 @@ strikethrough; images can be inline or standalone with alt text/captions.
   canonical model. Map their screenplay semantics to/from internal styles. When
   export cannot represent content faithfully, warn and include a placeholder.
 
-### Progress log — 2026-11-16
+### Progress log — 2026-11-17
 
 **Implemented foundation**
 
@@ -38,6 +38,20 @@ strikethrough; images can be inline or standalone with alt text/captions.
   styles, next-style rules, and canonical-case storage with uppercase display
   transforms for screenplay cues. New projects copy the program's style-sheet
   defaults.
+- Replaced free-string synopsis, document notes, research bodies and database
+  notes with the same rich document structure. The inspector, Research and
+  Database editors now use the rich-format controls. Existing screenwriting defaults
+  now use common U.S. margins: 12-point Courier, 1.5-inch left / 1-inch right
+  page margins, Character at about 3.5 inches, Dialogue 2.5–6 inches,
+  Parenthetical 3–5.5 inches, and right-aligned transitions. Added Intercut,
+  Subheading and Extension style types.
+- Added a stylesheet editor for global defaults and project-level next-style,
+  display-uppercase and paragraph-format settings.
+- Added screenplay style defaults for Scene Heading, Action, Character,
+  Dialogue, Parenthetical, Transition, Shot, Extension, Intercut and Subheading,
+  with measurements based on the supplied references.
+- Applied the reference screenplay measurements to Film Screenplay defaults and
+  exposed Extension, Intercut and Subheading styles in the style palette.
 - Replaced the screenplay's per-paragraph TextEdits with one TextEdit for the
   complete flow. Prose also edits its `RichDocument` through one flow. The
   project package stores rich bodies and snapshots as `.rich.json`.
@@ -45,16 +59,16 @@ strikethrough; images can be inline or standalone with alt text/captions.
   and Enter applying Character Name → Dialogue. Character completion remains
   in the flow and stores the canonical character name.
 - Added screenshot verification for the unified screenplay flow. The latest
-  workspace run passes 148 tests.
+  workspace run passes 151 tests.
 
 **Still required**
 
 - Inline/standalone image insertion, asset loading/rendering, captions and
   export placeholders/warnings.
-- Extend the shared model/editor to notes, synopsis, research and other
-  long-form fields.
-- Add project/program stylesheet editing for custom styles and next-style
-  rules; complete prose and screenplay style selection controls.
+- Continue polishing rich formatting in the corkboard synopsis editor and
+  keep formatting/selection stable as more fields adopt the same editor.
+- Ensure stylesheet appearance edits also drive every export writer, and add
+  focused UI tests for stylesheet customization.
 - Finish Fountain/FDX adapters and round-trip coverage. The reusable FDX import
   style/object mapping dialog remains deferred below.
 
@@ -179,6 +193,9 @@ open the sample project.
 
 ## Smaller polish items
 
+- Future UI visual redesign: move from the current dark, button-heavy chrome to
+  a light, sparse, Mac-native writing environment. See
+  `docs/ui-style-guidelines.md`. Begin after the unified editor work is stable.
 - A compile preview that opens as a modal page rather than a list.
 - Per-document compile overrides (font, spacing) for mixed manuscripts.
 - A proper empty state for the binder when a new project has no chapters.

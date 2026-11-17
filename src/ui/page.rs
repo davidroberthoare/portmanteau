@@ -210,13 +210,16 @@ pub fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
 /// height counted in those lines. The page keeps the paper width and frame but
 /// grows tall enough for all 55 lines.
 pub fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
-    let (page_w, _) = page_geometry(settings);
-    let content_w = page_w - 108.0;
+    // Screenplays use US Letter regardless of the prose book's trim size.
+    // `page_geometry` maps millimetres to three screen points.
+    let page_w: f32 = 8.5 * 25.4 * 3.0;
+    let page_h: f32 = 11.0 * 25.4 * 3.0;
+    let content_w = page_w - 2.5 * 25.4 * 3.0;
     let base = &settings.styles.action;
     let base_size = base.size.max(7.0);
     let base_line = (base_size * base.leading.max(0.85)).max(9.0);
     let lines_per_page = 55.0f32;
-    let content_h = base_line * lines_per_page;
+    let content_h = (page_h - 2.0 * 25.4 * 3.0).max(base_line * lines_per_page);
 
     let mut pages: Vec<Vec<PageLine>> = vec![Vec::new()];
     let mut used = 0.0f32;

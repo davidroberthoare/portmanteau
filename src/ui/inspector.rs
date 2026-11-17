@@ -8,6 +8,7 @@ use portmanteau_core::Medium;
 
 use crate::app::{InspectorTab, PortmanteauApp, ToastKind};
 use crate::theme::*;
+use crate::ui::editor::{inline_format_toolbar, script_flow_layout_job};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
@@ -70,6 +71,9 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut restore: Option<String> = None;
     let mut compare: Option<String> = None;
     let mut snapshot = false;
+    let styles = app.ws.project.styles.clone();
+    let prose_sheet =
+        portmanteau_core::StyleSheet::novel_prose(&app.ws.project.styles);
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
         section_label(ui, "Document");
@@ -147,16 +151,38 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         ui.add_space(10.0);
         section_label(ui, "Synopsis");
         ui.add_space(3.0);
-        if ui
-            .add(
-                TextEdit::multiline(&mut doc.synopsis)
-                    .hint_text("One or two sentences about this piece…")
-                    .desired_rows(4)
-                    .desired_width(f32::INFINITY)
-                    .font(sans(11.0)),
-            )
-            .changed()
-        {
+        let synopsis_id = egui::Id::unique(("inspector_synopsis", doc_id));
+        let ctx = ui.ctx().clone();
+        if inline_format_toolbar(ui, &ctx, synopsis_id, &mut doc.synopsis) {
+            doc.touch();
+            app.ws.dirty = true;
+        }
+        let mut synopsis = doc.synopsis.editor_text();
+        let synopsis_content = doc.synopsis.clone();
+        let mut synopsis_layouter =
+            |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                let job = script_flow_layout_job(
+                    text.as_str(),
+                    &synopsis_content,
+                    &prose_sheet,
+                    &styles,
+                    1.0,
+                    wrap_width,
+                    &[],
+                );
+                ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
+            };
+        let synopsis_output = TextEdit::multiline(&mut synopsis)
+            .id(synopsis_id)
+            .layouter(&mut synopsis_layouter)
+            .hint_text("One or two sentences about this piece…")
+            .desired_rows(4)
+            .desired_width(f32::INFINITY)
+            .font(sans(11.0))
+            .show(ui);
+        if synopsis_output.response.changed() {
+            doc.synopsis.sync_editor_text(&synopsis, &prose_sheet);
+            doc.touch();
             app.ws.dirty = true;
         }
 
@@ -281,20 +307,46 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         .map(|r| (r.title.clone(), r.kind.clone()))
         .collect();
     let project_notes = app.ws.project.logline.clone();
+    let styles = app.ws.project.styles.clone();
+    let prose_sheet =
+        portmanteau_core::StyleSheet::novel_prose(&app.ws.project.styles);
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
         section_label(ui, "Author's notes");
         ui.add_space(3.0);
-        if ui
-            .add(
-                TextEdit::multiline(&mut doc.notes)
-                    .hint_text("Intentions, questions, things to fix…")
-                    .desired_rows(12)
-                    .desired_width(f32::INFINITY)
-                    .font(sans(11.0)),
-            )
-            .changed()
-        {
+        let notes_id = egui::Id::unique(("inspector_notes", doc_id));
+        let ctx = ui.ctx().clone();
+        if inline_format_toolbar(ui, &ctx, notes_id, &mut doc.notes) {
+            doc.touch();
+            app.ws.dirty = true;
+        }
+        let mut notes = doc.notes.editor_text();
+        let notes_content = doc.notes.clone();
+        let mut notes_layouter = |ui: &egui::Ui,
+                                  text: &dyn egui::TextBuffer,
+                                  wrap_width: f32| {
+            let job = script_flow_layout_job(
+                text.as_str(),
+                &notes_content,
+                &prose_sheet,
+                &styles,
+                1.0,
+                wrap_width,
+                &[],
+            );
+            ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
+        };
+        let notes_output = TextEdit::multiline(&mut notes)
+            .id(notes_id)
+            .layouter(&mut notes_layouter)
+            .hint_text("Intentions, questions, things to fix…")
+            .desired_rows(12)
+            .desired_width(f32::INFINITY)
+            .font(sans(11.0))
+            .show(ui);
+        if notes_output.response.changed() {
+            doc.notes.sync_editor_text(&notes, &prose_sheet);
+            doc.touch();
             app.ws.dirty = true;
         }
     }

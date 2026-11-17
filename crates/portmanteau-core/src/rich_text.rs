@@ -75,6 +75,31 @@ impl StyleSheet {
                     next_style: Some("body".into()),
                     text_transform: TextTransform::None,
                 },
+                ParagraphStyle {
+                    id: "image".into(),
+                    name: "Image".into(),
+                    format: ElementStyle {
+                        align: crate::Alignment::Center,
+                        before: 6.0,
+                        after: 6.0,
+                        ..defaults.body.clone()
+                    },
+                    semantic_kind: None,
+                    next_style: Some("image-caption".into()),
+                    text_transform: TextTransform::None,
+                },
+                ParagraphStyle {
+                    id: "image-caption".into(),
+                    name: "Image Caption".into(),
+                    format: ElementStyle {
+                        align: crate::Alignment::Center,
+                        size: 9.0,
+                        ..defaults.body.clone()
+                    },
+                    semantic_kind: None,
+                    next_style: Some("body".into()),
+                    text_transform: TextTransform::None,
+                },
             ],
         }
     }
@@ -82,7 +107,7 @@ impl StyleSheet {
     /// Feature-film screenplay defaults with editable next-style rules.
     pub fn film_screenplay(defaults: &ElementStyles) -> Self {
         let kinds = ElementKind::all(Medium::Screenplay);
-        let styles = kinds
+        let mut styles: Vec<ParagraphStyle> = kinds
             .into_iter()
             .map(|kind| {
                 let id = script_style_id(kind).to_owned();
@@ -100,6 +125,31 @@ impl StyleSheet {
                 }
             })
             .collect();
+        styles.push(ParagraphStyle {
+            id: "image".into(),
+            name: "Image".into(),
+            format: ElementStyle {
+                align: crate::Alignment::Center,
+                before: 6.0,
+                after: 6.0,
+                ..defaults.action.clone()
+            },
+            semantic_kind: None,
+            next_style: Some("image-caption".into()),
+            text_transform: TextTransform::None,
+        });
+        styles.push(ParagraphStyle {
+            id: "image-caption".into(),
+            name: "Image Caption".into(),
+            format: ElementStyle {
+                align: crate::Alignment::Center,
+                size: 9.0,
+                ..defaults.action.clone()
+            },
+            semantic_kind: None,
+            next_style: Some("action".into()),
+            text_transform: TextTransform::None,
+        });
         Self {
             id: "film-screenplay".into(),
             name: "Film Screenplay".into(),
@@ -131,6 +181,9 @@ pub fn script_style_id(kind: ElementKind) -> &'static str {
         ElementKind::StageDirection => "stage-direction",
         ElementKind::Lyric => "lyric",
         ElementKind::General => "general",
+        ElementKind::Extension => "extension",
+        ElementKind::Intercut => "intercut",
+        ElementKind::Subheading => "subheading",
     }
 }
 
@@ -148,6 +201,9 @@ pub fn script_kind_for_style_id(style_id: &str) -> Option<ElementKind> {
         "stage-direction" => ElementKind::StageDirection,
         "lyric" => ElementKind::Lyric,
         "general" => ElementKind::General,
+        "extension" => ElementKind::Extension,
+        "intercut" => ElementKind::Intercut,
+        "subheading" => ElementKind::Subheading,
         _ => return None,
     })
 }
@@ -166,6 +222,9 @@ fn default_next_style(kind: ElementKind) -> Option<&'static str> {
         ElementKind::StageDirection => Some("character"),
         ElementKind::Lyric => Some("character"),
         ElementKind::General => Some("action"),
+        ElementKind::Extension => Some("dialogue"),
+        ElementKind::Intercut => Some("action"),
+        ElementKind::Subheading => Some("action"),
     }
 }
 
@@ -329,6 +388,11 @@ impl RichDocument {
             })
             .collect();
         Self { paragraphs }
+    }
+
+    pub fn set_plain_text(&mut self, text: impl Into<String>, style_id: &str) {
+        let text = text.into();
+        *self = Self::from_plain_text(&text, style_id);
     }
 
     pub fn from_script_blocks(blocks: &[crate::Block]) -> Self {
@@ -570,6 +634,67 @@ impl RichDocument {
             document_offset += paragraph_len + 1;
         }
         changed
+    }
+
+    /// Insert an image object, optionally as its own paragraph. The object
+    /// stores only a project asset id and accessibility/print metadata.
+    pub fn insert_image(
+        &mut self,
+        range: Range<usize>,
+        image: ImageObject,
+        standalone: bool,
+        sheet: &StyleSheet,
+    ) -> usize {
+        let insertion = range.start.min(range.end).min(self.char_count());
+        if range.start != range.end {
+            self.replace_range(range, "", sheet);
+        }
+        let position = self.position_at(insertion);
+        if !standalone {
+            let paragraph = &mut self.paragraphs[position.paragraph];
+            let (left, right) = split_content(&paragraph.content, position.offset);
+            let mut content = left;
+            content.push(InlineContent::Image(image));
+            append_content(&mut content, right);
+            paragraph.content = content;
+            return insertion + 1;
+        }
+
+        let original = std::mem::take(&mut self.paragraphs);
+        let paragraph = &original[position.paragraph];
+        let (left, right) = split_content(&paragraph.content, position.offset);
+        let mut output = original[..position.paragraph].to_vec();
+        if !left.is_empty() {
+            output.push(RichParagraph {
+                style_id: paragraph.style_id.clone(),
+                content: left,
+            });
+        }
+        output.push(RichParagraph {
+            style_id: if sheet.style("image").is_some() {
+                "image".into()
+            } else {
+                paragraph.style_id.clone()
+            },
+            content: vec![InlineContent::Image(image.clone())],
+        });
+        if !image.caption.is_empty() {
+            output.push(RichParagraph {
+                style_id: if sheet.style("image-caption").is_some() {
+                    "image-caption".into()
+                } else {
+                    paragraph.style_id.clone()
+                },
+                content: vec![InlineContent::Text(TextRun::plain(&image.caption))],
+            });
+        }
+        output.push(RichParagraph {
+            style_id: paragraph.style_id.clone(),
+            content: right,
+        });
+        output.extend(original.iter().skip(position.paragraph + 1).cloned());
+        self.paragraphs = output;
+        insertion + 1
     }
 
     /// Reconcile the value edited by a single text widget with this rich
@@ -843,6 +968,38 @@ mod tests {
     }
 
     #[test]
+    fn standalone_image_insertion_adds_an_image_paragraph_and_caption() {
+        let mut document = RichDocument::from_plain_text("before after", "body");
+        let sheet = StyleSheet::novel_prose(&ElementStyles::default());
+        document.insert_image(
+            7..7,
+            ImageObject {
+                asset_id: "images/harbor.png".into(),
+                alt_text: "Harbor at low tide".into(),
+                caption: "The harbor, 1987".into(),
+                width: None,
+                height: None,
+            },
+            true,
+            &sheet,
+        );
+        assert_eq!(
+            document
+                .paragraphs
+                .iter()
+                .map(|paragraph| paragraph.style_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["body", "image", "image-caption", "body"]
+        );
+        assert_eq!(
+            document.text_only(),
+            "before \n\nThe harbor, 1987\nafter"
+        );
+        assert_eq!(document.paragraphs[1].editor_text(), "\u{FFFC}");
+        assert_eq!(document.paragraphs[2].plain_text(), "The harbor, 1987");
+    }
+
+    #[test]
     fn industry_stylesheets_have_next_style_rules_and_canonical_character_case() {
         let defaults = ElementStyles::default();
         let sheets = StyleSheet::industry_defaults(&defaults);
@@ -861,6 +1018,31 @@ mod tests {
         let character = screenplay.style("character").unwrap();
         assert_eq!(character.text_transform, TextTransform::Uppercase);
         assert_eq!(character.semantic_kind, Some(ElementKind::Character));
+        assert_eq!(character.format.indent, 158.4);
+        assert_eq!(screenplay.style("dialogue").unwrap().format.indent, 72.0);
+        assert_eq!(screenplay.style("dialogue").unwrap().format.right_indent, 108.0);
+        assert_eq!(
+            screenplay.style("parenthetical").unwrap().format.indent,
+            108.0
+        );
+        assert_eq!(
+            screenplay
+                .style("parenthetical")
+                .unwrap()
+                .format
+                .right_indent,
+            144.0
+        );
+        assert_eq!(
+            screenplay.style("transition").unwrap().format.align,
+            crate::Alignment::Right
+        );
+        for id in ["extension", "intercut", "subheading", "shot"] {
+            assert!(
+                screenplay.style(id).is_some(),
+                "screenplay defaults should contain {id}"
+            );
+        }
     }
 
     #[test]

@@ -20,6 +20,14 @@ fn default_style_sheets() -> Vec<StyleSheet> {
     StyleSheet::industry_defaults(&ElementStyles::default())
 }
 
+fn screenplay_export_defaults(mut settings: ExportSettings) -> ExportSettings {
+    settings.paper = PaperSize::Letter;
+    settings.header_footer.number_location = HfLocation::Header;
+    settings.header_footer.number_align = Alignment::Right;
+    settings.header_footer.number_spacing = 36.0;
+    settings
+}
+
 pub fn now_stamp() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()
 }
@@ -172,8 +180,8 @@ pub struct Document {
     #[serde(default = "default_prose_stylesheet")]
     pub style_sheet_id: String,
     pub content: RichDocument,
-    pub synopsis: String,
-    pub notes: String,
+    pub synopsis: RichDocument,
+    pub notes: RichDocument,
     pub label: String,
     pub status: String,
     pub include_in_export: bool,
@@ -210,8 +218,8 @@ impl Document {
             } else {
                 "body"
             }),
-            synopsis: String::new(),
-            notes: String::new(),
+            synopsis: RichDocument::empty("body"),
+            notes: RichDocument::empty("body"),
             label: String::new(),
             status: "To do".into(),
             include_in_export: true,
@@ -248,8 +256,16 @@ impl Document {
     }
 
     pub fn with_synopsis(mut self, synopsis: impl Into<String>) -> Self {
-        self.synopsis = synopsis.into();
+        self.set_synopsis_text(synopsis);
         self
+    }
+
+    pub fn set_synopsis_text(&mut self, synopsis: impl Into<String>) {
+        self.synopsis = RichDocument::from_plain_text(&synopsis.into(), "body");
+    }
+
+    pub fn set_notes_text(&mut self, notes: impl Into<String>) {
+        self.notes = RichDocument::from_plain_text(&notes.into(), "body");
     }
 
     pub fn with_meta(
@@ -392,7 +408,7 @@ pub struct DatabaseItem {
     pub id: String,
     pub kind: ItemKind,
     pub title: String,
-    pub notes: String,
+    pub notes: RichDocument,
     pub tags: Vec<String>,
     pub related: Vec<String>,
     pub color: u8,
@@ -404,7 +420,7 @@ impl DatabaseItem {
             id: new_id("item"),
             kind,
             title: title.into(),
-            notes: String::new(),
+            notes: RichDocument::empty("body"),
             tags: Vec::new(),
             related: Vec::new(),
             color: 0,
@@ -416,7 +432,7 @@ impl DatabaseItem {
 pub struct ResearchItem {
     pub id: String,
     pub title: String,
-    pub body: String,
+    pub body: RichDocument,
     pub kind: String,
     pub source: String,
     pub created: String,
@@ -682,6 +698,13 @@ pub struct ElementStyles {
     pub scene: ElementStyle,
     pub stage_direction: ElementStyle,
     pub general: ElementStyle,
+    /// Common U.S. screenplay paragraph types beyond the core dialogue trio.
+    #[serde(default)]
+    pub extension: ElementStyle,
+    #[serde(default)]
+    pub intercut: ElementStyle,
+    #[serde(default)]
+    pub subheading: ElementStyle,
     /// Writer-defined styles ("Epigraph", "Pull quote", …). Stored with the
     /// built-ins so they persist in global settings, the project and each
     /// format's settings through serde.
@@ -717,15 +740,18 @@ impl Default for ElementStyles {
                 ..base_element(mono, 12.0, 1.0)
             },
             parenthetical: ElementStyle {
-                indent: 115.2,
+                indent: 108.0,
+                right_indent: 144.0,
                 ..base_element(mono, 12.0, 1.0)
             },
             dialogue: ElementStyle {
                 indent: 72.0,
+                right_indent: 108.0,
                 ..base_element(mono, 12.0, 1.0)
             },
             transition: ElementStyle {
                 uppercase: true,
+                align: Alignment::Right,
                 ..base_element(mono, 12.0, 1.0)
             },
             act: ElementStyle {
@@ -735,6 +761,19 @@ impl Default for ElementStyles {
             scene: base_element(mono, 12.0, 1.0),
             stage_direction: base_element(mono, 12.0, 1.0),
             general: base_element(mono, 12.0, 1.0),
+            extension: ElementStyle {
+                indent: 158.4,
+                uppercase: true,
+                ..base_element(mono, 12.0, 1.0)
+            },
+            intercut: ElementStyle {
+                uppercase: true,
+                ..base_element(mono, 12.0, 1.0)
+            },
+            subheading: ElementStyle {
+                uppercase: true,
+                ..base_element(mono, 12.0, 1.0)
+            },
             custom: Vec::new(),
         }
     }
@@ -759,6 +798,9 @@ impl ElementStyles {
             "scene" => &self.scene,
             "stage_direction" => &self.stage_direction,
             "general" => &self.general,
+            "extension" => &self.extension,
+            "intercut" => &self.intercut,
+            "subheading" => &self.subheading,
             _ => return None,
         })
     }
@@ -782,6 +824,9 @@ impl ElementStyles {
             ElementKind::Scene => &self.scene,
             ElementKind::StageDirection => &self.stage_direction,
             ElementKind::General => &self.general,
+            ElementKind::Extension => &self.extension,
+            ElementKind::Intercut => &self.intercut,
+            ElementKind::Subheading => &self.subheading,
         }
     }
 
@@ -803,6 +848,9 @@ impl ElementStyles {
             "scene" => &mut self.scene,
             "stage_direction" => &mut self.stage_direction,
             "general" => &mut self.general,
+            "extension" => &mut self.extension,
+            "intercut" => &mut self.intercut,
+            "subheading" => &mut self.subheading,
             _ => return None,
         })
     }
@@ -846,30 +894,14 @@ impl Default for AppSettings {
 
 impl AppSettings {
     /// Build the style sheets a newly created project receives. The existing
-    /// global element-style controls update the visual portions; style names,
-    /// semantic roles and next-style rules remain stylesheet data.
+    /// program-wide style sheets are copied into the project; project edits
+    /// never write back to this template.
     pub fn style_sheets_for_new_project(&self) -> Vec<StyleSheet> {
-        let mut sheets = if self.style_sheets.is_empty() {
+        if self.style_sheets.is_empty() {
             default_style_sheets()
         } else {
             self.style_sheets.clone()
-        };
-        for sheet in &mut sheets {
-            for style in &mut sheet.styles {
-                if let Some(kind) = style.semantic_kind {
-                    style.format = self.styles.style_for_kind(kind).clone();
-                } else if sheet.id == "prose" {
-                    match style.id.as_str() {
-                        "body" => style.format = self.styles.body.clone(),
-                        "chapter-heading" => {
-                            style.format = self.styles.chapter_heading.clone()
-                        }
-                        _ => {}
-                    }
-                }
-            }
         }
-        sheets
     }
 }
 
@@ -1087,6 +1119,11 @@ impl Project {
     pub fn new(title: impl Into<String>, kind: ProjectKind) -> Self {
         let stamp = now_stamp();
         let styles = ElementStyles::default();
+        let export = if kind.default_medium().is_script() {
+            screenplay_export_defaults(ExportSettings::default())
+        } else {
+            ExportSettings::default()
+        };
         let mut project = Self {
             schema: 1,
             id: new_id("proj"),
@@ -1104,7 +1141,7 @@ impl Project {
             checkpoints: Vec::new(),
             session_log: Vec::new(),
             daily_target: 1200,
-            export: ExportSettings::default(),
+            export,
             style_sheets: StyleSheet::industry_defaults(&styles),
             styles,
             formats: Vec::new(),
@@ -1133,6 +1170,9 @@ impl Project {
             styles: self.styles.clone(),
             ..ExportSettings::default()
         };
+        if self.kind.default_medium().is_script() {
+            settings = screenplay_export_defaults(settings);
+        }
         let base = if self.kind.default_medium().is_script() {
             &self.styles.action
         } else {
@@ -1479,7 +1519,12 @@ impl Project {
             return hits;
         }
         for doc in &self.documents {
-            let body = doc.body_text();
+            let body = format!(
+                "{}\n{}\n{}",
+                doc.body_text(),
+                doc.synopsis.plain_text(),
+                doc.notes.plain_text()
+            );
             if doc.title.to_lowercase().contains(&q) {
                 hits.push((doc, format!("Title — {}", doc.title)));
             } else if let Some(pos) = body.to_lowercase().find(&q) {
@@ -1529,7 +1574,7 @@ mod tests {
     #[test]
     fn global_element_defaults_seed_new_project_style_sheets() {
         let mut settings = AppSettings::default();
-        settings.styles.body.size = 13.0;
+        settings.style_sheets[0].styles[0].format.size = 13.0;
         let sheets = settings.style_sheets_for_new_project();
         let body = sheets
             .iter()
@@ -1540,7 +1585,19 @@ mod tests {
 
         let mut project_copy = sheets;
         project_copy[0].styles[0].format.size = 17.0;
-        assert_eq!(settings.styles.body.size, 13.0);
+        assert_eq!(settings.style_sheets[0].styles[0].format.size, 13.0);
+    }
+
+    #[test]
+    fn film_project_export_defaults_use_screenplay_page_numbering() {
+        let project = Project::new("Feature", ProjectKind::Film);
+        let settings = project.settings_for(ExportKind::Pdf);
+        assert_eq!(settings.paper, PaperSize::Letter);
+        assert!(settings.header_footer.page_numbers);
+        assert!(!settings.header_footer.number_on_first_page);
+        assert_eq!(settings.header_footer.number_location, HfLocation::Header);
+        assert_eq!(settings.header_footer.number_align, Alignment::Right);
+        assert_eq!(settings.header_footer.number_spacing, 36.0);
     }
 
     #[test]
@@ -1664,8 +1721,14 @@ mod tests {
         assert_eq!(styles.character.size, 12.0);
         assert_eq!(styles.character.leading, 1.0);
         assert_eq!(styles.character.indent, 158.4);
-        assert_eq!(styles.parenthetical.indent, 115.2);
+        assert_eq!(styles.parenthetical.indent, 108.0);
+        assert_eq!(styles.parenthetical.right_indent, 144.0);
         assert_eq!(styles.dialogue.indent, 72.0);
+        assert_eq!(styles.dialogue.right_indent, 108.0);
+        assert_eq!(styles.transition.align, Alignment::Right);
+        assert!(styles.extension.uppercase);
+        assert!(styles.intercut.uppercase);
+        assert!(styles.subheading.uppercase);
     }
 
     #[test]

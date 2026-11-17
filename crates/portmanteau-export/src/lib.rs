@@ -311,6 +311,9 @@ fn script_style<'a>(styles: &'a ElementStyles, kind: ElementKind) -> &'a Element
         ElementKind::Scene => &styles.scene,
         ElementKind::StageDirection => &styles.stage_direction,
         ElementKind::General => &styles.general,
+        ElementKind::Extension => &styles.extension,
+        ElementKind::Intercut => &styles.intercut,
+        ElementKind::Subheading => &styles.subheading,
     }
 }
 
@@ -606,6 +609,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let mut h = h_mm * 2.834645;
     let screenplay = is_screenplay(project);
     let mut margin = 20.0 * 2.834645;
+    let mut right_margin = margin;
     let mut top = 22.0 * 2.834645;
     let mut bottom = 22.0 * 2.834645;
     // A screenplay is a working document, not a trim size: keep the industry
@@ -614,6 +618,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         w = 8.5 * 72.0;
         h = 11.0 * 72.0;
         margin = 1.5 * 72.0;
+        right_margin = 1.0 * 72.0;
         top = 1.0 * 72.0;
         bottom = 1.0 * 72.0;
     }
@@ -621,7 +626,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let gap = size * settings.styles.body.leading.max(1.0);
     let mut flow = PdfFlow::new(h, top, bottom, gap);
     let mut pages: Vec<PdfPage> = Vec::new();
-    let content_width = w - margin * 2.0;
+    let content_width = w - margin - right_margin;
 
     if settings.include_title_page {
         let title_style = &settings.styles.title_page_title;
@@ -694,8 +699,8 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         let max_lines = ((h - top - bottom) / 13.0) as usize;
         let char_w = 7.2; // 12pt Courier at 0.6em
         let full_chars = (content_width / char_w).floor().max(20.0) as usize;
-        let width_for = |indent_mm: f32| {
-            ((content_width - indent_mm * 2.834645) / char_w)
+        let width_for = |style: &ElementStyle| {
+            ((content_width - style.indent - style.right_indent) / char_w)
                 .floor()
                 .max(14.0) as usize
         };
@@ -743,8 +748,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                 for block in &blocks {
                     let style = script_style(&settings.styles, block.kind);
                     let block_size = style.size.max(8.0);
-                    let indent_mm = style.indent / 2.834645;
-                    let width_chars = width_for(indent_mm);
+                    let width_chars = width_for(style);
                     let text = if settings.styles.style_for_kind(block.kind).uppercase {
                         block.text.to_uppercase()
                     } else {
@@ -774,6 +778,18 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                         scene_number += 1;
                     } else {
                         for wrapped in wrap_text(&text, width_chars) {
+                            let text_width = wrapped.chars().count() as f32 * char_w;
+                            let available = (content_width - style.indent - style.right_indent)
+                                .max(0.0);
+                            let aligned_x = match style.align {
+                                Alignment::Left | Alignment::Justify => style.indent,
+                                Alignment::Center => {
+                                    style.indent + (available - text_width).max(0.0) * 0.5
+                                }
+                                Alignment::Right => {
+                                    style.indent + (available - text_width).max(0.0)
+                                }
+                            };
                             push_line(
                                 &mut page,
                                 &mut line_index,
@@ -781,7 +797,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                                 top,
                                 margin,
                                 wrapped,
-                                indent_mm,
+                                aligned_x / 2.834645,
                                 block_size,
                                 false,
                             );
@@ -930,7 +946,10 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             settings.styles.chapter_heading.after,
         );
         if settings.include_synopsis && !section.doc.synopsis.is_empty() {
-            for part in wrap_text(&format!("Synopsis · {}", section.doc.synopsis), chars_per_line) {
+            for part in wrap_text(
+                &format!("Synopsis · {}", section.doc.synopsis.plain_text()),
+                chars_per_line,
+            ) {
                 flow.line(part, margin, size - 1.0, false, 0.0);
             }
             flow.line(String::new(), margin, size, false, 0.0);
@@ -992,7 +1011,10 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             }
         }
         if settings.include_notes && !section.doc.notes.is_empty() {
-            for part in wrap_text(&format!("Author's note · {}", section.doc.notes), chars_per_line) {
+            for part in wrap_text(
+                &format!("Author's note · {}", section.doc.notes.plain_text()),
+                chars_per_line,
+            ) {
                 flow.line(part, margin, size - 1.0, false, 0.0);
             }
         }
@@ -1317,12 +1339,14 @@ fn xhtml_body(
             let class = match block.kind {
                 ElementKind::SceneHeading => "scene",
                 ElementKind::Action | ElementKind::Shot => "action",
-                ElementKind::Character => "character",
+                ElementKind::Character | ElementKind::Extension => "character",
                 ElementKind::Parenthetical => "parenthetical",
                 ElementKind::Dialogue => "dialogue",
                 ElementKind::Transition => "transition",
                 ElementKind::Act => "scene",
                 ElementKind::Scene => "scene",
+                ElementKind::Intercut => "trans",
+                ElementKind::Subheading => "scene",
                 ElementKind::StageDirection => "action",
                 ElementKind::Lyric => "dialogue",
                 ElementKind::General => "action",
@@ -1508,6 +1532,9 @@ fn fdx_type(kind: ElementKind) -> &'static str {
         ElementKind::StageDirection => "Action",
         ElementKind::Lyric => "Lyric",
         ElementKind::General => "General",
+        ElementKind::Extension => "Extension",
+        ElementKind::Intercut => "Transition",
+        ElementKind::Subheading => "Scene Heading",
     }
 }
 
