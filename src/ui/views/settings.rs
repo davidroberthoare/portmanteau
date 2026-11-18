@@ -333,6 +333,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             &app.ws.project,
                             &settings,
                             &mut app.settings_preview_page,
+ height,
                             ui,
                         );
                     });

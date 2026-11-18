@@ -575,7 +575,7 @@ pub fn paged_view(app: &mut PortmanteauApp, ui: &mut egui::Ui, plan: &PagePlan) 
                 );
                 ui.add_space(10.0);
                 for (index, page) in plan.pages.iter().enumerate() {
-                    page_rects.push(page_frame(ui, plan, page, index + 1));
+                    page_rects.push(page_frame(ui, plan, page, index + 1, 1.0));
                     if index + 1 < plan.pages.len() {
                         ui.add_space(26.0);
                     }
@@ -596,7 +596,13 @@ pub fn paged_view(app: &mut PortmanteauApp, ui: &mut egui::Ui, plan: &PagePlan) 
         .min(plan.pages.len().max(1));
 }
 
-pub fn page_frame(ui: &mut egui::Ui, plan: &PagePlan, lines: &[PageLine], number: usize) -> egui::Rect {
+pub fn page_frame(
+    ui: &mut egui::Ui,
+    plan: &PagePlan,
+    lines: &[PageLine],
+    number: usize,
+    scale: f32,
+) -> egui::Rect {
     Frame::new()
         .fill(PAPER)
         .stroke(Stroke::new(1.0, PAPER_EDGE))
@@ -608,19 +614,19 @@ pub fn page_frame(ui: &mut egui::Ui, plan: &PagePlan, lines: &[PageLine], number
             color: Color32::from_black_alpha(24),
         })
         .inner_margin(Margin {
-            left: 54,
-            right: 54,
-            top: 44,
-            bottom: 34,
+            left: (54.0 * scale) as i8,
+            right: (54.0 * scale) as i8,
+            top: (44.0 * scale) as i8,
+            bottom: (34.0 * scale) as i8,
         })
         .show(ui, |ui| {
             ui.with_layout(Layout::top_down(Align::Min), |ui| {
-                ui.set_width(plan.content_w);
+                ui.set_width(plan.content_w * scale);
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 let mut used = 0.0f32;
                 for line in lines {
                     if line.gap_before > 0.0 {
-                        ui.add_space(line.gap_before);
+                        ui.add_space(line.gap_before * scale);
                         used += line.gap_before;
                     }
                     let family = if line.font.trim().is_empty() {
@@ -637,7 +643,7 @@ pub fn page_frame(ui: &mut egui::Ui, plan: &PagePlan, lines: &[PageLine], number
                     } else {
                         line.text.as_str()
                     })
-                    .font(FontId::new(line.size, family))
+                    .font(FontId::new(line.size * scale, family))
                     .color(PAPER_TEXT);
                     let left = (line.indent.max(0.0) + line.first_line_indent.max(0.0))
                         .min((plan.content_w - 24.0).max(0.0));
@@ -658,10 +664,10 @@ pub fn page_frame(ui: &mut egui::Ui, plan: &PagePlan, lines: &[PageLine], number
                     };
                     ui.horizontal(|ui| {
                         if left > 0.0 {
-                            ui.add_space(left);
+                            ui.add_space(left * scale);
                         }
                         ui.allocate_ui_with_layout(
-                            Vec2::new(text_w, row_h),
+                            Vec2::new(text_w * scale, row_h * scale),
                             Layout::top_down(align),
                             |ui| {
                                 ui.add(egui::Label::new(rich).wrap());
@@ -670,16 +676,16 @@ pub fn page_frame(ui: &mut egui::Ui, plan: &PagePlan, lines: &[PageLine], number
                     });
                     used += line.lead;
                     if line.after > 0.0 {
-                        ui.add_space(line.after);
+                        ui.add_space(line.after * scale);
                         used += line.after;
                     }
                 }
                 let remaining = (plan.content_h - used).max(6.0);
-                ui.add_space(remaining);
+                ui.add_space(remaining * scale);
                 ui.vertical_centered(|ui| {
                     ui.label(
                         RichText::new(format!("{number}"))
-                            .font(serif(9.0))
+                            .font(serif(9.0 * scale))
                             .color(PAPER_MUTED),
                     );
                 });

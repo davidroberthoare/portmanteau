@@ -463,17 +463,25 @@ fn card_ui(
             }
             ui.add_space(2.0);
 
-            let synopsis_resp = ui.add_sized(
-                Vec2::new(ui.available_width(), 58.0),
-                TextEdit::multiline(&mut card.synopsis)
-                    .id(synopsis_edit_id(&card.id))
-                    .font(ui_small())
-                    .text_color(MUTED)
-                    .frame(Frame::NONE)
-                    .hint_text("Add a synopsis…")
-                    .desired_rows(3)
-                    .desired_width(f32::INFINITY),
-            );
+            // Long synopses scroll inside the card rather than spilling over
+            // the footer and the cards below.
+            let synopsis_resp = ScrollArea::vertical()
+                .id_salt(("corkboard_synopsis_scroll", card.id.as_str()))
+                .max_height(58.0)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.add(
+                        TextEdit::multiline(&mut card.synopsis)
+                            .id(synopsis_edit_id(&card.id))
+                            .font(ui_small())
+                            .text_color(MUTED)
+                            .frame(Frame::NONE)
+                            .hint_text("Add a synopsis…")
+                            .desired_rows(3)
+                            .desired_width(f32::INFINITY),
+                    )
+                })
+                .inner;
             if synopsis_resp.changed() {
                 record_edit(edits, &card.id, None, Some(card.synopsis.clone()));
             }

@@ -134,6 +134,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 &app.ws.project,
                                 &settings,
                                 &mut app.preview_page,
+ height,
                                 ui,
                             );
                         });
@@ -390,6 +391,8 @@ fn output_field(ui: &mut egui::Ui, value: &mut String, hint: &str) {
                     .hint_text(hint)
                     .font(mono(10.0))
                     .frame(Frame::NONE)
+                    .align(egui::Align2::LEFT_CENTER)
+                    .min_size(Vec2::new(0.0, 22.0))
                     .desired_width((ui.available_width() - 4.0).max(120.0)),
             );
         });

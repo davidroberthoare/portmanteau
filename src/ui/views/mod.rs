@@ -677,6 +677,7 @@ pub fn manuscript_preview_navigator(
     project: &Project,
     settings: &ExportSettings,
     page: &mut usize,
+    max_height: f32,
     ui: &mut egui::Ui,
 ) {
     let preview = manuscript_preview(project, settings);
@@ -776,13 +777,24 @@ pub fn manuscript_preview_navigator(
             });
             ui.add_space(10.0);
 
+            // Scale the page down so a whole page fits the column, both
+            // across and down; the header, navigation and footer take the rest.
+            let chrome_height = 190.0;
+            let page_height_budget = (max_height - chrome_height).max(240.0);
+            let width_budget = (ui.available_width() - 8.0).max(160.0);
             ScrollArea::horizontal()
                 .id_salt("preview_page")
                 .auto_shrink([false, false])
+                .max_height(page_height_budget + 12.0)
                 .show(ui, |ui| {
                     ui.vertical_centered(|ui| {
                         if let Some((plan, lines)) = pages.get(*page) {
-                            page_frame(ui, plan, lines, *page + 1);
+                            let page_w = plan.content_w + 108.0;
+                            let page_h = plan.content_h + 78.0;
+                            let scale = (width_budget / page_w)
+                                .min(page_height_budget / page_h)
+                                .clamp(0.2, 1.0);
+                            page_frame(ui, plan, lines, *page + 1, scale);
                         }
                     });
                 });
