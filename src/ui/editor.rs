@@ -1121,6 +1121,9 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                 .sync_editor_text_with_caret(&edit_text, &sheet, caret);
             doc.touch();
             dirty = true;
+            if let Some(caret) = caret {
+                keep_caret_clear_of_bottom(ui, &output, caret);
+            }
         }
         crate::ui::editor::remember_selection_anchor(ui.ctx(), output.response.id, &output.galley, output.galley_pos);
         paint_rich_images(
@@ -1407,9 +1410,11 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 let count = cue.suggestions.len().max(1);
                 if input.consume_key(Modifiers::NONE, Key::ArrowDown) {
                     cue.selected = (cue.selected + 1) % count;
+                    cue.selection_moved = true;
                 }
                 if input.consume_key(Modifiers::NONE, Key::ArrowUp) {
                     cue.selected = (cue.selected + count - 1) % count;
+                    cue.selection_moved = true;
                 }
                 if input.consume_key(Modifiers::NONE, Key::Enter) {
                     accept_cue = Some(cue.selected);
@@ -1449,6 +1454,12 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             doc.touch();
             dirty = true;
         }
+        if focused_after_edit(&output) && (text_changed || cue.last_caret != caret) {
+            if let Some(caret) = caret {
+                keep_caret_clear_of_bottom(ui, &output, caret);
+            }
+        }
+        cue.last_caret = caret;
         let caret_paragraph = caret
             .map(|index| doc.content.position_at(index).paragraph)
             .unwrap_or(app.selected_block);
@@ -1501,9 +1512,22 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 .galley
                 .pos_from_cursor(egui::text::CCursor::new(caret.unwrap_or(0)))
                 .translate(output.galley_pos.to_vec2());
+            let row_height = ui_body().size + 16.0;
+            let popup_height = cue.suggestions.len().min(CUE_POPUP_ROWS as usize) as f32
+                * row_height
+                + 14.0;
+            let below = caret_rect.bottom() + 4.0;
+            let screen_bottom = ui.ctx().content_rect().bottom();
+            let top = if below + popup_height > screen_bottom - 8.0
+                && caret_rect.top() - 4.0 - popup_height > 0.0
+            {
+                caret_rect.top() - 4.0 - popup_height
+            } else {
+                below
+            };
             let anchor = egui::pos2(
                 caret_rect.left().max(output.response.rect.left()),
-                caret_rect.bottom() + 4.0,
+                top,
             );
             let area = egui::Area::new(Id::unique(("cue_popup_area", doc_id)))
                 .order(egui::Order::Foreground)
@@ -1511,18 +1535,27 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 .show(ui.ctx(), |ui| {
                     Frame::popup(ui.style()).show(ui, |ui| {
                         ui.set_width(260.0);
-                        for (index, suggestion) in cue.suggestions.iter().enumerate() {
-                            let response = ui.add(
-                                egui::Button::selectable(
-                                    index == cue.selected,
-                                    RichText::new(&suggestion.label).font(ui_body()),
-                                )
-                                .min_size(Vec2::new(ui.available_width(), 0.0)),
-                            );
-                            if response.clicked() {
-                                clicked_cue = Some(index);
-                            }
-                        }
+                        ScrollArea::vertical()
+                            .max_height(row_height * CUE_POPUP_ROWS)
+                            .auto_shrink([false, true])
+                            .show(ui, |ui| {
+                                for (index, suggestion) in cue.suggestions.iter().enumerate() {
+                                    let response = ui.add(
+                                        egui::Button::selectable(
+                                            index == cue.selected,
+                                            RichText::new(&suggestion.label).font(ui_body()),
+                                        )
+                                        .min_size(Vec2::new(ui.available_width(), 0.0)),
+                                    );
+                                    if index == cue.selected && cue.selection_moved {
+                                        response.scroll_to_me(None);
+                                    }
+                                    if response.clicked() {
+                                        clicked_cue = Some(index);
+                                    }
+                                }
+                            });
+                        cue.selection_moved = false;
                     });
                 });
             cue.popup_rect = Some(area.response.rect);
@@ -1786,6 +1819,10 @@ fn paragraph_leading(
 /// no glyphs to carry the indent. Cover that caret and draw one at the style's
 /// real margin so an empty Dialogue or Character line looks right before the
 /// first letter is typed.
+fn focused_after_edit(output: &egui::text_edit::TextEditOutput) -> bool {
+    output.response.has_focus()
+}
+
 fn paint_empty_paragraph_caret(
     ui: &egui::Ui,
     output: &egui::text_edit::TextEditOutput,
@@ -2734,6 +2771,33 @@ struct CueState {
     visible: bool,
     suggestions: Vec<CueSuggestion>,
     popup_rect: Option<egui::Rect>,
+    last_caret: Option<usize>,
+    selection_moved: bool,
+}
+
+/// Rows of the cue popup visible before it scrolls.
+const CUE_POPUP_ROWS: f32 = 4.0;
+/// Space kept clear below the line being typed (about two inches).
+const CARET_BOTTOM_CLEARANCE: f32 = 190.0;
+
+/// Scroll the writing surface so the caret line keeps a couple of inches of
+/// paper below it, instead of sinking to the window's edge as text is added.
+fn keep_caret_clear_of_bottom(
+    ui: &egui::Ui,
+    output: &egui::text_edit::TextEditOutput,
+    caret: usize,
+) {
+    let rect = output
+        .galley
+        .pos_from_cursor(egui::text::CCursor::new(caret))
+        .translate(output.galley_pos.to_vec2());
+    ui.scroll_to_rect(
+        egui::Rect::from_min_max(
+            rect.left_top(),
+            egui::pos2(rect.right(), rect.bottom() + CARET_BOTTOM_CLEARANCE),
+        ),
+        None,
+    );
 }
 
 /// Names to offer for the cue at `paragraph`. An empty cue lists the other
