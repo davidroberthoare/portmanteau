@@ -305,7 +305,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                     app.settings.sync_sheet_formats_from_element_styles();
                                 }
                                 ui.add_space(8.0);
-                                section_label(ui, "Writing behavior");
+                                section_label(ui, "Writing behavior · per-format styles (film, TV, stage)");
                                 if style_sheets_editor(ui, &mut app.settings.style_sheets) {
                                     app.settings.sync_element_styles_from_sheets();
                                 }

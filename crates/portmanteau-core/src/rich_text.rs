@@ -35,9 +35,32 @@ pub struct ParagraphStyle {
     pub text_transform: TextTransform,
 }
 
+/// Page margins in points (72 per inch) for a script format.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug)]
+pub struct PageMargins {
+    pub left: f32,
+    pub right: f32,
+    pub top: f32,
+    pub bottom: f32,
+}
+
+impl Default for PageMargins {
+    /// Film and TV: 1.5" binding edge, 1" elsewhere.
+    fn default() -> Self {
+        Self {
+            left: 108.0,
+            right: 72.0,
+            top: 72.0,
+            bottom: 72.0,
+        }
+    }
+}
+
 /// A project-owned set of paragraph styles for one writing mode.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct StyleSheet {
+    #[serde(default)]
+    pub margins: PageMargins,
     pub id: String,
     pub name: String,
     pub medium: Medium,
@@ -54,6 +77,7 @@ impl StyleSheet {
     /// in the project without changing the program-wide template.
     pub fn novel_prose(defaults: &ElementStyles) -> Self {
         Self {
+            margins: PageMargins::default(),
             id: "prose".into(),
             name: "Novel / Prose".into(),
             medium: Medium::Prose,
@@ -106,17 +130,107 @@ impl StyleSheet {
 
     /// Feature-film screenplay defaults with editable next-style rules.
     pub fn film_screenplay(defaults: &ElementStyles) -> Self {
-        let kinds = ElementKind::all(Medium::Screenplay);
+        Self::script_sheet(
+            "film-screenplay",
+            "Film Screenplay",
+            Medium::Screenplay,
+            defaults,
+            &|kind| defaults.style_for_kind(kind).clone(),
+        )
+    }
+
+    /// One-hour drama: film layout plus centred act headings (TEASER, ACT ONE).
+    pub fn tv_script(defaults: &ElementStyles) -> Self {
+        Self::script_sheet(
+            "tv-script",
+            "TV One-Hour Drama",
+            Medium::TvScript,
+            defaults,
+            &|kind| match kind {
+                ElementKind::Act => ElementStyle {
+                    before: 24.0,
+                    after: 12.0,
+                    align: crate::Alignment::Center,
+                    uppercase: true,
+                    ..defaults.action.clone()
+                },
+                _ => defaults.style_for_kind(kind).clone(),
+            },
+        )
+    }
+
+    /// Samuel French stage manuscript: centred cues, full-width dialogue,
+    /// italic stage directions set in from the left. Indents are measured from
+    /// the left text margin.
+    pub fn stage_play(defaults: &ElementStyles) -> Self {
+        let base = defaults.action.clone();
+        Self::script_sheet(
+            "stage-play",
+            "Stage Play (Samuel French)",
+            Medium::StagePlay,
+            defaults,
+            &|kind| match kind {
+                ElementKind::Act => ElementStyle {
+                    before: 24.0,
+                    after: 12.0,
+                    align: crate::Alignment::Center,
+                    uppercase: true,
+                    ..base.clone()
+                },
+                ElementKind::Scene => ElementStyle {
+                    before: 12.0,
+                    after: 12.0,
+                    align: crate::Alignment::Center,
+                    uppercase: true,
+                    ..base.clone()
+                },
+                ElementKind::StageDirection => ElementStyle {
+                    indent: 108.0,
+                    before: 12.0,
+                    italic: true,
+                    ..base.clone()
+                },
+                ElementKind::Character => ElementStyle {
+                    before: 12.0,
+                    align: crate::Alignment::Center,
+                    uppercase: true,
+                    ..base.clone()
+                },
+                ElementKind::Parenthetical => ElementStyle {
+                    indent: 108.0,
+                    right_indent: 108.0,
+                    italic: true,
+                    ..base.clone()
+                },
+                ElementKind::Dialogue => base.clone(),
+                _ => base.clone(),
+            },
+        )
+    }
+
+    fn script_sheet(
+        id: &str,
+        name: &str,
+        medium: Medium,
+        defaults: &ElementStyles,
+        format_for: &dyn Fn(ElementKind) -> ElementStyle,
+    ) -> Self {
+        let kinds = ElementKind::all(medium);
+        let default_kind = medium.default_element();
+        let known: Vec<&'static str> = kinds.iter().map(|k| script_style_id(*k)).collect();
+        let default_id = script_style_id(default_kind);
         let mut styles: Vec<ParagraphStyle> = kinds
             .into_iter()
             .map(|kind| {
-                let id = script_style_id(kind).to_owned();
+                let next = default_next_style(kind)
+                    .filter(|next| known.contains(next))
+                    .unwrap_or(default_id);
                 ParagraphStyle {
-                    id: id.clone(),
+                    id: script_style_id(kind).to_owned(),
                     name: kind.label().to_owned(),
-                    format: defaults.style_for_kind(kind).clone(),
+                    format: format_for(kind),
                     semantic_kind: Some(kind),
-                    next_style: default_next_style(kind).map(str::to_owned),
+                    next_style: Some(next.to_owned()),
                     text_transform: if kind.is_uppercase() {
                         TextTransform::Uppercase
                     } else {
@@ -125,6 +239,7 @@ impl StyleSheet {
                 }
             })
             .collect();
+        let body = format_for(default_kind);
         styles.push(ParagraphStyle {
             id: "image".into(),
             name: "Image".into(),
@@ -144,26 +259,61 @@ impl StyleSheet {
             format: ElementStyle {
                 align: crate::Alignment::Center,
                 size: 9.0,
-                ..defaults.action.clone()
+                ..body
             },
             semantic_kind: None,
-            next_style: Some("action".into()),
+            next_style: Some(default_id.to_owned()),
             text_transform: TextTransform::None,
         });
         Self {
-            id: "film-screenplay".into(),
-            name: "Film Screenplay".into(),
-            medium: Medium::Screenplay,
-            default_style: script_style_id(ElementKind::Action).into(),
+            margins: if medium == Medium::StagePlay {
+                PageMargins {
+                    left: 72.0,
+                    ..PageMargins::default()
+                }
+            } else {
+                PageMargins::default()
+            },
+            id: id.into(),
+            name: name.into(),
+            medium,
+            default_style: default_id.into(),
             styles,
         }
+    }
+
+    /// The built-in sheet for a document medium.
+    pub fn for_medium(medium: Medium, defaults: &ElementStyles) -> Self {
+        match medium {
+            Medium::Screenplay => Self::film_screenplay(defaults),
+            Medium::TvScript => Self::tv_script(&ElementStyles::default()),
+            Medium::StagePlay => Self::stage_play(&ElementStyles::default()),
+            Medium::Prose | Medium::Note => Self::novel_prose(defaults),
+        }
+    }
+
+    /// TV and stage sheets own their formatting; the shared element styles
+    /// only mirror prose and film.
+    pub fn is_independent_script_sheet(id: &str) -> bool {
+        matches!(id, "tv-script" | "stage-play")
     }
 
     pub fn industry_defaults(defaults: &ElementStyles) -> Vec<Self> {
         vec![
             Self::novel_prose(defaults),
             Self::film_screenplay(defaults),
+            Self::tv_script(&ElementStyles::default()),
+            Self::stage_play(&ElementStyles::default()),
         ]
+    }
+
+    /// Append built-in sheets missing from `sheets`, leaving existing ones alone.
+    pub fn ensure_industry_defaults(sheets: &mut Vec<Self>, defaults: &ElementStyles) {
+        for sheet in Self::industry_defaults(defaults) {
+            if !sheets.iter().any(|existing| existing.id == sheet.id) {
+                sheets.push(sheet);
+            }
+        }
     }
 }
 
@@ -1442,10 +1592,34 @@ mod tests {
     }
 
     #[test]
+    fn tv_and_stage_sheets_are_independent_formats() {
+        let sheets = StyleSheet::industry_defaults(&ElementStyles::default());
+        let tv = sheets.iter().find(|s| s.id == "tv-script").unwrap();
+        let stage = sheets.iter().find(|s| s.id == "stage-play").unwrap();
+        assert_eq!(tv.style("act").unwrap().format.align, crate::Alignment::Center);
+        assert_eq!(tv.style("dialogue").unwrap().format.indent, 72.0);
+        assert_eq!(stage.style("dialogue").unwrap().format.indent, 0.0);
+        assert_eq!(stage.style("character").unwrap().format.align, crate::Alignment::Center);
+        assert!(stage.style("stage-direction").unwrap().format.italic);
+        assert_eq!(stage.default_style, "stage-direction");
+        assert_eq!(stage.style("act").unwrap().next_style.as_deref(), Some("scene"));
+
+        // Editing the shared film styles must not touch TV or stage.
+        let mut styles = ElementStyles::default();
+        styles.update_from_sheets(&sheets);
+        assert_eq!(styles.dialogue.indent, 72.0);
+        assert_eq!(styles.character.align, crate::Alignment::Left);
+
+        let mut old = vec![StyleSheet::film_screenplay(&styles)];
+        StyleSheet::ensure_industry_defaults(&mut old, &styles);
+        assert_eq!(old.len(), 4);
+    }
+
+    #[test]
     fn industry_stylesheets_have_next_style_rules_and_canonical_character_case() {
         let defaults = ElementStyles::default();
         let sheets = StyleSheet::industry_defaults(&defaults);
-        assert_eq!(sheets.len(), 2);
+        assert_eq!(sheets.len(), 4);
         assert_eq!(sheets[0].id, "prose");
         assert_eq!(sheets[0].default_style, "body");
 
@@ -1465,7 +1639,7 @@ mod tests {
         assert_eq!(screenplay.style("dialogue").unwrap().format.right_indent, 108.0);
         assert_eq!(
             screenplay.style("parenthetical").unwrap().format.indent,
-            108.0
+            115.2
         );
         assert_eq!(
             screenplay
@@ -1473,7 +1647,7 @@ mod tests {
                 .unwrap()
                 .format
                 .right_indent,
-            144.0
+            136.8
         );
         assert_eq!(
             screenplay.style("transition").unwrap().format.align,

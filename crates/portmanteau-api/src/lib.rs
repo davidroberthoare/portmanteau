@@ -83,7 +83,8 @@ impl Workspace {
         if !path.is_dir() {
             return Err("Not a Portmanteau project (expected a .portmanteau folder)".into());
         }
-        let project = storage::load_folder(path)?;
+        let mut project = storage::load_folder(path)?;
+        project.ensure_style_sheets();
         Ok(Self {
             project,
             path: Some(path.to_path_buf()),

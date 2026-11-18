@@ -1109,3 +1109,13 @@ and script/prose tests pin Shift+Arrow selection, Ctrl+Arrow whole-word moves
 and plain-arrow caret movement without focus or `selected_block` changes. The
 prose body gained a stable `prose_body/<doc>` id so those tests can read its
 `TextEditState`.
+
+## Script formats (screenplay, TV, stage)
+
+- The continuous script view is a true US Letter sheet (1.5" left, 1" right margin, 12 pt Courier, 6 lines/inch). Each paragraph wraps in its own column (left/right indent, hanging wraps, space before/after, alignment): `script_flow_galley` in `src/ui/editor.rs` lays paragraphs out separately and stacks their rows into one galley, so a single TextEdit still owns the caret.
+- Three independent script stylesheets: `film-screenplay`, `tv-script` (one-hour drama: film layout plus centred ACT headings) and `stage-play` (Samuel French: centred cues, full-width dialogue, italic stage directions indented 1.5"). A document uses the sheet for its medium. Older projects and configs gain the missing sheets on load (`ensure_style_sheets`).
+- The shared element styles (Settings → Display → "Film screenplay") only mirror prose and film. TV and stage are edited under "Writing behavior · per-format styles", each with a "Reset to industry standard" button.
+- `ElementStyle.italic` is new. Not yet honoured by the Paged view or the PDF/DOCX/FDX writers; that belongs to the compiler work.
+- Page margins are per stylesheet (`StyleSheet.margins`; film/TV 1.5" left and 1" elsewhere, stage 1" all round) and editable under each sheet in Settings. The editor honours them; the Paged view and the compilers still assume 1.5"/1" and need to read the sheet's margins.
+- The format switch lives only in the inspector's Document panel; the editor toolbar dropdown is gone.
+- Known gaps: act-per-page breaks and bold/underline are not modelled.

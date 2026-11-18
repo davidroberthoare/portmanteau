@@ -234,7 +234,10 @@ pub fn element_styles_editor(
             .map(|style| style_summary(summary_label, style))
             .unwrap_or_default();
         egui::CollapsingHeader::new(
-            RichText::new(format!("{section}    {summary}"))
+            RichText::new(format!(
+                "{}    {summary}",
+                if section == "Script" { "Film screenplay" } else { section }
+            ))
                 .font(ui_body())
                 .color(if greyed { FAINT } else { TEXT }),
         )
@@ -386,6 +389,10 @@ fn element_row(
                     changed |= grid_drag(ui, &mut element.after, 0.5, 0.0..=800.0, " pt");
                     grid_label(ui, "All caps");
                     changed |= ui.checkbox(&mut element.uppercase, "").changed();
+                    ui.end_row();
+
+                    grid_label(ui, "Italic");
+                    changed |= ui.checkbox(&mut element.italic, "").changed();
                     ui.end_row();
                 });
         });
@@ -540,6 +547,38 @@ pub fn style_sheets_editor(ui: &mut egui::Ui, sheets: &mut Vec<StyleSheet>) -> b
         .id_salt(("style_sheet", sheet.id.as_str()))
         .default_open(false)
         .show(ui, |ui| {
+            ui.add_space(4.0);
+            if sheet.medium.is_script() {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Page margins").font(ui_small()).color(FAINT));
+                    for (label, field) in [
+                        ("Left", &mut sheet.margins.left),
+                        ("Right", &mut sheet.margins.right),
+                        ("Top", &mut sheet.margins.top),
+                        ("Bottom", &mut sheet.margins.bottom),
+                    ] {
+                        ui.label(RichText::new(label).font(ui_small()).color(FAINT));
+                        let mut inches = *field / 72.0;
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut inches)
+                                    .speed(0.05)
+                                    .range(0.25..=3.0)
+                                    .suffix("\""),
+                            )
+                            .changed()
+                        {
+                            *field = inches * 72.0;
+                            changed = true;
+                        }
+                    }
+                });
+                ui.add_space(4.0);
+            }
+            if quiet_button(ui, "Reset to industry standard").clicked() {
+                *sheet = StyleSheet::for_medium(sheet.medium, &ElementStyles::default());
+                changed = true;
+            }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Default paragraph").font(ui_small()).color(FAINT));

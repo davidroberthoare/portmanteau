@@ -117,6 +117,16 @@ impl Medium {
             Medium::Note,
         ]
     }
+    /// The id of the built-in stylesheet a document of this medium starts with.
+    pub fn default_stylesheet_id(self) -> &'static str {
+        match self {
+            Medium::Screenplay => "film-screenplay",
+            Medium::TvScript => "tv-script",
+            Medium::StagePlay => "stage-play",
+            Medium::Prose | Medium::Note => "prose",
+        }
+    }
+
     pub fn default_element(self) -> ElementKind {
         match self {
             Medium::StagePlay => ElementKind::StageDirection,
@@ -212,11 +222,7 @@ impl Document {
             title: title.into(),
             kind,
             medium,
-            style_sheet_id: if medium.is_script() {
-                "film-screenplay".into()
-            } else {
-                default_prose_stylesheet()
-            },
+            style_sheet_id: medium.default_stylesheet_id().into(),
             content: RichDocument::empty(if medium.is_script() {
                 "action"
             } else {
@@ -341,11 +347,7 @@ impl Document {
         }
         let body = self.body_text();
         self.medium = medium;
-        self.style_sheet_id = if medium.is_script() {
-            "film-screenplay".into()
-        } else {
-            default_prose_stylesheet()
-        };
+        self.style_sheet_id = medium.default_stylesheet_id().into();
         if medium.is_script() {
             let blocks = crate::script::parse_loose(&body);
             self.content = RichDocument::from_script_blocks(&blocks);
@@ -645,6 +647,9 @@ pub struct ElementStyle {
     /// and prose.
     #[serde(default)]
     pub uppercase: bool,
+    /// Render this element in italics (Samuel French stage directions).
+    #[serde(default)]
+    pub italic: bool,
 }
 
 impl Default for ElementStyle {
@@ -660,6 +665,7 @@ impl Default for ElementStyle {
             after: 0.0,
             align: Alignment::Left,
             uppercase: false,
+            italic: false,
         }
     }
 }
@@ -733,19 +739,27 @@ impl Default for ElementStyles {
                 first_line_indent: 14.0,
                 ..base_element(serif, 11.0, 1.4)
             },
+            // US Letter, 12 pt Courier, 6 lines per inch, 1.5" left / 1" right
+            // margins. Indents are measured from the left text margin (1.5"),
+            // so the character cue sits at 3.7" and dialogue at 2.5".
             scene_heading: ElementStyle {
+                before: 24.0,
                 uppercase: true,
                 ..base_element(mono, 12.0, 1.0)
             },
-            action: base_element(mono, 12.0, 1.0),
+            action: ElementStyle {
+                before: 12.0,
+                ..base_element(mono, 12.0, 1.0)
+            },
             character: ElementStyle {
                 indent: 158.4,
+                before: 12.0,
                 uppercase: true,
                 ..base_element(mono, 12.0, 1.0)
             },
             parenthetical: ElementStyle {
-                indent: 108.0,
-                right_indent: 144.0,
+                indent: 115.2,
+                right_indent: 136.8,
                 ..base_element(mono, 12.0, 1.0)
             },
             dialogue: ElementStyle {
@@ -754,11 +768,13 @@ impl Default for ElementStyles {
                 ..base_element(mono, 12.0, 1.0)
             },
             transition: ElementStyle {
+                before: 12.0,
                 uppercase: true,
                 align: Alignment::Right,
                 ..base_element(mono, 12.0, 1.0)
             },
             act: ElementStyle {
+                before: 12.0,
                 uppercase: true,
                 ..base_element(mono, 12.0, 1.0)
             },
@@ -771,10 +787,12 @@ impl Default for ElementStyles {
                 ..base_element(mono, 12.0, 1.0)
             },
             intercut: ElementStyle {
+                before: 12.0,
                 uppercase: true,
                 ..base_element(mono, 12.0, 1.0)
             },
             subheading: ElementStyle {
+                before: 12.0,
                 uppercase: true,
                 ..base_element(mono, 12.0, 1.0)
             },
@@ -856,6 +874,9 @@ impl ElementStyles {
     /// writing sheets, so preview and exported pages agree with the editor.
     pub fn update_from_sheets(&mut self, sheets: &[StyleSheet]) {
         for sheet in sheets {
+            if StyleSheet::is_independent_script_sheet(&sheet.id) {
+                continue;
+            }
             for style in &sheet.styles {
                 if let Some(kind) = style.semantic_kind {
                     *self.style_for_kind_mut(kind) = style.format.clone();
@@ -955,6 +976,11 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
+    /// Add any built-in stylesheet that a config saved by an older build lacks.
+    pub fn ensure_style_sheets(&mut self) {
+        StyleSheet::ensure_industry_defaults(&mut self.style_sheets, &self.styles);
+    }
+
     /// Build the style sheets a newly created project receives. The existing
     /// program-wide style sheets are copied into the project; project edits
     /// never write back to this template.
@@ -977,6 +1003,11 @@ impl AppSettings {
     /// rule.
     pub fn sync_sheet_formats_from_element_styles(&mut self) {
         for sheet in &mut self.style_sheets {
+            // The TV and stage sheets are separate formats with their own
+            // look; the shared element styles only describe film.
+            if StyleSheet::is_independent_script_sheet(&sheet.id) {
+                continue;
+            }
             for style in &mut sheet.styles {
                 if let Some(kind) = style.semantic_kind {
                     style.format = self.styles.style_for_kind(kind).clone();
@@ -1258,6 +1289,19 @@ impl Project {
         self.styles.update_from_sheets(&self.style_sheets);
     }
 
+    /// Add any built-in stylesheet an older project lacks (TV, stage) and move
+    /// TV and stage documents off the film sheet they used to share.
+    pub fn ensure_style_sheets(&mut self) {
+        StyleSheet::ensure_industry_defaults(&mut self.style_sheets, &self.styles);
+        for doc in &mut self.documents {
+            if doc.style_sheet_id == "film-screenplay"
+                && matches!(doc.medium, Medium::TvScript | Medium::StagePlay)
+            {
+                doc.style_sheet_id = doc.medium.default_stylesheet_id().into();
+            }
+        }
+    }
+
     /// The effective format for one paragraph style. `configured` holds an
     /// output format's saved element styles: a value that deliberately differs
     /// from the project base wins, while an untouched value defers to the
@@ -1304,11 +1348,7 @@ impl Project {
             .find(|sheet| sheet.id == doc.style_sheet_id)
             .cloned()
             .unwrap_or_else(|| {
-                if doc.medium.is_script() {
-                    StyleSheet::film_screenplay(&self.styles)
-                } else {
-                    StyleSheet::novel_prose(&self.styles)
-                }
+                StyleSheet::for_medium(doc.medium, &self.styles)
             })
     }
 
@@ -1915,8 +1955,8 @@ mod tests {
         assert_eq!(styles.character.size, 12.0);
         assert_eq!(styles.character.leading, 1.0);
         assert_eq!(styles.character.indent, 158.4);
-        assert_eq!(styles.parenthetical.indent, 108.0);
-        assert_eq!(styles.parenthetical.right_indent, 144.0);
+        assert_eq!(styles.parenthetical.indent, 115.2);
+        assert_eq!(styles.parenthetical.right_indent, 136.8);
         assert_eq!(styles.dialogue.indent, 72.0);
         assert_eq!(styles.dialogue.right_indent, 108.0);
         assert_eq!(styles.transition.align, Alignment::Right);

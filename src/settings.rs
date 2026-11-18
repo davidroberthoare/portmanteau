@@ -29,7 +29,11 @@ pub fn config_path() -> PathBuf {
 /// the built-in defaults are used instead.
 pub fn load_settings() -> AppSettings {
     match std::fs::read_to_string(config_path()) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
+        Ok(text) => {
+            let mut settings: AppSettings = serde_json::from_str(&text).unwrap_or_default();
+            settings.ensure_style_sheets();
+            settings
+        }
         Err(_) => AppSettings::default(),
     }
 }

@@ -81,7 +81,23 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     }
 
     let wide = if app.focus_mode { 860.0 } else { 780.0 };
-    let page_w = (ui.available_width() - 72.0).clamp(420.0, wide);
+    let is_script_view = app
+        .ws
+        .project
+        .document(&doc_id)
+        .is_some_and(|document| document.medium.is_script());
+    // Screenplays are drawn as a true US Letter sheet (612 x 792 pt) with a
+    // 1.5" left and 1" right margin, so 12 pt Courier gives 60 characters.
+    let margins = script_margins(app, &doc_id);
+    let text_pt = (612.0 - margins.left - margins.right).max(144.0);
+    let script_scale = (app.editor_zoom.clamp(0.7, 1.6) * SCRIPT_ZOOM_BASE)
+        .min((ui.available_width() - 72.0) / 612.0)
+        .max(0.3);
+    let page_w = if is_script_view {
+        612.0 * script_scale
+    } else {
+        (ui.available_width() - 72.0).clamp(420.0, wide)
+    };
     let is_script = app
         .ws
         .project
@@ -105,28 +121,32 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         spread: 0,
                         color: Color32::from_black_alpha(24),
                     })
-                    .inner_margin(Margin {
-                        left: if is_script {
-                            108
-                        } else if app.focus_mode {
-                            64
-                        } else {
-                            54
-                        },
-                        right: if is_script {
-                            72
-                        } else if app.focus_mode {
-                            64
-                        } else {
-                            54
-                        },
-                        top: if is_script { 72 } else { 44 },
-                        bottom: if is_script { 72 } else { 34 },
+                    .inner_margin(if is_script {
+                        Margin::ZERO
+                    } else {
+                        let side = if app.focus_mode { 64 } else { 54 };
+                        Margin {
+                            left: side,
+                            right: side,
+                            top: 44,
+                            bottom: 34,
+                        }
                     })
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         if is_script {
-                            script_page(app, ui, &doc_id);
+                            ui.add_space(margins.top * script_scale);
+                            ui.horizontal_top(|ui| {
+                                let spacing = ui.spacing().item_spacing.x;
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                ui.add_space(margins.left * script_scale);
+                                ui.vertical(|ui| {
+                                    ui.spacing_mut().item_spacing.x = spacing;
+                                    ui.set_width(text_pt * script_scale);
+                                    script_page(app, ui, &doc_id);
+                                });
+                            });
+                            ui.add_space(margins.bottom * script_scale);
                         } else {
                             prose_page(app, ui, &doc_id, &mut take_snapshot);
                         }
@@ -477,33 +497,6 @@ fn toolbar(
 
                     editor_zoom_control(app, ui);
 
-                    // Paged mode is a read-only preview, so the medium
-                    // switcher is hidden there and the space goes to the page
-                    // readout instead.
-                    if app.write_mode == WriteMode::Continuous {
-                        let mut new_medium = medium;
-                        ComboBox::from_id_salt("editor_medium")
-                            .selected_text(RichText::new(medium.label()).font(ui_body()).color(MUTED))
-                            .width(98.0)
-                            .show_ui(ui, |ui| {
-                                for m in [
-                                    Medium::Prose,
-                                    Medium::Screenplay,
-                                    Medium::StagePlay,
-                                    Medium::TvScript,
-                                ] {
-                                    ui.selectable_value(&mut new_medium, m, m.label());
-                                }
-                            });
-                        if new_medium != medium {
-                            if let Some(doc) = app.ws.project.document_mut(&id) {
-                                doc.convert_medium(new_medium);
-                                app.ws.dirty = true;
-                                app.block_focus = Some(0);
-                                app.selected_block = 0;
-                            }
-                        }
-                    }
                 });
                 if new_mode != app.write_mode {
                     if new_mode == WriteMode::Paged {
@@ -1106,7 +1099,8 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         let sheet_for_layout = sheet.clone();
         let styles_for_layout = styles.clone();
         let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
-            let job = script_flow_layout_job(
+            script_flow_galley(
+                ui,
                 text.as_str(),
                 &content_for_layout,
                 &sheet_for_layout,
@@ -1114,8 +1108,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                 zoom,
                 wrap_width,
                 &spans,
-            );
-            ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
+            )
         };
         let edit = TextEdit::multiline(&mut edit_text)
             .id(prose_id)
@@ -1200,6 +1193,15 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
     }
 }
 
+/// Page margins of the stylesheet that owns a script document.
+fn script_margins(app: &PortmanteauApp, doc_id: &str) -> portmanteau_core::rich_text::PageMargins {
+    app.ws
+        .project
+        .document(doc_id)
+        .map(|doc| app.ws.project.style_sheet_for(doc).margins)
+        .unwrap_or_default()
+}
+
 fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     script_flow_page(app, ui, doc_id);
 }
@@ -1208,7 +1210,10 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
 /// prose. Paragraph style ids carry screenplay semantics; the one TextEdit
 /// owns the caret and selection for the complete document.
 fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
-    let zoom = app.editor_zoom.clamp(0.7, 1.6) * SCRIPT_ZOOM_BASE;
+    let margins = script_margins(app, doc_id);
+    let zoom = (app.editor_zoom.clamp(0.7, 1.6) * SCRIPT_ZOOM_BASE)
+        .min(ui.available_width() / (612.0 - margins.left - margins.right).max(144.0))
+        .max(0.3);
     let project_title = app.ws.project.title.clone();
     let styles = app.ws.project.styles.clone();
     let sheet = app
@@ -1382,7 +1387,8 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         let styles_for_layout = styles.clone();
         let desired_rows = edit_text.lines().count().clamp(1, 2000);
         let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
-            let job = script_flow_layout_job(
+            script_flow_galley(
+                ui,
                 text.as_str(),
                 &content_for_layout,
                 &sheet_for_layout,
@@ -1390,8 +1396,7 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 zoom,
                 wrap_width,
                 &spans,
-            );
-            ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
+            )
         };
         let edit = TextEdit::multiline(&mut edit_text)
             .id(flow_id)
@@ -1401,7 +1406,7 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             .frame(Frame::NONE)
             .desired_width(f32::INFINITY)
             .desired_rows(desired_rows)
-            .margin(Margin::symmetric(2, 1))
+            .margin(Margin::ZERO)
             .event_filter(egui::EventFilter {
                 horizontal_arrows: true,
                 vertical_arrows: true,
@@ -1630,17 +1635,6 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 )
             });
         }
-        if focused && paragraph_text.is_empty() {
-            if let (Some(caret), Some(style)) = (
-                caret,
-                doc.content
-                    .paragraphs
-                    .get(caret_paragraph)
-                    .and_then(|paragraph| sheet.style(&paragraph.style_id)),
-            ) {
-                paint_empty_paragraph_caret(ui, &output, caret, &style.format, zoom);
-            }
-        }
         app.selected_block = caret_paragraph;
         if spell_on {
             let key = Id::unique(("script_spell_menu", doc_id));
@@ -1695,6 +1689,30 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     }
 }
 
+fn script_paragraph_style(
+    content: &portmanteau_core::RichDocument,
+    sheet: &portmanteau_core::StyleSheet,
+    styles: &portmanteau_core::ElementStyles,
+    index: usize,
+) -> (ElementKind, portmanteau_core::ElementStyle, bool) {
+    let style_id = content
+        .paragraphs
+        .get(index)
+        .map(|paragraph| paragraph.style_id.as_str())
+        .unwrap_or(sheet.default_style.as_str());
+    let paragraph_style = sheet.style(style_id);
+    let kind = paragraph_style
+        .and_then(|style| style.semantic_kind)
+        .unwrap_or(ElementKind::Action);
+    let element_style = paragraph_style
+        .map(|style| style.format.clone())
+        .unwrap_or_else(|| styles.style_for_kind(kind).clone());
+    let uppercase = paragraph_style
+        .is_some_and(|style| style.text_transform == portmanteau_core::TextTransform::Uppercase)
+        || element_style.uppercase;
+    (kind, element_style, uppercase)
+}
+
 pub(crate) fn script_flow_layout_job(
     text: &str,
     content: &portmanteau_core::RichDocument,
@@ -1715,34 +1733,8 @@ pub(crate) fn script_flow_layout_job(
         text.split_inclusive('\n').collect::<Vec<_>>()
     };
     for (index, line) in lines.into_iter().enumerate() {
-        let style_id = content
-            .paragraphs
-            .get(index)
-            .map(|paragraph| paragraph.style_id.as_str())
-            .unwrap_or(sheet.default_style.as_str());
-        let paragraph_style = sheet.style(style_id);
-        let kind = paragraph_style
-            .and_then(|style| style.semantic_kind)
-            .unwrap_or(ElementKind::Action);
-        let element_style = paragraph_style
-            .map(|style| style.format.clone())
-            .unwrap_or_else(|| styles.style_for_kind(kind).clone());
-        let family = family_for_font(&element_style.font);
+        let (_, element_style, _) = script_paragraph_style(content, sheet, styles, index);
         let font_size = element_style.size.max(6.0) * zoom;
-        let format = egui::TextFormat {
-            font_id: FontId::new(font_size, family),
-            color: if kind.is_uppercase() {
-                Color32::from_rgb(44, 40, 33)
-            } else {
-                PAPER_TEXT
-            },
-            line_height: Some(font_size * element_style.leading.max(0.85)),
-            ..Default::default()
-        };
-        let uppercase = paragraph_style
-            .is_some_and(|style| style.text_transform == portmanteau_core::TextTransform::Uppercase)
-            || element_style.uppercase;
-        let display_line = transform_for_display(line, uppercase);
         let leading = paragraph_leading(
             &element_style,
             zoom,
@@ -1750,65 +1742,195 @@ pub(crate) fn script_flow_layout_job(
             line.trim_end_matches('\n').chars().count(),
             font_size,
         );
-        let paragraph = content.paragraphs.get(index);
-        let raw_char_bytes: Vec<usize> = line.char_indices().map(|(byte, _)| byte).collect();
-        let display_char_bytes: Vec<usize> =
-            display_line.char_indices().map(|(byte, _)| byte).collect();
-        let mut keys = Vec::with_capacity(raw_char_bytes.len());
-        for (char_index, raw_byte) in raw_char_bytes.iter().enumerate() {
-            let global_byte = byte_start + raw_byte;
-            let char_end = raw_char_bytes
-                .get(char_index + 1)
-                .copied()
-                .unwrap_or(line.len());
-            let misspelled_char = !uppercase
-                && misspelled
-                    .iter()
-                    .any(|span| span.0 < byte_start + char_end && span.1 > global_byte);
-            let marks = paragraph
-                .map(|paragraph| inline_marks_at(&paragraph.content, char_index))
-                .unwrap_or_default();
-            keys.push((marks, misspelled_char));
-        }
-        let mut first = true;
-        let mut start_char = 0usize;
-        while start_char < keys.len() {
-            let key = keys[start_char].clone();
-            let mut end_char = start_char + 1;
-            while end_char < keys.len() && keys[end_char] == key {
-                end_char += 1;
-            }
-            let start_byte = display_char_bytes[start_char];
-            let end_byte = display_char_bytes
-                .get(end_char)
-                .copied()
-                .unwrap_or(display_line.len());
-            let mut run_format = format.clone();
-            apply_inline_marks(&mut run_format, &key.0);
-            if end_char == start_char + 1 {
-                if let Some(image) = paragraph
-                    .and_then(|paragraph| inline_image_at(&paragraph.content, start_char))
-                {
-                    let image_height = image.height.unwrap_or(20.0) * zoom;
-                    run_format.font_id.size = image_height.max(font_size);
-                    run_format.line_height = Some(image_height.max(font_size));
-                    run_format.color = Color32::TRANSPARENT;
-                }
-            }
-            if key.1 {
-                run_format.underline = Stroke::new(1.4, Color32::from_rgb(196, 64, 64));
-            }
-            job.append(
-                &display_line[start_byte..end_byte],
-                if first { leading } else { 0.0 },
-                run_format,
-            );
-            first = false;
-            start_char = end_char;
-        }
+        append_script_paragraph(
+            &mut job, line, index, byte_start, content, sheet, styles, zoom, misspelled, leading,
+        );
         byte_start += line.len();
     }
     job
+}
+
+/// Lay the screenplay out paragraph by paragraph, each wrapped to its own
+/// column (left and right indents), then stack the rows into one galley with
+/// the styles' space before/after and alignment. One TextEdit still owns the
+/// caret and selection; only the row positions differ from a plain job.
+pub(crate) fn script_flow_galley(
+    ui: &egui::Ui,
+    text: &str,
+    content: &portmanteau_core::RichDocument,
+    sheet: &portmanteau_core::StyleSheet,
+    styles: &portmanteau_core::ElementStyles,
+    zoom: f32,
+    wrap_width: f32,
+    misspelled: &[(usize, usize)],
+) -> std::sync::Arc<egui::Galley> {
+    use egui::text::LayoutJob;
+
+    let ppp = ui.ctx().pixels_per_point();
+    let snap = |v: f32| (v * ppp).round() / ppp;
+    let full = std::sync::Arc::new(script_flow_layout_job(
+        text, content, sheet, styles, zoom, wrap_width, misspelled,
+    ));
+    let paragraphs: Vec<&str> = text.split('\n').collect();
+    let count = paragraphs.len();
+    let mut template: Option<egui::Galley> = None;
+    let mut rows: Vec<egui::epaint::text::PlacedRow> = Vec::new();
+    let mut y = 0.0f32;
+    let mut prev_after = 0.0f32;
+    let mut byte_start = 0usize;
+    let mut right_edge = wrap_width;
+    for (index, line) in paragraphs.iter().enumerate() {
+        let (kind, style, _) = script_paragraph_style(content, sheet, styles, index);
+        // "FADE IN:" opens the script flush left rather than as a right-hand cue.
+        let flush_left = kind == ElementKind::Transition
+            && line.trim_start().to_uppercase().starts_with("FADE IN");
+        let indent = style.indent.max(0.0) * zoom;
+        let right_indent = style.right_indent.max(0.0) * zoom;
+        let column = (wrap_width - indent - right_indent).max(24.0 * zoom);
+        let mut job = LayoutJob::default();
+        job.wrap.max_width = column;
+        append_script_paragraph(
+            &mut job, line, index, byte_start, content, sheet, styles, zoom, misspelled, 0.0,
+        );
+        byte_start += line.len() + 1;
+        let galley = ui.ctx().fonts_mut(|fonts| fonts.layout_job(job));
+        if index > 0 {
+            y += prev_after + style.before.max(0.0) * zoom;
+        }
+        let first_indent = style.first_line_indent.max(0.0) * zoom;
+        for (row_index, placed) in galley.rows.iter().enumerate() {
+            let mut placed = placed.clone();
+            let width = placed.row.size.x;
+            let align = if flush_left {
+                portmanteau_core::Alignment::Left
+            } else {
+                style.align
+            };
+            let x = match align {
+                portmanteau_core::Alignment::Right => indent + (column - width).max(0.0),
+                portmanteau_core::Alignment::Center => indent + ((column - width) * 0.5).max(0.0),
+                _ => indent + if row_index == 0 { first_indent } else { 0.0 },
+            };
+            placed.pos = egui::pos2(snap(x), snap(y + placed.pos.y));
+            placed.ends_with_newline = index + 1 < count && row_index + 1 == galley.rows.len();
+            right_edge = right_edge.max(placed.pos.x + width);
+            rows.push(placed);
+        }
+        y += galley.rect.height();
+        prev_after = style.after.max(0.0) * zoom;
+        if template.is_none() {
+            template = Some((*galley).clone());
+        }
+    }
+    let mut out = template.unwrap_or_else(|| {
+        (*ui.ctx().fonts_mut(|fonts| fonts.layout_job(LayoutJob::default()))).clone()
+    });
+    let mut bounds = egui::Rect::NOTHING;
+    let (mut vertices, mut indices) = (0usize, 0usize);
+    for placed in &rows {
+        let b = placed.row.visuals.mesh_bounds;
+        if b.is_positive() {
+            bounds |= b.translate(placed.pos.to_vec2());
+        }
+        vertices += placed.row.visuals.mesh.vertices.len();
+        indices += placed.row.visuals.mesh.indices.len();
+    }
+    out.rows = rows;
+    out.rect = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(right_edge, y));
+    out.mesh_bounds = bounds;
+    out.num_vertices = vertices;
+    out.num_indices = indices;
+    out.job = full;
+    std::sync::Arc::new(out)
+}
+
+fn append_script_paragraph(
+    job: &mut egui::text::LayoutJob,
+    line: &str,
+    index: usize,
+    byte_start: usize,
+    content: &portmanteau_core::RichDocument,
+    sheet: &portmanteau_core::StyleSheet,
+    styles: &portmanteau_core::ElementStyles,
+    zoom: f32,
+    misspelled: &[(usize, usize)],
+    leading: f32,
+) {
+    let (kind, element_style, uppercase) = script_paragraph_style(content, sheet, styles, index);
+    let family = family_for_font(&element_style.font);
+    let font_size = element_style.size.max(6.0) * zoom;
+    let format = egui::TextFormat {
+        font_id: FontId::new(font_size, family),
+        color: if kind.is_uppercase() {
+            Color32::from_rgb(44, 40, 33)
+        } else {
+            PAPER_TEXT
+        },
+        line_height: Some(font_size * element_style.leading.max(0.85)),
+        italics: element_style.italic,
+        ..Default::default()
+    };
+    let display_line = transform_for_display(line, uppercase);
+    let paragraph = content.paragraphs.get(index);
+    let raw_char_bytes: Vec<usize> = line.char_indices().map(|(byte, _)| byte).collect();
+    let display_char_bytes: Vec<usize> =
+        display_line.char_indices().map(|(byte, _)| byte).collect();
+    let mut keys = Vec::with_capacity(raw_char_bytes.len());
+    for (char_index, raw_byte) in raw_char_bytes.iter().enumerate() {
+        let global_byte = byte_start + raw_byte;
+        let char_end = raw_char_bytes
+            .get(char_index + 1)
+            .copied()
+            .unwrap_or(line.len());
+        let misspelled_char = !uppercase
+            && misspelled
+                .iter()
+                .any(|span| span.0 < byte_start + char_end && span.1 > global_byte);
+        let marks = paragraph
+            .map(|paragraph| inline_marks_at(&paragraph.content, char_index))
+            .unwrap_or_default();
+        keys.push((marks, misspelled_char));
+    }
+    if keys.is_empty() {
+        job.append("", leading, format);
+        return;
+    }
+    let mut first = true;
+    let mut start_char = 0usize;
+    while start_char < keys.len() {
+        let key = keys[start_char].clone();
+        let mut end_char = start_char + 1;
+        while end_char < keys.len() && keys[end_char] == key {
+            end_char += 1;
+        }
+        let start_byte = display_char_bytes[start_char];
+        let end_byte = display_char_bytes
+            .get(end_char)
+            .copied()
+            .unwrap_or(display_line.len());
+        let mut run_format = format.clone();
+        apply_inline_marks(&mut run_format, &key.0);
+        if end_char == start_char + 1 {
+            if let Some(image) = paragraph
+                .and_then(|paragraph| inline_image_at(&paragraph.content, start_char))
+            {
+                let image_height = image.height.unwrap_or(20.0) * zoom;
+                run_format.font_id.size = image_height.max(font_size);
+                run_format.line_height = Some(image_height.max(font_size));
+                run_format.color = Color32::TRANSPARENT;
+            }
+        }
+        if key.1 {
+            run_format.underline = Stroke::new(1.4, Color32::from_rgb(196, 64, 64));
+        }
+        job.append(
+            &display_line[start_byte..end_byte],
+            if first { leading } else { 0.0 },
+            run_format,
+        );
+        first = false;
+        start_char = end_char;
+    }
 }
 
 /// Left offset of a paragraph's first line: its indent, or the centring /
@@ -1832,48 +1954,8 @@ fn paragraph_leading(
         * zoom
 }
 
-/// egui places the caret of an empty paragraph at the left edge because it has
-/// no glyphs to carry the indent. Cover that caret and draw one at the style's
-/// real margin so an empty Dialogue or Character line looks right before the
-/// first letter is typed.
 fn focused_after_edit(output: &egui::text_edit::TextEditOutput) -> bool {
     output.response.has_focus()
-}
-
-fn paint_empty_paragraph_caret(
-    ui: &egui::Ui,
-    output: &egui::text_edit::TextEditOutput,
-    caret: usize,
-    style: &portmanteau_core::ElementStyle,
-    zoom: f32,
-) {
-    let rect = output
-        .galley
-        .pos_from_cursor(egui::text::CCursor::new(caret))
-        .translate(output.galley_pos.to_vec2());
-    let font_size = style.size.max(6.0) * zoom;
-    let leading = paragraph_leading(style, zoom, output.galley.job.wrap.max_width, 0, font_size);
-    if leading < 1.0 {
-        return;
-    }
-    let painter = ui.painter();
-    painter.rect_filled(
-        egui::Rect::from_min_max(
-            egui::pos2(rect.left() - 2.0, rect.top()),
-            egui::pos2(rect.left() + 3.0, rect.bottom()),
-        ),
-        0.0,
-        PAPER,
-    );
-    let time = ui.input(|input| input.time);
-    if (time * 2.0) as i64 % 2 == 0 {
-        let x = rect.left() + leading;
-        painter.line_segment(
-            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-            Stroke::new(2.0, ui.visuals().text_cursor.stroke.color),
-        );
-    }
-    ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
 }
 
 fn inline_marks_at(

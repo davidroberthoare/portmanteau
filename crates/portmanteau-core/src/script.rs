@@ -118,7 +118,12 @@ impl ElementKind {
                 ElementKind::Dialogue,
                 ElementKind::General,
             ],
-            crate::Medium::TvScript | crate::Medium::Screenplay => vec![
+            crate::Medium::TvScript => {
+                let mut kinds = Self::all(crate::Medium::Screenplay);
+                kinds.push(ElementKind::Act);
+                kinds
+            }
+            crate::Medium::Screenplay => vec![
                 ElementKind::SceneHeading,
                 ElementKind::Action,
                 ElementKind::Character,
