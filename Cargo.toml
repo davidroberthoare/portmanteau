@@ -13,6 +13,7 @@ name = "portmanteau"
 version = "0.1.0"
 edition = "2021"
 description = "Portmanteau — a native writing studio for novels, film, TV and theatre"
+license = "GPL-3.0-or-later"
 default-run = "portmanteau"
 
 [[bin]]

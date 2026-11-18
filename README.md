@@ -228,3 +228,7 @@ not on a hosted service.
 - `docs/architecture.md` — why the workspace is split this way.
 - `docs/notes.md` — the running build log and screen-review decisions.
 - `docs/roadmap.md` — prioritised next work with concrete entry points.
+
+## Licence
+
+GPL-3.0-or-later — see `LICENSE`. Bundled fonts and dictionaries are listed in `THIRD_PARTY.md`.
