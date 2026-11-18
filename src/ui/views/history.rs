@@ -53,7 +53,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                     RichText::new(
                                         "A full copy of the project at this moment, including every document and note.",
                                     )
-                                    .font(sans(9.5))
+                                    .font(ui_small())
                                     .color(FAINT),
                                 );
                             });
@@ -75,7 +75,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 ui.add(
                                     TextEdit::singleline(&mut app.checkpoint_label)
                                         .hint_text("Label this moment")
-                                        .font(sans(10.5))
+                                        .font(ui_body())
                                         .desired_width(220.0),
                                 );
                             });
@@ -167,7 +167,7 @@ fn session_chart(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     egui::pos2(x + slot * 0.28, rect.bottom() - 4.0),
                     egui::Align2::CENTER_BOTTOM,
                     day,
-                    sans(7.5),
+                    ui_small(),
                     FAINT,
                 );
                 if *words > 0 {
@@ -175,7 +175,7 @@ fn session_chart(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::pos2(x + slot * 0.28, bar.top() - 2.0),
                         egui::Align2::CENTER_BOTTOM,
                         words.to_string(),
-                        sans(7.5),
+                        ui_small(),
                         MUTED,
                     );
                 }
@@ -207,7 +207,7 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                     if checkpoints.is_empty() {
                         ui.label(
                             RichText::new("No checkpoints yet.")
-                                .font(sans(10.0))
+                                .font(ui_small())
                                 .color(FAINT),
                         );
                     }
@@ -230,14 +230,14 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                     ui.painter().circle_filled(dot_rect.center(), 3.5, color);
                                     ui.vertical(|ui| {
                                         ui.label(
-                                            RichText::new(&cp.label).font(sans(10.5)).color(TEXT),
+                                            RichText::new(&cp.label).font(ui_body()).color(TEXT),
                                         );
                                         ui.label(
                                             RichText::new(format!(
                                                 "{} · {} words · {}",
                                                 cp.created, cp.words, cp.kind
                                             ))
-                                            .font(sans(8.5))
+                                            .font(ui_small())
                                             .color(FAINT),
                                         );
                                     });
@@ -304,7 +304,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                     if docs.is_empty() {
                         ui.label(
                             RichText::new("No document snapshots yet. Use Snapshot in the editor toolbar before a big cut.")
-                                .font(sans(10.0))
+                                .font(ui_small())
                                 .color(FAINT),
                         );
                     }
@@ -313,7 +313,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                     for (doc_id, title, snaps) in &docs {
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new(title).font(sans(10.5)).color(TEXT));
+                            ui.label(RichText::new(title).font(ui_body()).color(TEXT));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 meta_line(
                                     ui,
@@ -336,7 +336,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                         ui.vertical(|ui| {
                                             ui.label(
                                                 RichText::new(&snap.name)
-                                                    .font(sans(9.5))
+                                                    .font(ui_small())
                                                     .color(if i == 0 { TEXT } else { MUTED }),
                                             );
                                             ui.label(
@@ -344,7 +344,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                                     "{} · {} words",
                                                     snap.created, snap.words
                                                 ))
-                                                .font(sans(8.0))
+                                                .font(ui_small())
                                                 .color(FAINT),
                                             );
                                         });

@@ -271,10 +271,10 @@ impl Workspace {
                             .map(|extension| extension.to_ascii_lowercase())
                     })
                     .unwrap_or_default();
-                let source = match (&inline_text, &path) {
-                    (Some(text), _) => text.clone(),
-                    (None, Some(path)) => match std::fs::read_to_string(path) {
-                        Ok(text) => text,
+                let bytes = match (&inline_text, &path) {
+                    (Some(text), _) => text.clone().into_bytes(),
+                    (None, Some(path)) => match std::fs::read(path) {
+                        Ok(bytes) => bytes,
                         Err(error) => {
                             return ApiResponse::err(
                                 command,
@@ -289,25 +289,39 @@ impl Workspace {
                         )
                     }
                 };
+                let source = String::from_utf8_lossy(&bytes).into_owned();
                 let medium = payload
                     .get("medium")
                     .and_then(|v| v.as_str())
                     .and_then(parse_medium)
-                    .unwrap_or(Medium::Screenplay);
-                let content = if format == "fountain" {
-                    RichDocument::from_fountain(&source, medium)
-                } else if format == "fdx" {
-                    match portmanteau_core::parse_fdx(&source) {
+                    .unwrap_or_else(|| {
+                        if matches!(format.as_str(), "fountain" | "fdx") {
+                            Medium::Screenplay
+                        } else {
+                            Medium::Prose
+                        }
+                    });
+                let content = match format.as_str() {
+                    "fountain" => RichDocument::from_fountain(&source, medium),
+                    "fdx" => match portmanteau_core::parse_fdx(&source) {
                         Ok(document) => document,
                         Err(error) => return ApiResponse::err(command, error),
+                    },
+                    "docx" => match portmanteau_core::parse_docx(&bytes, medium) {
+                        Ok(document) => document,
+                        Err(error) => return ApiResponse::err(command, error),
+                    },
+                    "text" | "txt" | "plain" => {
+                        portmanteau_core::parse_plain_text(&source, medium)
                     }
-                } else {
-                    return ApiResponse::err(
-                        command,
-                        format!(
-                            "Unsupported import format {format:?}; use Fountain or FDX"
-                        ),
-                    );
+                    _ => {
+                        return ApiResponse::err(
+                            command,
+                            format!(
+                                "Unsupported import format {format:?}; use Fountain, FDX, DOCX or plain text"
+                            ),
+                        )
+                    }
                 };
                 let paragraph_count = content.paragraphs.len();
                 if paragraph_count == 0 {
@@ -319,7 +333,13 @@ impl Workspace {
                         .and_then(|stem| stem.to_str())
                         .map(|stem| stem.to_owned())
                 });
-                let title = title.unwrap_or_else(|| "Imported screenplay".into());
+                let title = title.unwrap_or_else(|| {
+                    if medium.is_script() {
+                        "Imported screenplay".into()
+                    } else {
+                        "Imported manuscript".into()
+                    }
+                });
                 let parent = str_arg(&payload, "parent")
                     .or_else(|| self.project.folder_id("Draft"));
                 let kind = payload
@@ -1097,7 +1117,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("document.list", "List every binder document", "{}"),
         ("document.get", "Read one document", r#"{"id":"doc-..."}"#),
         ("document.create", "Add a document", r#"{"parent":"doc-...","title":"...","kind":"Chapter","medium":"Prose"}"#),
-        ("document.import", "Import a Fountain or FDX file as a document", r#"{"path":"screenplay.fdx","title":"..."}"#),
+        ("document.import", "Import a Fountain, FDX, DOCX or plain-text file as a document", r#"{"path":"manuscript.docx","title":"..."}"#),
         ("document.update", "Change title, text, synopsis or metadata", r#"{"id":"doc-...","text":"..."}"#),
         ("document.delete", "Delete a document and its children", r#"{"id":"doc-..."}"#),
         ("document.move", "Move a document up, down or into a folder", r#"{"id":"doc-...","direction":"up"}"#),
@@ -1156,6 +1176,20 @@ mod tests {
         let doc = ws.project.document(&id).expect("imported document exists");
         assert_eq!(doc.medium, Medium::Screenplay);
         assert!(doc.content.plain_text().contains("We missed the tide."));
+
+        let res = ws.execute(
+            "document.import",
+            json!({"format":"text","title":"Text import","text":"A wrapped prose line\ncontinues here.\n\nSecond paragraph."}),
+        );
+        assert!(res.ok, "{}", res.message);
+        let id = res.data["id"].as_str().expect("import id").to_owned();
+        let doc = ws.project.document(&id).expect("imported text document exists");
+        assert_eq!(doc.medium, Medium::Prose);
+        assert_eq!(doc.content.paragraphs.len(), 2);
+        assert_eq!(
+            doc.content.paragraphs[0].plain_text(),
+            "A wrapped prose line continues here."
+        );
 
         let fdx = r#"<FinalDraft><Content>
             <Paragraph Type="Scene Heading"><Text>EXT. PIER - NIGHT</Text></Paragraph>

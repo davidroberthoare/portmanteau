@@ -1,8 +1,7 @@
 //! The binder: a live tree of the project with word counts and quick actions.
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke,
-    Vec2,
+    self, Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Vec2,
 };
 use portmanteau_core::{DocKind, Medium, ProjectKind};
 
@@ -30,6 +29,7 @@ enum Action {
     Move(String, i32),
     Delete(String),
     View(View),
+    HideBinder,
 }
 
 fn collect_rows(
@@ -62,38 +62,49 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         section_label(ui, "Binder");
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let add = egui::Button::new(RichText::new("+").font(sans(15.0)).color(TEXT))
+            let hide = egui::Button::new(
+                RichText::new("‹").font(ui_strong()).color(FAINT),
+            )
+            .frame(false);
+            if ui
+                .add(hide)
+                .on_hover_text("Hide the binder")
+                .clicked()
+            {
+                action = Some(Action::HideBinder);
+            }
+            ui.add_space(2.0);
+            let add = egui::Button::new(RichText::new("+").font(ui_strong()).color(TEXT))
                 .fill(PANEL_2)
                 .corner_radius(CornerRadius::same(5))
                 .min_size(Vec2::new(24.0, 22.0));
-            if ui.add(add).on_hover_text("New chapter or scene").clicked() {
-                action = Some(Action::NewUnder(None));
-            }
-            let add_folder = egui::Button::new(RichText::new("▣ +").font(sans(12.0)).color(TEXT))
-                .fill(PANEL_2)
-                .corner_radius(CornerRadius::same(5))
-                .min_size(Vec2::new(32.0, 22.0));
-            if ui.add(add_folder).on_hover_text("New folder").clicked() {
-                action = Some(Action::NewFolder(None));
-            }
-            let has_selection = app.selected.is_some();
-            for (glyph, hint, direction) in [
-                ("↓", "Move selected down", 1),
-                ("↑", "Move selected up", -1),
-            ] {
-                let button = egui::Button::new(RichText::new(glyph).size(12.0).color(FAINT))
-                    .frame(false);
-                if ui
-                    .add_enabled(has_selection, button)
-                    .on_hover_text(hint)
-                    .on_disabled_hover_text("Select a document first")
-                    .clicked()
-                {
-                    if let Some(id) = app.selected.clone() {
-                        action = Some(Action::Move(id, direction));
-                    }
+            let add = ui.add(add).on_hover_text("Add to the binder");
+            egui::Popup::menu(&add).show(|ui| {
+                if ui.button("New chapter or scene").clicked() {
+                    action = Some(Action::NewUnder(None));
+                    ui.close();
                 }
-            }
+                if ui.button("New folder").clicked() {
+                    action = Some(Action::NewFolder(None));
+                    ui.close();
+                }
+                ui.separator();
+                let has_selection = app.selected.is_some();
+                let up = ui.add_enabled(has_selection, egui::Button::new("Move selected up"));
+                if up.clicked() {
+                    if let Some(id) = app.selected.clone() {
+                        action = Some(Action::Move(id, -1));
+                    }
+                    ui.close();
+                }
+                let down = ui.add_enabled(has_selection, egui::Button::new("Move selected down"));
+                if down.clicked() {
+                    if let Some(id) = app.selected.clone() {
+                        action = Some(Action::Move(id, 1));
+                    }
+                    ui.close();
+                }
+            });
         });
     });
     ui.add_space(4.0);
@@ -105,7 +116,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 let (cover, _) = ui.allocate_exact_size(Vec2::new(30.0, 38.0), Sense::hover());
-                ui.painter().rect_filled(cover, CornerRadius::same(3), Color32::from_rgb(71, 59, 43));
+                ui.painter().rect_filled(cover, CornerRadius::same(3), PAPER_EDGE);
                 ui.painter().rect_filled(
                     egui::Rect::from_min_size(cover.min + Vec2::new(4.0, 4.0), Vec2::new(3.0, 30.0)),
                     CornerRadius::same(1),
@@ -116,7 +127,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     egui::Align2::CENTER_CENTER,
                     "S",
                     serif(13.0),
-                    ACCENT,
+                    ACCENT_INK,
                 );
                 ui.vertical(|ui| {
                     ui.label(
@@ -130,7 +141,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             app.ws.project.kind.label(),
                             app.ws.project.words()
                         ))
-                        .font(sans(9.5))
+                        .font(ui_small())
                         .color(FAINT),
                     );
                 });
@@ -159,7 +170,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 if hits.is_empty() {
                     ui.label(
                         RichText::new("No matches in this project.")
-                            .font(sans(11.0))
+                            .font(ui_body())
                             .color(FAINT),
                     );
                 }
@@ -173,7 +184,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         rect.left_top() + Vec2::new(6.0, 6.0),
                         egui::Align2::LEFT_TOP,
                         &title,
-                        sans(11.0),
+                        ui_body(),
                         TEXT,
                     );
                     let snippet: String = excerpt.chars().take(52).collect();
@@ -181,7 +192,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         rect.left_top() + Vec2::new(6.0, 22.0),
                         egui::Align2::LEFT_TOP,
                         snippet,
-                        sans(9.5),
+                        ui_small(),
                         FAINT,
                     );
                     if resp.clicked() {
@@ -242,23 +253,11 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     x += 15.0;
                 }
 
-                let (glyph, glyph_color) = match row.kind {
-                    DocKind::Folder => ("▣", MUTED),
-                    DocKind::Chapter => ("¶", ACCENT),
-                    DocKind::Scene if row.medium.is_script() => ("▶", PURPLE),
-                    DocKind::Scene => ("◆", SAGE),
-                    DocKind::Research => ("✎", BLUE),
-                    DocKind::Character => ("☺", PURPLE),
-                    DocKind::FrontMatter => ("▤", FAINT),
-                    DocKind::BackMatter => ("▤", FAINT),
-                    DocKind::Text => ("◆", FAINT),
-                };
-                ui.painter().text(
-                    egui::pos2(x + 5.0, rect.center().y),
-                    egui::Align2::CENTER_CENTER,
-                    glyph,
-                    sans(10.5),
-                    glyph_color,
+                paint_doc_icon(
+                    ui.painter(),
+                    egui::pos2(x + 6.0, rect.center().y),
+                    row.kind,
+                    row.medium.is_script(),
                 );
                 x += 17.0;
 
@@ -286,7 +285,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     title_rect.left_center(),
                     egui::Align2::LEFT_CENTER,
                     title,
-                    if selected { sans(11.5) } else { sans(11.0) },
+                    if selected { ui_body() } else { ui_body() },
                     title_color,
                 );
 
@@ -295,7 +294,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::pos2(rect.right() - 6.0, rect.center().y),
                         egui::Align2::RIGHT_CENTER,
                         row.words.to_string(),
-                        sans(9.5),
+                        ui_small(),
                         FAINT,
                     );
                 }
@@ -377,14 +376,14 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     rect.left_center() + Vec2::new(2.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     label,
-                    sans(10.5),
+                    ui_body(),
                     MUTED,
                 );
                 ui.painter().text(
                     rect.right_center() - Vec2::new(4.0, 0.0),
                     egui::Align2::RIGHT_CENTER,
                     count.to_string(),
-                    sans(9.5),
+                    ui_small(),
                     FAINT,
                 );
                 if resp.clicked() {
@@ -504,6 +503,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 }
             }
             Action::View(v) => app.view = v,
+            Action::HideBinder => app.set_binder_visible(false),
         }
     }
 }
@@ -520,7 +520,7 @@ fn target_card(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 section_label(ui, "Session target");
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(
-                        RichText::new("✓ local").font(sans(9.5)).color(SAGE),
+                        RichText::new("✓ local").font(ui_small()).color(SAGE),
                     );
                 });
             });
@@ -531,11 +531,11 @@ fn target_card(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.label(
                     RichText::new(today.to_string())
                         .font(serif(20.0))
-                        .color(ACCENT),
+                        .color(ACCENT_INK),
                 );
                 ui.label(
                     RichText::new(format!("of {target} words"))
-                        .font(sans(10.0))
+                        .font(ui_small())
                         .color(MUTED),
                 );
             });
@@ -544,12 +544,12 @@ fn target_card(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.horizontal(|ui| {
                 let streak = streak_days(app);
                 ui.label(
-                    RichText::new(format!("{streak}-day streak")).font(sans(9.5)).color(MUTED),
+                    RichText::new(format!("{streak}-day streak")).font(ui_small()).color(MUTED),
                 );
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(
                         RichText::new(format!("{} total", app.ws.project.words()))
-                            .font(sans(9.5))
+                            .font(ui_small())
                             .color(FAINT),
                     );
                 });
@@ -568,4 +568,85 @@ fn streak_days(app: &PortmanteauApp) -> u32 {
         }
     }
     streak
+}
+
+/// Binder icons: a folder for containers and a small page for everything
+/// else. Pages differ in tint and in the marks on them, so chapters, scripts,
+/// research and matter pages read as different kinds at a glance.
+fn paint_doc_icon(painter: &egui::Painter, center: egui::Pos2, kind: DocKind, script: bool) {
+    use egui::{pos2, Rect, Shape};
+    if kind == DocKind::Folder {
+        let color = egui::Color32::from_rgb(196, 158, 92);
+        let body = Rect::from_center_size(center + Vec2::new(0.0, 1.0), Vec2::new(14.0, 10.0));
+        let tab = Rect::from_min_size(
+            pos2(body.left(), body.top() - 2.5),
+            Vec2::new(6.0, 3.5),
+        );
+        painter.rect_filled(tab, CornerRadius::same(1), color);
+        painter.rect_filled(body, CornerRadius::same(2), color);
+        painter.rect_filled(
+            Rect::from_min_max(
+                pos2(body.left(), body.top() + 2.0),
+                pos2(body.right(), body.bottom()),
+            ),
+            CornerRadius::same(2),
+            egui::Color32::from_rgb(214, 180, 118),
+        );
+        return;
+    }
+    let tint = match kind {
+        DocKind::Chapter => ACCENT_INK,
+        DocKind::Scene if script => PURPLE,
+        DocKind::Scene => SAGE_INK,
+        DocKind::Research => BLUE,
+        DocKind::Character => PURPLE,
+        DocKind::FrontMatter | DocKind::BackMatter => egui::Color32::from_rgb(150, 140, 126),
+        _ => FAINT,
+    };
+    let page = Rect::from_center_size(center, Vec2::new(11.0, 14.0));
+    let fold = 3.5;
+    let outline = Stroke::new(1.2, tint);
+    let points = vec![
+        page.left_top(),
+        pos2(page.right() - fold, page.top()),
+        pos2(page.right(), page.top() + fold),
+        page.right_bottom(),
+        page.left_bottom(),
+    ];
+    painter.add(Shape::convex_polygon(
+        points,
+        tint.gamma_multiply(0.14),
+        outline,
+    ));
+    painter.line_segment(
+        [pos2(page.right() - fold, page.top()), pos2(page.right() - fold, page.top() + fold)],
+        Stroke::new(1.0, tint),
+    );
+    painter.line_segment(
+        [pos2(page.right() - fold, page.top() + fold), pos2(page.right(), page.top() + fold)],
+        Stroke::new(1.0, tint),
+    );
+    let line = Stroke::new(1.0, tint);
+    let l = page.left() + 2.5;
+    let r = page.right() - 2.5;
+    match (kind, script) {
+        (DocKind::Scene, true) => {
+            // Script: short centred cue line above a longer line.
+            painter.line_segment([pos2(center.x - 1.5, page.top() + 6.0), pos2(center.x + 1.5, page.top() + 6.0)], line);
+            painter.line_segment([pos2(l, page.top() + 9.0), pos2(r, page.top() + 9.0)], line);
+        }
+        (DocKind::Research, _) => {
+            painter.circle_filled(pos2(l + 0.8, page.top() + 7.0), 1.0, tint);
+            painter.line_segment([pos2(l + 3.0, page.top() + 7.0), pos2(r, page.top() + 7.0)], line);
+            painter.line_segment([pos2(l, page.top() + 10.0), pos2(r, page.top() + 10.0)], line);
+        }
+        (DocKind::Character, _) => {
+            painter.circle_stroke(pos2(center.x, page.top() + 6.5), 1.7, line);
+            painter.line_segment([pos2(l + 1.0, page.bottom() - 2.5), pos2(r - 1.0, page.bottom() - 2.5)], line);
+        }
+        _ => {
+            painter.line_segment([pos2(l, page.top() + 7.0), pos2(r, page.top() + 7.0)], line);
+            painter.line_segment([pos2(l, page.top() + 10.0), pos2(r, page.top() + 10.0)], line);
+        }
+    }
 }

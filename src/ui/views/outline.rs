@@ -40,8 +40,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     .add(
                         egui::Button::new(
                             RichText::new(label)
-                                .font(sans(10.0))
-                                .color(if active { Color32::from_rgb(30, 25, 18) } else { MUTED }),
+                                .font(ui_small())
+                                .color(if active { Color32::WHITE } else { MUTED }),
                         )
                         .fill(if active { ACCENT } else { PANEL_2 })
                         .corner_radius(CornerRadius::same(12))
@@ -106,8 +106,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::pos2(title_x, rect.center().y),
                         egui::Align2::LEFT_CENTER,
                         glyph,
-                        sans(9.5),
-                        if row.medium.is_script() { PURPLE } else { ACCENT },
+                        ui_small(),
+                        if row.medium.is_script() { PURPLE_INK } else { ACCENT_INK },
                     );
                     let title_rect = egui::Rect::from_min_max(
                         egui::pos2(title_x + 17.0, rect.top()),
@@ -119,9 +119,9 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::Align2::LEFT_CENTER,
                         &row.title,
                         if row.kind == DocKind::Folder {
-                            sans(10.5)
+                            ui_body()
                         } else {
-                            sans(11.0)
+                            ui_body()
                         },
                         if row.include { TEXT } else { FAINT },
                     );
@@ -138,7 +138,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             egui::pos2(label_x + 12.0, rect.center().y),
                             egui::Align2::LEFT_CENTER,
                             &row.label,
-                            sans(9.5),
+                            ui_small(),
                             color,
                         );
                     }
@@ -148,7 +148,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::pos2(status_x, rect.center().y),
                         egui::Align2::LEFT_CENTER,
                         &row.status,
-                        sans(9.5),
+                        ui_small(),
                         status_color(&row.status),
                     );
 
@@ -217,7 +217,7 @@ fn header_row(ui: &mut egui::Ui) {
         rect.left_center() + Vec2::new(12.0, 0.0),
         egui::Align2::LEFT_CENTER,
         "SECTION",
-        sans(8.5),
+        ui_small(),
         FAINT,
     );
     for (fraction, label) in [
@@ -229,7 +229,7 @@ fn header_row(ui: &mut egui::Ui) {
             egui::pos2(rect.left() + rect.width() * fraction, rect.center().y),
             egui::Align2::LEFT_CENTER,
             label,
-            sans(8.5),
+            ui_small(),
             FAINT,
         );
     }
@@ -237,7 +237,7 @@ fn header_row(ui: &mut egui::Ui) {
         egui::pos2(rect.right() - 6.0, rect.center().y),
         egui::Align2::RIGHT_CENTER,
         "COMPILE",
-        sans(8.5),
+        ui_small(),
         FAINT,
     );
     painter.line_segment(

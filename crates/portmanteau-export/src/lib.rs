@@ -141,13 +141,132 @@ fn manuscript_sections(project: &Project) -> Vec<Section<'_>> {
 }
 
 fn screenplay_blocks(project: &Project, doc: &Document) -> Vec<Block> {
-    let fallback = StyleSheet::film_screenplay(&project.styles);
-    let sheet = project
-        .style_sheets
+    let sheet = project.style_sheet_for(doc);
+    doc.content.to_script_blocks(&sheet)
+}
+
+/// One prose paragraph after its stylesheet has been resolved for output.
+/// Paragraphs stay separate here rather than being flattened into one string:
+/// the rich model's styles, inline marks and hard breaks all need to survive.
+struct ProseParagraph {
+    format: ElementStyle,
+    content: Vec<InlineContent>,
+    heading: bool,
+    uppercase: bool,
+}
+
+impl ProseParagraph {
+    /// Flowing text for formats that re-wrap: hard breaks read as spaces and
+    /// images become their alt-text placeholder.
+    fn flow_text(&self) -> String {
+        let mut text = String::new();
+        for item in &self.content {
+            match item {
+                InlineContent::Text(run) => {
+                    text.push_str(&self.transform(&run.text));
+                }
+                InlineContent::HardBreak => text.push(' '),
+                InlineContent::Image(image) if image.alt_text.is_empty() => {
+                    text.push_str("[Image]")
+                }
+                InlineContent::Image(image) => {
+                    text.push_str(&format!("[Image: {}]", self.transform(&image.alt_text)))
+                }
+            }
+        }
+        text
+    }
+
+    /// Text for plain formats: a hard break remains a newline.
+    fn plain_text(&self) -> String {
+        self.content
+            .iter()
+            .map(|item| match item {
+                InlineContent::Text(run) => self.transform(&run.text),
+                InlineContent::HardBreak => "\n".to_owned(),
+                InlineContent::Image(image) if image.alt_text.is_empty() => {
+                    "[Image]".to_owned()
+                }
+                InlineContent::Image(image) => {
+                    format!("[Image: {}]", self.transform(&image.alt_text))
+                }
+            })
+            .collect()
+    }
+
+    fn transform(&self, text: &str) -> String {
+        if self.uppercase {
+            text.to_uppercase()
+        } else {
+            text.to_owned()
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        !self
+            .content
+            .iter()
+            .any(|item| match item {
+                InlineContent::Text(run) => !run.text.trim().is_empty(),
+                InlineContent::Image(_) => true,
+                InlineContent::HardBreak => false,
+            })
+    }
+}
+
+/// Resolve a paragraph style for output. A format's saved element style wins
+/// only when it deliberately differs from the project style; otherwise the
+/// project stylesheet is authoritative, so an appearance edit reaches every
+/// writer even before the Compile screen has saved a per-format copy.
+fn prose_style(
+    project: &Project,
+    settings: &ExportSettings,
+    style: Option<&ParagraphStyle>,
+) -> ElementStyle {
+    let Some(style) = style else {
+        return settings.styles.body.clone();
+    };
+    let mut format = project.paragraph_format_for(style, &settings.styles);
+    if format.font.trim().is_empty() {
+        format.font = settings.styles.body.font.clone();
+    }
+    if format.font.trim().is_empty() {
+        format.font = settings.font.clone();
+    }
+    format
+}
+
+/// Every visible paragraph of a prose document, in order, with its effective
+/// output style. This is the single reading path the prose writers share.
+fn prose_paragraphs(
+    project: &Project,
+    doc: &Document,
+    settings: &ExportSettings,
+) -> Vec<ProseParagraph> {
+    let sheet = project.style_sheet_for(doc);
+    doc.content
+        .paragraphs
         .iter()
-        .find(|sheet| sheet.id == doc.style_sheet_id)
-        .unwrap_or(&fallback);
-    doc.content.to_script_blocks(sheet)
+        .filter_map(|paragraph| {
+            let style = sheet.style(&paragraph.style_id);
+            let format = prose_style(project, settings, style);
+            let name = style
+                .map(|style| style.name.to_ascii_lowercase())
+                .unwrap_or_default();
+            let heading = paragraph.style_id == "chapter-heading" || name.contains("heading");
+            let uppercase = style
+                .map(|style| style.text_transform == TextTransform::Uppercase)
+                .unwrap_or(false)
+                || format.uppercase;
+            let resolved = ProseParagraph {
+                format,
+                content: paragraph.content.clone(),
+                heading,
+                uppercase,
+            };
+            (!resolved.is_empty()).then_some(resolved)
+        })
+        .collect()
 }
 
 fn front_matter(project: &Project) -> Vec<&Document> {
@@ -218,6 +337,71 @@ fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// CSS declarations that carry one paragraph's resolved appearance. Inline
+/// declarations keep EPUB/XHTML output correct even when two project sheets
+/// define a style with the same id.
+fn prose_inline_style(format: &ElementStyle) -> String {
+    // The declarations live inside a double-quoted attribute, so family names
+    // use CSS single quotes rather than the double quotes from the shared
+    // stylesheet helper.
+    let family = html_escape(&element_css_font(format, "Liberation Serif").replace('"', "'"));
+    format!(
+        "font-family: {family}; font-size: {:.1}pt; line-height: {:.2}; text-align: {}; margin-left: {:.1}pt; margin-right: {:.1}pt; text-indent: {:.1}pt; margin-top: {:.1}pt; margin-bottom: {:.1}pt;",
+        format.size.max(8.0),
+        format.leading.max(1.0),
+        css_align(format.align),
+        format.indent.max(0.0),
+        format.right_indent.max(0.0),
+        format.first_line_indent,
+        format.before.max(0.0),
+        format.after.max(0.0),
+    )
+}
+
+fn html_runs(paragraph: &ProseParagraph) -> String {
+    let mut out = String::new();
+    for item in &paragraph.content {
+        match item {
+            InlineContent::Text(run) => {
+                let mut text = html_escape(&paragraph.transform(&run.text));
+                if run.marks.contains(&InlineMark::Italic) {
+                    text = format!("<em>{text}</em>");
+                }
+                if run.marks.contains(&InlineMark::Bold) {
+                    text = format!("<strong>{text}</strong>");
+                }
+                if run.marks.contains(&InlineMark::Underline) {
+                    text = format!("<u>{text}</u>");
+                }
+                if run.marks.contains(&InlineMark::Strikethrough) {
+                    text = format!("<s>{text}</s>");
+                }
+                out.push_str(&text);
+            }
+            InlineContent::HardBreak => out.push_str("<br/>"),
+            InlineContent::Image(image) if image.alt_text.is_empty() => out.push_str("[Image]"),
+            InlineContent::Image(image) => out.push_str(&html_escape(&format!(
+                "[Image: {}]",
+                paragraph.transform(&image.alt_text)
+            ))),
+        }
+    }
+    out
+}
+
+fn html_prose_paragraph(paragraph: &ProseParagraph, first: bool) -> String {
+    let mut style = prose_inline_style(&paragraph.format);
+    if first {
+        style.push_str("text-indent: 0;");
+    }
+    let runs = html_runs(paragraph);
+    if paragraph.heading {
+        format!("<h2 style=\"{style}\">{runs}</h2>\n")
+    } else {
+        format!("<p style=\"{style}\">{runs}</p>\n")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -587,6 +771,20 @@ impl PdfFlow {
     }
 
     fn line(&mut self, text: String, x: f32, size: f32, bold: bool, gap_before: f32) {
+        self.prose_line(text, x, size, bold, false, gap_before);
+    }
+
+    /// One reflowed prose line, optionally in Courier when a paragraph style
+    /// asks for a monospaced face.
+    fn prose_line(
+        &mut self,
+        text: String,
+        x: f32,
+        size: f32,
+        bold: bool,
+        mono: bool,
+        gap_before: f32,
+    ) {
         let advance = self.line_gap.max(size + 3.0);
         self.ensure(advance + gap_before);
         self.y -= gap_before;
@@ -597,7 +795,7 @@ impl PdfFlow {
             y: self.y,
             size,
             bold,
-            mono: false,
+            mono,
         });
     }
 
@@ -624,6 +822,42 @@ impl PdfFlow {
         }
         self.y = self.page_height - self.top;
     }
+}
+
+fn font_is_mono(family: &str) -> bool {
+    let family = family.to_ascii_lowercase();
+    family.contains("courier") || family.contains("mono")
+}
+
+/// Draw one prose paragraph with its own stylesheet measurements. The blank
+/// line after the paragraph keeps the manuscript airy while still letting a
+/// custom style set space before and after.
+fn pdf_prose_paragraph(flow: &mut PdfFlow, paragraph: &ProseParagraph, margin: f32, width: f32) {
+    let style = &paragraph.format;
+    let size = style.size.max(8.0);
+    let left = margin + style.indent.max(0.0);
+    let right = (width - margin - style.right_indent.max(0.0)).max(left + 60.0);
+    let chars_per_line = (((right - left) / (size * 0.50)).max(30.0)) as usize;
+    let mono = font_is_mono(&style.font);
+    for (i, part) in wrap_text(&paragraph.flow_text(), chars_per_line)
+        .iter()
+        .enumerate()
+    {
+        let mut x = aligned_x(part, style.align, left, right, size);
+        if i == 0 {
+            x += style.first_line_indent;
+        }
+        let gap_before = if i == 0 { style.before.max(0.0) } else { 0.0 };
+        flow.prose_line(part.clone(), x, size, paragraph.heading, mono, gap_before);
+    }
+    flow.prose_line(
+        String::new(),
+        margin,
+        size,
+        false,
+        false,
+        style.after.max(0.0),
+    );
 }
 
 fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
@@ -915,27 +1149,11 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let prose_right = (w - margin - body_style.right_indent).max(prose_left + 60.0);
     let chars_per_line = ((prose_right - prose_left) / (size * 0.50)).max(30.0) as usize;
     let mut headings: Vec<(String, usize)> = Vec::new();
-    let add_para = |flow: &mut PdfFlow, text: &str, bold: bool| {
-        for (i, part) in wrap_text(text, chars_per_line).iter().enumerate() {
-            let mut x = aligned_x(
-                part,
-                body_style.align,
-                prose_left,
-                prose_right,
-                size,
-            );
-            if i == 0 {
-                x += body_style.first_line_indent;
-            }
-            flow.line(part.clone(), x, size, bold, 0.0);
-        }
-    };
 
     for doc in front_matter(project) {
         flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
-        for para in paragraphs(&doc.body_text()) {
-            add_para(&mut flow, &para, false);
-            flow.line(String::new(), margin, size, false, 0.0);
+        for para in prose_paragraphs(project, doc, settings) {
+            pdf_prose_paragraph(&mut flow, &para, margin, w);
         }
         flow.page_break();
     }
@@ -1028,9 +1246,8 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                 }
             }
         } else {
-            for para in paragraphs(&section.doc.body_text()) {
-                add_para(&mut flow, &para, false);
-                flow.line(String::new(), margin, size, false, 0.0);
+            for para in prose_paragraphs(project, section.doc, settings) {
+                pdf_prose_paragraph(&mut flow, &para, margin, w);
             }
         }
         if settings.include_notes && !section.doc.notes.is_empty() {
@@ -1045,9 +1262,8 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     for doc in back_matter(project) {
         flow.page_break();
         flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
-        for para in paragraphs(&doc.body_text()) {
-            add_para(&mut flow, &para, false);
-            flow.line(String::new(), margin, size, false, 0.0);
+        for para in prose_paragraphs(project, doc, settings) {
+            pdf_prose_paragraph(&mut flow, &para, margin, w);
         }
     }
     pages.extend(flow.finish());
@@ -1386,12 +1602,8 @@ fn xhtml_body(
             ));
         }
     } else {
-        for (i, para) in paragraphs(&doc.body_text()).iter().enumerate() {
-            out.push_str(&format!(
-                "<p class=\"{}\">{}</p>\n",
-                if i == 0 { "first" } else { "" },
-                html_escape(para)
-            ));
+        for (i, para) in prose_paragraphs(project, doc, settings).iter().enumerate() {
+            out.push_str(&html_prose_paragraph(para, i == 0));
         }
     }
     out
@@ -1401,48 +1613,185 @@ fn xhtml_body(
 // DOCX
 // ---------------------------------------------------------------------------
 
+fn docx_align(align: Alignment) -> Option<&'static str> {
+    match align {
+        Alignment::Left => None,
+        Alignment::Center => Some("center"),
+        Alignment::Right => Some("right"),
+        Alignment::Justify => Some("both"),
+    }
+}
+
+fn docx_text_run(text: &str, properties: &str) -> String {
+    format!(
+        "<w:r><w:rPr>{properties}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r>",
+        xml_escape(text)
+    )
+}
+
+fn docx_run_properties(
+    paragraph: &ProseParagraph,
+    marks: &[InlineMark],
+    fallback_font: &str,
+) -> String {
+    let mut properties = String::new();
+    let font = if paragraph.format.font.trim().is_empty() {
+        fallback_font
+    } else {
+        &paragraph.format.font
+    };
+    if !font.trim().is_empty() {
+        let font = xml_escape(font);
+        properties.push_str(&format!(
+            "<w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\"/>"
+        ));
+    }
+    let half_points = (paragraph.format.size.max(8.0) * 2.0).round() as i32;
+    properties.push_str(&format!("<w:sz w:val=\"{half_points}\"/>"));
+    if paragraph.heading || marks.contains(&InlineMark::Bold) {
+        properties.push_str("<w:b/>");
+    }
+    if marks.contains(&InlineMark::Italic) {
+        properties.push_str("<w:i/>");
+    }
+    if marks.contains(&InlineMark::Underline) {
+        properties.push_str("<w:u w:val=\"single\"/>");
+    }
+    if marks.contains(&InlineMark::Strikethrough) {
+        properties.push_str("<w:strike/>");
+    }
+    properties
+}
+
+fn docx_prose_runs(paragraph: &ProseParagraph, fallback_font: &str) -> String {
+    let mut out = String::new();
+    for item in &paragraph.content {
+        match item {
+            InlineContent::Text(run) => {
+                let properties = docx_run_properties(paragraph, &run.marks, fallback_font);
+                out.push_str(&docx_text_run(&paragraph.transform(&run.text), &properties));
+            }
+            InlineContent::HardBreak => out.push_str("<w:r><w:br/></w:r>"),
+            InlineContent::Image(image) => {
+                let label = if image.alt_text.is_empty() {
+                    "[Image]".to_owned()
+                } else {
+                    format!("[Image: {}]", paragraph.transform(&image.alt_text))
+                };
+                let properties = docx_run_properties(paragraph, &[], fallback_font);
+                out.push_str(&docx_text_run(&label, &properties));
+            }
+        }
+    }
+    out
+}
+
+fn docx_prose_paragraph(paragraph: &ProseParagraph, fallback_font: &str) -> String {
+    let style = &paragraph.format;
+    let mut properties = String::new();
+    properties.push_str(if paragraph.heading {
+        "<w:pStyle w:val=\"Heading2\"/>"
+    } else {
+        "<w:pStyle w:val=\"Normal\"/>"
+    });
+    let before = (style.before.max(0.0) * 20.0).round() as i32;
+    let after = (style.after.max(0.0) * 20.0).round() as i32;
+    let line = (style.leading.max(1.0) * 240.0).round() as i32;
+    properties.push_str(&format!(
+        "<w:spacing w:before=\"{before}\" w:after=\"{after}\" w:line=\"{line}\" w:lineRule=\"auto\"/>"
+    ));
+    let left = (style.indent.max(0.0) * 20.0).round() as i32;
+    let right = (style.right_indent.max(0.0) * 20.0).round() as i32;
+    let first = (style.first_line_indent * 20.0).round() as i32;
+    if first >= 0 {
+        properties.push_str(&format!(
+            "<w:ind w:left=\"{left}\" w:right=\"{right}\" w:firstLine=\"{first}\"/>"
+        ));
+    } else {
+        properties.push_str(&format!(
+            "<w:ind w:left=\"{left}\" w:right=\"{right}\" w:hanging=\"{}\"/>",
+            -first
+        ));
+    }
+    if let Some(align) = docx_align(style.align) {
+        properties.push_str(&format!("<w:jc w:val=\"{align}\"/>"));
+    }
+    format!(
+        "<w:p><w:pPr>{properties}</w:pPr>{}</w:p>",
+        docx_prose_runs(paragraph, fallback_font)
+    )
+}
+
+fn docx_basic_paragraph(
+    body: &mut String,
+    text: &str,
+    style: &str,
+    bold: bool,
+    center: bool,
+    mono: bool,
+    indent: i32,
+    prose_font: &str,
+) {
+    let jc = if center { "<w:jc w:val=\"center\"/>" } else { "" };
+    let fonts = if mono {
+        "<w:rFonts w:ascii=\"Courier New\" w:hAnsi=\"Courier New\"/>".to_string()
+    } else {
+        format!(
+            "<w:rFonts w:ascii=\"{}\" w:hAnsi=\"{}\"/>",
+            prose_font, prose_font
+        )
+    };
+    // Element order inside w:pPr matters to Word: pStyle, ind, jc.
+    body.push_str(&format!(
+        "<w:p><w:pPr><w:pStyle w:val=\"{}\"/><w:ind w:left=\"{}\"/>{}</w:pPr><w:r><w:rPr>{}{}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",
+        style,
+        indent,
+        jc,
+        fonts,
+        if bold { "<w:b/>" } else { "" },
+        xml_escape(text)
+    ));
+}
+
 fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let mut body = String::new();
     let prose_font = xml_escape(&settings.font);
-    let mut add_para = |text: &str, style: &str, bold: bool, center: bool, mono: bool, indent: i32| {
-        let jc = if center { "<w:jc w:val=\"center\"/>" } else { "" };
-        let fonts = if mono {
-            "<w:rFonts w:ascii=\"Courier New\" w:hAnsi=\"Courier New\"/>".to_string()
-        } else {
-            format!(
-                "<w:rFonts w:ascii=\"{}\" w:hAnsi=\"{}\"/>",
-                prose_font, prose_font
-            )
-        };
-        // Element order inside w:pPr matters to Word: pStyle, ind, jc.
-        body.push_str(&format!(
-            "<w:p><w:pPr><w:pStyle w:val=\"{}\"/><w:ind w:left=\"{}\"/>{}</w:pPr><w:r><w:rPr>{}{}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",
-            style,
-            indent,
-            jc,
-            fonts,
-            if bold { "<w:b/>" } else { "" },
-            xml_escape(text)
-        ));
-    };
 
     if settings.include_title_page {
-        add_para(&project.title, "Title", true, true, false, 0);
+        docx_basic_paragraph(&mut body, &project.title, "Title", true, true, false, 0, &prose_font);
         if !project.subtitle.is_empty() {
-            add_para(&project.subtitle, "Subtitle", false, true, false, 0);
+            docx_basic_paragraph(
+                &mut body,
+                &project.subtitle,
+                "Subtitle",
+                false,
+                true,
+                false,
+                0,
+                &prose_font,
+            );
         }
-        add_para(&format!("by {}", project.author), "Normal", false, true, false, 0);
-        add_para("", "Normal", false, false, false, 0);
+        docx_basic_paragraph(
+            &mut body,
+            &format!("by {}", project.author),
+            "Normal",
+            false,
+            true,
+            false,
+            0,
+            &prose_font,
+        );
+        docx_basic_paragraph(&mut body, "", "Normal", false, false, false, 0, &prose_font);
     }
     for doc in front_matter(project) {
-        add_para(&doc.title, "Heading1", true, false, false, 0);
-        for para in paragraphs(&doc.body_text()) {
-            add_para(&para, "Normal", false, false, false, 0);
+        docx_basic_paragraph(&mut body, &doc.title, "Heading1", true, false, false, 0, &prose_font);
+        for para in prose_paragraphs(project, doc, settings) {
+            body.push_str(&docx_prose_paragraph(&para, &settings.font));
         }
     }
     for (i, section) in manuscript_sections(project).iter().enumerate() {
         let title = section_title(project, section.doc, i, settings);
-        add_para(&title, "Heading1", true, false, false, 0);
+        docx_basic_paragraph(&mut body, &title, "Heading1", true, false, false, 0, &prose_font);
         if section.doc.medium.is_script() {
             let blocks = screenplay_blocks(project, section.doc);
             for block in &blocks {
@@ -1458,25 +1807,27 @@ fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
                 } else {
                     block.text.clone()
                 };
-                add_para(
+                docx_basic_paragraph(
+                    &mut body,
                     &text,
                     if block.kind == ElementKind::SceneHeading { "Heading2" } else { "Normal" },
                     bold,
                     block.kind == ElementKind::Transition,
                     mono,
                     indent,
+                    &prose_font,
                 );
             }
         } else {
-            for para in paragraphs(&section.doc.body_text()) {
-                add_para(&para, "Normal", false, false, false, 0);
+            for para in prose_paragraphs(project, section.doc, settings) {
+                body.push_str(&docx_prose_paragraph(&para, &settings.font));
             }
         }
     }
     for doc in back_matter(project) {
-        add_para(&doc.title, "Heading1", true, false, false, 0);
-        for para in paragraphs(&doc.body_text()) {
-            add_para(&para, "Normal", false, false, false, 0);
+        docx_basic_paragraph(&mut body, &doc.title, "Heading1", true, false, false, 0, &prose_font);
+        for para in prose_paragraphs(project, doc, settings) {
+            body.push_str(&docx_prose_paragraph(&para, &settings.font));
         }
     }
 
@@ -1735,8 +2086,8 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
             "<section class=\"frontmatter\"><h2>{}</h2>\n",
             html_escape(&doc.title)
         ));
-        for para in paragraphs(&doc.body_text()) {
-            body.push_str(&format!("<p>{}</p>\n", html_escape(&para)));
+        for (i, para) in prose_paragraphs(project, doc, settings).iter().enumerate() {
+            body.push_str(&html_prose_paragraph(para, i == 0));
         }
         body.push_str("</section>\n");
     }
@@ -1772,12 +2123,11 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
             }
             body.push_str("</div>\n");
         } else {
-            for (j, para) in paragraphs(&section.doc.body_text()).iter().enumerate() {
-                body.push_str(&format!(
-                    "<p class=\"{}\">{}</p>\n",
-                    if j == 0 { "first" } else { "" },
-                    html_escape(para)
-                ));
+            for (j, para) in prose_paragraphs(project, section.doc, settings)
+                .iter()
+                .enumerate()
+            {
+                body.push_str(&html_prose_paragraph(para, j == 0));
             }
         }
         body.push_str("</section>\n");
@@ -1787,8 +2137,8 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
             "<section class=\"backmatter\"><h2>{}</h2>\n",
             html_escape(&doc.title)
         ));
-        for para in paragraphs(&doc.body_text()) {
-            body.push_str(&format!("<p>{}</p>\n", html_escape(&para)));
+        for (i, para) in prose_paragraphs(project, doc, settings).iter().enumerate() {
+            body.push_str(&html_prose_paragraph(para, i == 0));
         }
         body.push_str("</section>\n");
     }
@@ -1820,6 +2170,48 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
     )
 }
 
+fn markdown_runs(paragraph: &ProseParagraph) -> String {
+    let mut out = String::new();
+    for item in &paragraph.content {
+        match item {
+            InlineContent::Text(run) => {
+                let mut text = paragraph.transform(&run.text);
+                if text.is_empty() {
+                    continue;
+                }
+                if run.marks.contains(&InlineMark::Italic) {
+                    text = format!("*{text}*");
+                }
+                if run.marks.contains(&InlineMark::Bold) {
+                    text = format!("**{text}**");
+                }
+                if run.marks.contains(&InlineMark::Underline) {
+                    text = format!("<u>{text}</u>");
+                }
+                if run.marks.contains(&InlineMark::Strikethrough) {
+                    text = format!("~~{text}~~");
+                }
+                out.push_str(&text);
+            }
+            InlineContent::HardBreak => out.push_str("<br>"),
+            InlineContent::Image(image) if image.alt_text.is_empty() => out.push_str("[Image]"),
+            InlineContent::Image(image) => out.push_str(&format!(
+                "[Image: {}]",
+                paragraph.transform(&image.alt_text)
+            )),
+        }
+    }
+    out
+}
+
+fn markdown_prose_paragraph(paragraph: &ProseParagraph) -> String {
+    if paragraph.heading {
+        format!("### {}", markdown_runs(paragraph))
+    } else {
+        markdown_runs(paragraph)
+    }
+}
+
 fn markdown_manuscript(project: &Project, settings: &ExportSettings) -> String {
     let mut out = String::new();
     if settings.include_title_page {
@@ -1839,8 +2231,8 @@ fn markdown_manuscript(project: &Project, settings: &ExportSettings) -> String {
     }
     for doc in front_matter(project) {
         out.push_str(&format!("## {}\n\n", doc.title));
-        for para in paragraphs(&doc.body_text()) {
-            out.push_str(&para);
+        for para in prose_paragraphs(project, doc, settings) {
+            out.push_str(&markdown_prose_paragraph(&para));
             out.push_str("\n\n");
         }
     }
@@ -1853,16 +2245,16 @@ fn markdown_manuscript(project: &Project, settings: &ExportSettings) -> String {
             out.push_str(&script::to_fountain(&blocks, section.doc.medium));
             out.push_str("```\n\n");
         } else {
-            for para in paragraphs(&section.doc.body_text()) {
-                out.push_str(&para);
+            for para in prose_paragraphs(project, section.doc, settings) {
+                out.push_str(&markdown_prose_paragraph(&para));
                 out.push_str("\n\n");
             }
         }
     }
     for doc in back_matter(project) {
         out.push_str(&format!("## {}\n\n", doc.title));
-        for para in paragraphs(&doc.body_text()) {
-            out.push_str(&para);
+        for para in prose_paragraphs(project, doc, settings) {
+            out.push_str(&markdown_prose_paragraph(&para));
             out.push_str("\n\n");
         }
     }
@@ -1881,6 +2273,90 @@ fn rtf_escape(s: &str) -> String {
             c => out.push_str(&format!("\\u{}?", c as i32)),
         }
     }
+    out
+}
+
+fn rtf_prose_runs(paragraph: &ProseParagraph) -> String {
+    let mut out = String::new();
+    for item in &paragraph.content {
+        match item {
+            InlineContent::Text(run) => {
+                let mut prefix = String::new();
+                let mut suffix = String::new();
+                if run.marks.contains(&InlineMark::Bold) {
+                    prefix.push_str("\\b ");
+                    suffix.insert_str(0, "\\b0 ");
+                }
+                if run.marks.contains(&InlineMark::Italic) {
+                    prefix.push_str("\\i ");
+                    suffix.insert_str(0, "\\i0 ");
+                }
+                if run.marks.contains(&InlineMark::Underline) {
+                    prefix.push_str("\\ul ");
+                    suffix.insert_str(0, "\\ulnone ");
+                }
+                if run.marks.contains(&InlineMark::Strikethrough) {
+                    prefix.push_str("\\strike ");
+                    suffix.insert_str(0, "\\strike0 ");
+                }
+                out.push_str(&prefix);
+                out.push_str(&rtf_escape(&paragraph.transform(&run.text)));
+                out.push_str(&suffix);
+            }
+            InlineContent::HardBreak => out.push_str("\\line "),
+            InlineContent::Image(image) if image.alt_text.is_empty() => out.push_str("[Image]"),
+            InlineContent::Image(image) => out.push_str(&rtf_escape(&format!(
+                "[Image: {}]",
+                paragraph.transform(&image.alt_text)
+            ))),
+        }
+    }
+    out
+}
+
+fn rtf_prose_paragraph(paragraph: &ProseParagraph) -> String {
+    let style = &paragraph.format;
+    let mut out = String::from("\\pard");
+    match style.align {
+        Alignment::Center => out.push_str("\\qc"),
+        Alignment::Right => out.push_str("\\qr"),
+        Alignment::Justify => out.push_str("\\qj"),
+        Alignment::Left => out.push_str("\\ql"),
+    }
+    let left = (style.indent.max(0.0) * 20.0).round() as i32;
+    let right = (style.right_indent.max(0.0) * 20.0).round() as i32;
+    let first = (style.first_line_indent * 20.0).round() as i32;
+    if left > 0 {
+        out.push_str(&format!("\\li{left}"));
+    }
+    if right > 0 {
+        out.push_str(&format!("\\ri{right}"));
+    }
+    if first != 0 {
+        out.push_str(&format!("\\fi{first}"));
+    }
+    let before = (style.before.max(0.0) * 20.0).round() as i32;
+    let after = (style.after.max(0.0) * 20.0).round() as i32;
+    if before > 0 {
+        out.push_str(&format!("\\sb{before}"));
+    }
+    if after > 0 {
+        out.push_str(&format!("\\sa{after}"));
+    }
+    let half_points = (style.size.max(8.0) * 2.0).round() as i32;
+    out.push_str(&format!(
+        "\\f{}\\fs{} ",
+        if font_is_mono(&style.font) { 1 } else { 0 },
+        half_points
+    ));
+    if paragraph.heading {
+        out.push_str("\\b ");
+        out.push_str(&rtf_prose_runs(paragraph));
+        out.push_str("\\b0 ");
+    } else {
+        out.push_str(&rtf_prose_runs(paragraph));
+    }
+    out.push_str("\\par\n");
     out
 }
 
@@ -1903,8 +2379,8 @@ fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
             "\\f0\\fs32\\b {}\\b0\\fs24\\par\n",
             rtf_escape(&doc.title)
         ));
-        for para in paragraphs(&doc.body_text()) {
-            out.push_str(&format!("{}\\par\n", rtf_escape(&para)));
+        for para in prose_paragraphs(project, doc, settings) {
+            out.push_str(&rtf_prose_paragraph(&para));
         }
     }
     for (i, section) in manuscript_sections(project).iter().enumerate() {
@@ -1934,8 +2410,8 @@ fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
                 ));
             }
         } else {
-            for para in paragraphs(&section.doc.body_text()) {
-                out.push_str(&format!("{}\\par\n", rtf_escape(&para)));
+            for para in prose_paragraphs(project, section.doc, settings) {
+                out.push_str(&rtf_prose_paragraph(&para));
             }
         }
     }
@@ -1944,8 +2420,8 @@ fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
             "\\page\\f0\\fs32\\b {}\\b0\\fs24\\par\n",
             rtf_escape(&doc.title)
         ));
-        for para in paragraphs(&doc.body_text()) {
-            out.push_str(&format!("{}\\par\n", rtf_escape(&para)));
+        for para in prose_paragraphs(project, doc, settings) {
+            out.push_str(&rtf_prose_paragraph(&para));
         }
     }
     out.push_str("}\n");
@@ -1965,8 +2441,9 @@ fn txt_manuscript(project: &Project, settings: &ExportSettings) -> String {
     }
     for doc in front_matter(project) {
         out.push_str(&format!("{}\n\n", doc.title.to_uppercase()));
-        for para in paragraphs(&doc.body_text()) {
-            out.push_str(&format!("{}\n\n", para));
+        for para in prose_paragraphs(project, doc, settings) {
+            out.push_str(&para.plain_text());
+            out.push_str("\n\n");
         }
     }
     for (i, section) in manuscript_sections(project).iter().enumerate() {
@@ -1979,15 +2456,17 @@ fn txt_manuscript(project: &Project, settings: &ExportSettings) -> String {
                 out.push_str("\n\n");
             }
         } else {
-            for para in paragraphs(&section.doc.body_text()) {
-                out.push_str(&format!("{}\n\n", para));
+            for para in prose_paragraphs(project, section.doc, settings) {
+                out.push_str(&para.plain_text());
+                out.push_str("\n\n");
             }
         }
     }
     for doc in back_matter(project) {
         out.push_str(&format!("\n{}\n\n", doc.title.to_uppercase()));
-        for para in paragraphs(&doc.body_text()) {
-            out.push_str(&format!("{}\n\n", para));
+        for para in prose_paragraphs(project, doc, settings) {
+            out.push_str(&para.plain_text());
+            out.push_str("\n\n");
         }
     }
     out
@@ -2251,6 +2730,200 @@ mod tests {
         let p = demo();
         let bytes = docx_manuscript(&p, &p.export);
         assert!(bytes.starts_with(b"PK"));
+    }
+
+    fn docx_document_xml(bytes: Vec<u8>) -> String {
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut xml = String::new();
+        std::io::Read::read_to_string(
+            &mut archive.by_name("word/document.xml").unwrap(),
+            &mut xml,
+        )
+        .unwrap();
+        xml
+    }
+
+    /// A novel with one chapter whose second paragraph uses a writer-defined
+    /// paragraph style stored in the project stylesheet.
+    fn styled_prose_project() -> Project {
+        let mut project = Project::new("Style Test", ProjectKind::Novel);
+        let parent = project.folder_id("Draft");
+        let doc_id = project.add_document(parent, "Chapter One", DocKind::Chapter, Medium::Prose);
+        let sheet_id = project.document(&doc_id).unwrap().style_sheet_id.clone();
+        let sheet = project
+            .style_sheets
+            .iter_mut()
+            .find(|sheet| sheet.id == sheet_id)
+            .expect("prose stylesheet");
+        sheet.styles.push(ParagraphStyle {
+            id: "epigraph".into(),
+            name: "Epigraph".into(),
+            format: ElementStyle {
+                align: Alignment::Center,
+                size: 9.0,
+                first_line_indent: 0.0,
+                before: 6.0,
+                after: 6.0,
+                ..ElementStyle::default()
+            },
+            semantic_kind: None,
+            next_style: Some("body".into()),
+            text_transform: TextTransform::None,
+        });
+        let doc = project.document_mut(&doc_id).unwrap();
+        doc.content = RichDocument {
+            paragraphs: vec![
+                RichParagraph {
+                    style_id: "body".into(),
+                    content: vec![InlineContent::Text(TextRun::with_marks(
+                        "First paragraph.",
+                        vec![],
+                    ))],
+                },
+                RichParagraph {
+                    style_id: "epigraph".into(),
+                    content: vec![InlineContent::Text(TextRun::with_marks(
+                        "A centred epigraph.",
+                        vec![],
+                    ))],
+                },
+                RichParagraph {
+                    style_id: "chapter-heading".into(),
+                    content: vec![InlineContent::Text(TextRun::with_marks(
+                        "A heading inside the body",
+                        vec![],
+                    ))],
+                },
+            ],
+        };
+        project
+    }
+
+    #[test]
+    fn prose_export_honours_project_paragraph_styles() {
+        let project = styled_prose_project();
+        let html = html_manuscript(&project, &project.settings_for(ExportKind::Html));
+        assert!(
+            html.lines().any(|line| line.contains("A centred epigraph.")
+                && line.contains("text-align: center")
+                && line.contains("font-size: 9.0pt")),
+            "custom paragraph style should reach HTML: {html}"
+        );
+        assert!(
+            !html.contains("style=\"font-family: \""),
+            "font names inside a style attribute must not close the attribute"
+        );
+        assert!(
+            html.lines()
+                .any(|line| line.contains("<h2") && line.contains("A heading inside the body")),
+            "an in-body chapter-heading paragraph should become a subheading"
+        );
+
+        let xml = docx_document_xml(docx_manuscript(
+            &project,
+            &project.settings_for(ExportKind::Docx),
+        ));
+        assert!(xml.contains("A centred epigraph."));
+        assert!(
+            xml.contains("<w:jc w:val=\"center\"/>") && xml.contains("<w:sz w:val=\"18\"/>"),
+            "DOCX should carry the custom style's alignment and size"
+        );
+        assert!(
+            xml.contains("<w:pStyle w:val=\"Heading2\"/>"),
+            "in-body heading should use the DOCX heading style"
+        );
+
+        let text = txt_manuscript(&project, &project.settings_for(ExportKind::Txt));
+        assert!(
+            text.contains("First paragraph.\n\nA centred epigraph.\n\nA heading inside the body"),
+            "paragraph boundaries must survive text export: {text}"
+        );
+    }
+
+    #[test]
+    fn stylesheet_appearance_edits_reach_export_without_a_compile_save() {
+        let mut project = Project::new("Live Style", ProjectKind::Novel);
+        let parent = project.folder_id("Draft");
+        let doc_id = project.add_document(parent, "Chapter", DocKind::Chapter, Medium::Prose);
+        let sheet_id = project.document(&doc_id).unwrap().style_sheet_id.clone();
+        let sheet = project
+            .style_sheets
+            .iter_mut()
+            .find(|sheet| sheet.id == sheet_id)
+            .unwrap();
+        let body = sheet
+            .styles
+            .iter_mut()
+            .find(|style| style.id == "body")
+            .unwrap();
+        body.format.size = 13.0;
+        body.format.align = Alignment::Right;
+        body.format.first_line_indent = 0.0;
+        let doc = project.document_mut(&doc_id).unwrap();
+        doc.set_plain_text("The stylesheet is the source of truth.");
+
+        // The format settings are still seeded from the old base style, as if
+        // the writer had never opened Compile after editing the sheet.
+        let settings = project.settings_for(ExportKind::Html);
+        let html = html_manuscript(&project, &settings);
+        assert!(
+            html.lines().any(|line| line.contains("The stylesheet is the source of truth.")
+                && line.contains("font-size: 13.0pt")
+                && line.contains("text-align: right")),
+            "project sheet edit should win over a stale seeded format: {html}"
+        );
+    }
+
+    #[test]
+    fn prose_export_keeps_inline_marks_and_paragraph_breaks() {
+        let mut project = Project::new("Marks Test", ProjectKind::Novel);
+        let parent = project.folder_id("Draft");
+        let doc_id = project.add_document(parent, "Chapter", DocKind::Chapter, Medium::Prose);
+        let doc = project.document_mut(&doc_id).unwrap();
+        doc.content = RichDocument {
+            paragraphs: vec![
+                RichParagraph {
+                    style_id: "body".into(),
+                    content: vec![
+                        InlineContent::Text(TextRun::with_marks("Bold", vec![InlineMark::Bold])),
+                        InlineContent::Text(TextRun::plain(" and ")),
+                        InlineContent::Text(TextRun::with_marks(
+                            "italic.",
+                            vec![InlineMark::Italic],
+                        )),
+                    ],
+                },
+                RichParagraph {
+                    style_id: "body".into(),
+                    content: vec![InlineContent::Text(TextRun::plain("Second paragraph."))],
+                },
+            ],
+        };
+
+        let html = html_manuscript(&project, &project.settings_for(ExportKind::Html));
+        assert!(html.contains("<strong>Bold</strong>"));
+        assert!(html.contains("<em>italic.</em>"));
+        assert!(html.contains("Second paragraph."));
+
+        let markdown = markdown_manuscript(&project, &project.settings_for(ExportKind::Markdown));
+        assert!(markdown.contains("**Bold**"));
+        assert!(markdown.contains("*italic.*"));
+        assert!(markdown.contains("Second paragraph.\n"));
+
+        let rtf = rtf_manuscript(&project, &project.settings_for(ExportKind::Rtf));
+        assert!(rtf.contains("\\b Bold\\b0"));
+        assert!(rtf.contains("\\i italic.\\i0"));
+
+        let xml = docx_document_xml(docx_manuscript(
+            &project,
+            &project.settings_for(ExportKind::Docx),
+        ));
+        assert!(xml.contains("<w:b/>"));
+        assert!(xml.contains("<w:i/>"));
+        assert!(xml.contains("Second paragraph."));
+
+        let text = txt_manuscript(&project, &project.settings_for(ExportKind::Txt));
+        assert!(text.contains("Bold and italic.\n\nSecond paragraph."));
     }
 
     #[test]

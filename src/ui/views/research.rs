@@ -45,7 +45,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new("A folder of small, useful things. Start with one note.")
-                        .font(sans(11.0))
+                        .font(ui_body())
                         .color(MUTED),
                 );
                 ui.add_space(12.0);
@@ -120,14 +120,14 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                             title_rect.left_top() + Vec2::new(0.0, 7.0),
                                             egui::Align2::LEFT_TOP,
                                             &item.title,
-                                            sans(10.5),
+                                            ui_body(),
                                             if selected { TEXT } else { MUTED },
                                         );
                                         ui.painter().with_clip_rect(title_rect).text(
                                             title_rect.left_top() + Vec2::new(0.0, 24.0),
                                             egui::Align2::LEFT_TOP,
                                             format!("{} · {}", item.kind, item.source),
-                                            sans(8.5),
+                                            ui_small(),
                                             FAINT,
                                         );
                                         if resp.clicked() {
@@ -227,9 +227,9 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Kind").font(sans(9.5)).color(FAINT));
+                ui.label(RichText::new("Kind").font(ui_small()).color(FAINT));
                 egui::ComboBox::from_id_salt("research_kind")
-                    .selected_text(RichText::new(&kind).font(sans(10.0)).color(MUTED))
+                    .selected_text(RichText::new(&kind).font(ui_small()).color(MUTED))
                     .width(118.0)
                     .show_ui(ui, |ui| {
                         for option in ["Note", "Interview", "Data", "Archive", "Image", "Place"] {
@@ -242,12 +242,12 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         }
                     });
                 ui.add_space(8.0);
-                ui.label(RichText::new("Source").font(sans(9.5)).color(FAINT));
+                ui.label(RichText::new("Source").font(ui_small()).color(FAINT));
                 if ui
                     .add(
                         TextEdit::singleline(&mut source)
                             .hint_text("Where it came from")
-                            .font(sans(10.0))
+                            .font(ui_small())
                             .desired_width(220.0),
                     )
                     .changed()
@@ -307,6 +307,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                 rich_body.sync_editor_text(&body, &sheet);
                 changed = true;
             }
+            crate::ui::editor::remember_selection_anchor(ui.ctx(), body_output.response.id, &body_output.galley, body_output.galley_pos);
             paint_rich_images(
                 ui,
                 &body_output.galley,
@@ -339,7 +340,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
             if assets_dir.is_none() {
                 ui.label(
                     RichText::new("Save the project to attach files")
-                        .font(sans(9.5))
+                        .font(ui_small())
                         .color(FAINT),
                 );
                 ui.add_space(4.0);
@@ -350,7 +351,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     RichText::new(
                         "No attachments. Images preview inline; audio, video and documents stay as local references.",
                     )
-                    .font(sans(9.5))
+                    .font(ui_small())
                     .color(FAINT),
                 );
             } else {
@@ -377,11 +378,11 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                 .data(|d| d.get_temp::<String>(draft_id))
                 .unwrap_or_default();
             ui.horizontal(|ui| {
-                ui.label(RichText::new("File").font(sans(9.5)).color(FAINT));
+                ui.label(RichText::new("File").font(ui_small()).color(FAINT));
                 let response = ui.add(
                     TextEdit::singleline(&mut attach_path)
                         .hint_text("Path to a file on this computer")
-                        .font(sans(10.0))
+                        .font(ui_small())
                         .desired_width(300.0),
                 );
                 if response.changed() {
@@ -401,7 +402,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                 }
                 ui.label(
                     RichText::new("Copied into the project folder; nothing leaves this machine.")
-                        .font(sans(8.5))
+                        .font(ui_small())
                         .color(FAINT),
                 );
             });
@@ -541,18 +542,18 @@ fn attachment_row(
                 } else {
                     ui.label(
                         RichText::new("Image file is missing from assets/research.")
-                            .font(sans(9.5))
+                            .font(ui_small())
                             .color(FAINT),
                     );
                 }
             }
             ui.horizontal(|ui| {
-                ui.label(RichText::new(name).font(sans(10.0)).color(TEXT));
-                ui.label(RichText::new(kind).font(sans(9.0)).color(FAINT));
+                ui.label(RichText::new(name).font(ui_small()).color(TEXT));
+                ui.label(RichText::new(kind).font(ui_small()).color(FAINT));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let clicked = ui
                         .add(
-                            egui::Button::new(RichText::new("×").font(sans(12.0)).color(MUTED))
+                            egui::Button::new(RichText::new("×").font(ui_body()).color(MUTED))
                                 .frame(false),
                         )
                         .on_hover_text("Remove attachment")
@@ -565,7 +566,7 @@ fn attachment_row(
             if kind != "Image" {
                 ui.label(
                     RichText::new("Reference only — the file stays on disk.")
-                        .font(sans(8.5))
+                        .font(ui_small())
                         .color(FAINT),
                 );
             }
@@ -951,7 +952,7 @@ fn decode_base64(input: &str) -> Option<Vec<u8>> {
 
 fn quiet_link(ui: &mut egui::Ui, text: &str) -> egui::Response {
     ui.add(
-        egui::Button::new(RichText::new(text).font(sans(10.0)).color(BLUE))
+        egui::Button::new(RichText::new(text).font(ui_small()).color(BLUE))
             .frame(false)
             .min_size(Vec2::new(0.0, 22.0)),
     )

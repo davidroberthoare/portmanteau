@@ -102,7 +102,7 @@ fn rail_view_button(ui: &mut egui::Ui, view: View, active: bool) -> bool {
         painter,
         rect.shrink(12.0),
         view.icon(),
-        if active { ACCENT } else { MUTED },
+        if active { ACCENT_INK } else { MUTED },
     );
     resp.on_hover_text(view.label()).clicked()
 }
@@ -330,7 +330,7 @@ impl PortmanteauApp {
             collapsed,
             search: String::new(),
             focus_search: false,
-            focus_mode: false,
+            focus_mode: std::env::var("PORTMANTEAU_FOCUS").is_ok(),
             snapshot_name: String::new(),
             checkpoint_label: String::new(),
             selected_research,
@@ -356,7 +356,7 @@ impl PortmanteauApp {
             screenshot,
             frame_no: 0,
             screenshot_requested: false,
-            editor_zoom: 1.0,
+            editor_zoom: DEFAULT_EDITOR_ZOOM,
             corkboard_zoom: 1.0,
             spell,
             show_spelling: false,
@@ -547,7 +547,8 @@ impl PortmanteauApp {
             .exact_size(54.0)
             .frame(
                 Frame::new()
-                    .fill(Color32::from_rgb(15, 17, 20))
+                    .fill(PANEL)
+                    .stroke(Stroke::new(1.0, BORDER_SOFT))
                     .inner_margin(Margin::symmetric(14, 9)),
             )
             .show(ui, |ui| {
@@ -559,7 +560,7 @@ impl PortmanteauApp {
                         egui::Align2::CENTER_CENTER,
                         "S",
                         serif(18.0),
-                        Color32::from_rgb(28, 24, 18),
+                        Color32::WHITE,
                     );
                     ui.add_space(3.0);
                     ui.label(RichText::new("Portmanteau").font(serif(19.0)).color(TEXT));
@@ -571,7 +572,7 @@ impl PortmanteauApp {
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let compile = egui::Button::new(
-                            RichText::new("Compile  ▸").font(sans(12.5)).color(Color32::from_rgb(32, 26, 18)),
+                            RichText::new("Compile  ▸").font(ui_body()).color(Color32::WHITE),
                         )
                         .fill(ACCENT)
                         .corner_radius(CornerRadius::same(6))
@@ -586,7 +587,7 @@ impl PortmanteauApp {
                             ui.add_space(2.0);
                             ui.label(
                                 RichText::new(format!("{} / {} today", today, target))
-                                    .font(sans(10.5))
+                                    .font(ui_body())
                                     .color(MUTED),
                             );
                             ui.add_space(2.0);
@@ -600,27 +601,50 @@ impl PortmanteauApp {
                             );
                         });
                         ui.add_space(10.0);
-                        let (avatar, _) = ui.allocate_exact_size(Vec2::new(28.0, 28.0), egui::Sense::click());
-                        ui.painter().circle_filled(avatar.center(), 14.0, PANEL_3);
-                        ui.painter().text(
-                            avatar.center(),
-                            egui::Align2::CENTER_CENTER,
-                            "AM",
-                            sans(10.5),
-                            TEXT,
-                        );
-                        ui.add_space(6.0);
-                        let (dir, resp) = ui.allocate_exact_size(Vec2::new(50.0, 26.0), egui::Sense::click());
-                        ui.painter().rect_filled(dir, CornerRadius::same(6), PANEL_2);
-                        ui.painter().text(
-                            dir.center(),
-                            egui::Align2::CENTER_CENTER,
-                            "focus",
-                            sans(10.0),
-                            if self.focus_mode { ACCENT } else { MUTED },
-                        );
-                        if resp.on_hover_text("Hide the binder and inspector").clicked() {
-                            self.focus_mode = !self.focus_mode;
+                    });
+                });
+            });
+    }
+
+    /// Focus mode replaces the normal chrome with one slim bar. It changes
+    /// nothing about the document; the editor keeps its own state and layout
+    /// rules.
+    fn focus_bar(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::top("focusbar")
+            .exact_size(38.0)
+            .frame(
+                Frame::new()
+                    .fill(PANEL)
+                    .stroke(Stroke::new(1.0, BORDER_SOFT))
+                    .inner_margin(Margin::symmetric(14, 4)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal_centered(|ui| {
+                    ui.label(
+                        RichText::new(&self.ws.project.title)
+                            .font(serif(13.0))
+                            .color(MUTED),
+                    );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let exit = egui::Button::new(
+                            RichText::new("Exit focus").font(ui_body()).color(MUTED),
+                        )
+                        .fill(PANEL_2)
+                        .corner_radius(CornerRadius::same(5));
+                        if ui
+                            .add(exit)
+                            .on_hover_text("Restore the full workspace (F11)")
+                            .clicked()
+                        {
+                            self.focus_mode = false;
+                        }
+                        if let Some(doc) = self.current_doc() {
+                            ui.add_space(8.0);
+                            ui.label(
+                                RichText::new(format!("{} · {} words", doc.title, doc.words()))
+                                    .font(ui_body())
+                                    .color(FAINT),
+                            );
                         }
                     });
                 });
@@ -628,7 +652,7 @@ impl PortmanteauApp {
     }
 
     fn menus(&mut self, ui: &mut egui::Ui) {
-        let menu_text = |s: &str| RichText::new(s).font(sans(12.0)).color(MUTED);
+        let menu_text = |s: &str| RichText::new(s).font(ui_body()).color(MUTED);
         ui.menu_button(menu_text("File"), |ui| {
             if ui.button("New project…").clicked() {
                 self.new_project_title.clear();
@@ -662,7 +686,7 @@ impl PortmanteauApp {
                     .unwrap_or_default();
                 ui.close();
             }
-            if ui.button("Import Fountain or FDX…").clicked() {
+            if ui.button("Import Fountain, FDX, DOCX or Text…").clicked() {
                 self.path_dialog = Some(PathDialog::Import);
                 self.path_draft.clear();
                 ui.close();
@@ -717,12 +741,42 @@ impl PortmanteauApp {
                 ui.close();
             }
             ui.separator();
-            if ui.button("Focus mode").clicked() {
+            if ui
+                .checkbox(&mut self.settings.show_binder, "Show binder")
+                .changed()
+            {
+                let _ = crate::settings::save_settings(&self.settings);
+            }
+            if ui
+                .checkbox(&mut self.settings.show_inspector, "Show inspector")
+                .changed()
+            {
+                let _ = crate::settings::save_settings(&self.settings);
+            }
+            ui.separator();
+            if ui.button("Focus mode (F11)").clicked() {
                 self.focus_mode = !self.focus_mode;
                 ui.close();
             }
         });
         ui.menu_button(menu_text("Insert"), |ui| {
+            if ui.button("Image…").clicked() {
+                if let Some(id) = self.selected.clone() {
+                    if let Some(doc) = self.ws.project.document(&id) {
+                        let end = doc.content.char_count();
+                        self.image_insert = Some(ImageInsertState {
+                            target: RichTextTarget::DocumentBody(id),
+                            range: end..end,
+                            path: String::new(),
+                            alt_text: String::new(),
+                            caption: String::new(),
+                            standalone: true,
+                            error: String::new(),
+                        });
+                    }
+                }
+                ui.close();
+            }
             if ui.button("New chapter").clicked() {
                 self.new_chapter();
                 ui.close();
@@ -736,8 +790,6 @@ impl PortmanteauApp {
                 ui.close();
             }
         });
-        ui.add_space(2.0);
-        ui.label(RichText::new("Project").font(sans(12.0)).color(FAINT));
     }
 
     fn search_field(&mut self, ui: &mut egui::Ui) {
@@ -759,10 +811,10 @@ impl PortmanteauApp {
                     );
                     let resp = ui.add(
                         TextEdit::singleline(&mut self.search)
-                            .hint_text(RichText::new("Search manuscript…").font(sans(11.5)).color(FAINT))
+                            .hint_text(RichText::new("Search manuscript…").font(ui_body()).color(FAINT))
                             .desired_width(190.0)
                             .frame(Frame::NONE)
-                            .font(sans(11.5)),
+                            .font(ui_body()),
                     );
                     if self.focus_search {
                         resp.request_focus();
@@ -801,7 +853,7 @@ impl PortmanteauApp {
                         egui::Align2::CENTER_CENTER,
                         "S",
                         serif(20.0),
-                        ACCENT,
+                        ACCENT_INK,
                     );
                     ui.add_space(18.0);
                     for view in View::all() {
@@ -819,7 +871,7 @@ impl PortmanteauApp {
                 ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
                     let (av, _) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), egui::Sense::click());
                     ui.painter().circle_filled(av.center(), 14.0, SAGE_SOFT);
-                    ui.painter().text(av.center(), egui::Align2::CENTER_CENTER, "AM", sans(9.5), SAGE);
+                    ui.painter().text(av.center(), egui::Align2::CENTER_CENTER, "AM", ui_small(), SAGE);
                     ui.add_space(6.0);
                     // Settings sits just above the avatar, pinned to the foot
                     // of the rail rather than in the workspace list.
@@ -848,7 +900,8 @@ impl PortmanteauApp {
             .exact_size(27.0)
             .frame(
                 Frame::new()
-                    .fill(Color32::from_rgb(15, 17, 20))
+                    .fill(PANEL)
+                    .stroke(Stroke::new(1.0, BORDER_SOFT))
                     .inner_margin(Margin::symmetric(14, 4)),
             )
             .show(ui, |ui| {
@@ -859,7 +912,7 @@ impl PortmanteauApp {
                     ui.painter().circle_filled(dot_rect.center(), 3.0, color);
                     ui.label(
                         RichText::new(if self.ws.dirty { "Unsaved changes" } else { "All changes saved" })
-                            .font(sans(10.5))
+                            .font(ui_body())
                             .color(MUTED),
                     );
                     ui.add_space(8.0);
@@ -882,14 +935,14 @@ impl PortmanteauApp {
                                     .map(|d| d.pages())
                                     .sum::<u32>()
                             ))
-                            .font(sans(10.5))
+                            .font(ui_body())
                             .color(MUTED),
                         );
                         ui.add_space(12.0);
                         if let Some(doc) = self.current_doc() {
                             ui.label(
                                 RichText::new(format!("{} · {}", doc.title, doc.medium.label()))
-                                    .font(sans(10.5))
+                                    .font(ui_body())
                                     .color(FAINT),
                             );
                         }
@@ -923,8 +976,8 @@ impl PortmanteauApp {
                             let (r, _) = ui.allocate_exact_size(Vec2::new(8.0, 8.0), egui::Sense::hover());
                             ui.painter().circle_filled(r.center(), 4.0, accent);
                             ui.vertical(|ui| {
-                                ui.label(RichText::new(&toast.message).font(sans(12.0)).color(TEXT));
-                                ui.label(RichText::new(&toast.detail).font(sans(10.5)).color(MUTED));
+                                ui.label(RichText::new(&toast.message).font(ui_body()).color(TEXT));
+                                ui.label(RichText::new(&toast.detail).font(ui_body()).color(MUTED));
                             });
                         });
                     });
@@ -956,8 +1009,8 @@ impl PortmanteauApp {
                         for kind in ProjectKind::all() {
                             let selected = self.new_project_kind == kind;
                             let btn = egui::Button::new(
-                                RichText::new(kind.label()).font(sans(11.5))
-                                    .color(if selected { Color32::from_rgb(25, 21, 15) } else { TEXT }),
+                                RichText::new(kind.label()).font(ui_body())
+                                    .color(if selected { Color32::WHITE } else { TEXT }),
                             )
                             .fill(if selected { ACCENT } else { PANEL_2 })
                             .corner_radius(CornerRadius::same(20));
@@ -969,8 +1022,8 @@ impl PortmanteauApp {
                     ui.add_space(16.0);
                     let ready = !self.new_project_title.trim().is_empty();
                     let btn = egui::Button::new(
-                        RichText::new("Create project").font(sans(12.5))
-                            .color(Color32::from_rgb(25, 21, 15)),
+                        RichText::new("Create project").font(ui_body())
+                            .color(if ready { Color32::WHITE } else { MUTED }),
                     )
                     .fill(if ready { ACCENT } else { PANEL_3 })
                     .corner_radius(CornerRadius::same(6))
@@ -1011,7 +1064,7 @@ impl PortmanteauApp {
                     ui.label(RichText::new("Portmanteau").font(serif(26.0)).color(TEXT));
                     ui.label(
                         RichText::new("A native writing studio for novels, film, television and theatre.")
-                            .font(sans(12.0))
+                            .font(ui_body())
                             .color(MUTED),
                     );
                     ui.add_space(10.0);
@@ -1028,7 +1081,7 @@ impl PortmanteauApp {
                         ui.horizontal(|ui| {
                             let (r, _) = ui.allocate_exact_size(Vec2::new(5.0, 5.0), egui::Sense::hover());
                             ui.painter().circle_filled(r.center(), 2.5, ACCENT);
-                            ui.label(RichText::new(line).font(sans(11.5)).color(TEXT));
+                            ui.label(RichText::new(line).font(ui_body()).color(TEXT));
                         });
                     }
                     ui.add_space(10.0);
@@ -1079,13 +1132,13 @@ impl PortmanteauApp {
                     TextEdit::singleline(&mut state.role)
                         .hint_text("Protagonist, ally, antagonist…")
                         .desired_width(f32::INFINITY)
-                        .font(sans(12.5)),
+                        .font(ui_body()),
                 );
                 ui.add_space(16.0);
                 let ready = !state.name.trim().is_empty();
                 let btn = egui::Button::new(
-                    RichText::new("Create").font(sans(12.5))
-                        .color(Color32::from_rgb(25, 21, 15)),
+                    RichText::new("Create").font(ui_body())
+                        .color(if ready { Color32::WHITE } else { MUTED }),
                 )
                 .fill(if ready { ACCENT } else { PANEL_3 })
                 .corner_radius(CornerRadius::same(6))
@@ -1172,7 +1225,7 @@ impl PortmanteauApp {
                 );
                 if !state.error.is_empty() {
                     ui.add_space(4.0);
-                    ui.label(RichText::new(&state.error).font(sans(9.5)).color(RED));
+                    ui.label(RichText::new(&state.error).font(ui_small()).color(RED));
                 }
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
@@ -1373,7 +1426,7 @@ impl PortmanteauApp {
                                 state.words_before,
                                 state.words_after
                             ))
-                            .font(sans(10.0))
+                            .font(ui_small())
                             .color(FAINT),
                         );
                     });
@@ -1389,7 +1442,7 @@ impl PortmanteauApp {
                                     ui,
                                     &format!("−{} removed", state.removed),
                                     RED,
-                                    Color32::from_rgb(58, 34, 31),
+                                    Color32::from_rgb(244, 225, 222),
                                 );
                             }
                             if state.added > 0 {
@@ -1508,7 +1561,7 @@ impl PortmanteauApp {
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new("Restoring replaces the current text with this saved version.")
-                            .font(sans(9.5))
+                            .font(ui_small())
                             .color(FAINT),
                     );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -1554,9 +1607,9 @@ impl PortmanteauApp {
                 "Where the project folder should live (or a legacy .json file)",
             ),
             PathDialog::Import => (
-                "Import screenplay",
+                "Import manuscript",
                 "Import",
-                "Path to a .fountain or .fdx screenplay file",
+                "Path to a .fountain, .fdx, .docx or .txt file",
             ),
         };
         egui::Window::new(title)
@@ -1584,18 +1637,18 @@ impl PortmanteauApp {
                         PathDialog::Open => "Unsaved changes in the current project are left untouched.",
                         PathDialog::SaveAs => "A new copy is written; the open project switches to it.",
                         PathDialog::Import => {
-                            "Fountain and Final Draft files become new documents in the Draft folder."
+                            "Fountain and FDX become screenplays; DOCX and text become prose in the Draft folder."
                         }
                     })
-                    .font(sans(9.5))
+                    .font(ui_small())
                     .color(FAINT),
                 );
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     let btn = egui::Button::new(
                         RichText::new(verb)
-                            .font(sans(11.5))
-                            .color(Color32::from_rgb(29, 24, 17)),
+                            .font(ui_body())
+                            .color(Color32::WHITE),
                     )
                     .fill(ACCENT)
                     .corner_radius(CornerRadius::same(6))
@@ -1663,9 +1716,9 @@ impl PortmanteauApp {
                         self.selected = id;
                         self.view = View::Write;
                         self.path_dialog = None;
-                        self.toast("Screenplay imported", res.message, ToastKind::Ok);
+                        self.toast("Manuscript imported", res.message, ToastKind::Ok);
                     } else {
-                        self.toast("Could not import screenplay", res.message, ToastKind::Error);
+                        self.toast("Could not import manuscript", res.message, ToastKind::Error);
                     }
                 }
             }
@@ -1762,17 +1815,29 @@ impl eframe::App for PortmanteauApp {
         let ctx = ui.ctx().clone();
         self.handle_shortcuts(&ctx);
 
-        self.top_bar(ui);
-        self.status_bar(ui);
-        self.rail(ui);
+        let focus = self.focus_mode && self.view == View::Write;
+        if focus {
+            self.focus_bar(ui);
+        } else {
+            self.top_bar(ui);
+            self.status_bar(ui);
+            self.rail(ui);
+        }
         self.toast_ui(&ctx);
 
         if self.view == View::Write {
-            if !self.focus_mode {
-                self.binder(ui);
-            }
-            if !self.focus_mode {
-                self.inspector(ui);
+            let focus = self.focus_mode;
+            if !focus {
+                if self.settings.show_binder {
+                    self.binder(ui);
+                } else {
+                    self.binder_stub(ui);
+                }
+                if self.settings.show_inspector {
+                    self.inspector(ui);
+                } else {
+                    self.inspector_stub(ui);
+                }
             }
             egui::CentralPanel::default()
                 .frame(Frame::new().fill(BG))
@@ -1819,6 +1884,74 @@ impl PortmanteauApp {
             .show(ui, |ui| {
                 ui::inspector::show(self, ui);
             });
+    }
+
+    /// A slim edge handle so a hidden panel can be brought back without
+    /// reaching for the menu. Focus mode hides the handles too.
+    fn binder_stub(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::left("binder_stub")
+            .exact_size(18.0)
+            .resizable(false)
+            .frame(
+                Frame::new()
+                    .fill(BG)
+                    .inner_margin(Margin::symmetric(1, 6)),
+            )
+            .show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(10.0);
+                    let show = egui::Button::new(
+                        RichText::new("›").font(ui_body()).color(FAINT),
+                    )
+                    .frame(false)
+                    .min_size(Vec2::new(16.0, 28.0));
+                    if ui
+                        .add(show)
+                        .on_hover_text("Show the binder")
+                        .clicked()
+                    {
+                        self.set_binder_visible(true);
+                    }
+                });
+            });
+    }
+
+    fn inspector_stub(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::right("inspector_stub")
+            .exact_size(18.0)
+            .resizable(false)
+            .frame(
+                Frame::new()
+                    .fill(BG)
+                    .inner_margin(Margin::symmetric(1, 6)),
+            )
+            .show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(10.0);
+                    let show = egui::Button::new(
+                        RichText::new("‹").font(ui_body()).color(FAINT),
+                    )
+                    .frame(false)
+                    .min_size(Vec2::new(16.0, 28.0));
+                    if ui
+                        .add(show)
+                        .on_hover_text("Show the inspector")
+                        .clicked()
+                    {
+                        self.set_inspector_visible(true);
+                    }
+                });
+            });
+    }
+
+    pub fn set_binder_visible(&mut self, visible: bool) {
+        self.settings.show_binder = visible;
+        let _ = crate::settings::save_settings(&self.settings);
+    }
+
+    pub fn set_inspector_visible(&mut self, visible: bool) {
+        self.settings.show_inspector = visible;
+        let _ = crate::settings::save_settings(&self.settings);
     }
 }
 

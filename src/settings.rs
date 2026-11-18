@@ -35,7 +35,14 @@ pub fn load_settings() -> AppSettings {
 }
 
 /// Write the global defaults as pretty JSON, creating the folder if needed.
+///
+/// Unit tests exercise the shell and can toggle layout controls, so they must
+/// never overwrite the writer's real configuration. The test binary gets a
+/// no-op save; the app itself still persists normally.
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
+    if cfg!(test) {
+        return Ok(());
+    }
     let path = config_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;

@@ -61,12 +61,14 @@ strikethrough; images can be inline or standalone with alt text/captions.
 - Added headless probes for cross-style drag selection, paragraph navigation,
   and Enter applying Character Name → Dialogue. Character completion remains
   in the flow and stores the canonical character name.
-- Added `document.import` (API and `import_document` MCP tool) for Fountain and
-  FDX files, plus a File-menu import path. FDX export now preserves inline bold,
-  italic, underline and strikethrough runs and writes image alt-text placeholders.
-  Added Fountain and FDX round-trip tests.
+- Added `document.import` (API and `import_document` MCP tool) for Fountain,
+  FDX, Word (DOCX) and plain-text files, plus a File-menu import path. FDX
+  export now preserves inline bold, italic, underline and strikethrough runs and
+  writes image alt-text placeholders. Added Fountain and FDX round-trip tests.
+- Added a DOCX reader for `word/document.xml` with paragraph styles and inline
+  marks, and a plain-text reader that joins hard-wrapped prose into paragraphs.
 - Added screenshot verification for the unified screenplay flow. The latest
-  workspace run passes 159 tests.
+  workspace run passes 162 tests.
 
 **Still required**
 
@@ -77,14 +79,59 @@ strikethrough; images can be inline or standalone with alt text/captions.
   keep formatting/selection stable as more fields adopt the same editor.
 - Ensure stylesheet appearance edits also drive every export writer, and add
   focused UI tests for stylesheet customization.
-- Add plain-text and DOCX import beside the Fountain/FDX importer. The reusable
-  FDX import style/object mapping dialog remains deferred below.
+- The reusable FDX import style/object mapping dialog remains deferred below.
 
 **Done when** headless UI tests can drag-select and edit across different
 paragraph styles, script Enter follows the stylesheet's next-style rule, prose
 and screenplay share the same editor/model, the sample project uses the new
 model, and Fountain/FDX conversion has round-trip tests for supported
 screenplay semantics.
+
+## Next focus: a light, quiet, Mac-native interface
+
+Move the shell from a dark, button-heavy high-tech look to a calm writing
+environment. The manuscript should dominate; chrome should recede. Vellum is
+the primary reference for editor/preview composition, with iA Writer for
+focus and restraint, Ulysses for document navigation, and Apple's Human
+Interface Guidelines for native sidebar and toolbar behavior. The full brief is
+in `docs/ui-style-guidelines.md`.
+
+**Progress on branch `ui/light-mac-redesign`**
+
+- Replaced the dark palette with a warm-gray chrome, soft-white manuscript
+  paper, charcoal text, muted blue-green accent and restrained status colors.
+- Switched egui to its light visual theme, softened window shadows, and moved
+  the top bar, status bar, rail, binder, inspector, editor toolbar, style
+  palettes and primary buttons onto the light surfaces.
+- Kept the editor as the focal point: screenplay columns and prose typography
+  are unchanged, and the page now reads as paper rather than a bright card on a
+  dark background.
+- Consolidated binder actions into one `+` menu; the binder and inspector can
+  each be hidden from their header or the View menu, and the last layout is
+  remembered in the program settings. Hidden panels leave a slim edge handle
+  instead of a permanent button row.
+- Focus mode now drops the rail, status bar, binder, inspector and editor
+  toolbar, leaving a single slim title bar with a visible Exit focus control.
+  Nothing about the document or its editing behaviour changes.
+- Darkened secondary text and semantic label colours to clear a comfortable
+  contrast ratio at chrome type sizes, and added ink-strength variants for
+  sage, blue, red, purple and the accent.
+- Rebuilt the Settings → Preferences card around Writing, Spelling language and
+  Workspace sections, with panel visibility stored alongside the other global
+  defaults. Unit tests no longer write to the writer's real config file.
+- Verified Write, hidden-panel, focus-mode, Corkboard, Compile, Settings,
+  Research, Versions and Characters screenshots at 1440×930.
+
+**Still required**
+
+- Continue reducing persistent control rows in the remaining workspaces
+  (Compile still carries a long format list and export action) as they are
+  touched.
+- Check contrast for disabled states after the optional dark theme exists, and
+  keep the dark theme on the same token set rather than reverting to the old
+  palette.
+- Consider remembering editor zoom, write mode and inspector tab per project
+  alongside the panel layout.
 
 ## 1. Import a manuscript
 
@@ -93,21 +140,20 @@ novel in Word. Exporting without importing is a one-way door.
 
 **Start with Fountain, Final Draft and plain text**, then DOCX (confirmed future work):
 
-- `parse_fountain` and `parse_fdx` now exist in the core, and `document.import`
-  is wired through the API, MCP and the File menu. Add a DOCX reader and a
-  plain-text importer beside them.
-- DOCX: read `word/document.xml` out of the zip (the export side already uses
-  `zip`) and map paragraphs to sections. Do not pull in a full document model.
+- `parse_fountain`, `parse_fdx`, `parse_docx` and `parse_plain_text` now exist
+  in the core, and `document.import` is wired through the API, MCP and the File
+  menu. DOCX reads `word/document.xml` out of the zip and maps paragraph styles
+  and inline marks without pulling in a full document model.
 
 **Done when** real `.fountain`, `.fdx`, `.docx` and plain-text files round-trip
 through import and export without losing scene headings, character/dialogue
 pairing or transitions, and a manuscript becomes chapters with readable prose.
 
-**Deferred import workflow.** When FDX import is implemented, include a review
-dialog for mapping unknown paragraph styles/objects to built-in or project
-custom styles. Let writers revise those mappings, create custom styles, and save
-mapping profiles for reuse on future imports. This is recorded for later; do not
-build the dialog as part of the unified-editor work.
+**Deferred import workflow.** FDX import is in place. A later pass should add a
+review dialog for mapping unknown paragraph styles/objects to built-in or
+project custom styles. Let writers revise those mappings, create custom styles,
+and save mapping profiles for reuse on future imports. This is recorded for
+later; do not build the dialog as part of the unified-editor work.
 
 ## 2. Drag-and-drop binder
 
@@ -211,3 +257,14 @@ open the sample project.
 - Search filters (title only, research only, current part).
 - A character relationship map derived from appearances.
 - Project statistics: scenes per part, dialogue vs action ratio, reading time.
+
+## UI polish pass (selection popup, style dropdown, type scale, binder icons)
+- Floating B/I/U/S popup above selected text in every rich editor; Image moved to Insert ▸ Image….
+- Script paragraph styles are a toolbar dropdown instead of a button palette.
+- Interface type scale lives in `theme.rs` (`ui_small`/`ui_body`/`ui_strong`) with a Settings ▸ Interface text size preference.
+- Binder uses drawn folder and page icons, tinted by document type.
+
+## Planned: undo / redo history
+- Document-level undo/redo for every rich editor (typing, style changes, mark toggles, image inserts), spanning paragraph boundaries in the single flow.
+- Coalesce typing into word-sized steps; keep history per document for the session.
+- Edit menu Undo/Redo with ⌘Z / ⇧⌘Z; complements, not replaces, named version snapshots.

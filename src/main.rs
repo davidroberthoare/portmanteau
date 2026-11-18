@@ -46,8 +46,10 @@ fn main() -> eframe::Result<()> {
         "Portmanteau",
         options,
         Box::new(move |cc| {
+            let app = app::PortmanteauApp::new(screenshot);
+            theme::set_ui_scale(app.settings.ui_scale);
             theme::install(&cc.egui_ctx);
-            Ok(Box::new(app::PortmanteauApp::new(screenshot)))
+            Ok(Box::new(app))
         }),
     )
 }

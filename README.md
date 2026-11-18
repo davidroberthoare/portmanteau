@@ -159,7 +159,7 @@ A command always returns `{ ok, command, message, data }`.
 | `project.snapshots` | Every document snapshot |
 | `document.list` / `document.get` | Read the binder or one document |
 | `document.create` / `document.update` / `document.delete` | Write the binder |
-| `document.import` | Import a Fountain or Final Draft (FDX) file as a new screenplay |
+| `document.import` | Import Fountain, Final Draft (FDX), Word (DOCX) or plain text as a new document |
 | `document.move` | Reorder within a folder, or move into one |
 | `document.snapshot` / `snapshot.restore` / `snapshot.diff` | Save, restore and compare document versions |
 | `item.add` / `item.update` | Story-database records (characters, places, events, props, custom) |
