@@ -2813,11 +2813,27 @@ fn cue_suggestions(
     word: &str,
     cast: &[String],
 ) -> Vec<CueSuggestion> {
+    // Script cues are often short forms ("MARA", "BOY") of a database
+    // character ("Mara Venn", "The Boy"). Resolve them to the database name
+    // when exactly one character fits, so the list shows one entry per person.
     let canonical = |name: &str| {
-        cast.iter()
-            .find(|known| known.eq_ignore_ascii_case(name))
-            .cloned()
-            .unwrap_or_else(|| name.to_owned())
+        if let Some(known) = cast.iter().find(|known| known.eq_ignore_ascii_case(name)) {
+            return known.clone();
+        }
+        let needle = name.trim().to_lowercase();
+        let fits: Vec<&String> = cast
+            .iter()
+            .filter(|known| {
+                known
+                    .to_lowercase()
+                    .split_whitespace()
+                    .any(|part| part == needle)
+            })
+            .collect();
+        match fits.as_slice() {
+            [only] => (*only).clone(),
+            _ => name.to_owned(),
+        }
     };
     if word.is_empty() {
         let mut names: Vec<String> = Vec::new();
@@ -3715,6 +3731,29 @@ mod ui_tests {
     }
 
     #[test]
+    fn cue_list_merges_script_short_forms_into_database_names() {
+        use portmanteau_core::Block;
+        let blocks = vec![
+            Block::new(ElementKind::Character, "ELIAS"),
+            Block::new(ElementKind::Dialogue, "Hm."),
+            Block::new(ElementKind::Character, "MARA"),
+            Block::new(ElementKind::Dialogue, "Yes."),
+            Block::new(ElementKind::Character, "BOY"),
+            Block::new(ElementKind::Dialogue, "No."),
+            Block::new(ElementKind::Character, ""),
+        ];
+        let cast: Vec<String> = ["Mara Venn", "Elias Rook", "The Boy", "Ruth Alder"]
+            .iter()
+            .map(|name| name.to_string())
+            .collect();
+        let labels: Vec<String> = cue_suggestions(&blocks, 6, "", &cast)
+            .into_iter()
+            .map(|suggestion| suggestion.insert)
+            .collect();
+        assert_eq!(labels, vec!["Mara Venn", "The Boy", "Elias Rook", "Ruth Alder"]);
+    }
+
+    #[test]
     fn clicking_an_autocomplete_name_fills_the_block() {
         let mut fixture = click_harness();
         fixture.open_character_popup();
@@ -4228,7 +4267,7 @@ mod ui_tests {
             );
             assert!(
                 harness
-                    .query_by_role_and_label(Role::Button, "↺ MARA")
+                    .query_by_role_and_label(Role::Button, "↺ Mara Venn")
                     .is_some(),
                 "an empty cue should offer the next speaker as its suggestion"
             );
@@ -4237,8 +4276,8 @@ mod ui_tests {
             harness.run_steps(2);
             assert_eq!(
                 block_text(&app.borrow(), &doc_id, 4),
-                "MARA",
-                "Enter on the next-speaker suggestion fills the cue"
+                "Mara Venn",
+                "Enter on the next-speaker suggestion fills the cue with the database name"
             );
         }
 
