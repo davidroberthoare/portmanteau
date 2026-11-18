@@ -4,6 +4,8 @@ A small desktop writing app for novels, screenplays, TV and stage scripts, writt
 
 Suggestions, bug reports and ideas are very welcome — open an issue.
 
+<img width="2864" height="1906" alt="image" src="https://github.com/user-attachments/assets/828a721b-dbd9-4897-bb21-901efdbae7f4" />
+
 ## What it does so far
 
 - One rich-text editor for prose and scripts. Paragraph styles (with "next style" rules, like Enter after a character cue giving dialogue) decide how things look; bold, italic, underline, strikethrough and inline images are supported.
