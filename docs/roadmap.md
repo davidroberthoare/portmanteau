@@ -268,3 +268,20 @@ open the sample project.
 - Document-level undo/redo for every rich editor (typing, style changes, mark toggles, image inserts), spanning paragraph boundaries in the single flow.
 - Coalesce typing into word-sized steps; keep history per document for the session.
 - Edit menu Undo/Redo with ⌘Z / ⇧⌘Z; complements, not replaces, named version snapshots.
+
+## Session log: UI polish, character cues and export styling (latest)
+
+Done and merged to `master`:
+- Light Mac-style redesign, collapsible binder/inspector, focus mode, shared type scale (`ui_small/ui_body/ui_strong`) with a Settings text-size preference, drawn binder icons.
+- Zoom reads 100% at the comfortable default (prose 1.4x, script 1.2x; `PROSE_ZOOM_BASE`/`SCRIPT_ZOOM_BASE`).
+- Floating B/I/U/S popup on selection; Insert ▸ Image…; script paragraph style is a toolbar dropdown.
+- Character cues: caret-anchored popup (4 visible rows, flips above when short), opens only while typing or in a fresh empty cue; other speaker first (↺), short script forms (MARA, BOY) merged into database names; Enter splits at the caret (fixes wrong-style new paragraph); empty-paragraph caret drawn at the style's indent; auto-scroll keeps ~2in below the caret.
+- All prose exporters and the page preview honour per-paragraph stylesheet styles; preview pages are a constant, clipped size scaled to fit the column.
+- Toolbar, search and Compile field alignment; corkboard synopsis scrolls.
+
+Next session candidates:
+- Undo/redo history (see above) — the largest missing editing feature.
+- Verify cue popup and empty-paragraph caret by hand on more screenplays (stage play, prose with custom styles); only headless-tested.
+- Preview page-fit estimate vs real export pagination (clipped lines when estimate is off).
+- FDX style/object mapping review dialog; optional dark theme on the same tokens; further reduction of persistent control rows in Compile.
+- Remove dead `legacy_script_page` in `src/ui/editor.rs` and the unused `insert_image` field on `InlineToolbarResult`.
