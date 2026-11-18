@@ -66,9 +66,11 @@ fn ui_scale() -> f32 {
 // text uses one of these roles, so changing a value here (or the user's
 // "Interface text size" preference, which scales all of them) restyles the
 // whole app consistently.
-/// Starting magnification of the writing surface (a couple of points larger
-/// than the stylesheet size, which suits screen reading).
-pub const DEFAULT_EDITOR_ZOOM: f32 = 1.2;
+/// The zoom control reads 100% at its default. Each medium maps that to the
+/// on-screen scale of its stylesheet size that reads comfortably.
+pub const DEFAULT_EDITOR_ZOOM: f32 = 1.0;
+pub const PROSE_ZOOM_BASE: f32 = 1.4;
+pub const SCRIPT_ZOOM_BASE: f32 = 1.2;
 /// Height shared by every control in the editor toolbar so they sit on one line.
 pub const TOOLBAR_CONTROL_H: f32 = 28.0;
 /// Height of buttons nested inside a padded toolbar group.

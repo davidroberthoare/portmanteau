@@ -1004,7 +1004,7 @@ fn apply_spell_actions(app: &mut PortmanteauApp, actions: Vec<SpellAction>) {
 
 fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_snapshot: &mut bool) {
     let mut dirty = false;
-    let zoom = app.editor_zoom.clamp(0.7, 1.6);
+    let zoom = app.editor_zoom.clamp(0.7, 1.6) * PROSE_ZOOM_BASE;
     // The prose surface takes its type from the project's body element style,
     // the same style the compiled page and preview use.
     let styles = app.ws.project.styles.clone();
@@ -1186,7 +1186,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
 /// prose. Paragraph style ids carry screenplay semantics; the one TextEdit
 /// owns the caret and selection for the complete document.
 fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
-    let zoom = app.editor_zoom.clamp(0.7, 1.6);
+    let zoom = app.editor_zoom.clamp(0.7, 1.6) * SCRIPT_ZOOM_BASE;
     let project_title = app.ws.project.title.clone();
     let styles = app.ws.project.styles.clone();
     let sheet = app
@@ -2012,7 +2012,7 @@ pub(crate) fn inline_format_toolbar(
 #[allow(dead_code)]
 fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut dirty = false;
-    let zoom = app.editor_zoom.clamp(0.7, 1.6);
+    let zoom = app.editor_zoom.clamp(0.7, 1.6) * SCRIPT_ZOOM_BASE;
     let mut add_at: Option<usize> = None;
     let mut remove_at: Option<usize> = None;
     let mut cycle_at: Option<(usize, bool)> = None;
