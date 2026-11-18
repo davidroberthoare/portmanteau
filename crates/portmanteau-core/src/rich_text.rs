@@ -979,8 +979,45 @@ impl RichDocument {
     /// document. A common-prefix/suffix diff limits the replacement to the
     /// changed span, preserving paragraph styles, marks and images elsewhere.
     pub fn sync_editor_text(&mut self, new_text: &str, sheet: &StyleSheet) {
+        self.sync_editor_text_with_caret(new_text, sheet, None);
+    }
+
+    /// Like `sync_editor_text`, but resolves an ambiguous diff with the caret
+    /// the editor reports *after* the edit. Inserting "\n" before an existing
+    /// "\n" (or deleting one of two equal characters) produces identical text
+    /// whichever character was meant, and a plain prefix/suffix diff picks the
+    /// wrong one: the new paragraph then splits the *following* paragraph and
+    /// takes its style. The caret says where the edit really happened.
+    pub fn sync_editor_text_with_caret(
+        &mut self,
+        new_text: &str,
+        sheet: &StyleSheet,
+        caret_after: Option<usize>,
+    ) {
         let old: Vec<char> = self.editor_text().chars().collect();
         let new: Vec<char> = new_text.chars().collect();
+        if let Some(caret) = caret_after {
+            if new.len() > old.len() {
+                let added = new.len() - old.len();
+                if caret >= added && caret <= new.len() {
+                    let start = caret - added;
+                    if old[..start] == new[..start] && old[start..] == new[caret..] {
+                        let inserted: String = new[start..caret].iter().collect();
+                        self.replace_range(start..start, &inserted, sheet);
+                        return;
+                    }
+                }
+            } else if new.len() < old.len() {
+                let removed = old.len() - new.len();
+                if caret <= new.len()
+                    && old[..caret] == new[..caret]
+                    && old[caret + removed..] == new[caret..]
+                {
+                    self.replace_range(caret..caret + removed, "", sheet);
+                    return;
+                }
+            }
+        }
         let mut prefix = 0;
         while prefix < old.len() && prefix < new.len() && old[prefix] == new[prefix] {
             prefix += 1;
@@ -1514,6 +1551,28 @@ mod tests {
             vec!["character", "dialogue"]
         );
         assert_eq!(document.editor_text(), "Mara Venn\nHello.");
+    }
+
+    #[test]
+    fn enter_before_an_empty_paragraph_splits_the_caret_paragraph() {
+        let sheet = StyleSheet::film_screenplay(&ElementStyles::default());
+        let mut document = RichDocument {
+            paragraphs: vec![
+                RichParagraph {
+                    style_id: "character".into(),
+                    content: vec![InlineContent::Text(TextRun::plain("Elias"))],
+                },
+                RichParagraph::empty("scene-heading"),
+            ],
+        };
+        // Enter at the end of "Elias": text goes "Elias\n" -> "Elias\n\n".
+        document.sync_editor_text_with_caret("Elias\n\n", &sheet, Some(6));
+        let styles: Vec<&str> = document
+            .paragraphs
+            .iter()
+            .map(|paragraph| paragraph.style_id.as_str())
+            .collect();
+        assert_eq!(styles, vec!["character", "dialogue", "scene-heading"]);
     }
 
     #[test]

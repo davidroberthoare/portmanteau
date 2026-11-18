@@ -1116,7 +1116,9 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             );
         let output = edit.show(ui);
         if output.response.changed() {
-            doc.content.sync_editor_text(&edit_text, &sheet);
+            let caret = output.cursor_range.map(|range| range.primary.index.0);
+            doc.content
+                .sync_editor_text_with_caret(&edit_text, &sheet, caret);
             doc.touch();
             dirty = true;
         }
@@ -1392,105 +1394,180 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     .color(PAPER_MUTED),
             );
 
-        let mut typed_word = String::new();
-        let mut typed_caret = 0usize;
-        let mut text_before_completion = String::new();
-        let mut character_paragraph = 0usize;
-        let completion = egui::CompletionPopup::new(flow_id)
-            .word_boundary(|ch| ch == '\n')
-            .accept_keys(vec![Key::Enter])
-            .align(egui::RectAlign::BOTTOM_START)
-            .max_height(260.0)
-            .show(ui, edit, |query| {
-                typed_word = query.word.to_owned();
-                typed_caret = query.word_range.end.0;
-                text_before_completion = query.text.to_owned();
-                let position = query
-                    .text
-                    .chars()
-                    .take(typed_caret)
-                    .filter(|ch| *ch == '\n')
-                    .count();
-                character_paragraph = position;
-                let is_character = doc
-                    .content
-                    .paragraphs
-                    .get(position)
-                    .and_then(|paragraph| sheet.style(&paragraph.style_id))
-                    .and_then(|style| style.semantic_kind)
-                    == Some(ElementKind::Character);
-                if !is_character {
-                    return Vec::new();
+        // ---- Character cue popup -------------------------------------
+        // Our own popup rather than a stock completion list: it opens only
+        // while the writer is working on a cue (typing in it, or sitting in a
+        // fresh empty one), sits under the caret, and never appears just
+        // because the caret passed over an existing cue.
+        let cue_key = Id::unique(("cue_popup", doc_id));
+        let mut cue: CueState = ui.data(|data| data.get_temp(cue_key)).unwrap_or_default();
+        let mut accept_cue: Option<usize> = None;
+        if cue.visible && ui.memory(|memory| memory.has_focus(flow_id)) {
+            ui.input_mut(|input| {
+                let count = cue.suggestions.len().max(1);
+                if input.consume_key(Modifiers::NONE, Key::ArrowDown) {
+                    cue.selected = (cue.selected + 1) % count;
                 }
-
-                let word = query.word.trim();
-                if word.is_empty() {
-                    let blocks = doc.content.to_script_blocks(&sheet);
-                    return next_speaker(&blocks, position)
-                        .map(|speaker| {
-                            vec![egui::Suggestion::new(speaker.clone())
-                                .content(format!("↺ {speaker}"))]
-                        })
-                        .unwrap_or_default();
+                if input.consume_key(Modifiers::NONE, Key::ArrowUp) {
+                    cue.selected = (cue.selected + count - 1) % count;
                 }
-                let needle = word.to_lowercase();
-                if character_names
-                    .iter()
-                    .any(|name| name.to_lowercase() == needle)
-                {
-                    return Vec::new();
+                if input.consume_key(Modifiers::NONE, Key::Enter) {
+                    accept_cue = Some(cue.selected);
                 }
-                let matches = character_names
-                    .iter()
-                    .filter(|name| name.to_lowercase().contains(&needle))
-                    .map(|name| egui::Suggestion::new(name.clone()))
-                    .collect::<Vec<_>>();
-                if matches.is_empty() {
-                    vec![egui::Suggestion::new(NEW_CHARACTER_SENTINEL)
-                        .content("+ New character…")]
-                } else {
-                    matches
+                if input.consume_key(Modifiers::NONE, Key::Escape) {
+                    cue.dismissed = cue.armed;
+                    cue.visible = false;
                 }
             });
-
-        if let Some(accepted) = &completion.accepted {
-            if accepted.insert == NEW_CHARACTER_SENTINEL {
-                edit_text = text_before_completion.clone();
-                if let Some(mut state) =
-                    egui::text_edit::TextEditState::load(ui.ctx(), flow_id)
-                {
-                    state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
-                        egui::text::CCursor::new(typed_caret),
-                    )));
-                    state.store(ui.ctx(), flow_id);
-                }
-                new_character = Some(NewCharacterState {
-                    doc_id: doc_id.to_owned(),
-                    block: character_paragraph,
-                    name: typed_word,
-                    role: String::new(),
-                });
-            } else {
-                dirty = true;
-            }
         }
 
-        if completion.text_edit.response.changed() || completion.accepted.is_some() {
-            doc.content.sync_editor_text(&edit_text, &sheet);
+        // Clicking a suggestion must not take focus from the text.
+        let pointer_on_popup = cue.visible
+            && cue.popup_rect.is_some_and(|rect| {
+                ui.ctx()
+                    .pointer_interact_pos()
+                    .is_some_and(|pos| rect.contains(pos))
+            });
+        let surrender = ui
+            .ctx()
+            .options(|options| options.input_options.surrender_focus_on);
+        if pointer_on_popup {
+            ui.ctx().options_mut(|options| {
+                options.input_options.surrender_focus_on = egui::SurrenderFocusOn::Never;
+            });
+        }
+        let output = edit.show(ui);
+        ui.ctx()
+            .options_mut(|options| options.input_options.surrender_focus_on = surrender);
+        let caret = output
+            .cursor_range
+            .map(|range| range.primary.index.0);
+        let text_changed = output.response.changed();
+        if text_changed {
+            doc.content
+                .sync_editor_text_with_caret(&edit_text, &sheet, caret);
             doc.touch();
             dirty = true;
         }
-        crate::ui::editor::remember_selection_anchor(ui.ctx(), completion.text_edit.response.id, &completion.text_edit.galley, completion.text_edit.galley_pos);
+        let caret_paragraph = caret
+            .map(|index| doc.content.position_at(index).paragraph)
+            .unwrap_or(app.selected_block);
+        let paragraph_text = doc
+            .content
+            .paragraphs
+            .get(caret_paragraph)
+            .map(|paragraph| paragraph.editor_text())
+            .unwrap_or_default();
+        let is_cue = doc
+            .content
+            .paragraphs
+            .get(caret_paragraph)
+            .and_then(|paragraph| sheet.style(&paragraph.style_id))
+            .and_then(|style| style.semantic_kind)
+            == Some(ElementKind::Character);
+        let focused = output.response.has_focus();
+        if text_changed || cue.last_paragraph != Some(caret_paragraph) {
+            cue.dismissed = None;
+        }
+        cue.last_paragraph = Some(caret_paragraph);
+        let engaged = is_cue
+            && (text_changed
+                || paragraph_text.trim().is_empty()
+                || cue.armed == Some(caret_paragraph));
+        cue.armed = engaged.then_some(caret_paragraph);
+
+        let word = paragraph_text.trim().to_owned();
+        if cue.last_word != word {
+            cue.selected = 0;
+            cue.last_word = word.clone();
+        }
+        cue.suggestions = if cue.armed.is_some() && cue.dismissed.is_none() {
+            cue_suggestions(
+                &doc.content.to_script_blocks(&sheet),
+                caret_paragraph,
+                &word,
+                &character_names,
+            )
+        } else {
+            Vec::new()
+        };
+        cue.selected = cue.selected.min(cue.suggestions.len().saturating_sub(1));
+        cue.visible = focused && !cue.suggestions.is_empty() && accept_cue.is_none();
+
+        let mut clicked_cue = None;
+        cue.popup_rect = None;
+        if cue.visible {
+            let caret_rect = output
+                .galley
+                .pos_from_cursor(egui::text::CCursor::new(caret.unwrap_or(0)))
+                .translate(output.galley_pos.to_vec2());
+            let anchor = egui::pos2(
+                caret_rect.left().max(output.response.rect.left()),
+                caret_rect.bottom() + 4.0,
+            );
+            let area = egui::Area::new(Id::unique(("cue_popup_area", doc_id)))
+                .order(egui::Order::Foreground)
+                .fixed_pos(anchor)
+                .show(ui.ctx(), |ui| {
+                    Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.set_width(260.0);
+                        for (index, suggestion) in cue.suggestions.iter().enumerate() {
+                            let response = ui.add(
+                                egui::Button::selectable(
+                                    index == cue.selected,
+                                    RichText::new(&suggestion.label).font(ui_body()),
+                                )
+                                .min_size(Vec2::new(ui.available_width(), 0.0)),
+                            );
+                            if response.clicked() {
+                                clicked_cue = Some(index);
+                            }
+                        }
+                    });
+                });
+            cue.popup_rect = Some(area.response.rect);
+        }
+
+        if let Some(index) = accept_cue.or(clicked_cue) {
+            if let Some(suggestion) = cue.suggestions.get(index).cloned() {
+                if suggestion.insert == NEW_CHARACTER_SENTINEL {
+                    new_character = Some(NewCharacterState {
+                        doc_id: doc_id.to_owned(),
+                        block: caret_paragraph,
+                        name: word.clone(),
+                        role: String::new(),
+                    });
+                } else if let Some(paragraph) = doc.content.paragraphs.get_mut(caret_paragraph) {
+                    paragraph.set_plain_text(suggestion.insert.clone());
+                    doc.touch();
+                    dirty = true;
+                    let end = rich_paragraph_start(&doc.content, caret_paragraph)
+                        + suggestion.insert.chars().count();
+                    let mut state = egui::text_edit::TextEditState::load(ui.ctx(), flow_id)
+                        .unwrap_or_default();
+                    state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+                        egui::text::CCursor::new(end),
+                    )));
+                    state.store(ui.ctx(), flow_id);
+                }
+                ui.memory_mut(|memory| memory.request_focus(flow_id));
+                cue.dismissed = Some(caret_paragraph);
+                cue.visible = false;
+                cue.suggestions.clear();
+            }
+        }
+        ui.data_mut(|data| data.insert_temp(cue_key, cue));
+        crate::ui::editor::remember_selection_anchor(ui.ctx(), output.response.id, &output.galley, output.galley_pos);
         paint_rich_images(
             ui,
-            &completion.text_edit.galley,
-            completion.text_edit.galley_pos,
-            completion.text_edit.response.rect,
+            &output.galley,
+            output.galley_pos,
+            output.response.rect,
             &doc.content,
             &image_textures,
             zoom,
         );
-        if completion.text_edit.response.has_focus() {
+        if output.response.has_focus() {
             ui.memory_mut(|memory| {
                 memory.set_focus_lock_filter(
                     flow_id,
@@ -1503,24 +1580,29 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 )
             });
         }
-        if let Some(range) = completion
-            .text_edit
-            .cursor_range
-            .map(|range| range.primary.index.0)
-        {
-            app.selected_block = doc.content.position_at(range).paragraph;
+        if focused && paragraph_text.is_empty() {
+            if let (Some(caret), Some(style)) = (
+                caret,
+                doc.content
+                    .paragraphs
+                    .get(caret_paragraph)
+                    .and_then(|paragraph| sheet.style(&paragraph.style_id)),
+            ) {
+                paint_empty_paragraph_caret(ui, &output, caret, &style.format, zoom);
+            }
         }
+        app.selected_block = caret_paragraph;
         if spell_on {
             let key = Id::unique(("script_spell_menu", doc_id));
             let byte = spell_menu_byte(
                 ui.ctx(),
                 key,
-                &completion.text_edit.response,
-                &completion.text_edit.galley,
-                completion.text_edit.galley_pos,
+                &output.response,
+                &output.galley,
+                output.galley_pos,
                 &edit_text,
             );
-            completion.text_edit.response.context_menu(|ui| {
+            output.response.context_menu(|ui| {
                 if let Some(choice) = spell_menu_ui(ui, checker, &edit_text, byte) {
                     spell_action = Some(choice);
                 }
@@ -1611,21 +1693,13 @@ pub(crate) fn script_flow_layout_job(
             .is_some_and(|style| style.text_transform == portmanteau_core::TextTransform::Uppercase)
             || element_style.uppercase;
         let display_line = transform_for_display(line, uppercase);
-        let measured_width = line
-            .trim_end_matches('\n')
-            .chars()
-            .count() as f32
-            * font_size
-            * 0.6;
-        let aligned_indent = match element_style.align {
-            portmanteau_core::Alignment::Left | portmanteau_core::Alignment::Justify => 0.0,
-            portmanteau_core::Alignment::Center => (wrap_width - measured_width) * 0.5,
-            portmanteau_core::Alignment::Right => wrap_width - measured_width,
-        };
-        let leading = (element_style.indent + element_style.first_line_indent)
-            .max(aligned_indent)
-            .max(0.0)
-            * zoom;
+        let leading = paragraph_leading(
+            &element_style,
+            zoom,
+            wrap_width,
+            line.trim_end_matches('\n').chars().count(),
+            font_size,
+        );
         let paragraph = content.paragraphs.get(index);
         let raw_char_bytes: Vec<usize> = line.char_indices().map(|(byte, _)| byte).collect();
         let display_char_bytes: Vec<usize> =
@@ -1685,6 +1759,67 @@ pub(crate) fn script_flow_layout_job(
         byte_start += line.len();
     }
     job
+}
+
+/// Left offset of a paragraph's first line: its indent, or the centring /
+/// right-alignment offset for a line of `chars` characters.
+fn paragraph_leading(
+    style: &portmanteau_core::ElementStyle,
+    zoom: f32,
+    wrap_width: f32,
+    chars: usize,
+    font_size: f32,
+) -> f32 {
+    let measured_width = chars as f32 * font_size * 0.6;
+    let aligned_indent = match style.align {
+        portmanteau_core::Alignment::Left | portmanteau_core::Alignment::Justify => 0.0,
+        portmanteau_core::Alignment::Center => (wrap_width - measured_width) * 0.5,
+        portmanteau_core::Alignment::Right => wrap_width - measured_width,
+    };
+    (style.indent + style.first_line_indent)
+        .max(aligned_indent)
+        .max(0.0)
+        * zoom
+}
+
+/// egui places the caret of an empty paragraph at the left edge because it has
+/// no glyphs to carry the indent. Cover that caret and draw one at the style's
+/// real margin so an empty Dialogue or Character line looks right before the
+/// first letter is typed.
+fn paint_empty_paragraph_caret(
+    ui: &egui::Ui,
+    output: &egui::text_edit::TextEditOutput,
+    caret: usize,
+    style: &portmanteau_core::ElementStyle,
+    zoom: f32,
+) {
+    let rect = output
+        .galley
+        .pos_from_cursor(egui::text::CCursor::new(caret))
+        .translate(output.galley_pos.to_vec2());
+    let font_size = style.size.max(6.0) * zoom;
+    let leading = paragraph_leading(style, zoom, output.galley.job.wrap.max_width, 0, font_size);
+    if leading < 1.0 {
+        return;
+    }
+    let painter = ui.painter();
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(rect.left() - 2.0, rect.top()),
+            egui::pos2(rect.left() + 3.0, rect.bottom()),
+        ),
+        0.0,
+        PAPER,
+    );
+    let time = ui.input(|input| input.time);
+    if (time * 2.0) as i64 % 2 == 0 {
+        let x = rect.left() + leading;
+        painter.line_segment(
+            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+            Stroke::new(2.0, ui.visuals().text_cursor.stroke.color),
+        );
+    }
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
 }
 
 fn inline_marks_at(
@@ -2580,6 +2715,94 @@ fn ctrl_digit_element(ui: &mut egui::Ui, medium: Medium) -> Option<ElementKind> 
 
 /// The `insert` text behind the popup's "New character" row. U+0001 cannot be
 /// typed into a cue, so an accepted suggestion carrying it is never a name.
+#[derive(Clone, Default)]
+struct CueSuggestion {
+    insert: String,
+    label: String,
+}
+
+/// Per-document state of the character-cue popup.
+#[derive(Clone, Default)]
+struct CueState {
+    /// Paragraph the popup is working on, once the writer has typed in a cue
+    /// or entered an empty one.
+    armed: Option<usize>,
+    dismissed: Option<usize>,
+    last_paragraph: Option<usize>,
+    last_word: String,
+    selected: usize,
+    visible: bool,
+    suggestions: Vec<CueSuggestion>,
+    popup_rect: Option<egui::Rect>,
+}
+
+/// Names to offer for the cue at `paragraph`. An empty cue lists the other
+/// half of the current exchange first, then recent speakers, then the cast; a
+/// partly typed one filters the cast, and an unknown name offers to create a
+/// character. A complete, known name offers nothing, so Enter moves on.
+fn cue_suggestions(
+    blocks: &[portmanteau_core::Block],
+    paragraph: usize,
+    word: &str,
+    cast: &[String],
+) -> Vec<CueSuggestion> {
+    let canonical = |name: &str| {
+        cast.iter()
+            .find(|known| known.eq_ignore_ascii_case(name))
+            .cloned()
+            .unwrap_or_else(|| name.to_owned())
+    };
+    if word.is_empty() {
+        let mut names: Vec<String> = Vec::new();
+        let push = |name: String, names: &mut Vec<String>| {
+            if !name.trim().is_empty()
+                && !names.iter().any(|seen| seen.eq_ignore_ascii_case(&name))
+            {
+                names.push(name);
+            }
+        };
+        let mut result = Vec::new();
+        if let Some(speaker) = next_speaker(blocks, paragraph) {
+            push(canonical(&speaker), &mut names);
+        }
+        for block in blocks[..paragraph.min(blocks.len())].iter().rev() {
+            if block.kind == ElementKind::Character {
+                push(canonical(block.text.trim()), &mut names);
+            }
+        }
+        for name in cast {
+            push(name.clone(), &mut names);
+        }
+        for (index, name) in names.into_iter().take(8).enumerate() {
+            result.push(CueSuggestion {
+                label: if index == 0 { format!("↺ {name}") } else { name.clone() },
+                insert: name,
+            });
+        }
+        return result;
+    }
+    let needle = word.to_lowercase();
+    if cast.iter().any(|name| name.to_lowercase() == needle) {
+        return Vec::new();
+    }
+    let matches: Vec<CueSuggestion> = cast
+        .iter()
+        .filter(|name| name.to_lowercase().contains(&needle))
+        .map(|name| CueSuggestion {
+            insert: name.clone(),
+            label: name.clone(),
+        })
+        .collect();
+    if matches.is_empty() {
+        vec![CueSuggestion {
+            insert: NEW_CHARACTER_SENTINEL.to_owned(),
+            label: "+ New character…".to_owned(),
+        }]
+    } else {
+        matches
+    }
+}
+
 const NEW_CHARACTER_SENTINEL: &str = "\u{1}new-character";
 
 /// In a back-and-forth, the next speaker is the other half of the last two
@@ -3180,6 +3403,10 @@ mod ui_tests {
 
     fn click_harness() -> ClickHarness {
         let (app, doc_id) = click_fixture();
+        click_harness_from(app, doc_id)
+    }
+
+    fn click_harness_from(app: PortmanteauApp, doc_id: String) -> ClickHarness {
         let app = Rc::new(RefCell::new(app));
         let ui_app = Rc::clone(&app);
         // The editor uses the bundled families ("portmanteau-serif" and
@@ -3283,6 +3510,141 @@ mod ui_tests {
         assert_eq!(after_line.len(), 3, "{after_line:?}");
         assert_eq!(after_line[1].1, "Hello there.");
         assert_eq!(fixture.app.borrow().selected_block, 2);
+    }
+
+    fn harness_with_blocks(blocks: Vec<portmanteau_core::Block>, focus: usize) -> ClickHarness {
+        let (mut app, doc_id) = script_fixture();
+        app.ws
+            .project
+            .document_mut(&doc_id)
+            .unwrap()
+            .set_script_blocks(blocks);
+        app.selected_block = focus;
+        app.block_focus = Some(focus);
+        click_harness_from(app, doc_id)
+    }
+
+    fn popup_labels(fixture: &ClickHarness) -> Vec<String> {
+        ["Mara Venn", "Elias Rook", "↺ Elias Rook", "↺ Mara Venn", "The Boy"]
+            .iter()
+            .filter(|label| {
+                fixture
+                    .harness
+                    .query_by_role_and_label(Role::Button, label)
+                    .is_some()
+            })
+            .map(|label| label.to_string())
+            .collect()
+    }
+
+    /// Resting the caret on an existing cue must not pop the list open.
+    #[test]
+    fn caret_on_an_existing_cue_does_not_open_the_popup() {
+        use portmanteau_core::Block;
+        let fixture = harness_with_blocks(
+            vec![
+                Block::new(ElementKind::Action, "A boy sits."),
+                Block::new(ElementKind::Character, "Boy"),
+                Block::new(ElementKind::Dialogue, "Hi."),
+            ],
+            1,
+        );
+        assert!(popup_labels(&fixture).is_empty(), "{:?}", popup_labels(&fixture));
+    }
+
+    /// Enter at the end of a cue that is followed by another paragraph must
+    /// split the cue, not the paragraph after it.
+    #[test]
+    fn enter_in_the_middle_of_a_script_gives_dialogue_not_the_next_paragraphs_style() {
+        use portmanteau_core::Block;
+        let mut fixture = harness_with_blocks(
+            vec![
+                Block::new(ElementKind::Character, "Mara Venn"),
+                Block::new(ElementKind::Dialogue, "Then we have a problem."),
+                Block::new(ElementKind::Character, "Elias Rook"),
+                Block::new(ElementKind::SceneHeading, ""),
+                Block::new(ElementKind::Transition, "SMASH CUT TO BLACK."),
+            ],
+            2,
+        );
+        assert_eq!(fixture.harness.ctx.memory(|m| m.focused().is_some()), true);
+        fixture.harness.key_press(Key::Enter);
+        fixture.harness.run_steps(3);
+        let paragraphs = paragraph_summary(&fixture);
+        let styles: Vec<&str> = paragraphs.iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(
+            styles,
+            vec!["character", "dialogue", "character", "dialogue", "scene-heading", "transition"],
+            "{paragraphs:?}"
+        );
+        assert_eq!(fixture.app.borrow().selected_block, 3);
+    }
+
+    /// After a line of dialogue, Enter starts a cue and offers the other
+    /// speaker first.
+    #[test]
+    fn enter_after_dialogue_opens_a_cue_with_the_other_speaker_on_top() {
+        use portmanteau_core::Block;
+        let mut fixture = harness_with_blocks(
+            vec![
+                Block::new(ElementKind::Character, "Elias Rook"),
+                Block::new(ElementKind::Dialogue, "Where is she?"),
+                Block::new(ElementKind::Character, "Mara Venn"),
+                Block::new(ElementKind::Dialogue, "Then we have a problem."),
+            ],
+            3,
+        );
+        let end = {
+            let app = fixture.app.borrow();
+            app.ws
+                .project
+                .document(&fixture.doc_id)
+                .unwrap()
+                .content
+                .char_count()
+        };
+        {
+            let id = block_id(&fixture.doc_id, 0);
+            let mut state = egui::text_edit::TextEditState::load(&fixture.harness.ctx, id)
+                .unwrap_or_default();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+                egui::text::CCursor::new(end),
+            )));
+            state.store(&fixture.harness.ctx, id);
+        }
+        fixture.harness.run_steps(2);
+        fixture.harness.key_press(Key::Enter);
+        fixture.harness.run_steps(4);
+        let paragraphs = paragraph_summary(&fixture);
+        assert_eq!(paragraphs.last().unwrap().0, "character", "{paragraphs:?}");
+        assert!(
+            fixture
+                .harness
+                .query_by_role_and_label(Role::Button, "↺ Elias Rook")
+                .is_some(),
+            "the other speaker should head the list: {:?}",
+            popup_labels(&fixture)
+        );
+        fixture.harness.key_press(Key::Enter);
+        fixture.harness.run_steps(3);
+        let paragraphs = paragraph_summary(&fixture);
+        assert_eq!(paragraphs.last().unwrap().1, "Elias Rook", "{paragraphs:?}");
+        assert_eq!(paragraphs.len(), 5);
+    }
+
+    /// An empty paragraph still reports its style's margin, which the editor
+    /// uses to draw the caret there.
+    #[test]
+    fn empty_paragraph_leading_follows_the_style() {
+        let sheet = portmanteau_core::StyleSheet::film_screenplay(
+            &portmanteau_core::ElementStyles::default(),
+        );
+        let dialogue = &sheet.style("dialogue").unwrap().format;
+        assert!(paragraph_leading(dialogue, 1.0, 600.0, 0, 12.0) > 40.0);
+        let character = &sheet.style("character").unwrap().format;
+        assert!(paragraph_leading(character, 1.0, 600.0, 0, 12.0) > 100.0);
+        let action = &sheet.style("action").unwrap().format;
+        assert_eq!(paragraph_leading(action, 1.0, 600.0, 0, 12.0), 0.0);
     }
 
     #[test]
