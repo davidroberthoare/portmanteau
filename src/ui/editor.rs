@@ -3245,6 +3245,46 @@ mod ui_tests {
         }
     }
 
+    fn paragraph_summary(fixture: &ClickHarness) -> Vec<(String, String)> {
+        let app = fixture.app.borrow();
+        let doc = app.ws.project.document(&fixture.doc_id).unwrap();
+        doc.content
+            .paragraphs
+            .iter()
+            .map(|p| (p.style_id.clone(), p.editor_text()))
+            .collect()
+    }
+
+    /// The whole writing rhythm: choose a name from the popup with Enter, press
+    /// Enter again for dialogue, type a line, Enter for the next element.
+    #[test]
+    fn character_cue_flow_accept_name_then_dialogue_then_next_element() {
+        let mut fixture = click_harness();
+        fixture.open_character_popup();
+
+        fixture.harness.key_press(Key::Enter);
+        fixture.harness.run_steps(3);
+        assert_eq!(
+            paragraph_summary(&fixture),
+            vec![("character".to_owned(), "Mara Venn".to_owned())],
+            "Enter on a suggestion fills the name and does not add a paragraph"
+        );
+
+        fixture.harness.key_press(Key::Enter);
+        fixture.harness.run_steps(3);
+        let after_name = paragraph_summary(&fixture);
+        assert_eq!(after_name.len(), 2, "second Enter adds a paragraph: {after_name:?}");
+        assert_eq!(after_name[1].0, "dialogue");
+
+        fixture.type_word("Hello there.");
+        fixture.harness.key_press(Key::Enter);
+        fixture.harness.run_steps(3);
+        let after_line = paragraph_summary(&fixture);
+        assert_eq!(after_line.len(), 3, "{after_line:?}");
+        assert_eq!(after_line[1].1, "Hello there.");
+        assert_eq!(fixture.app.borrow().selected_block, 2);
+    }
+
     #[test]
     fn clicking_an_autocomplete_name_fills_the_block() {
         let mut fixture = click_harness();
