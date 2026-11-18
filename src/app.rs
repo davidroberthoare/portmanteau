@@ -800,6 +800,7 @@ impl PortmanteauApp {
             .inner_margin(Margin::symmetric(9, 4))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
+                    ui.set_min_height(24.0);
                     let (icon, _) =
                         ui.allocate_exact_size(Vec2::new(13.0, 13.0), egui::Sense::hover());
                     let c = icon.center();
@@ -813,6 +814,7 @@ impl PortmanteauApp {
                         TextEdit::singleline(&mut self.search)
                             .hint_text(RichText::new("Search manuscript…").font(ui_body()).color(FAINT))
                             .desired_width(190.0)
+                            .vertical_align(Align::Center)
                             .frame(Frame::NONE)
                             .font(ui_body()),
                     );
