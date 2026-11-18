@@ -132,7 +132,10 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         }
                     });
             });
-            ui.add_space(36.0);
+            // Room to scroll the caret line up off the window edge, so the
+            // cue popup and the clearance below the line fit at the end of
+            // the script too.
+            ui.add_space(CARET_BOTTOM_CLEARANCE + 80.0);
         });
 
     if take_snapshot {
@@ -1512,7 +1515,7 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 .galley
                 .pos_from_cursor(egui::text::CCursor::new(caret.unwrap_or(0)))
                 .translate(output.galley_pos.to_vec2());
-            let row_height = ui_body().size + 16.0;
+            let row_height = ui_body().size + 22.0;
             let popup_height = cue.suggestions.len().min(CUE_POPUP_ROWS as usize) as f32
                 * row_height
                 + 14.0;
@@ -2778,7 +2781,7 @@ struct CueState {
 /// Rows of the cue popup visible before it scrolls.
 const CUE_POPUP_ROWS: f32 = 4.0;
 /// Space kept clear below the line being typed (about two inches).
-const CARET_BOTTOM_CLEARANCE: f32 = 190.0;
+const CARET_BOTTOM_CLEARANCE: f32 = 200.0;
 
 /// Scroll the writing surface so the caret line keeps a couple of inches of
 /// paper below it, instead of sinking to the window's edge as text is added.
