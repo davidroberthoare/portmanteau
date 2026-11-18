@@ -356,7 +356,7 @@ impl PortmanteauApp {
             screenshot,
             frame_no: 0,
             screenshot_requested: false,
-            editor_zoom: 1.0,
+            editor_zoom: DEFAULT_EDITOR_ZOOM,
             corkboard_zoom: 1.0,
             spell,
             show_spelling: false,

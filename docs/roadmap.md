@@ -263,3 +263,8 @@ open the sample project.
 - Script paragraph styles are a toolbar dropdown instead of a button palette.
 - Interface type scale lives in `theme.rs` (`ui_small`/`ui_body`/`ui_strong`) with a Settings ▸ Interface text size preference.
 - Binder uses drawn folder and page icons, tinted by document type.
+
+## Planned: undo / redo history
+- Document-level undo/redo for every rich editor (typing, style changes, mark toggles, image inserts), spanning paragraph boundaries in the single flow.
+- Coalesce typing into word-sized steps; keep history per document for the session.
+- Edit menu Undo/Redo with ⌘Z / ⇧⌘Z; complements, not replaces, named version snapshots.

@@ -315,7 +315,11 @@ fn toolbar(
         .stroke(Stroke::new(1.0, BORDER_SOFT))
         .inner_margin(Margin::symmetric(16, 7))
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
+            let row_width = ui.available_width();
+            ui.allocate_ui_with_layout(
+                Vec2::new(row_width, TOOLBAR_CONTROL_H),
+                Layout::left_to_right(Align::Center),
+                |ui| {
                 let (id, medium) = match &app.selected {
                     Some(id) => {
                         let medium = app
@@ -370,7 +374,7 @@ fn toolbar(
                 }
 
                 let mut new_mode = app.write_mode;
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center).with_cross_justify(true), |ui| {
                     if app.settings.spellcheck {
                         let label = if miss_count > 0 {
                             format!("Spelling · {miss_count}")
@@ -388,7 +392,8 @@ fn toolbar(
                             RichText::new(label).font(ui_body()).color(color),
                         )
                         .fill(if app.show_spelling { ACCENT_SOFT } else { PANEL_2 })
-                        .corner_radius(CornerRadius::same(5));
+                        .corner_radius(CornerRadius::same(5))
+                        .min_size(Vec2::new(0.0, TOOLBAR_CONTROL_H));
                         if ui
                             .add(spell)
                             .on_hover_text("Review misspellings and apply suggestions")
@@ -408,7 +413,7 @@ fn toolbar(
                     Frame::new()
                         .fill(PANEL_2)
                         .corner_radius(CornerRadius::same(5))
-                        .inner_margin(Margin::symmetric(2, 1))
+                        .inner_margin(Margin::symmetric(2, 2))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 1.0;
@@ -422,7 +427,7 @@ fn toolbar(
                                     )
                                     .fill(if active { ACCENT_SOFT } else { PANEL_2 })
                                     .corner_radius(CornerRadius::same(4))
-                                    .min_size(Vec2::new(0.0, 19.0));
+                                    .min_size(Vec2::new(0.0, TOOLBAR_GROUP_H));
                                     if ui
                                         .add(btn)
                                         .on_hover_text(match mode {
@@ -443,7 +448,8 @@ fn toolbar(
                             .color(if app.focus_mode { ACCENT_INK } else { MUTED }),
                     )
                     .fill(PANEL_2)
-                    .corner_radius(CornerRadius::same(5));
+                    .corner_radius(CornerRadius::same(5))
+                    .min_size(Vec2::new(0.0, TOOLBAR_CONTROL_H));
                     if ui
                         .add(focus)
                         .on_hover_text("Hide the binder and inspector (F11)")
@@ -488,7 +494,8 @@ fn toolbar(
                     }
                     app.write_mode = new_mode;
                 }
-            });
+                },
+            );
         });
 }
 
@@ -547,13 +554,13 @@ fn editor_zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     // A fixed-width allocation keeps the group compact inside the
     // right-aligned toolbar row instead of stretching across it.
     ui.allocate_ui_with_layout(
-        Vec2::new(88.0, 21.0),
+        Vec2::new(96.0, TOOLBAR_CONTROL_H),
         Layout::left_to_right(Align::Center),
         |ui| {
             Frame::new()
                 .fill(PANEL_2)
                 .corner_radius(CornerRadius::same(5))
-                .inner_margin(Margin::symmetric(2, 1))
+                .inner_margin(Margin::symmetric(2, 2))
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.x = 1.0;
                     ui.spacing_mut().button_padding = Vec2::new(4.0, 2.0);
@@ -561,7 +568,7 @@ fn editor_zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         next = step_zoom(zoom, -1);
                     }
                     ui.add_sized(
-                        Vec2::new(42.0, 19.0),
+                        Vec2::new(44.0, TOOLBAR_GROUP_H),
                         egui::Label::new(
                             RichText::new(format!("{}%", (zoom * 100.0).round() as i32))
                                 .font(ui_small())
@@ -585,7 +592,7 @@ fn zoom_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
             .fill(PANEL_2)
             .stroke(Stroke::new(1.0, BORDER_SOFT))
             .corner_radius(CornerRadius::same(4))
-            .min_size(Vec2::new(20.0, 19.0)),
+            .min_size(Vec2::new(22.0, TOOLBAR_GROUP_H)),
     )
 }
 
