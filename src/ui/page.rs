@@ -620,7 +620,17 @@ pub fn page_frame(
             bottom: (34.0 * scale) as i8,
         })
         .show(ui, |ui| {
-            ui.with_layout(Layout::top_down(Align::Min), |ui| {
+            // Every page is the same size whatever it holds: reserve the full
+            // text block, then lay out (and clip) the lines inside it.
+            let size = Vec2::new(plan.content_w * scale, (plan.content_h + 18.0) * scale);
+            let (block, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(block)
+                    .layout(Layout::top_down(Align::Min)),
+            );
+            child.set_clip_rect(block.intersect(ui.clip_rect()));
+            child.with_layout(Layout::top_down(Align::Min), |ui| {
                 ui.set_width(plan.content_w * scale);
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 let mut used = 0.0f32;
@@ -693,4 +703,67 @@ pub fn page_frame(
         })
         .response
         .rect
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(text: &str) -> PageLine {
+        PageLine {
+            text: text.into(),
+            size: 11.0,
+            lead: 15.0,
+            gap_before: 0.0,
+            mono: false,
+            font: String::new(),
+            align: Alignment::Left,
+            indent: 0.0,
+            first_line_indent: 0.0,
+            right_indent: 0.0,
+            after: 0.0,
+            right: false,
+            center: false,
+        }
+    }
+
+    /// A sparse title page and an overfull body page must draw the same box.
+    #[test]
+    fn preview_pages_keep_one_size_whatever_they_hold() {
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        let plan = PagePlan {
+            page_w: 600.0,
+            content_w: 492.0,
+            content_h: 600.0,
+            pages: Vec::new(),
+        };
+        let sparse = vec![line("Title")];
+        let overfull: Vec<PageLine> = (0..80).map(|i| line(&format!("line {i}"))).collect();
+        let mut sizes = Vec::new();
+        for _ in 0..2 {
+            for lines in [&sparse, &overfull] {
+                let mut rect = egui::Rect::NOTHING;
+                let out = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            Vec2::new(1200.0, 1200.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        rect = page_frame(ui, &plan, lines, 1, 0.7);
+                    },
+                );
+                out.drop_without_applying_deltas();
+                sizes.push(rect.size());
+            }
+        }
+        let last = &sizes[2..];
+        assert!(
+            (last[0] - last[1]).abs().max_elem() < 0.5,
+            "page sizes differ: {last:?}"
+        );
+    }
 }
