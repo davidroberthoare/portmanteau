@@ -418,7 +418,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                             &rich_notes_layout,
                             &sheet_layout,
                             &styles_layout,
-                            1.0,
+                            field_text_zoom(),
                             wrap_width,
                             &[],
                         );
@@ -444,7 +444,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         notes_output.response.rect,
                         &rich_notes,
                         &notes_images,
-                        1.0,
+                        field_text_zoom(),
                     );
                     ui.add_space(14.0);
                     hairline(ui);

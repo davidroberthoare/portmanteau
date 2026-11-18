@@ -200,7 +200,7 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     &synopsis_content,
                     &prose_sheet,
                     &styles,
-                    1.0,
+                    field_text_zoom(),
                     wrap_width,
                     &[],
                 );
@@ -227,7 +227,7 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             synopsis_output.response.rect,
             &doc.synopsis,
             &synopsis_images,
-            1.0,
+            field_text_zoom(),
         );
 
         ui.add_space(12.0);
@@ -393,7 +393,7 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 &notes_content,
                 &prose_sheet,
                 &styles,
-                1.0,
+                field_text_zoom(),
                 wrap_width,
                 &[],
             );
@@ -420,7 +420,7 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             notes_output.response.rect,
             &doc.notes,
             &notes_images,
-            1.0,
+            field_text_zoom(),
         );
     }
     ui.add_space(14.0);

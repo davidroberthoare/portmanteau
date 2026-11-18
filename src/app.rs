@@ -814,7 +814,7 @@ impl PortmanteauApp {
                         TextEdit::singleline(&mut self.search)
                             .hint_text(RichText::new("Search manuscript…").font(ui_body()).color(FAINT))
                             .desired_width(190.0)
-                            .vertical_align(Align::Center)
+                            .align(egui::Align2::LEFT_CENTER)
                             .frame(Frame::NONE)
                             .font(ui_body()),
                     );

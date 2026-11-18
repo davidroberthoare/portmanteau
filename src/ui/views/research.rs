@@ -288,7 +288,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     &rich_body_layout,
                     &sheet_layout,
                     &styles_layout,
-                    1.0,
+                    field_text_zoom(),
                     wrap_width,
                     &[],
                 );
@@ -315,7 +315,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                 body_output.response.rect,
                 &rich_body,
                 &body_images,
-                1.0,
+                field_text_zoom(),
             );
 
             // ---- Attachments -------------------------------------------------

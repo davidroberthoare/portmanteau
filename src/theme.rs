@@ -73,6 +73,15 @@ pub const PROSE_ZOOM_BASE: f32 = 1.4;
 pub const SCRIPT_ZOOM_BASE: f32 = 1.2;
 /// Height shared by every control in the editor toolbar so they sit on one line.
 pub const TOOLBAR_CONTROL_H: f32 = 28.0;
+/// Height of the toolbar row itself; combo boxes and the Spelling button fill it.
+pub const TOOLBAR_ROW_H: f32 = 32.0;
+/// Extra magnification for the small inspector/research text areas so their
+/// stylesheet text reads like the rest of the interface.
+pub const FIELD_TEXT_ZOOM: f32 = 1.25;
+
+pub fn field_text_zoom() -> f32 {
+    FIELD_TEXT_ZOOM * ui_scale()
+}
 /// Height of buttons nested inside a padded toolbar group.
 pub const TOOLBAR_GROUP_H: f32 = TOOLBAR_CONTROL_H - 4.0;
 

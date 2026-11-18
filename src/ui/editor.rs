@@ -320,7 +320,7 @@ fn toolbar(
         .show(ui, |ui| {
             let row_width = ui.available_width();
             ui.allocate_ui_with_layout(
-                Vec2::new(row_width, TOOLBAR_CONTROL_H),
+                Vec2::new(row_width, TOOLBAR_ROW_H),
                 Layout::left_to_right(Align::Center),
                 |ui| {
                 let (id, medium) = match &app.selected {
@@ -391,14 +391,28 @@ fn toolbar(
                         } else {
                             FAINT
                         };
-                        let spell = egui::Button::new(
-                            RichText::new(label).font(ui_body()).color(color),
-                        )
-                        .fill(if app.show_spelling { ACCENT_SOFT } else { PANEL_2 })
-                        .corner_radius(CornerRadius::same(5))
-                        .min_size(Vec2::new(0.0, TOOLBAR_CONTROL_H));
-                        if ui
-                            .add(spell)
+                        let galley = ui.fonts_mut(|fonts| {
+                            fonts.layout_no_wrap(label, ui_body(), color)
+                        });
+                        let size = Vec2::new(galley.size().x + 20.0, TOOLBAR_ROW_H);
+                        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+                        let fill = if app.show_spelling { ACCENT_SOFT } else { PANEL_2 };
+                        ui.painter().rect_filled(rect, CornerRadius::same(5), fill);
+                        ui.painter().rect_stroke(
+                            rect,
+                            CornerRadius::same(5),
+                            Stroke::new(1.0, BORDER_SOFT),
+                            egui::StrokeKind::Inside,
+                        );
+                        ui.painter().galley(
+                            egui::pos2(
+                                rect.center().x - galley.size().x * 0.5,
+                                rect.center().y - galley.size().y * 0.5,
+                            ),
+                            galley,
+                            color,
+                        );
+                        if response
                             .on_hover_text("Review misspellings and apply suggestions")
                             .clicked()
                         {
