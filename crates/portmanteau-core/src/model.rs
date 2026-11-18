@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::{RichDocument, StyleSheet};
+use crate::{ParagraphStyle, RichDocument, StyleSheet};
 
 pub use crate::script::ElementKind;
 pub use crate::text::{count_words, reading_minutes, truncate_words};
@@ -1248,6 +1248,60 @@ impl Project {
 
     pub fn sync_element_styles_from_sheets(&mut self) {
         self.styles.update_from_sheets(&self.style_sheets);
+    }
+
+    /// The effective format for one paragraph style. `configured` holds an
+    /// output format's saved element styles: a value that deliberately differs
+    /// from the project base wins, while an untouched value defers to the
+    /// project stylesheet so appearance edits reach previews and exporters
+    /// without waiting for a compile save.
+    pub fn paragraph_format_for(
+        &self,
+        style: &ParagraphStyle,
+        configured: &ElementStyles,
+    ) -> ElementStyle {
+        let (base, saved) = match style.id.as_str() {
+            "body" => (&self.styles.body, &configured.body),
+            "chapter-heading" => (&self.styles.chapter_heading, &configured.chapter_heading),
+            _ => {
+                if let Some(kind) = style.semantic_kind {
+                    (
+                        self.styles.style_for_kind(kind),
+                        configured.style_for_kind(kind),
+                    )
+                } else if let Some(custom) = self.styles.custom_named(&style.name) {
+                    match configured.custom_named(&style.name) {
+                        Some(saved) => (&custom.style, &saved.style),
+                        None => (&custom.style, &custom.style),
+                    }
+                } else {
+                    (&style.format, &style.format)
+                }
+            }
+        };
+        if saved == base {
+            style.format.clone()
+        } else {
+            saved.clone()
+        }
+    }
+
+    /// The stylesheet that owns a document's paragraphs. A project normally
+    /// holds at least the industry defaults, but an older or hand-built project
+    /// may describe a document without one. Falling back to the medium's
+    /// standard sheet keeps the editor and every export writer agreed.
+    pub fn style_sheet_for(&self, doc: &Document) -> StyleSheet {
+        self.style_sheets
+            .iter()
+            .find(|sheet| sheet.id == doc.style_sheet_id)
+            .cloned()
+            .unwrap_or_else(|| {
+                if doc.medium.is_script() {
+                    StyleSheet::film_screenplay(&self.styles)
+                } else {
+                    StyleSheet::novel_prose(&self.styles)
+                }
+            })
     }
 
     /// Per-output-format settings. A format that has never been configured is

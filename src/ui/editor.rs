@@ -2612,7 +2612,7 @@ fn build_page_plan(app: &PortmanteauApp, doc_id: &str) -> Option<PagePlan> {
     Some(if doc.medium.is_script() {
         script_plan(doc, &settings)
     } else {
-        prose_plan(doc, &settings)
+        prose_plan(&app.ws.project, doc, &settings)
     })
 }
 

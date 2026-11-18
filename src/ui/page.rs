@@ -13,7 +13,7 @@ use eframe::egui::{
 };
 use portmanteau_core::{
     Alignment, DocKind, Document, ElementKind, ElementStyle, ElementStyles, ExportSettings,
-    Project, StyleSheet,
+    InlineContent, Project, RichParagraph, StyleSheet, TextTransform,
 };
 
 use crate::app::PortmanteauApp;
@@ -113,18 +113,19 @@ pub fn page_geometry(settings: &ExportSettings) -> (f32, f32) {
 /// Best-effort prose paging. Paragraphs are wrapped to the text width with a
 /// character-width estimate (`size * 0.55`), then lines are packed until the
 /// page's text height is used up.
-pub fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
+pub fn prose_plan(project: &Project, doc: &Document, settings: &ExportSettings) -> PagePlan {
     let (page_w, page_h) = page_geometry(settings);
     let content_w = page_w - 108.0;
     let content_h = page_h - 78.0;
-    let body = &settings.styles.body;
-    let heading = &settings.styles.chapter_heading;
-    let body_size = body.size.max(6.0);
-    let line_h = (body_size * body.leading.max(0.8)).max(8.0);
-    let body_indent = body.indent.max(0.0);
-    let body_right = body.right_indent.max(0.0);
-    let text_w = (content_w - body_indent - body_right).max(24.0);
-    let chars_per_line = (text_w / (body_size * 0.5)).floor().max(10.0) as usize;
+    let sheet = project.style_sheet_for(doc);
+    let body = sheet
+        .style("body")
+        .map(|style| project.paragraph_format_for(style, &settings.styles))
+        .unwrap_or_else(|| settings.styles.body.clone());
+    let heading = sheet
+        .style("chapter-heading")
+        .map(|style| project.paragraph_format_for(style, &settings.styles))
+        .unwrap_or_else(|| settings.styles.chapter_heading.clone());
 
     let mut pages: Vec<Vec<PageLine>> = vec![Vec::new()];
     let mut used = 0.0f32;
@@ -133,7 +134,7 @@ pub fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
     // chapter-heading style: its font, alignment, indents and spacing.
     let title = doc.title.trim();
     if !title.is_empty() {
-        let title_size = heading.size.max(body_size);
+        let title_size = heading.size.max(body.size.max(6.0));
         let title_lead = (title_size * heading.leading.max(0.9)).max(10.0);
         let title_before = heading.before.max(0.0);
         let title_after = heading.after.max(0.0);
@@ -155,18 +156,38 @@ pub fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
         used += title_before + title_lead + title_after;
     }
 
-    for paragraph in doc.body_text().split("\n\n") {
-        let paragraph = paragraph.trim();
-        if paragraph.is_empty() {
+    // Paragraphs keep their own stylesheet appearance. The old version
+    // flattened the rich document into one string, which collapsed typed
+    // paragraphs and ignored every style but Body.
+    for paragraph in &doc.content.paragraphs {
+        let style = sheet.style(&paragraph.style_id);
+        let format = style
+            .map(|style| project.paragraph_format_for(style, &settings.styles))
+            .unwrap_or_else(|| body.clone());
+        let uppercase = style
+            .map(|style| style.text_transform == TextTransform::Uppercase)
+            .unwrap_or(false)
+            || format.uppercase;
+        let mut text = prose_paragraph_text(paragraph);
+        if uppercase {
+            text = text.to_uppercase();
+        }
+        if text.trim().is_empty() {
             continue;
         }
-        let wrapped = wrap_words(paragraph, chars_per_line);
+        let size = format.size.max(6.0);
+        let lead = (size * format.leading.max(0.8)).max(8.0);
+        let indent = format.indent.max(0.0);
+        let right_indent = format.right_indent.max(0.0);
+        let text_w = (content_w - indent - right_indent).max(24.0);
+        let chars_per_line = (text_w / (size * 0.5)).floor().max(10.0) as usize;
+        let wrapped = wrap_words(&text, chars_per_line);
         let count = wrapped.len();
-        for (i, text) in wrapped.into_iter().enumerate() {
+        for (i, line) in wrapped.into_iter().enumerate() {
             let first = i == 0;
             let last = i + 1 == count;
-            let mut gap = if first { body.before.max(0.0) } else { 0.0 };
-            if used + gap + line_h > content_h && !pages.last().unwrap().is_empty() {
+            let mut gap = if first { format.before.max(0.0) } else { 0.0 };
+            if used + gap + lead > content_h && !pages.last().unwrap().is_empty() {
                 pages.push(Vec::new());
                 used = 0.0;
                 gap = 0.0;
@@ -174,27 +195,27 @@ pub fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
             if pages.last().unwrap().is_empty() {
                 gap = 0.0;
             }
-            let after = if last { body.after.max(0.0) } else { 0.0 };
+            let after = if last { format.after.max(0.0) } else { 0.0 };
             pages.last_mut().unwrap().push(PageLine {
-                text,
-                size: body_size,
-                lead: line_h,
+                text: line,
+                size,
+                lead,
                 gap_before: gap,
                 mono: false,
-                font: body.font.clone(),
-                align: body.align,
-                indent: body_indent,
+                font: format.font.clone(),
+                align: format.align,
+                indent,
                 first_line_indent: if first {
-                    body.first_line_indent.max(0.0)
+                    format.first_line_indent.max(0.0)
                 } else {
                     0.0
                 },
-                right_indent: body_right,
+                right_indent,
                 after,
                 right: false,
                 center: false,
             });
-            used += gap + line_h + after;
+            used += gap + lead + after;
         }
     }
 
@@ -204,6 +225,19 @@ pub fn prose_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
         content_h,
         pages,
     }
+}
+
+fn prose_paragraph_text(paragraph: &RichParagraph) -> String {
+    paragraph
+        .content
+        .iter()
+        .map(|item| match item {
+            InlineContent::Text(run) => run.text.clone(),
+            InlineContent::HardBreak => " ".to_owned(),
+            InlineContent::Image(image) if image.alt_text.is_empty() => "[Image]".to_owned(),
+            InlineContent::Image(image) => format!("[Image: {}]", image.alt_text),
+        })
+        .collect()
 }
 
 /// Script paging: roughly 55 typed lines per page, with each block's wrapped
@@ -366,7 +400,7 @@ pub fn manuscript_preview(project: &Project, settings: &ExportSettings) -> Manus
         .into_iter()
         .filter(|d| d.kind == DocKind::FrontMatter && d.include_in_export)
     {
-        let plan = prose_plan(doc, settings);
+        let plan = prose_plan(project, doc, settings);
         sections.push(section_for(doc, &plan));
         plans.push(plan);
     }
@@ -379,7 +413,7 @@ pub fn manuscript_preview(project: &Project, settings: &ExportSettings) -> Manus
         let plan = if doc.medium.is_script() {
             script_plan(doc, settings)
         } else {
-            prose_plan(doc, settings)
+            prose_plan(project, doc, settings)
         };
         sections.push(section_for(doc, &plan));
         plans.push(plan);
@@ -391,7 +425,7 @@ pub fn manuscript_preview(project: &Project, settings: &ExportSettings) -> Manus
         .into_iter()
         .filter(|d| d.kind == DocKind::BackMatter && d.include_in_export)
     {
-        let plan = prose_plan(doc, settings);
+        let plan = prose_plan(project, doc, settings);
         sections.push(section_for(doc, &plan));
         plans.push(plan);
     }
