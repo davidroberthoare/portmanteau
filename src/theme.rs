@@ -45,8 +45,54 @@ pub fn serif(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("portmanteau-serif".into()))
 }
 
+static UI_SCALE: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0x3f80_0000); // 1.0
+
+/// Choices offered by Settings → Interface text size.
+pub const UI_SCALE_PRESETS: [(&str, f32); 3] = [("Standard", 1.0), ("Large", 1.15), ("Larger", 1.3)];
+
+pub fn set_ui_scale(scale: f32) {
+    UI_SCALE.store(
+        scale.clamp(0.85, 1.4).to_bits(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+fn ui_scale() -> f32 {
+    f32::from_bits(UI_SCALE.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+// Interface type scale, in points at 100% text size. Every piece of chrome
+// text uses one of these roles, so changing a value here (or the user's
+// "Interface text size" preference, which scales all of them) restyles the
+// whole app consistently.
+pub const FONT_SMALL_PT: f32 = 11.5;
+pub const FONT_BODY_PT: f32 = 13.0;
+pub const FONT_STRONG_PT: f32 = 14.5;
+
+fn sans_family() -> FontFamily {
+    FontFamily::Name("portmanteau-sans".into())
+}
+
+/// Captions, hints, counts and section labels.
+pub fn ui_small() -> FontId {
+    FontId::new(FONT_SMALL_PT * ui_scale(), sans_family())
+}
+
+/// Buttons, menus, list rows and field text.
+pub fn ui_body() -> FontId {
+    FontId::new(FONT_BODY_PT * ui_scale(), sans_family())
+}
+
+/// Emphasised controls and panel titles.
+pub fn ui_strong() -> FontId {
+    FontId::new(FONT_STRONG_PT * ui_scale(), sans_family())
+}
+
+/// Sans text at an explicit size (scaled by the text-size preference). Prefer
+/// the role functions above.
 pub fn sans(size: f32) -> FontId {
-    FontId::new(size, FontFamily::Name("portmanteau-sans".into()))
+    FontId::new(size * ui_scale(), sans_family())
 }
 
 pub fn mono(size: f32) -> FontId {
@@ -136,16 +182,16 @@ pub fn install(ctx: &egui::Context) {
     let mut style = (*ctx.style_of(egui::Theme::Light)).clone();
     style.text_styles = [
         (TextStyle::Heading, serif(26.0)),
-        (TextStyle::Body, sans(14.0)),
-        (TextStyle::Button, sans(13.5)),
-        (TextStyle::Small, sans(11.0)),
+        (TextStyle::Body, ui_body()),
+        (TextStyle::Button, ui_body()),
+        (TextStyle::Small, ui_small()),
         (TextStyle::Monospace, mono(12.5)),
     ]
     .into();
     style.animation_time = 0.12;
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
     style.spacing.button_padding = egui::vec2(10.0, 5.0);
-    style.spacing.interact_size.y = 26.0;
+    style.spacing.interact_size.y = 28.0 * ui_scale().max(1.0);
 
     let mut visuals = Visuals::light();
     visuals.panel_fill = PANEL;

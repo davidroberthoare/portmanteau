@@ -570,7 +570,7 @@ pub fn paged_view(app: &mut PortmanteauApp, ui: &mut egui::Ui, plan: &PagePlan) 
                 ui.set_max_width(plan.page_w);
                 ui.label(
                     RichText::new("Read-only page preview — switch to Continuous to edit")
-                        .font(sans(9.5))
+                        .font(ui_small())
                         .color(FAINT),
                 );
                 ui.add_space(10.0);

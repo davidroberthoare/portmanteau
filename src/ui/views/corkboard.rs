@@ -74,7 +74,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         ui.add_space(4.0);
                         ui.label(
                             RichText::new("Create a chapter to see it pinned here.")
-                                .font(sans(11.0))
+                                .font(ui_body())
                                 .color(FAINT),
                         );
                     });
@@ -95,7 +95,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     ui.horizontal(|ui| {
                         ui.label(
                             RichText::new(group.to_uppercase())
-                                .font(sans(9.0))
+                                .font(ui_small())
                                 .color(FAINT)
                                 .extra_letter_spacing(1.2),
                         );
@@ -199,7 +199,7 @@ fn zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             Vec2::new(40.0, 26.0),
             egui::Label::new(
                 RichText::new(format!("{}%", (zoom * 100.0).round() as i32))
-                    .font(sans(10.5))
+                    .font(ui_body())
                     .color(MUTED),
             )
             .selectable(false),
@@ -214,7 +214,7 @@ fn zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
 fn zoom_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
     ui.add(
-        egui::Button::new(RichText::new(glyph).font(sans(13.0)).color(MUTED))
+        egui::Button::new(RichText::new(glyph).font(ui_strong()).color(MUTED))
             .fill(PANEL_2)
             .stroke(Stroke::new(1.0, BORDER_SOFT))
             .corner_radius(CornerRadius::same(5))
@@ -416,13 +416,13 @@ fn card_ui(
                 ui.add_space(3.0);
                 ui.label(
                     RichText::new(card.kind.to_uppercase())
-                        .font(sans(8.0))
+                        .font(ui_small())
                         .color(accent),
                 );
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui
                         .add(
-                            egui::Button::new(RichText::new("Write").font(sans(8.5)).color(FAINT))
+                            egui::Button::new(RichText::new("Write").font(ui_small()).color(FAINT))
                                 .frame(false),
                         )
                         .on_hover_text("Open this card in the Write editor")
@@ -467,7 +467,7 @@ fn card_ui(
                 Vec2::new(ui.available_width(), 58.0),
                 TextEdit::multiline(&mut card.synopsis)
                     .id(synopsis_edit_id(&card.id))
-                    .font(sans(10.0))
+                    .font(ui_small())
                     .text_color(MUTED)
                     .frame(Frame::NONE)
                     .hint_text("Add a synopsis…")
@@ -509,7 +509,7 @@ fn card_ui(
         rect.left_bottom() + Vec2::new(13.0, -19.0),
         egui::Align2::LEFT_CENTER,
         format!("{} words", card.words),
-        sans(9.0),
+        ui_small(),
         FAINT,
     );
     overlay.circle_filled(
@@ -521,7 +521,7 @@ fn card_ui(
         rect.right_bottom() + Vec2::new(-13.0, -19.0),
         egui::Align2::RIGHT_CENTER,
         &card.status,
-        sans(9.0),
+        ui_small(),
         status_color(&card.status),
     );
 

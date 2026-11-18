@@ -60,14 +60,14 @@ pub fn page_head<R>(
                 ui.vertical(|ui| {
                     ui.label(
                         RichText::new(kicker.to_uppercase())
-                            .font(sans(9.5))
+                            .font(ui_small())
                             .color(ACCENT_INK)
                             .extra_letter_spacing(1.5),
                     );
                     ui.add_space(2.0);
                     ui.label(RichText::new(title).font(serif(26.0)).color(TEXT));
                     ui.add_space(2.0);
-                    ui.label(RichText::new(subtitle).font(sans(11.0)).color(MUTED));
+                    ui.label(RichText::new(subtitle).font(ui_body()).color(MUTED));
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     result = Some(right(ui));
@@ -91,7 +91,7 @@ pub fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
     ui.add(
         egui::Button::new(
             RichText::new(text)
-                .font(sans(11.5))
+                .font(ui_body())
                 .color(Color32::WHITE),
         )
         .fill(ACCENT)
@@ -102,7 +102,7 @@ pub fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
 
 pub fn quiet_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
     ui.add(
-        egui::Button::new(RichText::new(text).font(sans(10.5)).color(MUTED))
+        egui::Button::new(RichText::new(text).font(ui_body()).color(MUTED))
             .fill(PANEL_2)
             .stroke(Stroke::new(1.0, BORDER_SOFT))
             .corner_radius(CornerRadius::same(5))
@@ -118,7 +118,7 @@ pub fn meta_line(ui: &mut egui::Ui, parts: &[&str]) {
         .copied()
         .collect::<Vec<_>>()
         .join("  ·  ");
-    ui.label(RichText::new(text).font(sans(9.5)).color(FAINT));
+    ui.label(RichText::new(text).font(ui_small()).color(FAINT));
 }
 
 const TITLE_PAGE_ELEMENTS: [(&str, &str); 3] = [
@@ -235,7 +235,7 @@ pub fn element_styles_editor(
             .unwrap_or_default();
         egui::CollapsingHeader::new(
             RichText::new(format!("{section}    {summary}"))
-                .font(sans(10.5))
+                .font(ui_body())
                 .color(if greyed { FAINT } else { TEXT }),
         )
         .id_salt(("style_section", section))
@@ -279,7 +279,7 @@ fn font_combo(ui: &mut egui::Ui, key: &str, element: &mut ElementStyle) -> bool 
         font.clone()
     };
     egui::ComboBox::from_id_salt(("style_font", key))
-        .selected_text(RichText::new(selected).font(sans(9.0)).color(TEXT))
+        .selected_text(RichText::new(selected).font(ui_small()).color(TEXT))
         .width(150.0)
         .show_ui(ui, |ui| {
             if ui
@@ -317,7 +317,7 @@ fn align_combo(ui: &mut egui::Ui, key: &str, element: &mut ElementStyle) -> bool
     let mut changed = false;
     let mut align = element.align;
     egui::ComboBox::from_id_salt(("style_align", key))
-        .selected_text(RichText::new(align.label()).font(sans(9.0)).color(TEXT))
+        .selected_text(RichText::new(align.label()).font(ui_small()).color(TEXT))
         .width(74.0)
         .show_ui(ui, |ui| {
             for option in Alignment::all() {
@@ -350,7 +350,7 @@ fn element_row(
         .inner_margin(Margin::symmetric(10, 7))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new(label).font(sans(9.5)).color(TEXT));
+            ui.label(RichText::new(label).font(ui_small()).color(TEXT));
             ui.add_space(4.0);
             egui::Grid::new(("style_grid", key))
                 .num_columns(4)
@@ -393,7 +393,7 @@ fn element_row(
 }
 
 fn grid_label(ui: &mut egui::Ui, text: &str) {
-    ui.label(RichText::new(text).font(sans(8.5)).color(FAINT));
+    ui.label(RichText::new(text).font(ui_small()).color(FAINT));
 }
 
 fn grid_drag(
@@ -424,7 +424,7 @@ pub fn custom_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) -> bo
             "Custom styles    {count} {}",
             if count == 1 { "style" } else { "styles" }
         ))
-        .font(sans(10.5))
+        .font(ui_body())
         .color(TEXT),
     )
     .id_salt("custom_style_section")
@@ -438,7 +438,7 @@ pub fn custom_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) -> bo
                 RichText::new(
                     "None yet. Add “Epigraph”, “Pull quote” or any element your book needs.",
                 )
-                .font(sans(9.0))
+                .font(ui_small())
                 .color(FAINT),
             );
             ui.add_space(4.0);
@@ -456,11 +456,11 @@ pub fn custom_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) -> bo
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Name").font(sans(8.5)).color(FAINT));
+                        ui.label(RichText::new("Name").font(ui_small()).color(FAINT));
                         row_changed |= ui
                             .add(
                                 TextEdit::singleline(&mut draft.name)
-                                    .font(sans(10.0))
+                                    .font(ui_small())
                                     .desired_width(180.0),
                             )
                             .changed();
@@ -468,7 +468,7 @@ pub fn custom_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) -> bo
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("Remove").font(sans(9.0)).color(RED),
+                                        RichText::new("Remove").font(ui_small()).color(RED),
                                     )
                                     .fill(PANEL_3)
                                     .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -534,7 +534,7 @@ pub fn style_sheets_editor(ui: &mut egui::Ui, sheets: &mut Vec<StyleSheet>) -> b
             .collect();
         egui::CollapsingHeader::new(
             RichText::new(format!("{} stylesheet", sheet.name))
-                .font(sans(10.5))
+                .font(ui_body())
                 .color(TEXT),
         )
         .id_salt(("style_sheet", sheet.id.as_str()))
@@ -542,7 +542,7 @@ pub fn style_sheets_editor(ui: &mut egui::Ui, sheets: &mut Vec<StyleSheet>) -> b
         .show(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Default paragraph").font(sans(9.0)).color(FAINT));
+                ui.label(RichText::new("Default paragraph").font(ui_small()).color(FAINT));
                 egui::ComboBox::from_id_salt(("default_style", sheet.id.as_str()))
                     .selected_text(
                         sheet
@@ -571,15 +571,15 @@ pub fn style_sheets_editor(ui: &mut egui::Ui, sheets: &mut Vec<StyleSheet>) -> b
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("Style").font(sans(8.5)).color(FAINT));
+                            ui.label(RichText::new("Style").font(ui_small()).color(FAINT));
                             changed |= ui
                                 .add(
                                     TextEdit::singleline(&mut draft.name)
-                                        .font(sans(9.5))
+                                        .font(ui_small())
                                         .desired_width(110.0),
                                 )
                                 .changed();
-                            ui.label(RichText::new("Enter →").font(sans(8.5)).color(FAINT));
+                            ui.label(RichText::new("Enter →").font(ui_small()).color(FAINT));
                             egui::ComboBox::from_id_salt((
                                 "next_style",
                                 sheet.id.as_str(),
@@ -623,7 +623,7 @@ pub fn style_sheets_editor(ui: &mut egui::Ui, sheets: &mut Vec<StyleSheet>) -> b
                         }
                         egui::CollapsingHeader::new(
                             RichText::new("Appearance")
-                                .font(sans(8.5))
+                                .font(ui_small())
                                 .color(MUTED),
                         )
                         .id_salt(("style_appearance", sheet.id.as_str(), draft.id.as_str()))
@@ -710,7 +710,7 @@ pub fn manuscript_preview_navigator(
             });
             ui.label(
                 RichText::new("Approximate — rendered from your compile settings")
-                    .font(sans(9.0))
+                    .font(ui_small())
                     .color(FAINT),
             );
             ui.add_space(8.0);
@@ -722,7 +722,7 @@ pub fn manuscript_preview_navigator(
                     can_prev,
                     egui::Button::new(
                         RichText::new("‹ Prev")
-                            .font(sans(10.5))
+                            .font(ui_body())
                             .color(if can_prev { TEXT } else { FAINT }),
                     )
                     .corner_radius(CornerRadius::same(5)),
@@ -733,7 +733,7 @@ pub fn manuscript_preview_navigator(
 
                 ui.label(
                     RichText::new(format!("Page {} of {}", *page + 1, total))
-                        .font(sans(10.0))
+                        .font(ui_small())
                         .color(MUTED),
                 );
 
@@ -742,7 +742,7 @@ pub fn manuscript_preview_navigator(
                     can_next,
                     egui::Button::new(
                         RichText::new("Next ›")
-                            .font(sans(10.5))
+                            .font(ui_body())
                             .color(if can_next { TEXT } else { FAINT }),
                     )
                     .corner_radius(CornerRadius::same(5)),
@@ -757,7 +757,7 @@ pub fn manuscript_preview_navigator(
                     egui::ComboBox::from_id_salt("preview_section")
                         .selected_text(
                             RichText::new(preview.sections[current].label.as_str())
-                                .font(sans(10.0))
+                                .font(ui_small())
                                 .color(TEXT),
                         )
                         .width(170.0)
@@ -771,7 +771,7 @@ pub fn manuscript_preview_navigator(
                     if chosen != current {
                         *page = starts.get(chosen).copied().unwrap_or(0).min(total - 1);
                     }
-                    ui.label(RichText::new("Section").font(sans(9.5)).color(MUTED));
+                    ui.label(RichText::new("Section").font(ui_small()).color(MUTED));
                 });
             });
             ui.add_space(10.0);
@@ -792,7 +792,7 @@ pub fn manuscript_preview_navigator(
                 RichText::new(
                     "Each section starts on its own page, matching the exported manuscript.",
                 )
-                .font(sans(9.0))
+                .font(ui_small())
                 .color(FAINT),
             );
         });

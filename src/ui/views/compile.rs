@@ -213,7 +213,7 @@ fn tab_button(ui: &mut egui::Ui, label: &str, color: Color32, selected: bool) ->
         egui::pos2(dot.x + 12.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
         label,
-        sans(11.0),
+        ui_body(),
         if selected { TEXT } else { MUTED },
     );
     resp.clicked()
@@ -276,7 +276,7 @@ fn output_tab(
             ui.label(RichText::new(kind.label()).font(serif(21.0)).color(TEXT));
             ui.label(
                 RichText::new(kind.description())
-                    .font(sans(10.0))
+                    .font(ui_small())
                     .color(FAINT),
             );
         });
@@ -314,7 +314,7 @@ fn output_tab(
         }
         ui.label(
             RichText::new("Seeds from the project-wide element styles.")
-                .font(sans(9.0))
+                .font(ui_small())
                 .color(FAINT),
         );
     });
@@ -345,7 +345,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                 .spacing([8.0, 5.0])
                 .min_col_width(48.0)
                 .show(ui, |ui| {
-                    ui.label(RichText::new("Folder").font(sans(8.5)).color(FAINT));
+                    ui.label(RichText::new("Folder").font(ui_small()).color(FAINT));
                     output_field(
                         ui,
                         &mut settings.output_path,
@@ -353,7 +353,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                     );
                     ui.end_row();
 
-                    ui.label(RichText::new("Filename").font(sans(8.5)).color(FAINT));
+                    ui.label(RichText::new("Filename").font(ui_small()).color(FAINT));
                     output_field(ui, &mut settings.output_filename, &default_name);
                     ui.end_row();
                 });
@@ -371,7 +371,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                 RichText::new(
                     "Front and back matter are assembled from the binder folders; excluded chapters are skipped.",
                 )
-                .font(sans(9.0))
+                .font(ui_small())
                 .color(FAINT),
             );
         });
@@ -439,7 +439,7 @@ fn action_panel(
                 let label = format!("Compile {}  ▸", settings.kind.label());
                 let btn = egui::Button::new(
                     RichText::new(label)
-                        .font(sans(12.0))
+                        .font(ui_body())
                         .color(Color32::WHITE),
                 )
                 .fill(ACCENT)
@@ -461,7 +461,7 @@ fn action_panel(
                                 .map(|d| d.pages())
                                 .sum::<u32>()
                         ))
-                        .font(sans(10.0))
+                        .font(ui_small())
                         .color(MUTED),
                     );
                     ui.label(
@@ -477,7 +477,7 @@ fn action_panel(
                                 ))
                                 .count()
                         ))
-                        .font(sans(9.0))
+                        .font(ui_small())
                         .color(FAINT),
                     );
                 });
@@ -498,7 +498,7 @@ fn action_panel(
                                 info.format,
                                 info.bytes as f32 / 1024.0
                             ))
-                            .font(sans(10.0))
+                            .font(ui_small())
                             .color(SAGE),
                         );
                         ui.label(
@@ -536,7 +536,7 @@ fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, project_kind: Proj
                 RichText::new(
                     "Per-element type for this output format, including writer-defined styles. The global defaults live in Settings → Display.",
                 )
-                .font(sans(9.0))
+                .font(ui_small())
                 .color(FAINT),
             );
             ui.add_space(6.0);
@@ -562,10 +562,10 @@ fn type_panel(ui: &mut egui::Ui, kind: ExportKind, settings: &mut ExportSettings
                 ExportKind::Pdf | ExportKind::Docx | ExportKind::Rtf
             ) {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Paper").font(sans(9.5)).color(MUTED));
+                    ui.label(RichText::new("Paper").font(ui_small()).color(MUTED));
                     egui::ComboBox::from_id_salt("paper_pick")
                         .selected_text(
-                            RichText::new(settings.paper.label()).font(sans(10.0)),
+                            RichText::new(settings.paper.label()).font(ui_small()),
                         )
                         .width(130.0)
                         .show_ui(ui, |ui| {
@@ -578,7 +578,7 @@ fn type_panel(ui: &mut egui::Ui, kind: ExportKind, settings: &mut ExportSettings
             }
 
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Font").font(sans(9.5)).color(MUTED));
+                ui.label(RichText::new("Font").font(ui_small()).color(MUTED));
                 font_picker(ui, &mut settings.font);
             });
 
@@ -591,7 +591,7 @@ fn type_panel(ui: &mut egui::Ui, kind: ExportKind, settings: &mut ExportSettings
                 ui.add_space(7.0);
                 ui.label(
                     RichText::new("Cover image")
-                        .font(sans(9.5))
+                        .font(ui_small())
                         .color(MUTED),
                 );
                 ui.add(
@@ -640,9 +640,9 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings) {
                 }
             });
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Format").font(sans(9.0)).color(MUTED));
+                ui.label(RichText::new("Format").font(ui_small()).color(MUTED));
                 egui::ComboBox::from_id_salt("hf_number_format")
-                    .selected_text(RichText::new(hf.number_format.label()).font(sans(10.0)))
+                    .selected_text(RichText::new(hf.number_format.label()).font(ui_small()))
                     .width(105.0)
                     .show_ui(ui, |ui| {
                         for format in NumberFormat::all() {
@@ -650,9 +650,9 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings) {
                         }
                     });
                 ui.add_space(6.0);
-                ui.label(RichText::new("Where").font(sans(9.0)).color(MUTED));
+                ui.label(RichText::new("Where").font(ui_small()).color(MUTED));
                 egui::ComboBox::from_id_salt("hf_number_location")
-                    .selected_text(RichText::new(hf.number_location.label()).font(sans(10.0)))
+                    .selected_text(RichText::new(hf.number_location.label()).font(ui_small()))
                     .width(80.0)
                     .show_ui(ui, |ui| {
                         for location in HfLocation::all() {
@@ -661,9 +661,9 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings) {
                     });
             });
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Align").font(sans(9.0)).color(MUTED));
+                ui.label(RichText::new("Align").font(ui_small()).color(MUTED));
                 egui::ComboBox::from_id_salt("hf_number_align")
-                    .selected_text(RichText::new(hf.number_align.label()).font(sans(10.0)))
+                    .selected_text(RichText::new(hf.number_align.label()).font(ui_small()))
                     .width(80.0)
                     .show_ui(ui, |ui| {
                         for align in [Alignment::Left, Alignment::Center, Alignment::Right] {
@@ -671,7 +671,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings) {
                         }
                     });
                 ui.add_space(6.0);
-                ui.label(RichText::new("Spacing").font(sans(9.0)).color(MUTED));
+                ui.label(RichText::new("Spacing").font(ui_small()).color(MUTED));
                 ui.add(
                     egui::DragValue::new(&mut hf.number_spacing)
                         .speed(0.5)
@@ -692,13 +692,13 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings) {
             ui.add(
                 TextEdit::singleline(&mut hf.header_text)
                     .hint_text("blank = book title")
-                    .font(sans(10.0))
+                    .font(ui_small())
                     .desired_width(f32::INFINITY),
             );
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Align").font(sans(9.0)).color(MUTED));
+                ui.label(RichText::new("Align").font(ui_small()).color(MUTED));
                 egui::ComboBox::from_id_salt("hf_header_align")
-                    .selected_text(RichText::new(hf.header_align.label()).font(sans(10.0)))
+                    .selected_text(RichText::new(hf.header_align.label()).font(ui_small()))
                     .width(80.0)
                     .show_ui(ui, |ui| {
                         for align in [Alignment::Left, Alignment::Center, Alignment::Right] {
@@ -706,7 +706,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings) {
                         }
                     });
                 ui.add_space(6.0);
-                ui.label(RichText::new("Spacing").font(sans(9.0)).color(MUTED));
+                ui.label(RichText::new("Spacing").font(ui_small()).color(MUTED));
                 ui.add(
                     egui::DragValue::new(&mut hf.header_spacing)
                         .speed(0.5)
@@ -727,7 +727,7 @@ fn font_picker(ui: &mut egui::Ui, font: &mut String) {
         font.clone()
     };
     egui::ComboBox::from_id_salt("compile_font")
-        .selected_text(RichText::new(selected).font(sans(10.0)).color(TEXT))
+        .selected_text(RichText::new(selected).font(ui_small()).color(TEXT))
         .width(170.0)
         .show_ui(ui, |ui| {
             ui.selectable_value(font, String::new(), "(inherit)");
@@ -817,7 +817,7 @@ fn body_panel(
                     "{} is compiled from the binder. Script media keep their element types.",
                     kind.label()
                 ))
-                .font(sans(9.0))
+                .font(ui_small())
                 .color(FAINT),
             );
         });
@@ -829,7 +829,7 @@ fn matter_list(
     toggles: &mut Vec<(String, bool)>,
 ) {
     if docs.is_empty() {
-        ui.label(RichText::new("(none)").font(sans(9.0)).color(FAINT));
+        ui.label(RichText::new("(none)").font(ui_small()).color(FAINT));
         return;
     }
     for (id, title, include) in docs {
@@ -879,12 +879,12 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui) {
                     let glyph = if d.medium.is_script() { "▶" } else { "¶" };
                     ui.label(
                         RichText::new(glyph)
-                            .font(sans(8.5))
+                            .font(ui_small())
                             .color(if d.medium.is_script() { PURPLE_INK } else { ACCENT_INK }),
                     );
                     ui.label(
                         RichText::new(&d.title)
-                            .font(sans(10.0))
+                            .font(ui_small())
                             .color(if d.include_in_export { TEXT } else { FAINT }),
                     );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -899,7 +899,7 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui) {
             if docs.len() > 14 {
                 ui.label(
                     RichText::new(format!("… and {} more sections", docs.len() - 14))
-                        .font(sans(9.0))
+                        .font(ui_small())
                         .color(FAINT),
                 );
             }

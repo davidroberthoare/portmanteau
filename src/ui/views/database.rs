@@ -62,7 +62,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new("Keep the people, places and things your story needs.")
-                        .font(sans(11.0))
+                        .font(ui_body())
                         .color(MUTED),
                 );
                 ui.add_space(12.0);
@@ -107,7 +107,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                                     kind.label().to_uppercase(),
                                                     count
                                                 ))
-                                                .font(sans(9.0))
+                                                .font(ui_small())
                                                 .color(FAINT)
                                                 .extra_letter_spacing(1.0),
                                             );
@@ -118,7 +118,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                                         .add(
                                                             egui::Button::new(
                                                                 RichText::new("+")
-                                                                    .font(sans(13.0))
+                                                                    .font(ui_strong())
                                                                     .color(ACCENT_INK),
                                                             )
                                                             .frame(false),
@@ -202,7 +202,7 @@ fn item_row(ui: &mut egui::Ui, item: &DatabaseItem, selected: bool) -> bool {
         egui::pos2(rect.left() + 28.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
         &item.title,
-        sans(11.0),
+        ui_body(),
         if selected { TEXT } else { MUTED },
     );
     resp.clicked()
@@ -337,7 +337,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("Delete").font(sans(9.5)).color(RED),
+                                        RichText::new("Delete").font(ui_small()).color(RED),
                                     )
                                     .frame(false),
                                 )
@@ -379,7 +379,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         .add(
                             TextEdit::singleline(&mut draft.tags_text)
                                 .hint_text("Comma-separated, e.g. harbour, family")
-                                .font(sans(11.0))
+                                .font(ui_body())
                                 .desired_width(f32::INFINITY),
                         )
                         .changed()
@@ -428,7 +428,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         .id(notes_id)
                         .layouter(&mut layouter)
                         .hint_text("What matters about this item?")
-                        .font(sans(11.0))
+                        .font(ui_body())
                         .desired_rows(8)
                         .desired_width(f32::INFINITY)
                         .show(ui);
@@ -436,6 +436,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         rich_notes.sync_editor_text(&draft.notes, &sheet);
                         apply = true;
                     }
+                    crate::ui::editor::remember_selection_anchor(ui.ctx(), notes_output.response.id, &notes_output.galley, notes_output.galley_pos);
                     paint_rich_images(
                         ui,
                         &notes_output.galley,
@@ -454,7 +455,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     if draft.related.is_empty() {
                         ui.label(
                             RichText::new("No links yet.")
-                                .font(sans(10.0))
+                                .font(ui_small())
                                 .color(FAINT),
                         );
                     }
@@ -468,7 +469,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new(&title).font(sans(10.5)).color(TEXT),
+                                        RichText::new(&title).font(ui_body()).color(TEXT),
                                     )
                                     .fill(PANEL_2)
                                     .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -483,7 +484,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("×").font(sans(10.0)).color(FAINT),
+                                        RichText::new("×").font(ui_small()).color(FAINT),
                                     )
                                     .frame(false),
                                 )
@@ -506,7 +507,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                             if candidates.is_empty() {
                                 ui.label(
                                     RichText::new("Everything is already linked.")
-                                        .font(sans(10.0))
+                                        .font(ui_small())
                                         .color(FAINT),
                                 );
                             }
@@ -526,7 +527,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         if appearances.is_empty() {
                             ui.label(
                                 RichText::new("Not yet named in the manuscript.")
-                                    .font(sans(10.0))
+                                    .font(ui_small())
                                     .color(FAINT),
                             );
                         } else {
@@ -536,14 +537,14 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                     appearances.len(),
                                     if appearances.len() == 1 { "" } else { "s" }
                                 ))
-                                .font(sans(10.0))
+                                .font(ui_small())
                                 .color(MUTED),
                             );
                             for title in &appearances {
                                 ui.horizontal(|ui| {
                                     dot(ui, color);
                                     ui.label(
-                                        RichText::new(title).font(sans(10.0)).color(MUTED),
+                                        RichText::new(title).font(ui_small()).color(MUTED),
                                     );
                                 });
                             }

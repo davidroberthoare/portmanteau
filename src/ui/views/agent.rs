@@ -19,7 +19,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         |ui| {
             ui.label(
                 RichText::new("API · MCP · CLI")
-                    .font(sans(9.5))
+                    .font(ui_small())
                     .color(SAGE),
             );
         },
@@ -85,7 +85,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                             rect.left_top() + Vec2::new(8.0, 23.0),
                                             egui::Align2::LEFT_TOP,
                                             short,
-                                            sans(8.3),
+                                            ui_small(),
                                             FAINT,
                                         );
                                         if resp.clicked() {
@@ -125,7 +125,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                     .font(mono(11.0))
                                     .desired_width(220.0),
                             );
-                            ui.label(RichText::new("payload").font(sans(9.5)).color(FAINT));
+                            ui.label(RichText::new("payload").font(ui_small()).color(FAINT));
                         });
                         ui.add_space(4.0);
                         ui.add(
@@ -143,7 +143,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("Fill example").font(sans(9.5)).color(MUTED),
+                                        RichText::new("Fill example").font(ui_small()).color(MUTED),
                                     )
                                     .frame(false),
                                 )

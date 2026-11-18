@@ -12,6 +12,10 @@ pub fn new_id(prefix: &str) -> String {
     format!("{}-{}", prefix, &Uuid::new_v4().simple().to_string()[..8])
 }
 
+fn default_ui_scale() -> f32 {
+    1.0
+}
+
 fn default_prose_stylesheet() -> String {
     "prose".into()
 }
@@ -929,6 +933,9 @@ pub struct AppSettings {
     /// Whether the inspector panel is visible in the Write workspace.
     #[serde(default = "default_true")]
     pub show_inspector: bool,
+    /// Interface text scale (1.0 = default). Affects chrome, not manuscripts.
+    #[serde(default = "default_ui_scale")]
+    pub ui_scale: f32,
 }
 
 impl Default for AppSettings {
@@ -942,6 +949,7 @@ impl Default for AppSettings {
             language: default_language(),
             show_binder: true,
             show_inspector: true,
+            ui_scale: default_ui_scale(),
         }
     }
 }

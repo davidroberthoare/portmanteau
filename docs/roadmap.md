@@ -257,3 +257,9 @@ open the sample project.
 - Search filters (title only, research only, current part).
 - A character relationship map derived from appearances.
 - Project statistics: scenes per part, dialogue vs action ratio, reading time.
+
+## UI polish pass (selection popup, style dropdown, type scale, binder icons)
+- Floating B/I/U/S popup above selected text in every rich editor; Image moved to Insert ▸ Image….
+- Script paragraph styles are a toolbar dropdown instead of a button palette.
+- Interface type scale lives in `theme.rs` (`ui_small`/`ui_body`/`ui_strong`) with a Settings ▸ Interface text size preference.
+- Binder uses drawn folder and page icons, tinted by document type.
