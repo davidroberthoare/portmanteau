@@ -9,7 +9,7 @@ use eframe::egui::{
 };
 use portmanteau_core::{
     Alignment, CompileScope, CompileType, DocKind, ElementStyles, ExportKind, ExportSettings,
-    HfLocation, NumberFormat, PaperSize, ProjectKind,
+    HfLocation, NumberFormat, PaperSize, Project, ProjectKind,
 };
 
 use crate::app::{CompileTab, PortmanteauApp, ToastKind};
@@ -343,7 +343,7 @@ fn output_tab(
     }
     ui.add_space(8.0);
 
-    type_panel(ui, kind, settings);
+    type_panel(ui, kind, settings, compile_type);
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         if quiet_button(ui, "Reset this format to base style").clicked() {
@@ -499,10 +499,17 @@ fn action_panel(
                                 .ws
                                 .project
                                 .compile_plan_for(settings, app.selected.as_deref());
+                            let mut effective = settings.clone();
+                            effective.compile_type = Some(plan.kind);
+                            let pages = if settings.kind == ExportKind::Pdf {
+                                page_estimate(ui.ctx(), &app.ws.project, &effective)
+                            } else {
+                                plan.included.iter().map(|d| d.pages()).sum()
+                            };
                             format!(
                                 "{} words · {} pages estimated",
                                 plan.included.iter().map(|d| d.words()).sum::<u32>(),
-                                plan.included.iter().map(|d| d.pages()).sum::<u32>()
+                                pages
                             )
                         })
                         .font(ui_small())
@@ -598,7 +605,12 @@ fn style_panel(
         });
 }
 
-fn type_panel(ui: &mut egui::Ui, kind: ExportKind, settings: &mut ExportSettings) {
+fn type_panel(
+    ui: &mut egui::Ui,
+    kind: ExportKind,
+    settings: &mut ExportSettings,
+    compile_type: CompileType,
+) {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -631,7 +643,13 @@ fn type_panel(ui: &mut egui::Ui, kind: ExportKind, settings: &mut ExportSettings
 
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Font").font(ui_small()).color(MUTED));
-                font_picker(ui, &mut settings.font);
+                if compile_type.is_script() {
+                    // A script's face comes from its own stylesheet, so a
+                    // format-wide font choice would silently do nothing.
+                    ui.label(RichText::new("From the script stylesheet").font(ui_small()).color(FAINT));
+                } else {
+                    font_picker(ui, &mut settings.font);
+                }
             });
 
             if kind == ExportKind::Pdf {
@@ -1149,6 +1167,34 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &ExportSetti
                 );
             }
         });
+}
+
+#[derive(Clone, Default)]
+struct PageEstimate {
+    fingerprint: String,
+    pages: usize,
+}
+
+/// The PDF page count comes from the real layout, not a rough estimate, but the
+/// Compile screen redraws every frame; keep the answer until the project or the
+/// settings change.
+#[allow(deprecated)]
+fn page_estimate(ctx: &egui::Context, project: &Project, settings: &ExportSettings) -> u32 {
+    let fingerprint = format!(
+        "{}|{}|{}",
+        project.words(),
+        project.documents.len(),
+        serde_json::to_string(settings).unwrap_or_default()
+    );
+    ctx.data_mut(|data| {
+        let cache = data
+            .get_temp_mut_or_default::<PageEstimate>(egui::Id::new("compile_page_estimate"));
+        if cache.fingerprint != fingerprint {
+            cache.pages = portmanteau_export::pdf_page_count(project, settings);
+            cache.fingerprint = fingerprint;
+        }
+        cache.pages as u32
+    })
 }
 
 fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {

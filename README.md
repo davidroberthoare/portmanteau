@@ -33,7 +33,7 @@ cargo run -p portmanteau-cli -- commands
 ## Known gaps
 
 - No undo/redo yet.
-- PDF and EPUB layout is a simple built-in engine, not a real typesetter, so the preview is only an estimate.
+- PDF layout is measured and writes embedded fonts, but it is not a full typesetter; the editor's paged preview is still only an estimate.
 - No drag-and-drop in the binder, no native file dialogs, no tracked changes.
 
 More detail on plans is in `docs/roadmap.md`; `docs/architecture.md` and `AGENTS.md` describe how the code is laid out.

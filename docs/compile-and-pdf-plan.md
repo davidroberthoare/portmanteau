@@ -96,20 +96,31 @@ hack inside krilla rather than on top of it, revisit.
 
 ### Script pages
 
-US Letter; margins from the format's stylesheet (`StyleSheet.margins`); element
-styles, italic, alignment, spacing and hanging indents from the document's own
-stylesheet (film, TV, stage); 12 pt Courier at exactly 12 pt leading; page
-number top right ("12.", none on page 1); scene numbers per the setting; no
-bold serif document title. Prose keeps the book layout (paper size, headers,
-footers, contents, front/back matter).
+Page size follows the compile's **Paper** setting: A4, US Letter, A5 or Trade
+paperback. A script project starts on US Letter (the industry default) and the
+writer can choose A4 or another size in Page & type. The same choice is honoured
+by every page-based writer — PDF, DOCX and RTF — not just PDF.
+
+Margins come from the format's stylesheet (`StyleSheet.margins`); element styles,
+italic, alignment, spacing and hanging indents come from the document's own
+stylesheet (film, TV, stage); 12 pt Courier at exactly 12 pt leading; page number
+top right ("12.", none on page 1); scene numbers per the setting; no bold serif
+document title. Prose keeps the book layout (paper size, headers, footers,
+contents, front/back matter).
+
+The compiler never invents content. In particular it does not add a `FADE IN:`,
+`CUT TO:`, `THE END` or any other transition: a script contains exactly the
+paragraphs the writer typed. `FADE IN:` appears only when it is a real transition
+block in the document.
 
 ### Verification (automated, in `cargo test`)
 
 Tests export a PDF and measure it with `pdftotext -bbox` when it is installed
-(skipped otherwise): US Letter page size, fonts embedded (`pdffonts`), left edge
-of each element within half a point of the style, characters per line, lines per
-page, an en dash survives, page count equals the layout's page count. The
-compile screen's page estimate must come from the same layout code.
+(skipped otherwise): page size follows the chosen paper (US Letter and A4),
+fonts embedded (`pdffonts`), left edge of each element within half a point of
+the style, characters per line, lines per page, an en dash survives, page count
+equals the layout's page count. DOCX and RTF page size follow the same setting.
+The compile screen's page estimate must come from the same layout code.
 
 ## 4. Out of scope for now
 

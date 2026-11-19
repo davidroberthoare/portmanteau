@@ -1127,3 +1127,36 @@ prose body gained a stable `prose_body/<doc>` id so those tests can read its
 - "Write each script as its own file" groups included scripts by top-level folder (episodes) and writes one file per group; `ExportInfo.files` lists them.
 - The Compile screen has Manuscript and Scope selectors, shows only the panels that apply, and lists skipped documents. The Paged view and the compile preview page through the same plan, so they no longer show other formats.
 - Commands: `export.preview` and `export.run` accept `compile_type` (`auto`, `prose`, `screenplay`, `tv`, `stage`), `scope` (`draft` or a document id) and `each_separately`. `export.preview` returns `included` and `skipped` with reasons.
+
+## PDF on krilla (commit B of the compile plan)
+
+The hand-written PDF writer is gone. `crates/portmanteau-export/src/pdf.rs` now
+does layout, and `krilla` (with `skrifa` for metrics) draws the finished pages.
+Layout and drawing are separate: `pdf_layout` returns positioned pages and is
+the single source of truth for pagination, so the Compile screen's page estimate
+is the count the writer will actually produce. The estimate is cached by project
+word count and settings so the panel does not re-measure a novel every frame.
+The page image beside it is still a rough visual approximation, labelled as such.
+
+- Fonts are bundled: Liberation Serif, Sans and Mono in regular, bold and
+  italic; DejaVu Sans covers characters the chosen face lacks. Every face is
+  embedded and subsetted. The output is PDF 1.7 with document metadata.
+- Script pages come from the document's own stylesheet (`project.style_sheet_for`),
+  including its margins, element indents, alignment and italic. Film, TV and
+  stage therefore print differently from one settings sheet, and `FADE IN:` is
+  flush left while other transitions stay right-aligned — only when they are
+  real blocks in the document.
+- Script page size follows the Paper setting (US Letter by default); the same
+  setting now writes `<w:pgSz>` in DOCX and `\paperw`/`\paperh` in RTF. Script
+  page numbers are top right as `1.`, `2.`, with none on the title page; the
+  first page of script is page 1.
+- Prose keeps the book layout: title page, contents with real page numbers
+  (honouring the start number and numbering style), front/back matter, running
+  headers, footers and synopsis/notes options.
+- The compiler adds no content: no `FADE IN:`, `CUT TO:`, `THE END` or blank
+  separators. What the writer typed is what the page shows.
+- `cargo test -p portmanteau-export` checks real files with `pdfinfo` (page size,
+  page count), `pdffonts` (embedded and subsetted) and `pdftotext` (text
+  round-trip, en dash, page-number position, no invented transition), skipping
+  those checks when the poppler tools are absent. DOCX and RTF page sizes are
+  covered for all four papers.

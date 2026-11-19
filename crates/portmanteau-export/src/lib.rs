@@ -13,6 +13,12 @@ use portmanteau_core::*;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
+mod pdf;
+pub use pdf::{
+    pdf_layout, pdf_manuscript, pdf_page_count, text_width, Face, Family, PdfLayout,
+    PdfLayoutSection, PdfPageLayout, PdfSegment, PdfText,
+};
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ExportInfo {
     pub path: String,
@@ -151,14 +157,24 @@ fn export_single(
             || (settings.include_synopsis && rich_document_has_images(&doc.synopsis))
             || (settings.include_notes && rich_document_has_images(&doc.notes))
     });
-    let pages: u32 = plan.included.iter().map(|d| d.pages()).sum();
+    // The PDF's own layout is the authority for its page count; the other
+    // writers still use the quick per-document estimate.
+    let pages: u32 = if settings.kind == ExportKind::Pdf {
+        pdf_page_count(project, settings) as u32
+    } else {
+        plan.included.iter().map(|d| d.pages()).sum()
+    };
+    let page_word = if pages == 1 { "page" } else { "pages" };
     let message = if has_images {
         format!(
-            "{} exported · {pages} pages estimated · Images represented by alt-text placeholders; source assets are not embedded",
+            "{} exported · {pages} {page_word} estimated · Images represented by alt-text placeholders; source assets are not embedded",
             settings.kind.label(),
         )
     } else {
-        format!("{} exported · {pages} pages estimated", settings.kind.label())
+        format!(
+            "{} exported · {pages} {page_word} estimated",
+            settings.kind.label()
+        )
     };
     Ok(ExportInfo {
         path: path.display().to_string(),
@@ -207,27 +223,6 @@ struct ProseParagraph {
 }
 
 impl ProseParagraph {
-    /// Flowing text for formats that re-wrap: hard breaks read as spaces and
-    /// images become their alt-text placeholder.
-    fn flow_text(&self) -> String {
-        let mut text = String::new();
-        for item in &self.content {
-            match item {
-                InlineContent::Text(run) => {
-                    text.push_str(&self.transform(&run.text));
-                }
-                InlineContent::HardBreak => text.push(' '),
-                InlineContent::Image(image) if image.alt_text.is_empty() => {
-                    text.push_str("[Image]")
-                }
-                InlineContent::Image(image) => {
-                    text.push_str(&format!("[Image: {}]", self.transform(&image.alt_text)))
-                }
-            }
-        }
-        text
-    }
-
     /// Text for plain formats: a hard break remains a newline.
     fn plain_text(&self) -> String {
         self.content
@@ -336,10 +331,6 @@ fn back_matter<'a>(project: &'a Project, settings: &ExportSettings) -> Vec<&'a D
         .into_iter()
         .filter(|d| d.kind == DocKind::BackMatter)
         .collect()
-}
-
-fn is_screenplay(project: &Project, settings: &ExportSettings) -> bool {
-    project.compile_plan(settings).kind.is_script()
 }
 
 fn section_title(_project: &Project, doc: &Document, index: usize, settings: &ExportSettings) -> String {
@@ -458,120 +449,10 @@ fn html_prose_paragraph(paragraph: &ProseParagraph, first: bool) -> String {
 // PDF
 // ---------------------------------------------------------------------------
 
-struct PdfLine {
-    text: String,
-    x: f32,
-    y: f32,
-    size: f32,
-    bold: bool,
-    /// Script elements are set in Courier; prose and front matter in Times.
-    mono: bool,
-}
-
-struct PdfPage {
-    lines: Vec<PdfLine>,
-}
-
-impl PdfPage {
-    fn new() -> Self {
-        Self { lines: Vec::new() }
-    }
-}
-
-fn wrap_text(text: &str, width_chars: usize) -> Vec<String> {
-    if width_chars == 0 {
-        return vec![text.to_string()];
-    }
-    let mut out = Vec::new();
-    let mut line = String::new();
-    for word in text.split_whitespace() {
-        if line.is_empty() {
-            line.push_str(word);
-        } else if line.chars().count() + 1 + word.chars().count() <= width_chars {
-            line.push(' ');
-            line.push_str(word);
-        } else {
-            out.push(line);
-            line = word.to_string();
-        }
-    }
-    if !line.is_empty() {
-        out.push(line);
-    }
-    if out.is_empty() {
-        out.push(String::new());
-    }
-    out
-}
-
-fn pdf_text(s: &str) -> String {
-    // The built-in PDF fonts use WinAnsi; keep the stream ASCII-clean and map
-    // the typography a writer is most likely to use.
-    let mut out = String::new();
-    for c in s.chars() {
-        let mapped: String = match c {
-            '(' => "\\(".into(),
-            ')' => "\\)".into(),
-            '\\' => "\\\\".into(),
-            '“' | '”' => "\"".into(),
-            '‘' | '’' => "'".into(),
-            '–' | '—' => "-".into(),
-            '…' => "...".into(),
-            '·' => "-".into(),
-            '©' => "(c)".into(),
-            '®' => "(R)".into(),
-            'é' => "e".into(),
-            'è' => "e".into(),
-            'ê' => "e".into(),
-            'à' => "a".into(),
-            'ç' => "c".into(),
-            'ó' => "o".into(),
-            'ü' => "u".into(),
-            c if c.is_ascii() => c.to_string(),
-            _ => "?".into(),
-        };
-        out.push_str(&mapped);
-    }
-    out
-}
-
-/// Map a family name to a PDF base-14 font (the writer embeds no font files).
-fn pdf_font(family: &str, bold: bool) -> &'static str {
-    let family = family.to_ascii_lowercase();
-    if family.contains("courier") || family.contains("mono") {
-        if bold { "Courier-Bold" } else { "Courier" }
-    } else if family.contains("sans") || family.contains("helvetica") || family.contains("arial") {
-        if bold { "Helvetica-Bold" } else { "Helvetica" }
-    } else if bold {
-        "Times-Bold"
-    } else {
-        "Times-Roman"
-    }
-}
-
 /// A CSS font stack built from the settings family with a safe serif fallback.
 fn css_font_family(family: &str) -> String {
     let safe = family.replace('"', "").replace('\\', "");
     format!("\"{}\", serif", safe)
-}
-
-/// The style that governs one screenplay element in the export writers.
-fn script_style<'a>(styles: &'a ElementStyles, kind: ElementKind) -> &'a ElementStyle {
-    match kind {
-        ElementKind::SceneHeading => &styles.scene_heading,
-        ElementKind::Action | ElementKind::Shot => &styles.action,
-        ElementKind::Character => &styles.character,
-        ElementKind::Parenthetical => &styles.parenthetical,
-        ElementKind::Dialogue | ElementKind::Lyric => &styles.dialogue,
-        ElementKind::Transition => &styles.transition,
-        ElementKind::Act => &styles.act,
-        ElementKind::Scene => &styles.scene,
-        ElementKind::StageDirection => &styles.stage_direction,
-        ElementKind::General => &styles.general,
-        ElementKind::Extension => &styles.extension,
-        ElementKind::Intercut => &styles.intercut,
-        ElementKind::Subheading => &styles.subheading,
-    }
 }
 
 /// CSS family for one element, falling back when its family is unset.
@@ -615,762 +496,9 @@ fn css_indent_margins(style: &ElementStyle) -> String {
     out
 }
 
-/// Approximate advance width of a line in the PDF prose face (Times).
-fn pdf_text_width(text: &str, size: f32) -> f32 {
-    text.chars().count() as f32 * size * 0.5
-}
-
-/// The left edge for one prose line inside `left..right`, honouring Paragraph
-/// alignment. Justified text is laid out from the left edge, as the built-in
-/// writer does not stretch inter-word spaces.
-fn aligned_x(text: &str, align: Alignment, left: f32, right: f32, size: f32) -> f32 {
-    let width = (right - left).max(1.0);
-    let text_width = pdf_text_width(text, size).min(width);
-    match align {
-        Alignment::Center => left + (width - text_width) / 2.0,
-        Alignment::Right => right - text_width,
-        Alignment::Left | Alignment::Justify => left,
-    }
-}
-
-fn build_pdf(
-    title: &str,
-    author: &str,
-    pages: &[PdfPage],
-    width_pt: f32,
-    height_pt: f32,
-    header_footer: &HeaderFooter,
-    font: &str,
-    font_bold: &str,
-) -> Vec<u8> {
-    // Stable object plan. A PDF page is a dictionary, and its content stream is
-    // a *separate* object; mixing the two up makes readers treat a stream as a
-    // page and silently drop text. Keep the numbering explicit:
-    //
-    //   1 catalog · 2 pages · 3 prose · 4 prose bold
-    //   5 Courier · 6 Courier-Bold · 7 page 1 · 8 content 1 · ...
-    let n = pages.len();
-    let mut objects: Vec<Vec<u8>> = Vec::with_capacity(7 + n * 2);
-    objects.push(b"<< /Type /Catalog /Pages 2 0 R >>".to_vec());
-    objects.push(Vec::new()); // Pages, filled once the kids are known.
-    objects.push(
-        format!("<< /Type /Font /Subtype /Type1 /BaseFont /{} /Encoding /WinAnsiEncoding >>", font)
-            .into_bytes(),
-    );
-    objects.push(
-        format!(
-            "<< /Type /Font /Subtype /Type1 /BaseFont /{} /Encoding /WinAnsiEncoding >>",
-            font_bold
-        )
-        .into_bytes(),
-    );
-    objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>".to_vec());
-    objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>".to_vec());
-
-    let mut kids: Vec<usize> = Vec::with_capacity(n);
-    for (i, page) in pages.iter().enumerate() {
-        let page_num = 7 + i * 2;
-        let content_num = page_num + 1;
-        kids.push(page_num);
-
-        let mut content = String::new();
-        for line in &page.lines {
-            content.push_str("BT\n");
-            let font = match (line.mono, line.bold) {
-                (true, true) => "F4",
-                (true, false) => "F3",
-                (false, true) => "F2",
-                (false, false) => "F1",
-            };
-            content.push_str(&format!("/{} {} Tf\n", font, line.size));
-            content.push_str(&format!("1 0 0 1 {:.2} {:.2} Tm\n", line.x, line.y));
-            content.push_str(&format!("({}) Tj\nET\n", pdf_text(&line.text)));
-        }
-        if header_footer.page_numbers && (header_footer.number_on_first_page || i > 0) {
-            let number = header_footer
-                .number_format
-                .format(header_footer.start_number + i as u32);
-            let y = match header_footer.number_location {
-                HfLocation::Footer => header_footer.number_spacing,
-                HfLocation::Header => height_pt - header_footer.header_spacing,
-            };
-            let x = aligned_x(&number, header_footer.number_align, 20.0, width_pt - 20.0, 9.0);
-            content.push_str("BT\n/F1 9 Tf\n");
-            content.push_str(&format!(
-                "1 0 0 1 {:.2} {:.2} Tm\n({}) Tj\nET\n",
-                x,
-                y,
-                pdf_text(&number)
-            ));
-        }
-        if header_footer.running_header && i > 0 {
-            // A quiet running head in the top margin. It is drawn in the same
-            // content stream as the page, so the object plan stays untouched.
-            let text = if header_footer.header_text.trim().is_empty() {
-                title
-            } else {
-                header_footer.header_text.as_str()
-            };
-            let head = pdf_text(text);
-            let x = aligned_x(&head, header_footer.header_align, 20.0, width_pt - 20.0, 9.0);
-            content.push_str("BT\n/F1 9 Tf\n");
-            content.push_str(&format!(
-                "1 0 0 1 {:.2} {:.2} Tm\n({}) Tj\nET\n",
-                x,
-                height_pt - header_footer.header_spacing,
-                head
-            ));
-        }
-
-        let page_obj = format!(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {:.2} {:.2}] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> /Contents {} 0 R >>",
-            width_pt, height_pt, content_num
-        );
-        objects.push(page_obj.into_bytes());
-        objects.push(
-            format!(
-                "<< /Length {} >>\nstream\n{}endstream",
-                content.len(),
-                content
-            )
-            .into_bytes(),
-        );
-    }
-
-    let kids_refs: Vec<String> = kids.iter().map(|n| format!("{n} 0 R")).collect();
-    objects[1] = format!(
-        "<< /Type /Pages /Kids [{}] /Count {} >>",
-        kids_refs.join(" "),
-        n
-    )
-    .into_bytes();
-
-    // Info object.
-    let info_num = objects.len() + 1;
-    objects.push(
-        format!(
-            "<< /Title ({}) /Author ({}) /Producer (Portmanteau) /Creator (Portmanteau) >>",
-            pdf_text(title),
-            pdf_text(author)
-        )
-        .into_bytes(),
-    );
-
-    let mut pdf: Vec<u8> = Vec::new();
-    pdf.extend_from_slice(b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
-    let mut offsets = Vec::new();
-    for (i, obj) in objects.iter().enumerate() {
-        offsets.push(pdf.len());
-        pdf.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
-        pdf.extend_from_slice(obj);
-        pdf.extend_from_slice(b"\nendobj\n");
-    }
-    let xref = pdf.len();
-    pdf.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
-    pdf.extend_from_slice(b"0000000000 65535 f \n");
-    for off in &offsets {
-        pdf.extend_from_slice(format!("{:010} 00000 n \n", off).as_bytes());
-    }
-    pdf.extend_from_slice(
-        format!(
-            "trailer\n<< /Size {} /Root 1 0 R /Info {} 0 R >>\nstartxref\n{}\n%%EOF\n",
-            objects.len() + 1,
-            info_num,
-            xref
-        )
-        .as_bytes(),
-    );
-    pdf
-}
-
-struct PdfFlow {
-    pages: Vec<PdfPage>,
-    y: f32,
-    top: f32,
-    bottom: f32,
-    page_height: f32,
-    line_gap: f32,
-    current: PdfPage,
-}
-
-impl PdfFlow {
-    fn new(page_height: f32, top_margin: f32, bottom_margin: f32, line_gap: f32) -> Self {
-        Self {
-            pages: Vec::new(),
-            y: page_height - top_margin,
-            top: top_margin,
-            bottom: bottom_margin,
-            page_height,
-            line_gap,
-            current: PdfPage::new(),
-        }
-    }
-
-    fn finish(mut self) -> Vec<PdfPage> {
-        if !self.current.lines.is_empty() {
-            self.pages.push(self.current);
-        }
-        self.pages
-    }
-
-    fn ensure(&mut self, needed: f32) {
-        if self.y - needed < self.bottom {
-            self.pages.push(std::mem::replace(&mut self.current, PdfPage::new()));
-            self.y = self.page_height - self.top;
-        }
-    }
-
-    fn line(&mut self, text: String, x: f32, size: f32, bold: bool, gap_before: f32) {
-        self.prose_line(text, x, size, bold, false, gap_before);
-    }
-
-    /// One reflowed prose line, optionally in Courier when a paragraph style
-    /// asks for a monospaced face.
-    fn prose_line(
-        &mut self,
-        text: String,
-        x: f32,
-        size: f32,
-        bold: bool,
-        mono: bool,
-        gap_before: f32,
-    ) {
-        let advance = self.line_gap.max(size + 3.0);
-        self.ensure(advance + gap_before);
-        self.y -= gap_before;
-        self.y -= advance;
-        self.current.lines.push(PdfLine {
-            text,
-            x,
-            y: self.y,
-            size,
-            bold,
-            mono,
-        });
-    }
-
-    /// A screenplay line: Courier, a baseline just past its type size, and its
-    /// own indent.
-    fn script_line(&mut self, text: String, x: f32, size: f32, bold: bool, gap_before: f32) {
-        let advance = size + 1.0;
-        self.ensure(advance + gap_before);
-        self.y -= gap_before;
-        self.y -= advance;
-        self.current.lines.push(PdfLine {
-            text,
-            x,
-            y: self.y,
-            size,
-            bold,
-            mono: true,
-        });
-    }
-
-    fn page_break(&mut self) {
-        if !self.current.lines.is_empty() {
-            self.pages.push(std::mem::replace(&mut self.current, PdfPage::new()));
-        }
-        self.y = self.page_height - self.top;
-    }
-}
-
 fn font_is_mono(family: &str) -> bool {
     let family = family.to_ascii_lowercase();
     family.contains("courier") || family.contains("mono")
-}
-
-/// Draw one prose paragraph with its own stylesheet measurements. The blank
-/// line after the paragraph keeps the manuscript airy while still letting a
-/// custom style set space before and after.
-fn pdf_prose_paragraph(flow: &mut PdfFlow, paragraph: &ProseParagraph, margin: f32, width: f32) {
-    let style = &paragraph.format;
-    let size = style.size.max(8.0);
-    let left = margin + style.indent.max(0.0);
-    let right = (width - margin - style.right_indent.max(0.0)).max(left + 60.0);
-    let chars_per_line = (((right - left) / (size * 0.50)).max(30.0)) as usize;
-    let mono = font_is_mono(&style.font);
-    for (i, part) in wrap_text(&paragraph.flow_text(), chars_per_line)
-        .iter()
-        .enumerate()
-    {
-        let mut x = aligned_x(part, style.align, left, right, size);
-        if i == 0 {
-            x += style.first_line_indent;
-        }
-        let gap_before = if i == 0 { style.before.max(0.0) } else { 0.0 };
-        flow.prose_line(part.clone(), x, size, paragraph.heading, mono, gap_before);
-    }
-    flow.prose_line(
-        String::new(),
-        margin,
-        size,
-        false,
-        false,
-        style.after.max(0.0),
-    );
-}
-
-fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
-    let (w_mm, h_mm) = settings.paper.mm();
-    let mut w = w_mm * 2.834645;
-    let mut h = h_mm * 2.834645;
-    let screenplay = is_screenplay(project, settings);
-    let mut margin = 20.0 * 2.834645;
-    let mut right_margin = margin;
-    let mut top = 22.0 * 2.834645;
-    let mut bottom = 22.0 * 2.834645;
-    // A screenplay is a working document, not a trim size: keep the industry
-    // standard US Letter and 1.5" left margin even when the book is set to A5.
-    if screenplay {
-        w = 8.5 * 72.0;
-        h = 11.0 * 72.0;
-        margin = 1.5 * 72.0;
-        right_margin = 1.0 * 72.0;
-        top = 1.0 * 72.0;
-        bottom = 1.0 * 72.0;
-    }
-    let size = settings.styles.body.size.max(8.0);
-    let gap = size * settings.styles.body.leading.max(1.0);
-    let mut flow = PdfFlow::new(h, top, bottom, gap);
-    let mut pages: Vec<PdfPage> = Vec::new();
-    let content_width = w - margin - right_margin;
-
-    if settings.include_title_page {
-        let title_style = &settings.styles.title_page_title;
-        let subtitle_style = &settings.styles.title_page_subtitle;
-        let author_style = &settings.styles.title_page_author;
-        let title_size = title_style.size.max(8.0);
-        let subtitle_size = subtitle_style.size.max(8.0);
-        let author_size = author_style.size.max(8.0);
-        let mut page = PdfPage::new();
-        // Title, subtitle and byline get their own vertical bands. The earlier
-        // version moved the cursor down and then subtracted the offset again,
-        // which drew the subtitle on top of the title.
-        let mut y = h * 0.34;
-        for line in wrap_text(&project.title, 34) {
-            page.lines.push(PdfLine {
-                text: line.clone(),
-                x: w / 2.0 - line.chars().count() as f32 * title_size * 0.24,
-                y,
-                size: title_size,
-                bold: true,
-                mono: false,
-            });
-            y -= title_size * 1.25;
-        }
-        y -= 18.0;
-        if !project.subtitle.is_empty() {
-            for line in wrap_text(&project.subtitle, 50) {
-                page.lines.push(PdfLine {
-                    text: line.clone(),
-                    x: w / 2.0 - line.chars().count() as f32 * subtitle_size * 0.24,
-                    y,
-                    size: subtitle_size,
-                    bold: false,
-                    mono: false,
-                });
-                y -= 18.0;
-            }
-        }
-        y -= 34.0;
-        let byline = format!("by {}", project.author);
-        page.lines.push(PdfLine {
-            text: byline.clone(),
-            x: w / 2.0 - byline.chars().count() as f32 * author_size * 0.24,
-            y,
-            size: author_size,
-            bold: false,
-            mono: false,
-        });
-        let footer = if screenplay {
-            "Portmanteau · screenplay".to_string()
-        } else {
-            format!("{} · {}", project.genre, chrono::Local::now().format("%Y"))
-        };
-        page.lines.push(PdfLine {
-            x: w / 2.0 - footer.chars().count() as f32 * 2.3,
-            text: footer,
-            y: 70.0,
-            size: 9.0,
-            bold: false,
-            mono: false,
-        });
-        pages.push(page);
-    }
-
-    if screenplay {
-        // Screenplay layout: Courier-like fixed columns, scene numbers optional.
-        let mut page = PdfPage::new();
-        let mut line_index = 0usize;
-        let mut scene_number = 1usize;
-        let max_lines = ((h - top - bottom) / 13.0) as usize;
-        let char_w = 7.2; // 12pt Courier at 0.6em
-        let full_chars = (content_width / char_w).floor().max(20.0) as usize;
-        let width_for = |style: &ElementStyle| {
-            ((content_width - style.indent - style.right_indent) / char_w)
-                .floor()
-                .max(14.0) as usize
-        };
-        fn push_line(
-            page: &mut PdfPage,
-            line_index: &mut usize,
-            h: f32,
-            top: f32,
-            margin: f32,
-            text: String,
-            x_mm: f32,
-            size: f32,
-            bold: bool,
-        ) {
-            let y = h - top - (*line_index as f32) * 13.0;
-            page.lines.push(PdfLine {
-                text,
-                x: x_mm * 2.834645 + margin,
-                y,
-                size,
-                bold,
-                mono: true,
-            });
-            *line_index += 1;
-        }
-        for section in manuscript_sections(project, settings) {
-            let doc = section.doc;
-            if doc.medium.is_script() {
-                let heading = format!("{}.", section.heading.to_uppercase());
-                for line in wrap_text(&heading, full_chars) {
-                    push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, 12.0, true);
-                }
-                push_line(
-                    &mut page,
-                    &mut line_index,
-                    h,
-                    top,
-                    margin,
-                    String::new(),
-                    0.0,
-                    12.0,
-                    false,
-                );
-                let blocks = screenplay_blocks(project, doc);
-                for block in &blocks {
-                    let style = script_style(&settings.styles, block.kind);
-                    let block_size = style.size.max(8.0);
-                    let width_chars = width_for(style);
-                    let text = if settings.styles.style_for_kind(block.kind).uppercase {
-                        block.text.to_uppercase()
-                    } else {
-                        block.text.clone()
-                    };
-                    if block.kind == ElementKind::SceneHeading && settings.include_scene_numbers {
-                        for (i, wrapped) in
-                            wrap_text(&text, full_chars.saturating_sub(4)).iter().enumerate()
-                        {
-                            let line = if i == 0 {
-                                format!("{}   {}", scene_number, wrapped)
-                            } else {
-                                wrapped.clone()
-                            };
-                            push_line(
-                                &mut page,
-                                &mut line_index,
-                                h,
-                                top,
-                                margin,
-                                line,
-                                0.0,
-                                block_size,
-                                false,
-                            );
-                        }
-                        scene_number += 1;
-                    } else {
-                        for wrapped in wrap_text(&text, width_chars) {
-                            let text_width = wrapped.chars().count() as f32 * char_w;
-                            let available = (content_width - style.indent - style.right_indent)
-                                .max(0.0);
-                            let aligned_x = match style.align {
-                                Alignment::Left | Alignment::Justify => style.indent,
-                                Alignment::Center => {
-                                    style.indent + (available - text_width).max(0.0) * 0.5
-                                }
-                                Alignment::Right => {
-                                    style.indent + (available - text_width).max(0.0)
-                                }
-                            };
-                            push_line(
-                                &mut page,
-                                &mut line_index,
-                                h,
-                                top,
-                                margin,
-                                wrapped,
-                                aligned_x / 2.834645,
-                                block_size,
-                                false,
-                            );
-                        }
-                    }
-                    if !block.kind.is_dialogue() {
-                        push_line(
-                            &mut page,
-                            &mut line_index,
-                            h,
-                            top,
-                            margin,
-                            String::new(),
-                            0.0,
-                            12.0,
-                            false,
-                        );
-                    }
-                    if line_index >= max_lines {
-                        pages.push(std::mem::replace(&mut page, PdfPage::new()));
-                        line_index = 0;
-                    }
-                }
-            } else {
-                for line in wrap_text(&section.heading.to_uppercase(), full_chars) {
-                    push_line(&mut page, &mut line_index, h, top, margin, line, 0.0, 12.0, true);
-                }
-                push_line(
-                    &mut page,
-                    &mut line_index,
-                    h,
-                    top,
-                    margin,
-                    String::new(),
-                    0.0,
-                    12.0,
-                    false,
-                );
-                for para in paragraphs(&doc.body_text()) {
-                    for line in wrap_text(&para, full_chars) {
-                        push_line(
-                            &mut page,
-                            &mut line_index,
-                            h,
-                            top,
-                            margin,
-                            line,
-                            0.0,
-                            12.0,
-                            false,
-                        );
-                    }
-                    push_line(
-                        &mut page,
-                        &mut line_index,
-                        h,
-                        top,
-                        margin,
-                        String::new(),
-                        0.0,
-                        12.0,
-                        false,
-                    );
-                }
-            }
-            if line_index >= max_lines - 3 {
-                pages.push(std::mem::replace(&mut page, PdfPage::new()));
-                line_index = 0;
-            }
-        }
-        if !page.lines.is_empty() {
-            pages.push(page);
-        }
-        let _ = char_w;
-        return build_pdf(
-            &project.title,
-            &project.author,
-            &pages,
-            w,
-            h,
-            &settings.header_footer,
-            pdf_font(&settings.styles.body.font, false),
-            pdf_font(&settings.styles.body.font, true),
-        );
-    }
-
-    // Prose: flowing layout with chapter headings and optional front matter.
-    // Times-Roman averages roughly half an em per character. The old formula
-    // mixed millimetres and points and let lines run past the page edge.
-    let body_style = &settings.styles.body;
-    let prose_left = margin + body_style.indent;
-    let prose_right = (w - margin - body_style.right_indent).max(prose_left + 60.0);
-    let chars_per_line = ((prose_right - prose_left) / (size * 0.50)).max(30.0) as usize;
-    let mut headings: Vec<(String, usize)> = Vec::new();
-
-    for doc in front_matter(project, settings) {
-        flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
-        for para in prose_paragraphs(project, doc, settings) {
-            pdf_prose_paragraph(&mut flow, &para, margin, w);
-        }
-        flow.page_break();
-    }
-
-    let sections = manuscript_sections(project, settings);
-    for (i, section) in sections.iter().enumerate() {
-        flow.page_break();
-        let title = section_title(project, section.doc, i, settings);
-        headings.push((title.clone(), flow.pages.len() + 1));
-        let head_style = &settings.styles.chapter_heading;
-        let head_size = head_style.size.max(size);
-        let head_left = margin + head_style.indent;
-        let head_right = (w - margin - head_style.right_indent).max(head_left + 40.0);
-        let head_chars = ((head_right - head_left) / (head_size * 0.50)).max(12.0) as usize;
-        let mut first_heading_line = true;
-        for part in wrap_text(&title, head_chars) {
-            let gap_before = if first_heading_line {
-                head_style.before
-            } else {
-                0.0
-            };
-            let x = aligned_x(&part, head_style.align, head_left, head_right, head_size);
-            flow.line(part, x, head_size, true, gap_before);
-            first_heading_line = false;
-        }
-        flow.line(
-            String::new(),
-            margin,
-            size,
-            false,
-            settings.styles.chapter_heading.after,
-        );
-        if settings.include_synopsis && !section.doc.synopsis.is_empty() {
-            for part in wrap_text(
-                &format!("Synopsis · {}", section.doc.synopsis.plain_text()),
-                chars_per_line,
-            ) {
-                flow.line(part, margin, size - 1.0, false, 0.0);
-            }
-            flow.line(String::new(), margin, size, false, 0.0);
-        }
-        if section.doc.medium.is_script() {
-            // Mixed projects: a script section keeps Courier columns even when
-            // the surrounding manuscript is prose. This is what makes a novel
-            // with a companion pilot read correctly in one PDF.
-            let mut scene_number = 1usize;
-            let blocks = screenplay_blocks(project, section.doc);
-            for block in &blocks {
-                let style = script_style(&settings.styles, block.kind);
-                let block_size = style.size.max(8.0);
-                let indent_mm = style.indent / 2.834645;
-                let width = ((content_width - indent_mm * 2.834645) / 7.2)
-                    .floor()
-                    .max(14.0) as usize;
-                let text = if settings.styles.style_for_kind(block.kind).uppercase {
-                    block.text.to_uppercase()
-                } else {
-                    block.text.clone()
-                };
-                if block.kind == ElementKind::SceneHeading
-                    && settings.include_scene_numbers
-                {
-                    for (i, part) in wrap_text(&text, width.saturating_sub(4)).iter().enumerate() {
-                        let line = if i == 0 {
-                            format!("{}   {}", scene_number, part)
-                        } else {
-                            part.clone()
-                        };
-                        flow.script_line(line, margin, block_size, false, 0.0);
-                    }
-                    scene_number += 1;
-                } else {
-                    for part in wrap_text(&text, width) {
-                        flow.script_line(
-                            part,
-                            margin + indent_mm * 2.834645,
-                            block_size,
-                            false,
-                            0.0,
-                        );
-                    }
-                }
-                // A blank line closes each beat. Character and parenthetical
-                // lines stay tight to their dialogue; everything else gets air.
-                if !matches!(
-                    block.kind,
-                    ElementKind::Character | ElementKind::Parenthetical
-                ) {
-                    flow.script_line(String::new(), margin, 12.0, false, 0.0);
-                }
-            }
-        } else {
-            for para in prose_paragraphs(project, section.doc, settings) {
-                pdf_prose_paragraph(&mut flow, &para, margin, w);
-            }
-        }
-        if settings.include_notes && !section.doc.notes.is_empty() {
-            for part in wrap_text(
-                &format!("Author's note · {}", section.doc.notes.plain_text()),
-                chars_per_line,
-            ) {
-                flow.line(part, margin, size - 1.0, false, 0.0);
-            }
-        }
-    }
-    for doc in back_matter(project, settings) {
-        flow.page_break();
-        flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
-        for para in prose_paragraphs(project, doc, settings) {
-            pdf_prose_paragraph(&mut flow, &para, margin, w);
-        }
-    }
-    pages.extend(flow.finish());
-
-    if settings.include_toc && !headings.is_empty() {
-        // The title page (when present) sits before the flow, and the contents
-        // page will be inserted before the flow too. Both shift the printed
-        // number of every chapter by one, so convert flow page numbers to the
-        // reader's page numbers before drawing the list.
-        let title_offset = usize::from(settings.include_title_page && !pages.is_empty());
-        let mut toc = PdfPage::new();
-        toc.lines.push(PdfLine {
-            text: "Contents".into(),
-            x: margin,
-            y: h - top - 20.0,
-            size: size + 6.0,
-            bold: true,
-            mono: false,
-        });
-        let mut y = top + 50.0;
-        for (title, page) in &headings {
-            let printed = page + title_offset + 1;
-            toc.lines.push(PdfLine {
-                text: title.clone(),
-                x: margin,
-                y: h - y,
-                size,
-                bold: false,
-                mono: false,
-            });
-            toc.lines.push(PdfLine {
-                text: printed.to_string(),
-                x: w - margin - 20.0,
-                y: h - y,
-                size,
-                bold: false,
-                mono: false,
-            });
-            y += size * 1.8;
-            if y > h - bottom {
-                break;
-            }
-        }
-        let insert_at = if title_offset == 1 { 1 } else { 0 };
-        pages.insert(insert_at.min(pages.len()), toc);
-    }
-
-    build_pdf(
-        &project.title,
-        &project.author,
-        &pages,
-        w,
-        h,
-        &settings.header_footer,
-        pdf_font(&settings.styles.body.font, false),
-        pdf_font(&settings.styles.body.font, true),
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1659,6 +787,15 @@ fn xhtml_body(
     out
 }
 
+/// Page width and height in twentieths of a point, the unit DOCX and RTF use.
+fn paper_twips(settings: &ExportSettings) -> (i64, i64) {
+    let (w_mm, h_mm) = settings.paper.mm();
+    (
+        (w_mm as f64 * 1440.0 / 25.4).round() as i64,
+        (h_mm as f64 * 1440.0 / 25.4).round() as i64,
+    )
+}
+
 // ---------------------------------------------------------------------------
 // DOCX
 // ---------------------------------------------------------------------------
@@ -1881,8 +1018,9 @@ fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         }
     }
 
+    let (page_w, page_h) = paper_twips(settings);
     let document = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>{}\n<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\"/></w:sectPr></w:body></w:document>",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>{}\n<w:sectPr><w:pgSz w:w=\"{page_w}\" w:h=\"{page_h}\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\"/></w:sectPr></w:body></w:document>",
         body
     );
     let styles = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -2416,7 +1554,10 @@ fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
         "{{\\rtf1\\ansi\\deff0{{\\fonttbl{{\\f0 {};}}{{\\f1 Courier New;}}}}\n",
         rtf_escape(&settings.font)
     ));
-    out.push_str("\\paperw11906\\paperh16838\\margl1440\\margr1440\\margt1440\\margb1440\n");
+    let (page_w, page_h) = paper_twips(settings);
+    out.push_str(&format!(
+        "\\paperw{page_w}\\paperh{page_h}\\margl1440\\margr1440\\margt1440\\margb1440\n"
+    ));
     if settings.include_title_page {
         out.push_str("\\qc\\f0\\fs52 ");
         out.push_str(&rtf_escape(&project.title));
@@ -2575,117 +1716,6 @@ mod tests {
     }
 
     #[test]
-    fn pdf_has_signature_and_pages() {
-        let p = demo();
-        let mut s = p.export.clone();
-        s.kind = ExportKind::Pdf;
-        let bytes = pdf_manuscript(&p, &s);
-        assert!(bytes.starts_with(b"%PDF-1.4"));
-        let text = String::from_utf8_lossy(&bytes);
-        assert!(text.contains("/Type /Page"));
-        assert!(text.contains("The Salt Road"));
-        assert!(text.contains("startxref"));
-        assert!(text.contains("%%EOF"));
-    }
-
-    #[test]
-    fn pdf_page_objects_point_at_real_page_streams() {
-        let p = demo();
-        let mut s = p.export.clone();
-        s.kind = ExportKind::Pdf;
-        let bytes = pdf_manuscript(&p, &s);
-        let doc = String::from_utf8_lossy(&bytes);
-
-        // Pull the /Kids list out of the page tree and prove every reference is
-        // a page dictionary, not a content stream. This is the exact mistake
-        // that made readers report "Kid object is wrong type (stream)" and drop
-        // the ends of paragraphs.
-        let kids_at = doc.find("/Type /Pages /Kids [").expect("page tree");
-        let kids_start = kids_at + "/Type /Pages /Kids [".len();
-        let kids_end = doc[kids_start..].find(']').unwrap() + kids_start;
-        let kids = &doc[kids_start..kids_end];
-        let numbers: Vec<&str> = kids.split_whitespace().filter(|s| *s != "0" && *s != "R").collect();
-        assert!(numbers.len() >= 2, "expected several pages, got {:?}", numbers);
-
-        for n in &numbers {
-            let marker = format!("\n{} 0 obj\n", n);
-            let at = doc.find(&marker).unwrap_or_else(|| panic!("object {} missing", n));
-            let body = &doc[at..];
-            assert!(
-                body.starts_with(&format!("\n{} 0 obj\n<< /Type /Page ", n)),
-                "kid {} is not a /Type /Page dictionary",
-                n
-            );
-            let content_at = body.find("/Contents ").expect("contents ref");
-            let after = &body[content_at + "/Contents ".len()..];
-            let content_num: String = after
-                .chars()
-                .take_while(|c| c.is_ascii_digit())
-                .collect();
-            assert!(!content_num.is_empty(), "page {} has no content object", n);
-            let content_marker = format!("\n{} 0 obj\n", content_num);
-            let content_pos = doc.find(&content_marker).expect("content object");
-            let content_body = &doc[content_pos..];
-            assert!(
-                content_body.contains("stream"),
-                "contents {} is not a stream",
-                content_num
-            );
-        }
-
-        // Each page dictionary names a media box; a missing box is another
-        // common way malformed hand-built PDFs break readers.
-        assert_eq!(doc.matches("/MediaBox").count(), numbers.len());
-    }
-
-    #[test]
-    fn pdf_uses_courier_for_scripts_and_times_for_prose() {
-        let p = demo();
-        let mut s = p.export.clone();
-        s.kind = ExportKind::Pdf;
-        let text = String::from_utf8_lossy(&pdf_manuscript(&p, &s)).to_string();
-        assert!(text.contains("/BaseFont /Times-Roman"));
-        assert!(text.contains("/BaseFont /Courier"));
-        // The demonstration project mixes a novel with a television pilot and
-        // a stage play, so both fonts must actually be selected in content.
-        assert!(text.contains("/F1 "));
-        assert!(text.contains("/F3 "));
-    }
-
-    #[test]
-    fn pdf_font_maps_family_names_to_base14_fonts() {
-        assert_eq!(pdf_font("Courier New", false), "Courier");
-        assert_eq!(pdf_font("Liberation Serif", true), "Times-Bold");
-        assert_eq!(pdf_font("Liberation Sans", false), "Helvetica");
-    }
-
-    #[test]
-    fn pdf_base_font_follows_the_body_style() {
-        let p = demo();
-        let mut s = p.settings_for(ExportKind::Pdf);
-        s.styles.body.font = "Courier New".into();
-        let text = String::from_utf8_lossy(&pdf_manuscript(&p, &s)).to_string();
-        assert!(text.contains("/BaseFont /Courier "), "prose F1 should use Courier");
-        assert!(
-            text.contains("/BaseFont /Courier-Bold "),
-            "prose F2 should use Courier-Bold"
-        );
-    }
-
-    #[test]
-    fn pdf_title_page_uses_the_title_style_size() {
-        let p = demo();
-        let mut s = p.settings_for(ExportKind::Pdf);
-        s.include_title_page = true;
-        s.styles.title_page_title.size = 30.0;
-        let text = String::from_utf8_lossy(&pdf_manuscript(&p, &s)).to_string();
-        assert!(
-            text.contains("F2 30 Tf"),
-            "title should be drawn at 30pt in the bold prose face"
-        );
-    }
-
-    #[test]
     fn epub_css_uses_the_body_style_font() {
         let p = demo();
         let mut s = p.settings_for(ExportKind::Epub);
@@ -2705,38 +1735,6 @@ mod tests {
         s.styles.body.font = "SomeTestFont".into();
         let html = html_manuscript(&p, &s);
         assert!(html.contains("SomeTestFont"), "HTML should carry the font family");
-    }
-
-    fn max_pdf_x(bytes: &[u8]) -> f32 {
-        String::from_utf8_lossy(bytes)
-            .lines()
-            .filter(|line| line.ends_with(" Tm"))
-            .filter_map(|line| line.split_whitespace().nth(4))
-            .filter_map(|x| x.parse::<f32>().ok())
-            .fold(0.0_f32, f32::max)
-    }
-
-    #[test]
-    fn pdf_centered_chapter_heading_shifts_toward_the_middle() {
-        let mut p = Project::new("Heading Test", ProjectKind::Novel);
-        let parent = p.folder_id("Draft");
-        p.add_document(parent, "One", DocKind::Chapter, Medium::Prose);
-        let mut s = p.settings_for(ExportKind::Pdf);
-        // Strip the other centred elements so the heading is the only source of
-        // a mid-page start position.
-        s.include_title_page = false;
-        s.include_toc = false;
-        s.header_footer.page_numbers = false;
-        s.header_footer.running_header = false;
-
-        s.styles.chapter_heading.align = Alignment::Left;
-        let left = max_pdf_x(&pdf_manuscript(&p, &s));
-        s.styles.chapter_heading.align = Alignment::Center;
-        let centered = max_pdf_x(&pdf_manuscript(&p, &s));
-        assert!(
-            centered > left + 40.0,
-            "centred heading should move right: left x {left}, centred x {centered}"
-        );
     }
 
     #[test]
@@ -2780,6 +1778,38 @@ mod tests {
         let p = demo();
         let bytes = docx_manuscript(&p, &p.export);
         assert!(bytes.starts_with(b"PK"));
+    }
+
+    #[test]
+    fn docx_and_rtf_page_size_follow_the_paper_setting() {
+        let p = demo();
+        // Width and height in twentieths of a point for every paper the
+        // Compile screen offers.
+        let expected = [
+            (PaperSize::Letter, 12240, 15840),
+            (PaperSize::A4, 11906, 16838),
+            (PaperSize::A5, 8391, 11906),
+            (PaperSize::UsTrade, 8640, 12960),
+        ];
+        for (paper, width, height) in expected {
+            let mut s = p.settings_for(ExportKind::Docx);
+            s.paper = paper;
+            let xml = docx_document_xml(docx_manuscript(&p, &s));
+            assert!(
+                xml.contains(&format!("<w:pgSz w:w=\"{width}\" w:h=\"{height}\"/>")),
+                "DOCX should carry {} as {width}x{height} twips",
+                paper.label()
+            );
+
+            let mut s = p.settings_for(ExportKind::Rtf);
+            s.paper = paper;
+            let rtf = rtf_manuscript(&p, &s);
+            assert!(
+                rtf.contains(&format!("\\paperw{width}\\paperh{height}")),
+                "RTF should carry {} as {width}x{height} twips",
+                paper.label()
+            );
+        }
     }
 
     fn docx_document_xml(bytes: Vec<u8>) -> String {
@@ -3039,50 +2069,6 @@ mod tests {
             "lossy FDX export should include the image's alt text"
         );
         assert_eq!(sheet.medium, Medium::Screenplay);
-    }
-
-    #[test]
-    fn pdf_page_numbers_follow_the_setting() {
-        let p = demo();
-        let mut on = p.settings_for(ExportKind::Pdf);
-        on.header_footer.page_numbers = true;
-        on.header_footer.running_header = false;
-        let mut off = on.clone();
-        off.header_footer.page_numbers = false;
-
-        let with_numbers = String::from_utf8_lossy(&pdf_manuscript(&p, &on)).into_owned();
-        let without_numbers = String::from_utf8_lossy(&pdf_manuscript(&p, &off)).into_owned();
-        assert!(with_numbers.contains(" 30.00 Tm"), "footer page number missing");
-        assert!(
-            !without_numbers.contains(" 30.00 Tm"),
-            "footer page number should be omitted"
-        );
-        assert_ne!(with_numbers, without_numbers);
-
-        // Roman numerals and a non-1 start should reach the content stream.
-        let mut formatted = on.clone();
-        formatted.header_footer.number_format = NumberFormat::RomanLower;
-        formatted.header_footer.start_number = 3;
-        formatted.header_footer.number_on_first_page = true;
-        let roman = String::from_utf8_lossy(&pdf_manuscript(&p, &formatted)).into_owned();
-        assert!(roman.contains("(iii) Tj"), "roman start number missing");
-    }
-
-    #[test]
-    fn pdf_running_headers_are_optional() {
-        let mut p = demo();
-        p.title = "Header Probe".into();
-        let mut off = p.settings_for(ExportKind::Pdf);
-        off.header_footer.running_header = false;
-        let mut on = off.clone();
-        on.header_footer.running_header = true;
-
-        let without = String::from_utf8_lossy(&pdf_manuscript(&p, &off)).into_owned();
-        let with = String::from_utf8_lossy(&pdf_manuscript(&p, &on)).into_owned();
-        assert!(
-            with.matches("Header Probe").count() > without.matches("Header Probe").count(),
-            "running headers should repeat the title on body pages"
-        );
     }
 
     const TINY_PNG: [u8; 67] = [
