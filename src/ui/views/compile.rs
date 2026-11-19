@@ -390,7 +390,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                     output_field(
                         ui,
                         &mut settings.output_path,
-                        "Folder for the export (blank = exports/)",
+                        "Folder for the export (blank = ./exports)",
                     );
                     ui.end_row();
 
@@ -402,7 +402,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
             ui.label(
                 RichText::new(format!(
                     "Writes {}",
-                    export_target_label(settings, &default_name)
+                    export_target_label(&app.ws.project, settings)
                 ))
                 .font(mono(9.0))
                 .color(FAINT),
@@ -438,31 +438,59 @@ fn output_field(ui: &mut egui::Ui, value: &mut String, hint: &str) {
         });
 }
 
-/// The path handed to `export.run`: folder + filename when the writer names a
-/// file, otherwise the folder alone (the engine supplies its standard name).
-/// A blank folder means the usual `exports/` destination.
-fn export_target(settings: &ExportSettings) -> Option<String> {
-    let folder = settings.output_path.trim();
-    let filename = settings.output_filename.trim();
-    if filename.is_empty() {
-        if folder.is_empty() {
-            None
-        } else {
-            Some(folder.to_string())
+/// Expand a leading `~/` the way a file dialog would; joining a path with a
+/// literal `~` used to create a folder named "~" in the working directory.
+fn expand_tilde(path: &str) -> std::path::PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            if !home.trim().is_empty() {
+                return std::path::Path::new(&home).join(rest);
+            }
         }
-    } else if folder.is_empty() {
-        Some(format!("exports/{filename}"))
-    } else {
-        Some(format!(
-            "{}/{}",
-            folder.trim_end_matches(['/', '\\']),
-            filename
-        ))
     }
+    std::path::PathBuf::from(path)
 }
 
-fn export_target_label(settings: &ExportSettings, default_name: &str) -> String {
-    export_target(settings).unwrap_or_else(|| format!("exports/{default_name}"))
+/// The file the Compile button writes. A blank folder means `./exports`; a
+/// blank filename means the format's standard name. The result is absolute so
+/// the writer can always find it, however the app was launched.
+fn resolved_export_path(project: &Project, settings: &ExportSettings) -> String {
+    let folder = if settings.output_path.trim().is_empty() {
+        std::path::PathBuf::from("exports")
+    } else {
+        expand_tilde(settings.output_path.trim())
+    };
+    let filename = if settings.output_filename.trim().is_empty() {
+        std::path::PathBuf::from(portmanteau_export::default_filename(project, settings.kind))
+    } else {
+        expand_tilde(settings.output_filename.trim())
+    };
+    let path = if filename.is_absolute() {
+        filename
+    } else {
+        folder.join(filename)
+    };
+    if path.is_absolute() {
+        return path.display().to_string();
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(&path))
+        .unwrap_or(path)
+        .display()
+        .to_string()
+}
+
+/// The path shown under "Where it goes", with the home folder abbreviated so a
+/// long absolute path still fits.
+fn export_target_label(project: &Project, settings: &ExportSettings) -> String {
+    let path = resolved_export_path(project, settings);
+    if let Ok(home) = std::env::var("HOME") {
+        let home = home.trim_end_matches('/');
+        if let Some(rest) = path.strip_prefix(&format!("{home}/")) {
+            return format!("~/{rest}");
+        }
+    }
+    path
 }
 
 fn action_panel(
@@ -1198,7 +1226,7 @@ fn page_estimate(ctx: &egui::Context, project: &Project, settings: &ExportSettin
 }
 
 fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
-    let target = export_target(settings);
+    let target = resolved_export_path(&app.ws.project, settings);
     let payload = serde_json::json!({
         "format": settings.kind.label(),
         "path": target,
@@ -1236,9 +1264,87 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
             .get("path")
             .and_then(|v| v.as_str())
             .unwrap_or("the export folder");
-        app.toast("Compile finished", res.message.clone(), ToastKind::Ok);
+        // The toast names the file: a compile that writes somewhere the writer
+        // cannot find is indistinguishable from one that did nothing.
+        app.toast(
+            "Compile finished",
+            format!("{} · {path}", res.message),
+            ToastKind::Ok,
+        );
         app.ws.last_message = format!("{} → {}", res.message, path);
     } else {
         app.toast("Compile failed", res.message, ToastKind::Error);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eframe::egui::{Role, Vec2};
+    use egui_kittest::kittest::Queryable;
+    use egui_kittest::Harness;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    /// The button in the Compile panel must actually write the file, not just
+    /// switch screens: this drives the real view with a pointer click and then
+    /// looks on disk.
+    #[test]
+    fn tilde_paths_expand_instead_of_creating_a_literal_tilde_folder() {
+        let app = PortmanteauApp::new(None);
+        let mut settings = app.ws.project.settings_for(ExportKind::Pdf);
+        settings.output_path = "~/portmanteau-tilde-check".into();
+        settings.output_filename = "x.pdf".into();
+        let path = resolved_export_path(&app.ws.project, &settings);
+        if let Ok(home) = std::env::var("HOME") {
+            assert!(path.starts_with(&format!("{home}/")), "{path}");
+        }
+        assert!(!path.contains("/~/"), "{path}");
+    }
+
+    #[test]
+    fn compile_button_writes_the_pdf() {
+        let mut app = PortmanteauApp::new(None);
+        let dir = std::env::temp_dir().join("portmanteau-compile-click");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut settings = app.ws.project.settings_for(ExportKind::Pdf);
+        settings.output_path = dir.display().to_string();
+        settings.output_filename = "click.pdf".into();
+        app.ws.project.set_settings(settings);
+        app.compile_tab = crate::app::CompileTab::Format(ExportKind::Pdf);
+
+        let app = Rc::new(RefCell::new(app));
+        let ui_app = Rc::clone(&app);
+        let mut harness = Harness::builder()
+            .with_size(Vec2::new(1440.0, 930.0))
+            .with_accessibility_check(false)
+            .allow_missing_glyphs()
+            .build_ui(move |ui| {
+                show(&mut ui_app.borrow_mut(), ui);
+            });
+        harness.run_steps(3);
+        harness
+            .get_by_role_and_label(Role::Button, "Compile PDF  ▸")
+            .click();
+        harness.run_steps(2);
+
+        let app = app.borrow();
+        assert!(
+            app.ws.last_message.contains("PDF exported"),
+            "the click should run the export, last message: {:?}",
+            app.ws.last_message
+        );
+        let written = dir.join("click.pdf");
+        assert!(
+            written.is_file(),
+            "the PDF should be on disk at {written:?}"
+        );
+        let toast = app.toast.as_ref().expect("a finished compile reports itself");
+        assert!(matches!(toast.kind, ToastKind::Ok));
+        assert!(
+            toast.detail.contains(&written.display().to_string()),
+            "the toast should name the file, got {:?}",
+            toast.detail
+        );
     }
 }

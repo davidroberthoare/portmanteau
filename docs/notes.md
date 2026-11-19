@@ -1155,6 +1155,13 @@ The page image beside it is still a rough visual approximation, labelled as such
   headers, footers and synopsis/notes options.
 - The compiler adds no content: no `FADE IN:`, `CUT TO:`, `THE END` or blank
   separators. What the writer typed is what the page shows.
+- The Compile button now reports exactly where the file went. The "Writes …"
+  line shows the resolved absolute path (`~` for the home folder) and the
+  success toast names the file; previously it showed a relative `exports/…`
+  path, so a compile that worked could look like nothing happened. A UI test
+  clicks the real "Compile PDF" button in the Compile view and checks the file
+  on disk and the toast. The top-bar "Compile ▸" button only opens the Compile
+  screen; its tooltip now says so.
 - `cargo test -p portmanteau-export` checks real files with `pdfinfo` (page size,
   page count), `pdffonts` (embedded and subsetted) and `pdftotext` (text
   round-trip, en dash, page-number position, no invented transition), skipping

@@ -577,7 +577,7 @@ impl PortmanteauApp {
                         .fill(ACCENT)
                         .corner_radius(CornerRadius::same(6))
                         .min_size(Vec2::new(96.0, 30.0));
-                        if ui.add(compile).on_hover_text("Compile and export the manuscript").clicked() {
+                        if ui.add(compile).on_hover_text("Open the Compile screen").clicked() {
                             self.view = View::Compile;
                         }
                         ui.add_space(8.0);
