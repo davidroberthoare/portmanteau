@@ -1119,3 +1119,11 @@ prose body gained a stable `prose_body/<doc>` id so those tests can read its
 - Page margins are per stylesheet (`StyleSheet.margins`; film/TV 1.5" left and 1" elsewhere, stage 1" all round) and editable under each sheet in Settings. The editor honours them; the Paged view and the compilers still assume 1.5"/1" and need to read the sheet's margins.
 - The format switch lives only in the inspector's Document panel; the editor toolbar dropdown is gone.
 - Known gaps: act-per-page breaks and bold/underline are not modelled.
+
+## Compile selection (commit A of the compile plan)
+
+- A compile is one kind of manuscript: prose, film screenplay, TV script or stage play (`CompileType` in `crates/portmanteau-core/src/compile.rs`). `Project::compile_plan` picks the included documents and lists every skipped one with a reason ("Different format: stage play", "Excluded from compile", "In the Research folder"). `compile_plan_for` also accepts the binder selection, which automatic mode uses to choose the type.
+- Scope is the whole draft or one binder item and its descendants (`CompileScope`). Front and back matter, contents and chapter numbering apply to prose only; script compiles get a script title page.
+- "Write each script as its own file" groups included scripts by top-level folder (episodes) and writes one file per group; `ExportInfo.files` lists them.
+- The Compile screen has Manuscript and Scope selectors, shows only the panels that apply, and lists skipped documents. The Paged view and the compile preview page through the same plan, so they no longer show other formats.
+- Commands: `export.preview` and `export.run` accept `compile_type` (`auto`, `prose`, `screenplay`, `tv`, `stage`), `scope` (`draft` or a document id) and `each_separately`. `export.preview` returns `included` and `skipped` with reasons.

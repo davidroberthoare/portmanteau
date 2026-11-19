@@ -20,6 +20,9 @@ pub struct ExportInfo {
     pub words: u32,
     pub format: String,
     pub message: String,
+    /// Every file written; more than one when compiling scripts separately.
+    #[serde(default)]
+    pub files: Vec<String>,
 }
 
 /// One exportable section of the manuscript.
@@ -48,12 +51,62 @@ pub fn default_filename(project: &Project, kind: ExportKind) -> String {
     format!("{}.{}", base, kind.extension())
 }
 
+/// Compile the manuscript. One export is one kind of manuscript (see
+/// `CompilePlan`); with `each_separately` a script compile writes one file per
+/// script.
 pub fn export(
     project: &Project,
     settings: &ExportSettings,
     output: Option<&Path>,
 ) -> Result<ExportInfo, String> {
-    let path: PathBuf = match output {
+    let plan = project.compile_plan(settings);
+    let mut settings = settings.clone();
+    settings.compile_type = Some(plan.kind);
+    if plan.kind.is_script() {
+        settings.include_toc = false;
+        settings.include_chapter_numbers = false;
+    }
+    let settings = &settings;
+    if settings.each_separately && plan.kind.is_script() {
+        let groups = project.compile_groups(&plan);
+        if !groups.is_empty() {
+            let first = output_path(project, settings, output);
+            let dir = first.parent().map(Path::to_path_buf).unwrap_or_default();
+            let stem = first
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "manuscript".into());
+            let (mut files, mut bytes, mut words) = (Vec::new(), 0usize, 0u32);
+            for group in &groups {
+                let mut each = settings.clone();
+                each.scope = portmanteau_core::CompileScope::Documents(group.ids.clone());
+                each.each_separately = false;
+                let name = format!("{stem}-{}.{}", slugify(&group.title), settings.kind.extension());
+                let info = export_single(project, &each, Some(&dir.join(name)))?;
+                bytes += info.bytes;
+                words += info.words;
+                files.extend(info.files);
+            }
+            return Ok(ExportInfo {
+                path: dir.display().to_string(),
+                bytes,
+                words,
+                format: settings.kind.label().to_string(),
+                message: format!(
+                    "{} exported · {} separate {} files",
+                    settings.kind.label(),
+                    files.len(),
+                    plan.kind.label().to_lowercase()
+                ),
+                files,
+            });
+        }
+    }
+    export_single(project, settings, output)
+}
+
+fn output_path(project: &Project, settings: &ExportSettings, output: Option<&Path>) -> PathBuf {
+    match output {
         Some(p) => p.to_path_buf(),
         None => {
             let name = default_filename(project, settings.kind);
@@ -63,7 +116,15 @@ pub fn export(
                 PathBuf::from(settings.output_path.trim()).join(name)
             }
         }
-    };
+    }
+}
+
+fn export_single(
+    project: &Project,
+    settings: &ExportSettings,
+    output: Option<&Path>,
+) -> Result<ExportInfo, String> {
+    let path = output_path(project, settings, output);
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent).map_err(|e| format!("Could not make folder: {e}"))?;
@@ -84,39 +145,28 @@ pub fn export(
     };
 
     fs::write(&path, &bytes).map_err(|e| format!("Could not write {}: {e}", path.display()))?;
-    let has_images = project.documents.iter().any(|doc| {
-            doc.include_in_export
-                && (rich_document_has_images(&doc.content)
-                    || (settings.include_synopsis && rich_document_has_images(&doc.synopsis))
-                    || (settings.include_notes && rich_document_has_images(&doc.notes)))
-        });
+    let plan = project.compile_plan(settings);
+    let has_images = plan.included.iter().any(|doc| {
+        rich_document_has_images(&doc.content)
+            || (settings.include_synopsis && rich_document_has_images(&doc.synopsis))
+            || (settings.include_notes && rich_document_has_images(&doc.notes))
+    });
+    let pages: u32 = plan.included.iter().map(|d| d.pages()).sum();
     let message = if has_images {
         format!(
-            "{} exported · {} pages estimated · Images represented by alt-text placeholders; source assets are not embedded",
+            "{} exported · {pages} pages estimated · Images represented by alt-text placeholders; source assets are not embedded",
             settings.kind.label(),
-            project
-                .manuscript_documents()
-                .iter()
-                .map(|d| d.pages())
-                .sum::<u32>()
         )
     } else {
-        format!(
-            "{} exported · {} pages estimated",
-            settings.kind.label(),
-            project
-                .manuscript_documents()
-                .iter()
-                .map(|d| d.pages())
-                .sum::<u32>()
-        )
+        format!("{} exported · {pages} pages estimated", settings.kind.label())
     };
     Ok(ExportInfo {
         path: path.display().to_string(),
         bytes: bytes.len(),
-        words: project.words(),
+        words: plan.included.iter().map(|d| d.words()).sum(),
         format: settings.kind.label().to_string(),
         message,
+        files: vec![path.display().to_string()],
     })
 }
 
@@ -128,9 +178,10 @@ fn rich_document_has_images(document: &RichDocument) -> bool {
 // Shared manuscript assembly
 // ---------------------------------------------------------------------------
 
-fn manuscript_sections(project: &Project) -> Vec<Section<'_>> {
+fn manuscript_sections<'a>(project: &'a Project, settings: &ExportSettings) -> Vec<Section<'a>> {
     project
-        .manuscript_documents()
+        .compile_plan(settings)
+        .included
         .into_iter()
         .filter(|d| !matches!(d.kind, DocKind::FrontMatter | DocKind::BackMatter))
         .map(|doc| Section {
@@ -269,27 +320,26 @@ fn prose_paragraphs(
         .collect()
 }
 
-fn front_matter(project: &Project) -> Vec<&Document> {
+fn front_matter<'a>(project: &'a Project, settings: &ExportSettings) -> Vec<&'a Document> {
     project
-        .ordered_documents()
+        .compile_plan(settings)
+        .included
         .into_iter()
-        .filter(|d| d.kind == DocKind::FrontMatter && d.include_in_export)
+        .filter(|d| d.kind == DocKind::FrontMatter)
         .collect()
 }
 
-fn back_matter(project: &Project) -> Vec<&Document> {
+fn back_matter<'a>(project: &'a Project, settings: &ExportSettings) -> Vec<&'a Document> {
     project
-        .ordered_documents()
+        .compile_plan(settings)
+        .included
         .into_iter()
-        .filter(|d| d.kind == DocKind::BackMatter && d.include_in_export)
+        .filter(|d| d.kind == DocKind::BackMatter)
         .collect()
 }
 
-fn is_screenplay(project: &Project) -> bool {
-    matches!(
-        project.kind,
-        ProjectKind::Film | ProjectKind::Television | ProjectKind::Theatre
-    )
+fn is_screenplay(project: &Project, settings: &ExportSettings) -> bool {
+    project.compile_plan(settings).kind.is_script()
 }
 
 fn section_title(_project: &Project, doc: &Document, index: usize, settings: &ExportSettings) -> String {
@@ -864,7 +914,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let (w_mm, h_mm) = settings.paper.mm();
     let mut w = w_mm * 2.834645;
     let mut h = h_mm * 2.834645;
-    let screenplay = is_screenplay(project);
+    let screenplay = is_screenplay(project, settings);
     let mut margin = 20.0 * 2.834645;
     let mut right_margin = margin;
     let mut top = 22.0 * 2.834645;
@@ -983,7 +1033,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             });
             *line_index += 1;
         }
-        for section in manuscript_sections(project) {
+        for section in manuscript_sections(project, settings) {
             let doc = section.doc;
             if doc.medium.is_script() {
                 let heading = format!("{}.", section.heading.to_uppercase());
@@ -1150,7 +1200,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let chars_per_line = ((prose_right - prose_left) / (size * 0.50)).max(30.0) as usize;
     let mut headings: Vec<(String, usize)> = Vec::new();
 
-    for doc in front_matter(project) {
+    for doc in front_matter(project, settings) {
         flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
         for para in prose_paragraphs(project, doc, settings) {
             pdf_prose_paragraph(&mut flow, &para, margin, w);
@@ -1158,7 +1208,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         flow.page_break();
     }
 
-    let sections = manuscript_sections(project);
+    let sections = manuscript_sections(project, settings);
     for (i, section) in sections.iter().enumerate() {
         flow.page_break();
         let title = section_title(project, section.doc, i, settings);
@@ -1259,7 +1309,7 @@ fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             }
         }
     }
-    for doc in back_matter(project) {
+    for doc in back_matter(project, settings) {
         flow.page_break();
         flow.line(doc.title.clone(), margin, size + 3.0, true, 12.0);
         for para in prose_paragraphs(project, doc, settings) {
@@ -1485,14 +1535,14 @@ p.first {{ text-indent: 0; }}
         }
 
         let mut chapter_no = 0usize;
-        for doc in front_matter(project) {
+        for doc in front_matter(project, settings) {
             files.push((
                 format!("front-{}.xhtml", slugify(&doc.title)),
                 doc.title.clone(),
                 xhtml_body(project, doc, None, settings),
             ));
         }
-        for (i, section) in manuscript_sections(project).iter().enumerate() {
+        for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
             chapter_no += 1;
             let title = section_title(project, section.doc, i, settings);
             files.push((
@@ -1501,7 +1551,7 @@ p.first {{ text-indent: 0; }}
                 xhtml_body(project, section.doc, Some(&title), settings),
             ));
         }
-        for doc in back_matter(project) {
+        for doc in back_matter(project, settings) {
             files.push((
                 format!("back-{}.xhtml", slugify(&doc.title)),
                 doc.title.clone(),
@@ -1783,13 +1833,13 @@ fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         );
         docx_basic_paragraph(&mut body, "", "Normal", false, false, false, 0, &prose_font);
     }
-    for doc in front_matter(project) {
+    for doc in front_matter(project, settings) {
         docx_basic_paragraph(&mut body, &doc.title, "Heading1", true, false, false, 0, &prose_font);
         for para in prose_paragraphs(project, doc, settings) {
             body.push_str(&docx_prose_paragraph(&para, &settings.font));
         }
     }
-    for (i, section) in manuscript_sections(project).iter().enumerate() {
+    for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
         let title = section_title(project, section.doc, i, settings);
         docx_basic_paragraph(&mut body, &title, "Heading1", true, false, false, 0, &prose_font);
         if section.doc.medium.is_script() {
@@ -1824,7 +1874,7 @@ fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
             }
         }
     }
-    for doc in back_matter(project) {
+    for doc in back_matter(project, settings) {
         docx_basic_paragraph(&mut body, &doc.title, "Heading1", true, false, false, 0, &prose_font);
         for para in prose_paragraphs(project, doc, settings) {
             body.push_str(&docx_prose_paragraph(&para, &settings.font));
@@ -1990,7 +2040,7 @@ fn fdx_manuscript(project: &Project, settings: &ExportSettings) -> String {
         out.push_str("  </Content></TitlePage>\n");
     }
     out.push_str("  <Content>\n");
-    for section in manuscript_sections(project) {
+    for section in manuscript_sections(project, settings) {
         if section.doc.medium.is_script() {
             let fallback = StyleSheet::film_screenplay(&project.styles);
             let sheet = project
@@ -2042,7 +2092,7 @@ fn fountain_manuscript(project: &Project, settings: &ExportSettings) -> String {
     if settings.include_title_page {
         out.push_str(&script::fountain_title_page(project));
     }
-    for section in manuscript_sections(project) {
+    for section in manuscript_sections(project, settings) {
         if section.doc.medium.is_script() {
             out.push_str(&format!("# {}\n\n", section.heading));
             let blocks = screenplay_blocks(project, section.doc);
@@ -2071,7 +2121,7 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
     }
     if settings.include_toc {
         body.push_str("<nav class=\"toc\"><h2>Contents</h2><ol>\n");
-        for (i, section) in manuscript_sections(project).iter().enumerate() {
+        for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
             let title = section_title(project, section.doc, i, settings);
             body.push_str(&format!(
                 "<li><a href=\"#s{}\">{}</a></li>\n",
@@ -2081,7 +2131,7 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
         }
         body.push_str("</ol></nav>\n");
     }
-    for doc in front_matter(project) {
+    for doc in front_matter(project, settings) {
         body.push_str(&format!(
             "<section class=\"frontmatter\"><h2>{}</h2>\n",
             html_escape(&doc.title)
@@ -2091,7 +2141,7 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
         }
         body.push_str("</section>\n");
     }
-    for (i, section) in manuscript_sections(project).iter().enumerate() {
+    for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
         let title = section_title(project, section.doc, i, settings);
         body.push_str(&format!(
             "<section id=\"s{}\" class=\"chapter\"><h2>{}</h2>\n",
@@ -2132,7 +2182,7 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
         }
         body.push_str("</section>\n");
     }
-    for doc in back_matter(project) {
+    for doc in back_matter(project, settings) {
         body.push_str(&format!(
             "<section class=\"backmatter\"><h2>{}</h2>\n",
             html_escape(&doc.title)
@@ -2223,20 +2273,20 @@ fn markdown_manuscript(project: &Project, settings: &ExportSettings) -> String {
     }
     if settings.include_toc {
         out.push_str("## Contents\n\n");
-        for (i, section) in manuscript_sections(project).iter().enumerate() {
+        for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
             let title = section_title(project, section.doc, i, settings);
             out.push_str(&format!("{}. {}\n", i + 1, title));
         }
         out.push('\n');
     }
-    for doc in front_matter(project) {
+    for doc in front_matter(project, settings) {
         out.push_str(&format!("## {}\n\n", doc.title));
         for para in prose_paragraphs(project, doc, settings) {
             out.push_str(&markdown_prose_paragraph(&para));
             out.push_str("\n\n");
         }
     }
-    for (i, section) in manuscript_sections(project).iter().enumerate() {
+    for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
         let title = section_title(project, section.doc, i, settings);
         out.push_str(&format!("## {}\n\n", title));
         if section.doc.medium.is_script() {
@@ -2251,7 +2301,7 @@ fn markdown_manuscript(project: &Project, settings: &ExportSettings) -> String {
             }
         }
     }
-    for doc in back_matter(project) {
+    for doc in back_matter(project, settings) {
         out.push_str(&format!("## {}\n\n", doc.title));
         for para in prose_paragraphs(project, doc, settings) {
             out.push_str(&markdown_prose_paragraph(&para));
@@ -2374,7 +2424,7 @@ fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
         out.push_str(&rtf_escape(&project.author));
         out.push_str("\\par\\page\n");
     }
-    for doc in front_matter(project) {
+    for doc in front_matter(project, settings) {
         out.push_str(&format!(
             "\\f0\\fs32\\b {}\\b0\\fs24\\par\n",
             rtf_escape(&doc.title)
@@ -2383,7 +2433,7 @@ fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
             out.push_str(&rtf_prose_paragraph(&para));
         }
     }
-    for (i, section) in manuscript_sections(project).iter().enumerate() {
+    for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
         let title = section_title(project, section.doc, i, settings);
         out.push_str(&format!(
             "\\page\\f0\\fs36\\b {}\\b0\\fs24\\par\n",
@@ -2415,7 +2465,7 @@ fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
             }
         }
     }
-    for doc in back_matter(project) {
+    for doc in back_matter(project, settings) {
         out.push_str(&format!(
             "\\page\\f0\\fs32\\b {}\\b0\\fs24\\par\n",
             rtf_escape(&doc.title)
@@ -2439,14 +2489,14 @@ fn txt_manuscript(project: &Project, settings: &ExportSettings) -> String {
         out.push_str(&"-".repeat(40));
         out.push_str("\n\n");
     }
-    for doc in front_matter(project) {
+    for doc in front_matter(project, settings) {
         out.push_str(&format!("{}\n\n", doc.title.to_uppercase()));
         for para in prose_paragraphs(project, doc, settings) {
             out.push_str(&para.plain_text());
             out.push_str("\n\n");
         }
     }
-    for (i, section) in manuscript_sections(project).iter().enumerate() {
+    for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
         let title = section_title(project, section.doc, i, settings);
         out.push_str(&format!("\n{}\n{}\n\n", title.to_uppercase(), "-".repeat(title.len())));
         if section.doc.medium.is_script() {
@@ -2462,7 +2512,7 @@ fn txt_manuscript(project: &Project, settings: &ExportSettings) -> String {
             }
         }
     }
-    for doc in back_matter(project) {
+    for doc in back_matter(project, settings) {
         out.push_str(&format!("\n{}\n\n", doc.title.to_uppercase()));
         for para in prose_paragraphs(project, doc, settings) {
             out.push_str(&para.plain_text());
@@ -2929,7 +2979,9 @@ mod tests {
     #[test]
     fn fdx_is_wellformed_ish() {
         let p = demo();
-        let fdx = fdx_manuscript(&p, &p.export);
+        let mut settings = p.export.clone();
+        settings.compile_type = Some(CompileType::TvScript);
+        let fdx = fdx_manuscript(&p, &settings);
         assert!(fdx.contains("<FinalDraft"));
         assert!(fdx.contains("Scene Heading"));
     }
@@ -2977,7 +3029,9 @@ mod tests {
             })],
         });
 
-        let fdx = fdx_manuscript(&p, &p.export);
+        let mut settings = p.export.clone();
+        settings.compile_type = Some(CompileType::TvScript);
+        let fdx = fdx_manuscript(&p, &settings);
         assert!(fdx.contains("Style=\"Bold\""), "bold run missing from FDX");
         assert!(fdx.contains("Style=\"Italic\""), "italic run missing from FDX");
         assert!(

@@ -12,7 +12,7 @@ Suggestions, bug reports and ideas are very welcome — open an issue.
 - Screenplay helpers: style dropdown, character-name suggestions drawn from the story database and the script, and a paged print preview.
 - Binder, corkboard, outline, search, a story database (characters, places and so on), research notes, snapshots and a writing calendar.
 - Import Fountain, Final Draft (FDX), Word (DOCX) and plain text.
-- Export to PDF, EPUB, DOCX, FDX, Fountain, HTML, Markdown, RTF, plain text, or a project bundle.
+- Export to PDF, EPUB, DOCX, FDX, Fountain, HTML, Markdown, RTF, plain text, or a project bundle. Each compile is one kind of manuscript (prose, film, TV or stage), drawn from the whole draft or one binder item; TV and stage scripts can compile as one file per script.
 - Offline spell-checking, light interface, adjustable text size.
 - Everything stays on your own disk. No accounts, no network.
 

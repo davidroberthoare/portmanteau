@@ -385,8 +385,13 @@ pub fn manuscript_preview(project: &Project, settings: &ExportSettings) -> Manus
     let mut plans: Vec<PagePlan> = Vec::new();
     let mut sections: Vec<PreviewSection> = Vec::new();
 
+    let compile = project.compile_plan(settings);
     if settings.include_title_page {
-        let plan = title_page_plan(project, settings);
+        let plan = if compile.kind.is_script() {
+            script_title_page_plan(project, settings)
+        } else {
+            title_page_plan(project, settings)
+        };
         sections.push(PreviewSection {
             label: "Title page".to_string(),
             page_count: plan.pages.len(),
@@ -394,19 +399,21 @@ pub fn manuscript_preview(project: &Project, settings: &ExportSettings) -> Manus
         plans.push(plan);
     }
 
-    // Front matter first, in binder order, matching the export assembly.
-    for doc in project
-        .ordered_documents()
-        .into_iter()
-        .filter(|d| d.kind == DocKind::FrontMatter && d.include_in_export)
+    // Front matter first, in binder order, matching the export assembly. A
+    // script compile has no book front matter.
+    for doc in compile
+        .included
+        .iter()
+        .copied()
+        .filter(|d| d.kind == DocKind::FrontMatter)
     {
         let plan = prose_plan(project, doc, settings);
         sections.push(section_for(doc, &plan));
         plans.push(plan);
     }
 
-    // The draft: prose and script sections share the binder order.
-    for doc in project.manuscript_documents() {
+    // The draft: only the documents this compile includes.
+    for doc in compile.included.iter().copied() {
         if matches!(doc.kind, DocKind::FrontMatter | DocKind::BackMatter) {
             continue;
         }
@@ -420,10 +427,11 @@ pub fn manuscript_preview(project: &Project, settings: &ExportSettings) -> Manus
     }
 
     // Back matter last.
-    for doc in project
-        .ordered_documents()
-        .into_iter()
-        .filter(|d| d.kind == DocKind::BackMatter && d.include_in_export)
+    for doc in compile
+        .included
+        .iter()
+        .copied()
+        .filter(|d| d.kind == DocKind::BackMatter)
     {
         let plan = prose_plan(project, doc, settings);
         sections.push(section_for(doc, &plan));
@@ -460,6 +468,51 @@ fn section_for(doc: &Document, plan: &PagePlan) -> PreviewSection {
             title.to_string()
         },
         page_count: plan.pages.len(),
+    }
+}
+
+/// A script title page: the work's title, then "Written by" and the author,
+/// set in the script face. Scripts are never titled like a book.
+fn script_title_page_plan(project: &Project, settings: &ExportSettings) -> PagePlan {
+    let (page_w, page_h) = page_geometry(settings);
+    let content_w = page_w - 108.0;
+    let content_h = page_h - 78.0;
+    let face = settings.styles.action.font.clone();
+    let mut lines: Vec<PageLine> = Vec::new();
+    let push = |lines: &mut Vec<PageLine>, text: &str, size: f32, gap: f32| {
+        lines.push(PageLine {
+            text: text.to_owned(),
+            size,
+            lead: size * 1.2,
+            gap_before: gap,
+            mono: true,
+            font: face.clone(),
+            align: Alignment::Center,
+            indent: 0.0,
+            first_line_indent: 0.0,
+            right_indent: 0.0,
+            after: 0.0,
+            right: false,
+            center: true,
+        });
+    };
+    let top = (content_h * 0.32).max(24.0);
+    push(
+        &mut lines,
+        &project.title.to_uppercase(),
+        14.0,
+        top,
+    );
+    if !project.subtitle.trim().is_empty() {
+        push(&mut lines, project.subtitle.trim(), 12.0, 18.0);
+    }
+    push(&mut lines, "Written by", 12.0, 60.0);
+    push(&mut lines, project.author.trim(), 12.0, 24.0);
+    PagePlan {
+        page_w,
+        content_w,
+        content_h,
+        pages: vec![lines],
     }
 }
 

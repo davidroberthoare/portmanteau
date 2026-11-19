@@ -8,8 +8,8 @@ use eframe::egui::{
     Stroke, TextEdit, Vec2,
 };
 use portmanteau_core::{
-    Alignment, DocKind, ElementStyles, ExportKind, ExportSettings, HfLocation, NumberFormat,
-    PaperSize, ProjectKind,
+    Alignment, CompileScope, CompileType, DocKind, ElementStyles, ExportKind, ExportSettings,
+    HfLocation, NumberFormat, PaperSize, ProjectKind,
 };
 
 use crate::app::{CompileTab, PortmanteauApp, ToastKind};
@@ -29,8 +29,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             meta_line(
                 ui,
                 &[&format!(
-                    "{} sections · {} words",
-                    app.ws.project.manuscript_documents().len(),
+                    "{} document{} in this compile · {} words",
+                    app.ws
+                        .project
+                        .compile_plan_for(&app.ws.project.export, app.selected.as_deref())
+                        .included
+                        .len(),
+                    if app.ws.project.compile_plan_for(&app.ws.project.export, app.selected.as_deref()).included.len() == 1 { "" } else { "s" },
                     app.ws.project.words()
                 )],
             );
@@ -59,6 +64,25 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .filter(|d| d.kind == DocKind::BackMatter)
         .map(|d| (d.id.clone(), d.title.clone(), d.include_in_export))
         .collect();
+    // Binder items the scope selector can narrow to, with their depth so the
+    // labels read like the binder.
+    let scope_items: Vec<(String, String)> = app
+        .ws
+        .project
+        .ordered_documents()
+        .into_iter()
+        .map(|d| (d.id.clone(), d.title.clone()))
+        .collect();
+    let selected_id = app.selected.clone();
+    // Automatic mode resolves to a concrete type for the preview and the
+    // export; the saved setting stays "auto".
+    let resolved_kind = app
+        .ws
+        .project
+        .compile_plan_for(&settings, selected_id.as_deref())
+        .kind;
+    let mut effective = settings.clone();
+    effective.compile_type = Some(resolved_kind);
     let mut matter_toggles: Vec<(String, bool)> = Vec::new();
     let mut style_sheets_changed = false;
 
@@ -110,6 +134,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 &mut settings,
                                 &front_docs,
                                 &back_docs,
+                                &scope_items,
+                                selected_id.as_deref(),
                                 &mut matter_toggles,
                                 &mut compile,
                                 &mut style_sheets_changed,
@@ -132,7 +158,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             ui.set_width(ui.available_width());
                             manuscript_preview_navigator(
                                 &app.ws.project,
-                                &settings,
+                                &effective,
                                 &mut app.preview_page,
  height,
                                 ui,
@@ -169,7 +195,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         app.ws.dirty = true;
     }
     if compile {
-        run_export(app, &settings);
+        run_export(app, &effective);
     }
 }
 
@@ -268,6 +294,8 @@ fn output_tab(
     settings: &mut ExportSettings,
     front_docs: &[(String, String, bool)],
     back_docs: &[(String, String, bool)],
+    scope_items: &[(String, String)],
+    selected_id: Option<&str>,
     toggles: &mut Vec<(String, bool)>,
     compile: &mut bool,
     style_sheets_changed: &mut bool,
@@ -292,13 +320,21 @@ fn output_tab(
     });
     ui.add_space(8.0);
 
+    selection_panel(ui, settings, scope_items, selected_id);
+    ui.add_space(10.0);
+
     output_panel(app, ui, settings);
     ui.add_space(10.0);
 
     action_panel(app, ui, settings, compile);
     ui.add_space(12.0);
 
-    style_panel(ui, &mut settings.styles, app.ws.project.kind);
+    let compile_type = app
+        .ws
+        .project
+        .compile_plan_for(settings, selected_id)
+        .kind;
+    style_panel(ui, &mut settings.styles, app.ws.project.kind, compile_type);
     ui.add_space(12.0);
     if style_sheets_editor(ui, &mut app.ws.project.style_sheets) {
         *style_sheets_changed = true;
@@ -321,13 +357,17 @@ fn output_tab(
     });
     ui.add_space(12.0);
 
-    ui.columns(2, |cols| {
-        front_panel(&mut cols[0], settings, kind, front_docs, toggles);
-        body_panel(&mut cols[1], settings, kind, back_docs, toggles);
-    });
+    if compile_type.is_script() {
+        script_panel(ui, settings, kind, compile_type);
+    } else {
+        ui.columns(2, |cols| {
+            front_panel(&mut cols[0], settings, kind, front_docs, toggles);
+            body_panel(&mut cols[1], settings, kind, back_docs, toggles);
+        });
+    }
     ui.add_space(12.0);
 
-    preview_panel(app, ui);
+    preview_panel(app, ui, settings);
 }
 
 fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSettings) {
@@ -454,32 +494,38 @@ fn action_panel(
                 ui.add_space(10.0);
                 ui.vertical(|ui| {
                     ui.label(
-                        RichText::new(format!(
-                            "{} words · {} pages estimated",
-                            app.ws.project.words(),
-                            app.ws
+                        RichText::new({
+                            let plan = app
+                                .ws
                                 .project
-                                .manuscript_documents()
-                                .iter()
-                                .map(|d| d.pages())
-                                .sum::<u32>()
-                        ))
+                                .compile_plan_for(settings, app.selected.as_deref());
+                            format!(
+                                "{} words · {} pages estimated",
+                                plan.included.iter().map(|d| d.words()).sum::<u32>(),
+                                plan.included.iter().map(|d| d.pages()).sum::<u32>()
+                            )
+                        })
                         .font(ui_small())
                         .color(MUTED),
                     );
                     ui.label(
-                        RichText::new(format!(
-                            "Includes {} manuscript sections",
-                            app.ws
+                        RichText::new({
+                            let count = app
+                                .ws
                                 .project
-                                .manuscript_documents()
+                                .compile_plan_for(settings, app.selected.as_deref())
+                                .included
                                 .iter()
                                 .filter(|d| !matches!(
                                     d.kind,
                                     DocKind::FrontMatter | DocKind::BackMatter
                                 ))
-                                .count()
-                        ))
+                                .count();
+                            format!(
+                                "Includes {count} manuscript section{}",
+                                if count == 1 { "" } else { "s" }
+                            )
+                        })
                         .font(ui_small())
                         .color(FAINT),
                     );
@@ -520,13 +566,16 @@ fn action_panel(
         });
 }
 
-fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, project_kind: ProjectKind) {
-    // Grey out the element group that cannot apply to this project's medium.
-    let grey_prose = matches!(
-        project_kind,
-        ProjectKind::Film | ProjectKind::Television | ProjectKind::Theatre
-    );
-    let grey_script = project_kind == ProjectKind::Novel;
+fn style_panel(
+    ui: &mut egui::Ui,
+    styles: &mut ElementStyles,
+    project_kind: ProjectKind,
+    compile_type: CompileType,
+) {
+    // Grey out the element group that cannot apply to this compile.
+    let _ = project_kind;
+    let grey_prose = compile_type.is_script();
+    let grey_script = compile_type == CompileType::Prose;
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -744,6 +793,149 @@ fn font_picker(ui: &mut egui::Ui, font: &mut String) {
         });
 }
 
+/// Script compiles have no book front or back matter: a title page, scene
+/// numbers and the "one file per script" choice instead.
+fn script_panel(
+    ui: &mut egui::Ui,
+    settings: &mut ExportSettings,
+    kind: ExportKind,
+    compile_type: CompileType,
+) {
+    Frame::new()
+        .fill(PANEL)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::symmetric(14, 11))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            section_label(ui, "Script pages");
+            ui.add_space(5.0);
+            check(
+                ui,
+                settings,
+                |s| &mut s.include_title_page,
+                "Script title page",
+            );
+            check(
+                ui,
+                settings,
+                |s| &mut s.include_scene_numbers,
+                "Scene numbers",
+            );
+            check(ui, settings, |s| &mut s.include_synopsis, "Include synopses");
+            check(ui, settings, |s| &mut s.include_notes, "Include author notes");
+            if !matches!(kind, ExportKind::Txt | ExportKind::Markdown | ExportKind::Rtf) {
+                check(
+                    ui,
+                    settings,
+                    |s| &mut s.each_separately,
+                    "Write each script as its own file",
+                );
+            }
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(format!(
+                    "A {} compile takes only {} documents. Front and back matter, contents and chapter numbering belong to the prose manuscript.",
+                    compile_type.label().to_lowercase(),
+                    compile_type.label().to_lowercase()
+                ))
+                .font(ui_small())
+                .color(FAINT),
+            );
+        });
+}
+
+/// Manuscript type and scope: which kind of document this compile is, and
+/// which part of the binder it draws from.
+fn selection_panel(
+    ui: &mut egui::Ui,
+    settings: &mut ExportSettings,
+    scope_items: &[(String, String)],
+    selected_id: Option<&str>,
+) {
+    Frame::new()
+        .fill(PANEL)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::symmetric(14, 11))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            section_label(ui, "What is being compiled");
+            ui.add_space(5.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Manuscript").font(ui_small()).color(MUTED));
+                let selected = settings
+                    .compile_type
+                    .map(|t| t.label())
+                    .unwrap_or("Auto (from the binder)");
+                egui::ComboBox::from_id_salt("compile_type")
+                    .selected_text(RichText::new(selected).font(ui_small()))
+                    .width(190.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut settings.compile_type, None, "Auto (from the binder)");
+                        for compile_type in CompileType::all() {
+                            ui.selectable_value(
+                                &mut settings.compile_type,
+                                Some(compile_type),
+                                compile_type.label(),
+                            );
+                        }
+                    });
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Scope").font(ui_small()).color(MUTED));
+                let mut draft = settings.scope == CompileScope::Draft;
+                let before = settings.scope.clone();
+                egui::ComboBox::from_id_salt("compile_scope")
+                    .selected_text(
+                        RichText::new(match &settings.scope {
+                            CompileScope::Draft => "Whole draft".to_owned(),
+                            CompileScope::Subtree(id) => scope_items
+                                .iter()
+                                .find(|(item, _)| item == id)
+                                .map(|(_, title)| title.clone())
+                                .unwrap_or_else(|| "Whole draft".to_owned()),
+                            CompileScope::Documents(_) => "Selected documents".to_owned(),
+                        })
+                        .font(ui_small()),
+                    )
+                    .width(190.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut draft, true, "Whole draft");
+                        for (id, title) in scope_items.iter().take(40) {
+                            ui.selectable_value(
+                                &mut settings.scope,
+                                CompileScope::Subtree(id.clone()),
+                                title,
+                            );
+                        }
+                    });
+                if draft {
+                    settings.scope = CompileScope::Draft;
+                }
+                let _ = before;
+                if let Some(id) = selected_id {
+                    if ui
+                        .small_button("Use binder selection")
+                        .on_hover_text("Compile the selected binder item and everything beneath it")
+                        .clicked()
+                    {
+                        settings.scope = CompileScope::Subtree(id.to_owned());
+                    }
+                }
+            });
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(
+                    "Each export is one kind of manuscript. Documents of another kind are listed as skipped, not silently dropped.",
+                )
+                .font(ui_small())
+                .color(FAINT),
+            );
+        });
+}
+
 fn front_panel(
     ui: &mut egui::Ui,
     settings: &mut ExportSettings,
@@ -855,7 +1047,7 @@ fn check(
     }
 }
 
-fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui) {
+fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &ExportSettings) {
     Frame::new()
         .fill(BG)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -870,13 +1062,27 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui) {
                 });
             });
             ui.add_space(5.0);
-            let docs: Vec<_> = app
+            let plan = app
                 .ws
                 .project
-                .manuscript_documents()
-                .into_iter()
-                .filter(|d| !matches!(d.kind, DocKind::FrontMatter | DocKind::BackMatter))
-                .collect();
+                .compile_plan_for(settings, app.selected.as_deref());
+            ui.horizontal(|ui| {
+                pill(ui, plan.kind.label(), format_color(settings.kind), PANEL_2);
+                if settings.each_separately && plan.kind.is_script() {
+                    let groups = app.ws.project.compile_groups(&plan);
+                    ui.label(
+                        RichText::new(format!(
+                            "{} separate file{}",
+                            groups.len(),
+                            if groups.len() == 1 { "" } else { "s" }
+                        ))
+                        .font(ui_small())
+                        .color(FAINT),
+                    );
+                }
+            });
+            ui.add_space(4.0);
+            let docs = &plan.included;
             for d in docs.iter().take(14) {
                 ui.horizontal(|ui| {
                     let glyph = if d.medium.is_script() { "▶" } else { "¶" };
@@ -885,11 +1091,7 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui) {
                             .font(ui_small())
                             .color(if d.medium.is_script() { PURPLE_INK } else { ACCENT_INK }),
                     );
-                    ui.label(
-                        RichText::new(&d.title)
-                            .font(ui_small())
-                            .color(if d.include_in_export { TEXT } else { FAINT }),
-                    );
+                    ui.label(RichText::new(&d.title).font(ui_small()).color(TEXT));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(
                             RichText::new(format!("{} w · {} pp", d.words(), d.pages()))
@@ -898,6 +1100,46 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui) {
                         );
                     });
                 });
+            }
+            if docs.is_empty() {
+                ui.label(
+                    RichText::new("Nothing of this kind is included in the scope.")
+                        .font(ui_small())
+                        .color(FAINT),
+                );
+            }
+            if !plan.skipped.is_empty() {
+                ui.add_space(6.0);
+                hairline(ui);
+                ui.add_space(5.0);
+                ui.label(
+                    RichText::new(format!("Skipped ({})", plan.skipped.len()))
+                        .font(ui_small())
+                        .color(FAINT),
+                );
+                for skipped in plan.skipped.iter().take(4) {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(&skipped.doc.title)
+                                .font(ui_small())
+                                .color(FAINT),
+                        );
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.label(
+                                RichText::new(&skipped.reason)
+                                    .font(mono(8.0))
+                                    .color(FAINT),
+                            );
+                        });
+                    });
+                }
+                if plan.skipped.len() > 4 {
+                    ui.label(
+                        RichText::new(format!("… and {} more", plan.skipped.len() - 4))
+                            .font(ui_small())
+                            .color(FAINT),
+                    );
+                }
             }
             if docs.len() > 14 {
                 ui.label(
@@ -926,7 +1168,14 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
         "include_chapter_numbers": settings.include_chapter_numbers,
         "include_scene_numbers": settings.include_scene_numbers,
         "include_synopsis": settings.include_synopsis,
-        "include_notes": settings.include_notes
+        "include_notes": settings.include_notes,
+        "compile_type": settings.compile_type.map(|t| t.key()).unwrap_or("auto"),
+        "scope": match &settings.scope {
+            CompileScope::Draft => "draft".to_owned(),
+            CompileScope::Subtree(id) => id.clone(),
+            CompileScope::Documents(ids) => ids.first().cloned().unwrap_or_default(),
+        },
+        "each_separately": settings.each_separately
     });
     let res = app.ws.execute("export.run", payload);
     // `export.run` records the full file path in the format's output_path, even

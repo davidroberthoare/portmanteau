@@ -163,6 +163,7 @@ app/
       src/model.rs           Project, Document, Block, Snapshot, Checkpoint,
                              Character, ResearchItem, IdeaCard, Beat,
                              ExportKind, ExportSettings, PaperSize
+      src/compile.rs         CompileType, CompileScope, Project::compile_plan
       src/script.rs          ElementKind, loose-text classification, Fountain
       src/text.rs            word counts, reading time, line diff
       src/sample.rs          original demonstration project, "The Salt Road"
@@ -275,7 +276,7 @@ When you add a command, update **all** of these:
 | `search` | Full-text search | `{"query":"…"}` |
 | `stats` | Words, pages, scenes, log | `{}` |
 | `script.parse` | Loose text → typed blocks + Fountain | `{"text":"INT. …"}` |
-| `export.preview` | What a compile would contain | `{}` |
+| `export.preview` | What a compile would contain: included and skipped documents for one manuscript type | `{"compile_type":"screenplay","scope":"draft"}` |
 | `export.formats` | Supported formats | `{}` |
 | `export.run` | Write a real file | `{"format":"PDF","path":"exports"}` |
 | `commands` | The catalogue | `{}` |

@@ -637,13 +637,22 @@ impl Workspace {
                 ApiResponse::ok(command, "Export formats", Value::Array(formats))
             }
             "export.preview" => {
-                let sections: Vec<Value> = self
-                    .project
-                    .manuscript_documents()
-                    .into_iter()
+                let kind = parse_export_kind(
+                    payload.get("format").and_then(|v| v.as_str()).unwrap_or(""),
+                )
+                .unwrap_or(self.project.export.kind);
+                let mut settings = self.project.settings_for(kind);
+                if let Err(e) = apply_settings_overrides(&mut settings, &payload) {
+                    return ApiResponse::err(command, e);
+                }
+                let plan = self.project.compile_plan(&settings);
+                let sections: Vec<Value> = plan
+                    .included
+                    .iter()
                     .filter(|d| !matches!(d.kind, DocKind::FrontMatter | DocKind::BackMatter))
                     .map(|d| {
                         json!({
+                            "id": d.id,
                             "title": d.title,
                             "medium": d.medium,
                             "words": d.words(),
@@ -651,14 +660,28 @@ impl Workspace {
                         })
                     })
                     .collect();
+                let skipped: Vec<Value> = plan
+                    .skipped
+                    .iter()
+                    .map(|s| json!({"id": s.doc.id, "title": s.doc.title, "reason": s.reason}))
+                    .collect();
+                let files = if settings.each_separately && plan.kind.is_script() {
+                    self.project.compile_groups(&plan).len()
+                } else {
+                    1
+                };
                 ApiResponse::ok(
                     command,
                     "Compile preview",
                     json!({
                         "title": self.project.title,
                         "author": self.project.author,
+                        "compile_type": plan.kind.key(),
                         "sections": sections,
-                        "words": self.project.words(),
+                        "included": sections.len(),
+                        "skipped": skipped,
+                        "files": files,
+                        "words": plan.included.iter().map(|d| d.words()).sum::<u32>(),
                         "pages": sections.iter().filter_map(|s| s["pages"].as_u64()).sum::<u64>(),
                     }),
                 )
@@ -978,6 +1001,24 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
             *field = v;
         }
     }
+    if let Some(v) = payload.get("compile_type") {
+        settings.compile_type = match v.as_str().map(str::trim) {
+            None | Some("") | Some("auto") => None,
+            Some(raw) => Some(
+                CompileType::from_key(raw)
+                    .ok_or_else(|| format!("Unknown compile_type: {raw} (prose, screenplay, tv, stage or auto)"))?,
+            ),
+        };
+    }
+    if let Some(v) = payload.get("scope") {
+        settings.scope = match v.as_str() {
+            Some(key) => CompileScope::from_key(key),
+            None => CompileScope::Draft,
+        };
+    }
+    if let Some(v) = payload.get("each_separately").and_then(|v| v.as_bool()) {
+        settings.each_separately = v;
+    }
     merge_header_footer(&mut settings.header_footer, payload)?;
     if let Some(v) = payload.get("styles") {
         apply_style_overrides(&mut settings.styles, v)?;
@@ -1131,13 +1172,13 @@ pub fn command_catalogue() -> Vec<Value> {
         ("search", "Search the whole manuscript", r#"{"query":"..."}"#),
         ("stats", "Word, page and session statistics", "{}"),
         ("script.parse", "Parse plain text into script blocks", r#"{"text":"INT. ..."}"#),
-        ("export.preview", "Preview the compiled manuscript", "{}"),
+        ("export.preview", "Preview the compiled manuscript: included and skipped documents for one manuscript type", r#"{"compile_type":"screenplay","scope":"draft"}"#),
         ("export.formats", "List supported output formats", "{}"),
         ("export.settings.get", "Read the settings for one output format", r#"{"format":"PDF"}"#),
         ("export.settings.update", "Change the settings for one output format", r#"{"format":"PDF","font_size":11.5}"#),
         ("style.get", "Read the project's per-element styles", "{}"),
         ("style.update", "Change one or more per-element styles", r#"{"body":{"size":12,"font":"Georgia"},"dialogue":{"indent":80}}"#),
-        ("export.run", "Export the manuscript", r#"{"format":"PDF","path":"exports"}"#),
+        ("export.run", "Export the manuscript", r#"{"format":"PDF","path":"exports","compile_type":"tv","scope":"draft","each_separately":false}"#),
         ("commands", "This catalogue", "{}"),
     ];
     entries
