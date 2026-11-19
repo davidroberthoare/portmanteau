@@ -5,6 +5,7 @@
 //! file-system dependencies, so it can be reused by the API, MCP server and
 //! the desktop app.
 
+pub mod compile;
 pub mod model;
 pub mod rich_text;
 pub mod sample;
@@ -12,6 +13,7 @@ pub mod script;
 pub mod spell;
 pub mod text;
 
+pub use compile::*;
 pub use model::*;
 pub use rich_text::{
     parse_docx, parse_fdx, parse_plain_text, ImageObject, InlineContent, InlineMark,

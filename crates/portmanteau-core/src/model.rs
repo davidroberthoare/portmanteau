@@ -1183,6 +1183,15 @@ pub struct ExportSettings {
     /// configured is seeded from the project's base styles, then diverges.
     #[serde(default)]
     pub styles: ElementStyles,
+    /// Which kind of manuscript to compile; `None` follows the first included
+    /// document.
+    #[serde(default)]
+    pub compile_type: Option<crate::CompileType>,
+    #[serde(default)]
+    pub scope: crate::CompileScope,
+    /// Script types only: write one file per script instead of one combined file.
+    #[serde(default)]
+    pub each_separately: bool,
 }
 
 impl Default for ExportSettings {
@@ -1204,6 +1213,9 @@ impl Default for ExportSettings {
             output_path: String::new(),
             output_filename: String::new(),
             styles: ElementStyles::default(),
+            compile_type: None,
+            scope: crate::CompileScope::Draft,
+            each_separately: false,
         }
     }
 }
