@@ -240,20 +240,29 @@ fn prose_paragraph_text(paragraph: &RichParagraph) -> String {
         .collect()
 }
 
+/// Scripts are designed on US Letter. On any other paper the export scales
+/// margins, type, leading and indents by this factor; the preview uses the same
+/// number so its page looks like the file that will be written.
+pub fn script_page_scale(settings: &ExportSettings) -> f32 {
+    (settings.paper.mm().0 / 215.9).clamp(0.3, 1.0)
+}
+
 /// Script paging: roughly 55 typed lines per page, with each block's wrapped
 /// height counted in those lines. The page keeps the paper width and frame but
 /// grows tall enough for all 55 lines.
 pub fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
-    // Screenplays use US Letter regardless of the prose book's trim size.
-    // `page_geometry` maps millimetres to three screen points.
-    let page_w: f32 = 8.5 * 25.4 * 3.0;
-    let page_h: f32 = 11.0 * 25.4 * 3.0;
-    let content_w = page_w - 2.5 * 25.4 * 3.0;
+    // The PDF scales the whole Letter-designed script sheet with the chosen
+    // paper. The preview does the same, so a smaller page is not shown as
+    // 12 pt type inside nearly an inch of margin.
+    let (page_w, page_h) = page_geometry(settings);
+    let scale = script_page_scale(settings);
+    let content_w = page_w - 2.5 * 25.4 * 3.0 * scale;
     let base = &settings.styles.action;
-    let base_size = base.size.max(7.0);
-    let base_line = (base_size * base.leading.max(0.85)).max(9.0);
+    let base_size = base.size.max(7.0) * scale;
+    let base_line = (base_size * base.leading.max(0.85)).max(9.0 * scale);
     let lines_per_page = 55.0f32;
-    let content_h = (page_h - 2.0 * 25.4 * 3.0).max(base_line * lines_per_page);
+    let content_h =
+        (page_h - 2.0 * 25.4 * 3.0 * scale).max(base_line * lines_per_page);
 
     let mut pages: Vec<Vec<PageLine>> = vec![Vec::new()];
     let mut used = 0.0f32;
@@ -262,10 +271,10 @@ pub fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
     let blocks = doc.content.to_script_blocks(&default_sheet);
     for (index, block) in blocks.iter().enumerate() {
         let style = script_element_style(&settings.styles, block.kind);
-        let size = style.size.max(6.0);
-        let lead = (size * style.leading.max(0.85)).max(8.0);
-        let indent = style.indent.max(0.0).min(content_w * 0.42);
-        let right_indent = style.right_indent.max(0.0);
+        let size = style.size.max(6.0) * scale;
+        let lead = (size * style.leading.max(0.85)).max(8.0 * scale);
+        let indent = (style.indent.max(0.0) * scale).min(content_w * 0.42);
+        let right_indent = style.right_indent.max(0.0) * scale;
         let text_w = (content_w - indent - right_indent).max(12.0);
         let chars_per_line = (text_w / (size * 0.6)).floor().max(8.0) as usize;
         let text = if style.uppercase {
@@ -276,7 +285,7 @@ pub fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
         let wrapped = wrap_words(&text, chars_per_line);
         let count = wrapped.len();
         let block_lines = (count as f32 * lead / base_line).max(1.0);
-        let after = style.after.max(0.0);
+        let after = style.after.max(0.0) * scale;
 
         // Blocks are separated by their style's before/after spacing, with the
         // old one-fifth-line gap as the fallback when before is unset.
@@ -286,7 +295,7 @@ pub fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
             0.4 * base_line
         };
         if index > 0 && style.before > 0.0 {
-            gap_points = style.before;
+            gap_points = style.before * scale;
         }
         let mut gap_lines = gap_points / base_line;
         let after_lines = after / base_line;
@@ -319,7 +328,7 @@ pub fn script_plan(doc: &Document, settings: &ExportSettings) -> PagePlan {
                 },
                 indent,
                 first_line_indent: if first {
-                    style.first_line_indent.max(0.0)
+                    style.first_line_indent.max(0.0) * scale
                 } else {
                     0.0
                 },
@@ -475,7 +484,8 @@ fn section_for(doc: &Document, plan: &PagePlan) -> PreviewSection {
 /// set in the script face. Scripts are never titled like a book.
 fn script_title_page_plan(project: &Project, settings: &ExportSettings) -> PagePlan {
     let (page_w, page_h) = page_geometry(settings);
-    let content_w = page_w - 108.0;
+    let scale = script_page_scale(settings);
+    let content_w = page_w - 2.5 * 25.4 * 3.0 * scale;
     let content_h = page_h - 78.0;
     let face = settings.styles.action.font.clone();
     let mut lines: Vec<PageLine> = Vec::new();
@@ -500,14 +510,11 @@ fn script_title_page_plan(project: &Project, settings: &ExportSettings) -> PageP
     push(
         &mut lines,
         &project.title.to_uppercase(),
-        14.0,
+        14.0 * scale,
         top,
     );
-    if !project.subtitle.trim().is_empty() {
-        push(&mut lines, project.subtitle.trim(), 12.0, 18.0);
-    }
-    push(&mut lines, "Written by", 12.0, 60.0);
-    push(&mut lines, project.author.trim(), 12.0, 24.0);
+    push(&mut lines, "Written by", 12.0 * scale, 60.0 * scale);
+    push(&mut lines, project.author.trim(), 12.0 * scale, 24.0 * scale);
     PagePlan {
         page_w,
         content_w,
@@ -778,6 +785,45 @@ mod tests {
             right: false,
             center: false,
         }
+    }
+
+    /// The live preview must show the same scaled script page the PDF writes,
+    /// not 12 pt type inside a Letter frame on an A5 page.
+    #[test]
+    fn script_preview_scales_with_the_chosen_paper() {
+        let project = portmanteau_core::sample::demo();
+        let doc = project
+            .documents
+            .iter()
+            .find(|doc| doc.medium == portmanteau_core::Medium::TvScript)
+            .expect("the demo has a TV script");
+        let mut settings = project.settings_for(portmanteau_core::ExportKind::Pdf);
+        settings.paper = portmanteau_core::PaperSize::A5;
+        let plan = script_plan(doc, &settings);
+        let scale = script_page_scale(&settings);
+        assert!((plan.page_w - 148.0 * 3.0).abs() < 0.5, "{}", plan.page_w);
+        let expected_content = plan.page_w - 2.5 * 25.4 * 3.0 * scale;
+        assert!(
+            (plan.content_w - expected_content).abs() < 0.5,
+            "content {} at scale {scale}",
+            plan.content_w
+        );
+        let action = plan
+            .pages
+            .iter()
+            .flatten()
+            .find(|line| line.text.starts_with("The sea"))
+            .expect("an action line");
+        assert!(
+            (action.size - 12.0 * scale).abs() < 0.05,
+            "preview type {}",
+            action.size
+        );
+        assert!(
+            (action.lead - 12.0 * scale).abs() < 0.05,
+            "preview leading {}",
+            action.lead
+        );
     }
 
     /// A sparse title page and an overfull body page must draw the same box.

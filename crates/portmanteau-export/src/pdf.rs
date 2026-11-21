@@ -293,7 +293,7 @@ fn wrap_chars(chars: &[StyledChar], max_width: f32, size: f32) -> Vec<Vec<Styled
     let mut width = 0.0f32;
     let mut last_space: Option<usize> = None;
 
-    for (index, &styled) in chars.iter().enumerate() {
+    for &styled in chars {
         if styled.c == '\n' {
             trim_trailing_spaces(&mut line);
             lines.push(std::mem::take(&mut line));
@@ -303,6 +303,17 @@ fn wrap_chars(chars: &[StyledChar], max_width: f32, size: f32) -> Vec<Vec<Styled
         }
         let advance = char_width(styled.c, styled.face, size);
         if width + advance > max_width && !line.is_empty() {
+            if styled.c == ' ' {
+                // A trailing space never pushes the last word onto the next
+                // line; it is trimmed and the break happens after that word.
+                trim_trailing_spaces(&mut line);
+                if !line.is_empty() {
+                    lines.push(std::mem::take(&mut line));
+                }
+                width = 0.0;
+                last_space = None;
+                continue;
+            }
             if let Some(split) = last_space {
                 let tail: Vec<StyledChar> = line.split_off(split);
                 trim_trailing_spaces(&mut line);
@@ -320,21 +331,7 @@ fn wrap_chars(chars: &[StyledChar], max_width: f32, size: f32) -> Vec<Vec<Styled
             }
         }
         if styled.c == ' ' {
-            // Do not break around a spaced dash: "BREAKWATER — DAWN" is one
-            // unit, and a line should never open with "— DAWN".
-            let before = line
-                .iter()
-                .rev()
-                .find(|s| s.c != ' ')
-                .map(|s| s.c);
-            let after = chars[index + 1..]
-                .iter()
-                .find(|s| s.c != ' ')
-                .map(|s| s.c);
-            let dash = |c: Option<char>| matches!(c, Some('—' | '–' | '-'));
-            if !dash(before) && !dash(after) {
-                last_space = Some(line.len());
-            }
+            last_space = Some(line.len());
         }
         width += advance;
         line.push(styled);
@@ -533,13 +530,19 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
             &project.styles,
         ));
     let (width, height) = paper_pt(settings);
+    // A script sheet is designed for US Letter: 12 pt Courier, 1.5" left and
+    // 1" elsewhere, 3.5" of dialogue. On a narrower page, scaling only the
+    // indents leaves the type and margins huge relative to the page. Scale the
+    // whole sheet instead, so a smaller page is the Letter page reduced — the
+    // same look as the editor's paper. Letter itself stays exactly 1:1.
+    let scale = (width / 612.0).clamp(0.3, 1.0);
     let frame = Frame {
         width,
         height,
-        left: sheet.margins.left,
-        right: sheet.margins.right,
-        top: sheet.margins.top,
-        bottom: sheet.margins.bottom,
+        left: sheet.margins.left * scale,
+        right: sheet.margins.right * scale,
+        top: sheet.margins.top * scale,
+        bottom: sheet.margins.bottom * scale,
     };
 
     let fallback_font = sheet
@@ -555,18 +558,11 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         &fallback_font,
     );
 
-    // The stylesheet indents are calibrated for a US Letter text column
-    // (3.7" cue, 2.5"-6" dialogue). On narrower paper the same point indents
-    // would leave dialogue only a few characters wide, so scale them with the
-    // column. Twelve-point type stays twelve-point.
-    let letter_content = 612.0 - sheet.margins.left - sheet.margins.right;
-    let indent_scale = (frame.content_width() / letter_content.max(72.0)).clamp(0.3, 1.0);
-
     let mut pages: Vec<PdfPageLayout> = Vec::new();
     let mut sections: Vec<PdfLayoutSection> = Vec::new();
 
     if settings.include_title_page {
-        pages.push(script_title_page(project, &frame, title_face));
+        pages.push(script_title_page(project, &frame, title_face, scale));
         sections.push(PdfLayoutSection {
             label: "Title page".into(),
             start_page: 0,
@@ -610,10 +606,10 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
                 text = format!("{}   {}", scene_number, text);
                 scene_number += 1;
             }
-            let size = format.size.max(7.0);
+            let size = format.size.max(7.0) * scale;
             let leading = (size * format.leading.max(0.9)).max(size * 0.9);
-            let indent = format.indent.max(0.0) * indent_scale;
-            let right_indent = format.right_indent.max(0.0) * indent_scale;
+            let indent = format.indent.max(0.0) * scale;
+            let right_indent = format.right_indent.max(0.0) * scale;
             let width = (frame.content_width() - indent - right_indent).max(18.0);
             let fallback = doc_sheet
                 .style("action")
@@ -628,8 +624,8 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
                 continue;
             }
 
-            let before = format.before.max(0.0);
-            let after = format.after.max(0.0);
+            let before = format.before.max(0.0) * scale;
+            let after = format.after.max(0.0) * scale;
             let needed = before + lines.len() as f32 * leading;
             let widowed_cue = block.kind == ElementKind::Character
                 && flow.cursor + needed + leading * 2.0
@@ -645,7 +641,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
                 let line_width = chars_width(line, size);
                 let first = line_index == 0;
                 let first_indent = if first {
-                    format.first_line_indent.max(0.0) * indent_scale
+                    format.first_line_indent.max(0.0) * scale
                 } else {
                     0.0
                 };
@@ -689,18 +685,19 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         // The title page is unnumbered, and the first page of the script is
         // page 1, not page 2.
         let title_pages = usize::from(settings.include_title_page);
-        let baseline = (frame.top - 24.0).max(10.0);
+        let number_size = 12.0 * scale;
+        let baseline = (frame.top - 24.0 * scale).max(10.0);
         for (index, page) in pages.iter_mut().skip(title_pages).enumerate() {
             let number = settings
                 .header_footer
                 .number_format
                 .format(first_number + index as u32);
             let text = format!("{}.", number);
-            let width = text_width(&text, face, 12.0);
+            let width = text_width(&text, face, number_size);
             page.items.push(PdfText {
                 x: frame.width - frame.right - width,
                 baseline,
-                size: 12.0,
+                size: number_size,
                 segments: vec![PdfSegment { text, face }],
             });
         }
@@ -722,6 +719,7 @@ fn script_title_page(
     project: &Project,
     frame: &Frame,
     face: Face,
+    scale: f32,
 ) -> PdfPageLayout {
     let mut items = Vec::new();
     let mut push = |text: &str, size: f32, y: f32, align: Alignment| {
@@ -747,28 +745,32 @@ fn script_title_page(
     };
 
     // Courier advances 0.6 em. Wrapping by the frame's real width keeps a long
-    // title inside the page margins on A5 as well as on Letter.
-    let title_chars = (frame.content_width() / (14.0 * 0.6)).floor().max(12.0) as usize;
+    // title inside the page margins on A5 as well as on Letter. The type is
+    // scaled with the sheet, so the title page reduces with it.
+    let title_size = 14.0 * scale;
+    let title_chars = (frame.content_width() / (title_size * 0.6))
+        .floor()
+        .max(12.0) as usize;
     let mut y = frame.height * 0.30;
     let title = project.title.trim().to_uppercase();
     for line in wrap_plain(&title, title_chars) {
-        push(&line, 14.0, y, Alignment::Center);
-        y += 18.0;
+        push(&line, title_size, y, Alignment::Center);
+        y += 18.0 * scale;
     }
     // Scripts are never titled like a book: no prose subtitle on the cover.
-    y = (frame.height * 0.56).max(y + 24.0);
-    push("Written by", 12.0, y, Alignment::Center);
-    let mut author_y = y + 20.0;
+    y = (frame.height * 0.56).max(y + 24.0 * scale);
+    push("Written by", 12.0 * scale, y, Alignment::Center);
+    let mut author_y = y + 20.0 * scale;
     for line in wrap_plain(project.author.trim(), title_chars) {
-        push(&line, 12.0, author_y, Alignment::Center);
-        author_y += 20.0;
+        push(&line, 12.0 * scale, author_y, Alignment::Center);
+        author_y += 20.0 * scale;
     }
 
     let today = chrono::Local::now().format("%d %B %Y");
     push(
         &format!("Draft · {today}"),
-        10.0,
-        frame.height - frame.bottom - 6.0,
+        10.0 * scale,
+        frame.height - frame.bottom - 6.0 * scale,
         Alignment::Left,
     );
 
@@ -1445,22 +1447,29 @@ mod tests {
     }
 
     #[test]
-    fn narrow_paper_scales_script_columns_instead_of_collapsing_them() {
+    fn narrow_paper_scales_the_whole_script_sheet() {
         let project = demo();
         let mut settings = script_settings(&project, "tv");
         settings.paper = portmanteau_core::PaperSize::A5;
         settings.include_title_page = false;
         let layout = pdf_layout(&project, &settings);
+        let scale = layout.width / 612.0;
 
-        // The A5 text column is 239.5 pt. Scaling the Letter-calibrated
-        // indents with it keeps the dialogue column at 139 pt, instead of the
-        // six-point sliver that turned every line into one or two words. The
-        // parenthetical must also fit on one line.
+        // Margins, type and indents reduce together: the A5 page is the Letter
+        // sheet at 68.5%, not 12 pt type squeezed inside 1.5" margins. Dialogue
+        // therefore starts at 1.71" and holds the same words per line.
         let dialogue = line_starting_with(&layout, "The chart");
         assert!(
-            (dialogue.x - 147.9).abs() < 1.0,
-            "dialogue at {}",
-            dialogue.x
+            (dialogue.x - (108.0 + 72.0) * scale).abs() < 1.0,
+            "dialogue at {}, expected {}",
+            dialogue.x,
+            (108.0 + 72.0) * scale
+        );
+        assert!(
+            (dialogue.size - 12.0 * scale).abs() < 0.05,
+            "dialogue type is {} pt, expected {}",
+            dialogue.size,
+            12.0 * scale
         );
         assert!(
             item_text(line_starting_with(&layout, "(to herself)")).contains("(to herself)"),
@@ -1471,16 +1480,27 @@ mod tests {
             "the first dialogue line should hold several words, got {:?}",
             item_text(dialogue)
         );
-        // A wrapped scene heading must not leave the em dash opening a line.
+        // The editor fits "…The harbour" on one line. An overflowing trailing
+        // space used to move the last word down a line, so the line breaks no
+        // longer matched the page on screen.
+        assert!(
+            item_text(line_starting_with(&layout, "The sea has gone out"))
+                .ends_with("harbour"),
+            "the action line should break exactly as it does in the editor"
+        );
+        // Same characters per line as the editor, so the scene heading still
+        // fits on one line.
         assert!(
             layout
                 .pages
                 .iter()
                 .flat_map(|page| &page.items)
-                .any(|item| item_text(item).starts_with("BREAKWATER — DAWN")),
-            "the scene heading should wrap before the place name, not at the dash"
+                .any(|item| item_text(item).contains("BREAKWATER — DAWN")),
+            "the scene heading should survive on one line"
         );
     }
+
+
 
     #[test]
     fn script_sections_account_for_every_page() {

@@ -1168,22 +1168,28 @@ The page image beside it is still a rough visual approximation, labelled as such
   those checks when the poppler tools are absent. DOCX and RTF page sizes are
   covered for all four papers.
 
-## Script columns on smaller paper (follow-up)
+## Script page geometry on smaller paper (follow-up)
 
 The first real TV export looked wrong on the demonstration project's A5 paper:
-parentheticals printed one character per line and dialogue broke every word or
-two. The indents in the film/TV sheets are absolute positions for the US Letter
-text column (cue at 2.2" from the margin, dialogue at 1" with a 1.5" right
-inset, so 3.5" of dialogue). A5's text column is only 3.3" wide, so subtracting
-those same indents left a six-point sliver.
+margins and type were proportionally huge, parentheticals printed one character
+per line and dialogue broke every word or two. The film/TV sheet is designed for
+US Letter (12 pt Courier, 1.5" left and 1" elsewhere, cue at 3.7", dialogue
+2.5"–6"), and those absolute point sizes were being applied unchanged inside a
+5.8" page.
 
-The column indents now scale with the available text width, while the type size
-and the page margins stay fixed. On Letter nothing changes (scale 1): the cue
-still sits at 3.7" from the page edge and dialogue runs from 2.5" to 6". On A5
-the dialogue column is 1.9" instead of 0.08", parentheticals fit on one line,
-and the block positions match the proportions of the editor's Letter sheet.
-Stage layout scales the same way. Tests cover both the exact Letter geometry
-and the absence of one-character lines on A5.
+The whole script sheet now scales with the paper. The scale is the chosen page
+width over 612 pt: margins, element sizes, leading, spacing and indents all
+multiply by it, so a smaller page is the editor's Letter sheet reduced. On
+Letter the scale is 1 and nothing moves. On A5 the sheet is 68.5%: type is
+8.2 pt, margins are 1.03"/0.68", and action/dialogue still hold the same words
+per line as the editor. Parentheticals no longer collapse. Stage layout scales
+the same way. The Compile preview uses the same scale, so its paper and type
+match the file rather than showing 12 pt inside a Letter frame. A trailing space
+that overflowed the column no longer pushes the last word to the next line,
+which is why the A5 action lines now break exactly where the editor's do. Tests
+check the exact Letter geometry (cue at 266.4 pt, dialogue at 180 pt), that A5
+dialogue starts at the scaled 1.5"+1" position with scaled 8.2 pt type and the
+same words per line, and that the preview carries the same scale.
 
 The compile toast now carries the written file as a link. Its full path is
 shown (home folder abbreviated to `~`); clicking it opens the file, or its
@@ -1191,7 +1197,6 @@ folder if the file has since moved. A shell-level test renders the toast and
 finds the link by role, and the compile-button test checks the path handed to
 the toast is the file actually written.
 
-The script title page also wraps against the real text width now, so a long
-title cannot run past the right margin on a narrow page. Scene headings treat a
-spaced dash as part of the following phrase, so a wrapped heading breaks before
-"BREAKWATER — DAWN" rather than leaving the dash to open a line.
+The script title page also wraps against the real text width and scales its
+type with the sheet, so a long title cannot run past the right margin on a
+narrow page.
