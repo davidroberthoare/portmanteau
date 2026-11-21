@@ -85,9 +85,8 @@ How to check output visually (all on this machine):
    `portmanteau_export::pdf_layout` pages in the Compile and Settings previews
    and delete the duplicate engine. This is also the foundation for the paged
    editor view, which the owner has deferred.
-2. **PDF starts every script document on a new page.** With scenes as separate
-   binder items that puts one scene per page. Confirm the intended rule with
-   the owner (probably: flow continuously, break only between episodes).
+2. ~~PDF page per script document~~ Done: scenes run on; only a chapter-level
+   document (episode/act) starts a page (`content::starts_new_page`, all writers).
 3. **Import review step**: show the split (titles, word counts) before the
    documents are created. See `docs/roadmap.md` for the rest of the import gaps.
 4. Per-document compile overrides and a "compile with last settings" action.

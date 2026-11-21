@@ -818,3 +818,38 @@ fn every_flowing_format_drops_the_title_block_to_where_the_pdf_puts_it() {
     tall.margins = Some(PageMargins { left: 72.0, right: 72.0, top: 400.0, bottom: 72.0 });
     assert_eq!(title_drop_pt(&p, &tall), 0.0, "a tall margin leaves nothing to drop");
 }
+
+#[test]
+fn script_scenes_run_on_and_only_a_chapter_level_document_starts_a_page() {
+    let mut p = Project::new("Run on", ProjectKind::Television);
+    let mut ids = Vec::new();
+    for (title, kind) in [
+        ("Episode 1", DocKind::Chapter),
+        ("Scene a", DocKind::Scene),
+        ("Scene b", DocKind::Scene),
+        ("Scene c", DocKind::Scene),
+        ("Episode 2", DocKind::Chapter),
+    ] {
+        let id = p.add_document(None, title, kind, Medium::TvScript);
+        let doc = p.documents.iter_mut().find(|d| d.id == id).unwrap();
+        doc.content = RichDocument::from_plain_text(&format!("INT. {title} - DAY\n\nSomeone speaks."), "action");
+        ids.push(id);
+    }
+    let mut s = p.settings_for(ExportKind::Pdf);
+    s.compile_type = Some(CompileType::TvScript);
+    s.include_title_page = false;
+    assert_eq!(p.compile_plan(&s).included.len(), 5, "all five documents compile");
+
+    // Five documents but only two chapter-level starts: the second episode
+    // opens page two and the scenes between share page one.
+    let layout = pdf_layout(&p, &s);
+    assert_eq!(layout.pages.len(), 2, "scenes run on, the episode breaks the page");
+
+    let make = |kind, medium| Document::new(None, 0, "x", kind, medium);
+    assert!(!starts_new_page(&make(DocKind::Scene, Medium::TvScript)));
+    assert!(starts_new_page(&make(DocKind::Chapter, Medium::TvScript)));
+    assert!(starts_new_page(&make(DocKind::Scene, Medium::Prose)), "prose always starts a page");
+
+    let docx = docx_document_xml(docx_manuscript(&p, &s));
+    assert_eq!(docx.matches("<w:pageBreakBefore/>").count(), 1, "one episode break after the first");
+}

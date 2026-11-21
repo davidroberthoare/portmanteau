@@ -22,7 +22,7 @@ use skrifa::{FontRef, MetadataProvider};
 
 use crate::{
     back_matter, front_matter, manuscript_sections, page_margins, paper_pt, prose_paragraphs,
-    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers, TITLE_PAGE_DROP,
+    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers, starts_new_page, TITLE_PAGE_DROP,
 };
 
 // ---------------------------------------------------------------------------
@@ -608,7 +608,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
     let mut scenes = SceneNumbers::default();
 
     for (index, doc) in included.iter().enumerate() {
-        if index > 0 {
+        if index > 0 && starts_new_page(doc) {
             flow.page_break();
         }
         let start = flow.page_index();

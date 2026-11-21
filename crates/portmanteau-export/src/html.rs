@@ -35,7 +35,9 @@ pub(crate) fn html_manuscript(project: &Project, settings: &ExportSettings) -> S
         } else {
             format!("<h2 class=\"heading\">{}</h2>", html_escape(&title))
         };
-        body.push_str(&format!("<section id=\"s{index}\" class=\"chapter\">{heading}\n"));
+        // Scenes of a script run on; only a chapter-level document starts a page.
+        let class = if starts_new_page(section.doc) { "chapter" } else { "run-on" };
+        body.push_str(&format!("<section id=\"s{index}\" class=\"{class}\">{heading}\n"));
         body.push_str(&html_document_body(project, section.doc, settings, &mut classes));
         body.push_str("</section>\n");
     }

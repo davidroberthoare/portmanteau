@@ -193,6 +193,7 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
     for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
         if section.doc.medium.is_script() {
             // A script prints only what the writer typed, as in the PDF.
+            let mut first_block = true;
             for block in screenplay_blocks(project, section.doc) {
                 let style = st.style_for_kind(block.kind);
                 let text = if style.uppercase {
@@ -201,7 +202,9 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
                     block.text.clone()
                 };
                 let text = scenes.apply(block.kind, text, settings.include_scene_numbers);
-                out.push_str(&rtf_plain_paragraph(style, mono, &text, false, false));
+                let new_page = first_block && i > 0 && starts_new_page(section.doc);
+                first_block = false;
+                out.push_str(&rtf_plain_paragraph(style, mono, &text, false, new_page));
             }
         } else {
             let title = section_title(project, section.doc, i, settings);

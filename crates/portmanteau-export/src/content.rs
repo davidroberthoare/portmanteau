@@ -6,6 +6,16 @@ pub(crate) struct Section<'a> {
     pub(crate) heading: String,
 }
 
+/// Whether a compiled document starts on a fresh page.
+///
+/// Prose chapters always do. Script documents follow the trade convention:
+/// scenes run straight on from each other, and a new page starts only at a
+/// chapter-level document (an episode or an act). Every writer asks this one
+/// question, so the formats cannot disagree.
+pub(crate) fn starts_new_page(doc: &Document) -> bool {
+    !doc.medium.is_script() || doc.kind == DocKind::Chapter
+}
+
 pub(crate) fn rich_document_has_images(document: &RichDocument) -> bool {
     document.paragraphs.iter().any(|paragraph| paragraph.has_image())
 }

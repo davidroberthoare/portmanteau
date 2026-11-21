@@ -112,8 +112,14 @@ pub(crate) fn docx_prose_paragraph(paragraph: &ProseParagraph, fallback_font: &s
 /// A paragraph that only names its style. Appearance lives in `styles.xml`,
 /// so a writer's style change reaches every paragraph that uses it.
 pub(crate) fn docx_styled_paragraph(body: &mut String, text: &str, style_id: &str) {
+    docx_paragraph(body, text, style_id, false);
+}
+
+/// A styled paragraph, optionally forced to the top of a new page.
+pub(crate) fn docx_paragraph(body: &mut String, text: &str, style_id: &str, new_page: bool) {
+    let break_before = if new_page { "<w:pageBreakBefore/>" } else { "" };
     body.push_str(&format!(
-        "<w:p><w:pPr><w:pStyle w:val=\"{style_id}\"/></w:pPr><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",
+        "<w:p><w:pPr><w:pStyle w:val=\"{style_id}\"/>{break_before}</w:pPr><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",
         xml_escape(text)
     ));
 }
@@ -246,6 +252,7 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
     for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
         if section.doc.medium.is_script() {
             // A script prints only what the writer typed, as in the PDF.
+            let mut first_block = true;
             for block in screenplay_blocks(project, section.doc) {
                 let text = if settings.styles.style_for_kind(block.kind).uppercase {
                     block.text.to_uppercase()
@@ -253,7 +260,9 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
                     block.text.clone()
                 };
                 let text = scenes.apply(block.kind, text, settings.include_scene_numbers);
-                docx_styled_paragraph(&mut body, &text, &docx_script_style_id(block.kind));
+                let new_page = first_block && i > 0 && starts_new_page(section.doc);
+                first_block = false;
+                docx_paragraph(&mut body, &text, &docx_script_style_id(block.kind), new_page);
             }
         } else {
             let title = section_title(project, section.doc, i, settings);
