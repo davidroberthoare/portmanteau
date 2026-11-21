@@ -96,10 +96,10 @@ hack inside krilla rather than on top of it, revisit.
 
 ### Script pages
 
-Page size follows the compile's **Paper** setting: A4, US Letter, A5 or Trade
-paperback. A script project starts on US Letter (the industry default) and the
-writer can choose A4 or another size in Page & type. The same choice is honoured
-by every page-based writer — PDF, DOCX and RTF — not just PDF.
+Page size follows the compile's **Paper** setting: US Letter (the default for
+every new format and every new project), A4, A5 or Trade paperback. The writer
+can choose another size in Page & type. The same choice is honoured by every
+page-based writer — PDF, DOCX and RTF — not just PDF.
 
 Margins come from the format's stylesheet (`StyleSheet.margins`); element styles,
 italic, alignment, spacing and hanging indents come from the document's own

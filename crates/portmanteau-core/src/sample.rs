@@ -323,7 +323,7 @@ pub fn demo() -> Project {
     // The same manuscript finishes differently as a book and as an ebook, so
     // the demonstration project ships with each target already customised.
     let mut pdf = p.settings_for(ExportKind::Pdf);
-    pdf.paper = PaperSize::A5;
+    pdf.paper = PaperSize::Letter;
     pdf.font_size = 11.0;
     pdf.line_spacing = 1.45;
     pdf.header_footer.page_numbers = true;
@@ -352,5 +352,24 @@ fn block(kind: ElementKind, text: &str) -> Block {
     Block {
         kind,
         text: text.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The demonstration project is the project most people see first, so its
+    /// page formats must default to the same US Letter page as a new project.
+    #[test]
+    fn demo_project_compiles_to_us_letter() {
+        let project = demo();
+        for export in [ExportKind::Pdf, ExportKind::Docx, ExportKind::Rtf] {
+            assert_eq!(
+                project.settings_for(export).paper,
+                PaperSize::Letter,
+                "{export:?}"
+            );
+        }
     }
 }

@@ -1200,3 +1200,13 @@ the toast is the file actually written.
 The script title page also wraps against the real text width and scales its
 type with the sheet, so a long title cannot run past the right margin on a
 narrow page.
+
+## US Letter by default
+
+Every new export format now starts on US Letter, and the demonstration project
+was changed from A5 to US Letter too. Portmanteau is used on a North American
+desk, and A5 made the first compiled pages smaller than the Letter sheet in the
+editor. A4, A5 and trade paperback remain available per format in Page & type,
+and a project's saved paper choice is still honoured. The narrower-paper tests
+stay because they check how a script behaves when the writer deliberately picks
+A5, not what the default is.

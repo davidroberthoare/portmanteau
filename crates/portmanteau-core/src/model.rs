@@ -1198,7 +1198,10 @@ impl Default for ExportSettings {
     fn default() -> Self {
         Self {
             kind: ExportKind::Pdf,
-            paper: PaperSize::A5,
+            // Portmanteau is written for a North American desk: US Letter is
+            // the default page for every new output format. A5, A4 and the
+            // trade paperback trim remain available per format.
+            paper: PaperSize::Letter,
             font: "Liberation Serif".into(),
             font_size: 11.0,
             line_spacing: 1.4,
@@ -1832,6 +1835,27 @@ mod tests {
         let settings: AppSettings = serde_json::from_str("{}").expect("empty settings parse");
         assert!(settings.show_binder, "the binder should start visible");
         assert!(settings.show_inspector, "the inspector should start visible");
+    }
+
+    #[test]
+    fn new_formats_default_to_us_letter() {
+        // The product is used on a North American desk. A writer can still
+        // choose A4, A5 or the trade paperback trim for any format.
+        for kind in ProjectKind::all() {
+            let project = Project::new("Test", kind);
+            for export in [
+                ExportKind::Pdf,
+                ExportKind::Docx,
+                ExportKind::Rtf,
+                ExportKind::Epub,
+            ] {
+                assert_eq!(
+                    project.settings_for(export).paper,
+                    PaperSize::Letter,
+                    "{kind:?} {export:?}"
+                );
+            }
+        }
     }
 
     #[test]
