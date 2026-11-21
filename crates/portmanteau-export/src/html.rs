@@ -29,10 +29,13 @@ pub(crate) fn html_manuscript(project: &Project, settings: &ExportSettings) -> S
     }
     for (index, section) in sections.iter().enumerate() {
         let title = section_title(project, section.doc, index, settings);
-        body.push_str(&format!(
-            "<section id=\"s{index}\" class=\"chapter\"><h2 class=\"heading\">{}</h2>\n",
-            html_escape(&title)
-        ));
+        // A script prints only what the writer typed, as in the PDF.
+        let heading = if section.doc.medium.is_script() {
+            String::new()
+        } else {
+            format!("<h2 class=\"heading\">{}</h2>", html_escape(&title))
+        };
+        body.push_str(&format!("<section id=\"s{index}\" class=\"chapter\">{heading}\n"));
         body.push_str(&html_document_body(project, section.doc, settings, &mut classes));
         body.push_str("</section>\n");
     }

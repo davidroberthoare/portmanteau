@@ -11,6 +11,13 @@ pub(crate) fn txt_manuscript(project: &Project, settings: &ExportSettings) -> St
         out.push_str(&"-".repeat(40));
         out.push_str("\n\n");
     }
+    if settings.include_toc {
+        out.push_str("CONTENTS\n\n");
+        for (index, title) in contents_entries(project, settings).iter().enumerate() {
+            out.push_str(&format!("{}. {}\n", index + 1, title));
+        }
+        out.push('\n');
+    }
     for doc in front_matter(project, settings) {
         out.push_str(&format!("{}\n\n", doc.title.to_uppercase()));
         for para in prose_paragraphs(project, doc, settings) {

@@ -161,3 +161,36 @@ pub(crate) fn section_title(_project: &Project, doc: &Document, index: usize, se
         doc.title.clone()
     }
 }
+
+
+/// The entries of a Contents list: one title per compiled section, numbered
+/// the way the chapter headings are. Writers that cannot know page numbers
+/// (DOCX, RTF, plain text) print this as a simple list.
+pub(crate) fn contents_entries(project: &Project, settings: &ExportSettings) -> Vec<String> {
+    manuscript_sections(project, settings)
+        .iter()
+        .enumerate()
+        .map(|(index, section)| section_title(project, section.doc, index, settings))
+        .collect()
+}
+
+/// Running scene numbers across one script compile. One implementation so
+/// every writer numbers the same scenes the same way ("1   EXT. HARBOUR").
+#[derive(Default)]
+pub(crate) struct SceneNumbers {
+    seen: u32,
+}
+
+impl SceneNumbers {
+    /// `text` for a script element, prefixed with the next scene number when
+    /// it is a scene heading and numbering is on. The gap is non-breaking so
+    /// HTML keeps it.
+    pub(crate) fn apply(&mut self, kind: ElementKind, text: String, enabled: bool) -> String {
+        if enabled && kind == ElementKind::SceneHeading {
+            self.seen += 1;
+            format!("{}\u{a0}\u{a0}\u{a0}{}", self.seen, text)
+        } else {
+            text
+        }
+    }
+}

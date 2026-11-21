@@ -663,3 +663,127 @@ fn rtf_text_with_braces_and_unicode_stays_valid() {
     assert!(rtf_braces_balance(&rtf), "{rtf}");
     assert!(rtf.contains("\\u8220?"), "curly quote is written as a unicode escape");
 }
+
+/// Every piece of text a format's output carries, for "is it in there?" checks.
+fn output_text(kind: ExportKind, project: &Project, settings: &ExportSettings) -> String {
+    match kind {
+        ExportKind::Pdf => pdf_layout(project, settings)
+            .pages
+            .iter()
+            .flat_map(|page| &page.items)
+            .flat_map(|item| item.segments.iter().map(|segment| segment.text.clone()))
+            .collect::<Vec<_>>()
+            .join(" "),
+        ExportKind::Epub => {
+            let bytes = epub_manuscript(project, settings);
+            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+            let names: Vec<String> = archive
+                .file_names()
+                .filter(|name| name.ends_with(".xhtml") && !name.ends_with("nav.xhtml"))
+                .map(str::to_owned)
+                .collect();
+            names
+                .iter()
+                .map(|name| {
+                    let mut text = String::new();
+                    std::io::Read::read_to_string(&mut archive.by_name(name).unwrap(), &mut text).unwrap();
+                    // Visible text only: the head's <title> is page metadata.
+                    text.split_once("<body>").map(|(_, body)| body.to_string()).unwrap_or(text)
+                })
+                .collect()
+        }
+        ExportKind::Docx => docx_document_xml(docx_manuscript(project, settings)),
+        ExportKind::Html => html_manuscript(project, settings),
+        ExportKind::Markdown => markdown_manuscript(project, settings),
+        ExportKind::Rtf => rtf_manuscript(project, settings),
+        ExportKind::Txt => txt_manuscript(project, settings),
+        other => panic!("not a prose text format: {other:?}"),
+    }
+}
+
+const PROSE_FORMATS: [ExportKind; 7] = [
+    ExportKind::Pdf,
+    ExportKind::Epub,
+    ExportKind::Docx,
+    ExportKind::Html,
+    ExportKind::Markdown,
+    ExportKind::Rtf,
+    ExportKind::Txt,
+];
+
+#[test]
+fn every_prose_writer_respects_which_documents_are_included() {
+    let mut p = demo();
+    let chapter_two = p
+        .documents
+        .iter()
+        .find(|d| d.title.starts_with("Chapter Two"))
+        .map(|d| d.id.clone())
+        .expect("demo has Chapter Two");
+    p.document_mut(&chapter_two).unwrap().include_in_export = false;
+    for kind in PROSE_FORMATS {
+        let settings = p.settings_for(kind);
+        let text = output_text(kind, &p, &settings);
+        assert!(text.contains("The tide went out"), "{kind:?} should carry chapter 1");
+        assert!(
+            !text.contains("By noon the mud"),
+            "{kind:?} must skip the excluded chapter"
+        );
+    }
+}
+
+#[test]
+fn every_prose_writer_respects_the_title_page_and_contents_switches() {
+    let p = demo();
+    for kind in PROSE_FORMATS {
+        let mut settings = p.settings_for(kind);
+        settings.include_title_page = true;
+        settings.include_toc = true;
+        let with = output_text(kind, &p, &settings);
+        assert!(with.contains("A novel, with a companion pilot"), "{kind:?} title page");
+        assert!(with.to_lowercase().contains("contents"), "{kind:?} contents");
+
+        settings.include_title_page = false;
+        settings.include_toc = false;
+        let without = output_text(kind, &p, &settings);
+        assert!(!without.contains("A novel, with a companion pilot"), "{kind:?} title page off");
+        assert!(!without.to_lowercase().contains("contents"), "{kind:?} contents off");
+        assert!(without.contains("The tide went out"), "{kind:?} still has the book");
+    }
+}
+
+#[test]
+fn every_script_writer_numbers_scenes_the_same_way_and_adds_no_heading() {
+    let p = demo();
+    let formats = [
+        ExportKind::Pdf,
+        ExportKind::Epub,
+        ExportKind::Docx,
+        ExportKind::Html,
+        ExportKind::Rtf,
+    ];
+    for kind in formats {
+        let mut settings = p.settings_for(kind);
+        settings.compile_type = Some(CompileType::TvScript);
+        settings.include_title_page = false;
+        settings.include_toc = false;
+        settings.include_scene_numbers = true;
+        let numbered = output_text(kind, &p, &settings);
+        // RTF writes the non-breaking gap as a unicode escape.
+        let first = if kind == ExportKind::Rtf {
+            "1\\u160?\\u160?\\u160?EXT. COLD HARBOR"
+        } else {
+            "1\u{a0}\u{a0}\u{a0}EXT. COLD HARBOR"
+        };
+        assert!(numbered.contains(first), "{kind:?} should number the first scene");
+        assert!(
+            !numbered.contains("Cold Harbor · Pilot") || kind == ExportKind::Pdf,
+            "{kind:?} must not print the document title as a heading"
+        );
+
+        settings.include_scene_numbers = false;
+        let plain = output_text(kind, &p, &settings);
+        assert!(!plain.contains(first), "{kind:?} numbering off");
+        assert!(plain.contains("EXT. COLD HARBOR"), "{kind:?} still has the scene");
+    }
+}

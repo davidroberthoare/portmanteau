@@ -146,6 +146,7 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
     let serif = settings.font.as_str();
     let mono = "Courier New";
     let mut out = String::new();
+    let mut scenes = SceneNumbers::default();
     out.push_str(&format!(
         "{{\\rtf1\\ansi\\deff0{{\\fonttbl{{\\f0 {};}}{{\\f1 {mono};}}}}\n",
         rtf_escape(serif)
@@ -169,6 +170,16 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
             out.push_str(&rtf_plain_paragraph(&st.title_page_author, serif, &format!("by {}", project.author), false, false));
         }
     }
+    if settings.include_toc {
+        out.push_str(&rtf_plain_paragraph(&st.chapter_heading, serif, "Contents", true, true));
+        let entry = ElementStyle {
+            first_line_indent: 0.0,
+            ..st.body.clone()
+        };
+        for title in contents_entries(project, settings) {
+            out.push_str(&rtf_plain_paragraph(&entry, serif, &title, false, false));
+        }
+    }
     for doc in front_matter(project, settings) {
         out.push_str(&rtf_plain_paragraph(&st.chapter_heading, serif, &doc.title, true, true));
         for para in prose_paragraphs(project, doc, settings) {
@@ -185,6 +196,7 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
                 } else {
                     block.text.clone()
                 };
+                let text = scenes.apply(block.kind, text, settings.include_scene_numbers);
                 out.push_str(&rtf_plain_paragraph(style, mono, &text, false, false));
             }
         } else {

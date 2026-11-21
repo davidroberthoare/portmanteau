@@ -259,12 +259,18 @@ fn book_pages(
     }
     for (index, section) in sections.iter().enumerate() {
         let title = section_title(project, section.doc, index, settings);
+        // A script prints only what the writer typed, as in the PDF; its title
+        // still names the page in the reader's menu.
+        let heading = if section.doc.medium.is_script() {
+            String::new()
+        } else {
+            format!("<h1 class=\"heading chapter\">{}</h1>\n", xml_escape(&title))
+        };
         pages.push(Page {
             file: format!("chapter-{:03}.xhtml", index + 1),
-            title: title.clone(),
+            title,
             body: format!(
-                "<h1 class=\"heading chapter\">{}</h1>\n{}",
-                xml_escape(&title),
+                "{heading}{}",
                 html_document_body(project, section.doc, settings, classes)
             ),
             in_nav: true,

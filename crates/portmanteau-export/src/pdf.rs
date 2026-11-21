@@ -22,7 +22,7 @@ use skrifa::{FontRef, MetadataProvider};
 
 use crate::{
     back_matter, front_matter, manuscript_sections, page_margins, paper_pt, prose_paragraphs,
-    script_scale, script_sheet, section_title, ProseParagraph,
+    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers,
 };
 
 // ---------------------------------------------------------------------------
@@ -605,7 +605,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
     }
 
     let mut flow = Flow::with_pages(frame, pages);
-    let mut scene_number = 1u32;
+    let mut scenes = SceneNumbers::default();
 
     for (index, doc) in included.iter().enumerate() {
         if index > 0 {
@@ -634,12 +634,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
             } else {
                 block.text.clone()
             };
-            let mut text = text;
-            let scene_heading = block.kind == ElementKind::SceneHeading;
-            if scene_heading && settings.include_scene_numbers {
-                text = format!("{}   {}", scene_number, text);
-                scene_number += 1;
-            }
+            let text = scenes.apply(block.kind, text, settings.include_scene_numbers);
             let size = format.size.max(7.0) * scale;
             let leading = (size * format.leading.max(0.9)).max(size * 0.9);
             let indent = format.indent.max(0.0) * scale;

@@ -120,6 +120,8 @@ pub(crate) fn declarations(style: &ElementStyle, fallback_font: &str) -> String 
 #[derive(Default)]
 pub(crate) struct ParagraphClasses {
     rules: Vec<String>,
+    /// Scene numbering runs across every script document in the compile.
+    scenes: SceneNumbers,
 }
 
 impl ParagraphClasses {
@@ -296,7 +298,12 @@ pub(crate) fn html_prose_paragraph(
 }
 
 /// A screenplay document as classed paragraphs.
-pub(crate) fn html_script_blocks(project: &Project, doc: &Document, settings: &ExportSettings) -> String {
+pub(crate) fn html_script_blocks(
+    project: &Project,
+    doc: &Document,
+    settings: &ExportSettings,
+    scenes: &mut SceneNumbers,
+) -> String {
     let mut out = String::new();
     for block in screenplay_blocks(project, doc) {
         let text = if settings.styles.style_for_kind(block.kind).uppercase {
@@ -304,6 +311,7 @@ pub(crate) fn html_script_blocks(project: &Project, doc: &Document, settings: &E
         } else {
             block.text.clone()
         };
+        let text = scenes.apply(block.kind, text, settings.include_scene_numbers);
         out.push_str(&format!(
             "<p class=\"{}\">{}</p>\n",
             script_class(block.kind),
@@ -321,7 +329,7 @@ pub(crate) fn html_document_body(
     classes: &mut ParagraphClasses,
 ) -> String {
     if doc.medium.is_script() {
-        html_script_blocks(project, doc, settings)
+        html_script_blocks(project, doc, settings, &mut classes.scenes)
     } else {
         prose_paragraphs(project, doc, settings)
             .iter()

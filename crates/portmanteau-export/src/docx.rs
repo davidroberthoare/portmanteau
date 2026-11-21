@@ -190,6 +190,14 @@ pub(crate) fn docx_styles(settings: &ExportSettings) -> String {
     out.push_str(&docx_style("Byline", "Byline", &st.title_page_author, serif, false, false, None));
     out.push_str(&docx_style("Heading1", "heading 1", &st.chapter_heading, serif, true, true, Some(0)));
     out.push_str(&docx_style("Heading2", "heading 2", &st.chapter_heading, serif, true, false, Some(1)));
+    // The Contents list: a heading that starts a page but stays out of the
+    // outline, and plain entries without the body's first-line indent.
+    out.push_str(&docx_style("ContentsHeading", "Contents Heading", &st.chapter_heading, serif, true, true, None));
+    let entry = ElementStyle {
+        first_line_indent: 0.0,
+        ..st.body.clone()
+    };
+    out.push_str(&docx_style("ContentsEntry", "Contents Entry", &entry, serif, false, false, None));
     for kind in ALL_KINDS {
         out.push_str(&docx_style(
             &docx_script_style_id(kind),
@@ -207,6 +215,7 @@ pub(crate) fn docx_styles(settings: &ExportSettings) -> String {
 
 pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let mut body = String::new();
+    let mut scenes = SceneNumbers::default();
 
     if settings.include_title_page {
         docx_styled_paragraph(&mut body, &project.title, "Title");
@@ -215,6 +224,12 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
         }
         if !project.author.trim().is_empty() {
             docx_styled_paragraph(&mut body, &format!("by {}", project.author), "Byline");
+        }
+    }
+    if settings.include_toc {
+        docx_styled_paragraph(&mut body, "Contents", "ContentsHeading");
+        for title in contents_entries(project, settings) {
+            docx_styled_paragraph(&mut body, &title, "ContentsEntry");
         }
     }
     for doc in front_matter(project, settings) {
@@ -232,6 +247,7 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
                 } else {
                     block.text.clone()
                 };
+                let text = scenes.apply(block.kind, text, settings.include_scene_numbers);
                 docx_styled_paragraph(&mut body, &text, &docx_script_style_id(block.kind));
             }
         } else {
