@@ -525,6 +525,17 @@ fn word_screenplay_styles_map_to_script_elements() {
 }
 
 #[test]
+fn word_refuses_a_part_that_inflates_beyond_the_limit() {
+    // A zip bomb in miniature: a few KB on disk, more than the cap once
+    // unpacked. It must be refused, not read into memory.
+    let padding = "x".repeat(64 * 1024 * 1024 + 1);
+    let bomb = docx(None, None, &format!("<w:p><w:r><w:t>{padding}</w:t></w:r></w:p>"));
+    assert!(bomb.len() < 1024 * 1024, "the fixture really is small: {} bytes", bomb.len());
+    let error = import(ImportFormat::Docx, &bomb, &opts()).unwrap_err();
+    assert!(error.contains("refusing to read"), "{error}");
+}
+
+#[test]
 fn word_rejects_files_that_are_not_documents() {
     assert!(import(ImportFormat::Docx, b"definitely not a zip", &opts()).is_err());
     let empty = docx(None, None, "");

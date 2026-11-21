@@ -16,7 +16,7 @@ pub mod text;
 pub use compile::*;
 pub use model::*;
 pub use rich_text::{
-    parse_docx, parse_fdx, parse_plain_text, ImageObject, InlineContent, InlineMark,
+    ImageObject, InlineContent, InlineMark,
     PageMargins, ParagraphStyle, RichDocument, RichParagraph, StyleSheet, TextPosition, TextRun,
     TextTransform,
 };

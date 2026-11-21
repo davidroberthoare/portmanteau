@@ -20,6 +20,14 @@ use crate::{ImportedDocument, Notes, Parsed, Split};
 
 const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
+/// A Word file is a zip from an unknown source, and a few kilobytes can
+/// inflate to gigabytes. No part we read may exceed this many bytes once
+/// decompressed; a real manuscript's text part is a small fraction of it.
+const MAX_PART_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Upper bound on XML elements in one part, against deeply padded documents.
+const MAX_XML_NODES: u32 = 4_000_000;
+
 pub(crate) fn import(
     bytes: &[u8],
     medium: Medium,
@@ -28,16 +36,28 @@ pub(crate) fn import(
 ) -> Result<Parsed, String> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|error| format!("Could not open the DOCX file: {error}"))?;
-    let body_xml = read_part(&mut archive, "word/document.xml")
-        .ok_or("This DOCX file has no word/document.xml")?;
+    let body_xml = match read_part(&mut archive, "word/document.xml") {
+        Part_::Text(text) => text,
+        Part_::Missing => return Err("This DOCX file has no word/document.xml".into()),
+        Part_::TooLarge => {
+            return Err(format!(
+                "The document text is larger than {} MB once unpacked; refusing to read it",
+                MAX_PART_BYTES / (1024 * 1024)
+            ))
+        }
+    };
+    // Styles and properties are optional: a part that is missing or too large
+    // is skipped (headings then fall back on their built-in names).
     let styles = read_part(&mut archive, "word/styles.xml")
+        .text()
         .map(|xml| Styles::parse(&xml))
         .unwrap_or_default();
     let (core_title, core_author) = read_part(&mut archive, "docProps/core.xml")
+        .text()
         .map(|xml| core_properties(&xml))
         .unwrap_or_default();
 
-    let document = roxmltree::Document::parse(&body_xml)
+    let document = parse_xml(&body_xml)
         .map_err(|error| format!("Could not read the DOCX body: {error}"))?;
     notes.dropped("table", count(&document, "tbl"));
 
@@ -80,11 +100,50 @@ fn count(document: &roxmltree::Document, name: &str) -> usize {
     document.descendants().filter(|n| is(n, name)).count()
 }
 
-fn read_part(archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> Option<String> {
-    let mut file = archive.by_name(name).ok()?;
-    let mut text = String::new();
-    file.read_to_string(&mut text).ok()?;
-    Some(text)
+/// The outcome of reading one zip entry.
+#[allow(non_camel_case_types)]
+enum Part_ {
+    Text(String),
+    Missing,
+    TooLarge,
+}
+
+impl Part_ {
+    fn text(self) -> Option<String> {
+        match self {
+            Part_::Text(text) => Some(text),
+            _ => None,
+        }
+    }
+}
+
+/// Read one entry, never more than `MAX_PART_BYTES` of *decompressed* output.
+/// The size the zip header claims is the attacker's to choose, so the cap is
+/// applied to the bytes that actually come out.
+fn read_part(archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> Part_ {
+    let Ok(file) = archive.by_name(name) else { return Part_::Missing };
+    let mut bytes = Vec::new();
+    if file.take(MAX_PART_BYTES + 1).read_to_end(&mut bytes).is_err() {
+        return Part_::Missing;
+    }
+    if bytes.len() as u64 > MAX_PART_BYTES {
+        return Part_::TooLarge;
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) => Part_::Text(text),
+        Err(_) => Part_::Missing,
+    }
+}
+
+fn parse_xml(xml: &str) -> Result<roxmltree::Document<'_>, roxmltree::Error> {
+    roxmltree::Document::parse_with_options(
+        xml,
+        roxmltree::ParsingOptions {
+            allow_dtd: false,
+            nodes_limit: MAX_XML_NODES,
+            ..roxmltree::ParsingOptions::default()
+        },
+    )
 }
 
 fn attr<'a>(node: &Node<'a, '_>, name: &str) -> Option<&'a str> {
@@ -96,7 +155,7 @@ fn child<'a, 'b>(node: &Node<'a, 'b>, name: &str) -> Option<Node<'a, 'b>> {
 }
 
 fn core_properties(xml: &str) -> (Option<String>, Option<String>) {
-    let Ok(doc) = roxmltree::Document::parse(xml) else { return (None, None) };
+    let Ok(doc) = parse_xml(xml) else { return (None, None) };
     let find = |name: &str| {
         doc.descendants()
             .find(|n| n.is_element() && n.tag_name().name() == name)
@@ -127,7 +186,7 @@ struct Styles {
 impl Styles {
     fn parse(xml: &str) -> Self {
         let mut styles = Styles::default();
-        let Ok(doc) = roxmltree::Document::parse(xml) else { return styles };
+        let Ok(doc) = parse_xml(xml) else { return styles };
         for style in doc.descendants().filter(|n| is(n, "style")) {
             if attr(&style, "type") != Some("paragraph") {
                 continue;

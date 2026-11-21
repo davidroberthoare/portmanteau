@@ -14,8 +14,15 @@ use roxmltree::Node;
 use crate::{ImportedDocument, Notes, Parsed};
 
 pub(crate) fn import(xml: &str, medium: Medium, notes: &mut Notes) -> Result<Parsed, String> {
-    let document = roxmltree::Document::parse(xml)
-        .map_err(|error| format!("Could not read the FDX file as XML: {error}"))?;
+    let document = roxmltree::Document::parse_with_options(
+        xml,
+        roxmltree::ParsingOptions {
+            allow_dtd: false,
+            nodes_limit: 4_000_000,
+            ..roxmltree::ParsingOptions::default()
+        },
+    )
+    .map_err(|error| format!("Could not read the FDX file as XML: {error}"))?;
     if document.root_element().tag_name().name() != "FinalDraft" {
         return Err("This XML file is not a Final Draft document".into());
     }

@@ -2861,6 +2861,7 @@ dependencies = [
  "chrono",
  "portmanteau-core",
  "portmanteau-export",
+ "portmanteau-import",
  "serde",
  "serde_json",
 ]
@@ -2881,11 +2882,9 @@ name = "portmanteau-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "roxmltree",
  "serde",
  "serde_json",
  "uuid",
- "zip",
  "zspell",
 ]
 

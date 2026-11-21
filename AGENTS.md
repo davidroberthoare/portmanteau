@@ -447,8 +447,9 @@ These are documented rather than hidden:
 - The diff is line-level, not word-level, and does not yet offer accept/reject
   hunks or tracked changes.
 - Import covers Fountain, Final Draft (FDX), Word (DOCX) and plain text through
-  `document.import`, the `import_document` MCP tool and File → Import. The FDX
-  style-mapping review dialog is still deliberate later work.
+  `document.import`, the `import_document` MCP tool and File → Import. The
+  parsers live in `crates/portmanteau-import`; see `docs/roadmap.md` for what is
+  not done (review step, dual dialogue, Word images and footnotes).
 - Collaboration is out of scope for this version: no accounts, network, sync,
   comments or shared review. Keep future designs file-based and versioned so a
   writer owns their data.
