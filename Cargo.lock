@@ -2903,6 +2903,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "portmanteau-import"
+version = "0.1.0"
+dependencies = [
+ "portmanteau-core",
+ "portmanteau-export",
+ "roxmltree",
+ "zip",
+]
+
+[[package]]
 name = "portmanteau-mcp"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,12 @@
+[package]
+name = "portmanteau-import"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+portmanteau-core = { path = "../portmanteau-core" }
+roxmltree = "0.21"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+portmanteau-export = { path = "../portmanteau-export" }
