@@ -158,7 +158,7 @@ pub(crate) fn short_path(path: &Path) -> String {
 
 /// Ask the desktop to open a file. When the file has been moved or deleted,
 /// open its folder instead so the click still leads somewhere useful.
-fn open_path(path: &Path) {
+pub(crate) fn open_path(path: &Path) {
     let target = if path.is_file() {
         path.to_path_buf()
     } else {
@@ -187,8 +187,6 @@ pub struct Toast {
     pub detail: String,
     pub at: Instant,
     pub kind: ToastKind,
-    /// A file the toast can open when its path is clicked.
-    pub path: Option<PathBuf>,
 }
 
 /// A prepared revision comparison, owned by the shell so the modal can be
@@ -426,24 +424,6 @@ impl PortmanteauApp {
             detail: detail.into(),
             at: Instant::now(),
             kind,
-            path: None,
-        });
-    }
-
-    /// A toast that names a file and opens it when the path is clicked.
-    pub fn toast_path(
-        &mut self,
-        message: impl Into<String>,
-        detail: impl Into<String>,
-        path: PathBuf,
-        kind: ToastKind,
-    ) {
-        self.toast = Some(Toast {
-            message: message.into(),
-            detail: detail.into(),
-            at: Instant::now(),
-            kind,
-            path: Some(path),
         });
     }
 
@@ -1022,16 +1002,6 @@ impl PortmanteauApp {
                             ui.vertical(|ui| {
                                 ui.label(RichText::new(&toast.message).font(ui_body()).color(TEXT));
                                 ui.label(RichText::new(&toast.detail).font(ui_body()).color(MUTED));
-                                if let Some(path) = &toast.path {
-                                    let link = ui.link(
-                                        RichText::new(short_path(path))
-                                            .font(mono(9.0))
-                                            .color(accent),
-                                    );
-                                    if link.on_hover_text("Open the file").clicked() {
-                                        open_path(path);
-                                    }
-                                }
                             });
                         });
                     });
@@ -2473,33 +2443,6 @@ mod shell_probe {
 
         let _ = std::fs::remove_dir_all(&source_dir);
         let _ = std::fs::remove_dir_all(&project_dir);
-    }
-
-    /// A compile toast names the file it wrote, and that name is a link the
-    /// writer can click — not just text to copy.
-    #[test]
-    fn compile_toast_path_is_a_link() {
-        let mut app = PortmanteauApp::new(None);
-        let path = PathBuf::from("/tmp/portmanteau/toast-check.pdf");
-        app.toast_path(
-            "Compile finished",
-            "PDF exported · 3 pages estimated",
-            path.clone(),
-            ToastKind::Ok,
-        );
-        let app = Rc::new(RefCell::new(app));
-        let ui_app = Rc::clone(&app);
-        let mut harness = Harness::builder()
-            .with_size(SHELL)
-            .with_max_steps(32)
-            .with_accessibility_check(false)
-            .allow_missing_glyphs()
-            .build_ui(move |ui| {
-                let ctx = ui.ctx().clone();
-                ui_app.borrow_mut().toast_ui(&ctx);
-            });
-        harness.run_steps(3);
-        harness.get_by_role_and_label(Role::Link, &short_path(&path));
     }
 
     /// The chrome used to carry controls that did nothing or repeated another:

@@ -392,11 +392,24 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                 .min_col_width(48.0)
                 .show(ui, |ui| {
                     ui.label(RichText::new("Folder").font(ui_small()).color(FAINT));
-                    output_field(
-                        ui,
-                        &mut settings.output_path,
-                        "Folder for the export (blank = ./exports)",
-                    );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        // The button keeps its own width at the right; the
+                        // field takes the rest.
+                        if ui
+                            .button(RichText::new("Browse…").font(ui_small()))
+                            .on_hover_text("Choose the folder the export is written to")
+                            .clicked()
+                        {
+                            if let Some(folder) = choose_export_folder(&settings.output_path) {
+                                settings.output_path = folder;
+                            }
+                        }
+                        output_field(
+                            ui,
+                            &mut settings.output_path,
+                            "Folder for the export (blank = ./exports)",
+                        );
+                    });
                     ui.end_row();
 
                     ui.label(RichText::new("Filename").font(ui_small()).color(FAINT));
@@ -404,15 +417,6 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                     ui.end_row();
                 });
             ui.add_space(5.0);
-            ui.label(
-                RichText::new(format!(
-                    "Writes {}",
-                    export_target_label(&app.ws.project, settings)
-                ))
-                .font(mono(9.0))
-                .color(FAINT),
-            );
-            ui.add_space(4.0);
             ui.label(
                 RichText::new(
                     "Front and back matter are assembled from the binder folders; excluded chapters are skipped.",
@@ -485,11 +489,17 @@ fn resolved_export_path(project: &Project, settings: &ExportSettings) -> String 
         .to_string()
 }
 
-/// The path shown under "Where it goes", with the home folder abbreviated so a
-/// long absolute path still fits.
-fn export_target_label(project: &Project, settings: &ExportSettings) -> String {
-    let path = resolved_export_path(project, settings);
-    crate::app::short_path(Path::new(&path))
+/// Ask the desktop for a folder, starting where the field already points.
+/// `None` when the writer cancels.
+fn choose_export_folder(current: &str) -> Option<String> {
+    let mut dialog = rfd::FileDialog::new().set_title("Export folder");
+    let start = expand_tilde(current);
+    if start.is_dir() {
+        dialog = dialog.set_directory(start);
+    }
+    dialog
+        .pick_folder()
+        .map(|folder| folder.to_string_lossy().into_owned())
 }
 
 fn action_panel(
@@ -584,15 +594,16 @@ fn action_panel(
                             .font(ui_small())
                             .color(SAGE),
                         );
-                        ui.label(
-                            RichText::new(&info.path)
+                        // The one place the output path is shown: a live link
+                        // that opens the file.
+                        let path = Path::new(&info.path);
+                        let link = ui.link(
+                            RichText::new(crate::app::short_path(path))
                                 .font(mono(9.0))
-                                .color(FAINT),
+                                .color(ACCENT),
                         );
-                    });
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.small_button("Copy path").clicked() {
-                            ui.ctx().copy_text(info.path.clone());
+                        if link.on_hover_text("Open the file").clicked() {
+                            crate::app::open_path(path);
                         }
                     });
                 });
@@ -1334,15 +1345,9 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
             .and_then(|v| v.as_str())
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(&target));
-        // The toast names the file and opens it: a compile that writes
-        // somewhere the writer cannot find is indistinguishable from one that
-        // did nothing.
-        app.toast_path(
-            "Compile finished",
-            res.message.clone(),
-            path.clone(),
-            ToastKind::Ok,
-        );
+        // No toast: "Last export" in the action panel names the file and
+        // opens it, so a compile that wrote somewhere unexpected is still
+        // findable without a second, vanishing notice.
         app.ws.last_message = format!("{} → {}", res.message, path.display());
     } else {
         app.toast("Compile failed", res.message, ToastKind::Error);
@@ -1412,13 +1417,15 @@ mod tests {
             written.is_file(),
             "the PDF should be on disk at {written:?}"
         );
-        let toast = app.toast.as_ref().expect("a finished compile reports itself");
-        assert!(matches!(toast.kind, ToastKind::Ok));
-        assert_eq!(
-            toast.path.as_deref(),
-            Some(written.as_path()),
-            "the toast should carry the file it wrote so the path can be clicked"
-        );
+        assert!(app.toast.is_none(), "the compile reports in the action panel, not a toast");
+        let info = app.ws.last_export.as_ref().expect("the compile records its file");
+        assert_eq!(Path::new(&info.path), written.as_path());
+        drop(app);
+        // The one place the path appears is a live link; no copy button, no
+        // second "Writes" line.
+        harness.get_by_role_and_label(Role::Link, &crate::app::short_path(&written));
+        assert!(harness.query_by_label("Copy path").is_none());
+        assert!(harness.query_by_label_contains("Writes ").is_none());
     }
 
     #[test]
