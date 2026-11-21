@@ -231,7 +231,7 @@ fn book_pages(
         pages.push(Page {
             file: "titlepage.xhtml".into(),
             title: "Title page".into(),
-            body: html_title_page(project),
+            body: html_title_page(project, settings),
             in_nav: false,
         });
     }

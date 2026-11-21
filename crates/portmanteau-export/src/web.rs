@@ -227,6 +227,19 @@ pub(crate) fn stylesheet(
     // 2. Headings and the title page.
     css.push_str(&format!(".heading {{ {} font-weight: bold; }}\n", declarations(&st.chapter_heading, serif)));
     css.push_str(".chapter { break-before: page; page-break-before: always; }\n");
+    if project.compile_plan(settings).kind.is_script() {
+        // The script cover: its own lines carry the space above them, and the
+        // script starts on the next page even when its first document runs on.
+        css.push_str(".title-page { break-after: page; page-break-after: always; }\n");
+        for line in script_cover_lines(project, settings) {
+            let class = cover_class(line.role);
+            let style = ElementStyle { before: 0.0, ..line.style.clone() };
+            let rule = format!(".title-page .{class} {{ {} }}\n", declarations(&style, mono));
+            if !css.contains(&rule) {
+                css.push_str(&rule);
+            }
+        }
+    } else {
     css.push_str(&format!(
         ".title-page {{ margin-top: {:.1}pt; }}\n.title-page .title {{ {} font-weight: bold; }}\n",
         title_drop_pt(project, settings),
@@ -235,6 +248,7 @@ pub(crate) fn stylesheet(
     css.push_str(&format!(".title-page .subtitle {{ {} }}\n", declarations(&st.title_page_subtitle, serif)));
     css.push_str(&format!(".title-page .byline {{ {} }}\n", declarations(&st.title_page_author, serif)));
     css.push_str(".title-page .imprint { margin-top: 4em; font-size: .85em; color: #555; text-align: center; }\n");
+    }
     css.push_str(".toc a { color: inherit; }\n.cover { text-align: center; margin: 0; padding: 0; }\n.cover img { max-width: 100%; }\n");
 
     // 3. Script elements, one class per kind, straight from the element styles.
@@ -342,8 +356,33 @@ pub(crate) fn html_document_body(
     }
 }
 
+fn cover_class(role: TitleRole) -> &'static str {
+    match role {
+        TitleRole::Title => "cover-title",
+        TitleRole::Credit => "cover-credit",
+        TitleRole::Footer => "cover-footer",
+    }
+}
+
 /// The title page block shared by both targets.
-pub(crate) fn html_title_page(project: &Project) -> String {
+pub(crate) fn html_title_page(project: &Project, settings: &ExportSettings) -> String {
+    if project.compile_plan(settings).kind.is_script() {
+        let mut out = String::from("<div class=\"title-page\">\n");
+        for line in script_cover_lines(project, settings) {
+            let spacing = if line.style.before > 0.0 {
+                format!(" style=\"margin-top: {:.1}pt\"", line.style.before)
+            } else {
+                String::new()
+            };
+            out.push_str(&format!(
+                "<p class=\"{}\"{spacing}>{}</p>\n",
+                cover_class(line.role),
+                html_escape(&line.text)
+            ));
+        }
+        out.push_str("</div>\n");
+        return out;
+    }
     let mut out = String::from("<div class=\"title-page\">\n");
     out.push_str(&format!("<p class=\"title\">{}</p>\n", html_escape(&project.title)));
     if !project.subtitle.trim().is_empty() {

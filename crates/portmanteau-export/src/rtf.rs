@@ -161,7 +161,12 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
         pt_to_twips(margins.bottom),
     ));
 
-    if settings.include_title_page {
+    let is_script = project.compile_plan(settings).kind.is_script();
+    if settings.include_title_page && is_script {
+        for line in script_cover_lines(project, settings) {
+            out.push_str(&rtf_plain_paragraph(&line.style, mono, &line.text, false, false));
+        }
+    } else if settings.include_title_page {
         let title = ElementStyle {
             before: st.title_page_title.before + title_drop_pt(project, settings),
             ..st.title_page_title.clone()
@@ -202,7 +207,8 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
                     block.text.clone()
                 };
                 let text = scenes.apply(block.kind, text, settings.include_scene_numbers);
-                let new_page = first_block && i > 0 && starts_new_page(section.doc);
+                let new_page = first_block
+                    && if i == 0 { settings.include_title_page } else { starts_new_page(section.doc) };
                 first_block = false;
                 out.push_str(&rtf_plain_paragraph(style, mono, &text, false, new_page));
             }
