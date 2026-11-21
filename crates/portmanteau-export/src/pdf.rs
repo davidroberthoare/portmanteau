@@ -238,8 +238,14 @@ pub struct PdfPageLayout {
 #[derive(Clone, Debug)]
 pub struct PdfLayoutSection {
     pub label: String,
+    /// The binder document this section prints, when it is one (not the
+    /// generated title page or contents).
+    pub doc_id: Option<String>,
     /// 0-based index of the section's first page.
     pub start_page: usize,
+    /// How many pages the section touches. Script documents run on from one
+    /// another, so neighbours can share a page and these counts can sum to
+    /// more than the manuscript's pages.
     pub page_count: usize,
 }
 
@@ -407,6 +413,13 @@ impl Flow {
 
     /// The page currently being filled counts, so a one-page section reports
     /// one page even before the flow finishes it.
+    /// The 0-based page the next line of text lands on. A section that starts
+    /// by running on from the previous text starts on the page still being
+    /// filled, not the one after it.
+    fn here(&self) -> usize {
+        self.pages.len()
+    }
+
     fn page_index(&self) -> usize {
         self.pages.len() + usize::from(!self.current.items.is_empty())
     }
@@ -599,6 +612,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         pages.push(script_title_page(project, settings, &frame, title_face));
         sections.push(PdfLayoutSection {
             label: "Title page".into(),
+            doc_id: None,
             start_page: 0,
             page_count: 1,
         });
@@ -611,7 +625,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         if index > 0 && starts_new_page(doc) {
             flow.page_break();
         }
-        let start = flow.page_index();
+        let start = flow.here();
         let doc_sheet = project.style_sheet_for(doc);
         let mut blocks: Vec<Block> = crate::screenplay_blocks(project, doc);
         // Blank blocks are not content; the writer never inserts separators or
@@ -700,6 +714,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
 
         sections.push(PdfLayoutSection {
             label: doc.title.clone(),
+            doc_id: Some(doc.id.clone()),
             start_page: start,
             page_count: flow.page_index() - start,
         });
@@ -841,6 +856,7 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         pages.push(prose_title_page(project, settings, &frame));
         sections.push(PdfLayoutSection {
             label: "Title page".into(),
+            doc_id: None,
             start_page: 0,
             page_count: 1,
         });
@@ -851,7 +867,7 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
 
     for doc in front_matter(project, settings) {
         flow.page_break();
-        let start = flow.page_index();
+        let start = flow.here();
         flow_chapter_heading(
             &mut flow,
             &doc.title,
@@ -864,6 +880,7 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         }
         sections.push(PdfLayoutSection {
             label: doc.title.clone(),
+            doc_id: Some(doc.id.clone()),
             start_page: start,
             page_count: flow.page_index() - start,
         });
@@ -872,7 +889,7 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
     let compiled = manuscript_sections(project, settings);
     for (index, section) in compiled.iter().enumerate() {
         flow.page_break();
-        let start = flow.page_index();
+        let start = flow.here();
         let title = section_title(project, section.doc, index, settings);
         headings.push((title.clone(), start));
         flow_chapter_heading(
@@ -912,6 +929,7 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         }
         sections.push(PdfLayoutSection {
             label: section.heading.clone(),
+            doc_id: Some(section.doc.id.clone()),
             start_page: start,
             page_count: flow.page_index() - start,
         });
@@ -919,7 +937,7 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
 
     for doc in back_matter(project, settings) {
         flow.page_break();
-        let start = flow.page_index();
+        let start = flow.here();
         flow_chapter_heading(
             &mut flow,
             &doc.title,
@@ -932,6 +950,7 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         }
         sections.push(PdfLayoutSection {
             label: doc.title.clone(),
+            doc_id: Some(doc.id.clone()),
             start_page: start,
             page_count: flow.page_index() - start,
         });
@@ -956,6 +975,7 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
                 insert_at.min(sections.len()),
                 PdfLayoutSection {
                     label: "Contents".into(),
+                    doc_id: None,
                     start_page: insert_at,
                     page_count: 1,
                 },
@@ -1638,22 +1658,43 @@ mod tests {
         for kind in ["tv", "stage"] {
             let settings = script_settings(&project, kind);
             let layout = pdf_layout(&project, &settings);
-            let titled = usize::from(settings.include_title_page);
-            let body: usize = layout
-                .sections
-                .iter()
-                .filter(|section| section.label != "Title page")
-                .map(|section| section.page_count)
-                .sum();
-            assert_eq!(
-                body + titled,
-                layout.page_count(),
-                "{kind}: {:?}",
-                layout.sections
-            );
+            // Documents run on from one another, so sections may share a page;
+            // what must hold is that every page belongs to some section and
+            // none points past the end.
+            let mut covered = vec![false; layout.page_count()];
             for section in &layout.sections {
-                assert!(section.page_count > 0, "{kind}: {:?}", section);
+                assert!(section.page_count > 0, "{kind}: {section:?}");
+                let end = section.start_page + section.page_count;
+                assert!(end <= layout.page_count(), "{kind}: {section:?}");
+                for page in section.start_page..end {
+                    covered[page] = true;
+                }
             }
+            assert!(covered.iter().all(|c| *c), "{kind}: {:?}", layout.sections);
+        }
+    }
+
+    #[test]
+    fn a_scene_that_runs_on_starts_on_the_page_still_being_filled() {
+        let mut p = Project::new("Run on", portmanteau_core::ProjectKind::Television);
+        for (title, kind) in [
+            ("Episode 1", DocKind::Chapter),
+            ("Scene a", DocKind::Scene),
+            ("Scene b", DocKind::Scene),
+        ] {
+            let id = p.add_document(None, title, kind, portmanteau_core::Medium::TvScript);
+            let doc = p.documents.iter_mut().find(|d| d.id == id).unwrap();
+            doc.content =
+                portmanteau_core::RichDocument::from_plain_text(&format!("INT. {title} - DAY\n\nSomeone speaks."), "action");
+        }
+        let mut settings = p.settings_for(ExportKind::Pdf);
+        settings.compile_type = Some(portmanteau_core::CompileType::TvScript);
+        settings.include_title_page = false;
+        let layout = pdf_layout(&p, &settings);
+        assert_eq!(layout.page_count(), 1, "three short documents share a page");
+        for section in &layout.sections {
+            assert_eq!((section.start_page, section.page_count), (0, 1), "{section:?}");
+            assert!(section.doc_id.is_some());
         }
     }
 
