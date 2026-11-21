@@ -22,7 +22,7 @@ use skrifa::{FontRef, MetadataProvider};
 
 use crate::{
     back_matter, front_matter, manuscript_sections, page_margins, paper_pt, prose_paragraphs,
-    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers,
+    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers, TITLE_PAGE_DROP,
 };
 
 // ---------------------------------------------------------------------------
@@ -780,7 +780,7 @@ fn script_title_page(
     let title_chars = (frame.content_width() / (title_size * 0.6))
         .floor()
         .max(12.0) as usize;
-    let mut y = frame.height * 0.30;
+    let mut y = frame.height * TITLE_PAGE_DROP;
     let title = project.title.trim().to_uppercase();
     for line in wrap_plain(&title, title_chars) {
         push(&line, title_size, y, Alignment::Center);
@@ -997,7 +997,7 @@ fn prose_title_page(
 ) -> PdfPageLayout {
     let styles = &settings.styles;
     let mut items = Vec::new();
-    let mut y = frame.height * 0.30;
+    let mut y = frame.height * TITLE_PAGE_DROP;
 
     let title_style = &styles.title_page_title;
     let title_size = title_style.size.max(8.0);

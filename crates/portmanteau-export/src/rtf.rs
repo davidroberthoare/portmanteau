@@ -162,7 +162,11 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
     ));
 
     if settings.include_title_page {
-        out.push_str(&rtf_plain_paragraph(&st.title_page_title, serif, &project.title, true, false));
+        let title = ElementStyle {
+            before: st.title_page_title.before + title_drop_pt(project, settings),
+            ..st.title_page_title.clone()
+        };
+        out.push_str(&rtf_plain_paragraph(&title, serif, &project.title, true, false));
         if !project.subtitle.trim().is_empty() {
             out.push_str(&rtf_plain_paragraph(&st.title_page_subtitle, serif, &project.subtitle, false, false));
         }

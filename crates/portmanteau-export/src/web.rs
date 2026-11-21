@@ -227,7 +227,11 @@ pub(crate) fn stylesheet(
     // 2. Headings and the title page.
     css.push_str(&format!(".heading {{ {} font-weight: bold; }}\n", declarations(&st.chapter_heading, serif)));
     css.push_str(".chapter { break-before: page; page-break-before: always; }\n");
-    css.push_str(&format!(".title-page {{ margin-top: 25%; }}\n.title-page .title {{ {} font-weight: bold; }}\n", declarations(&st.title_page_title, serif)));
+    css.push_str(&format!(
+        ".title-page {{ margin-top: {:.1}pt; }}\n.title-page .title {{ {} font-weight: bold; }}\n",
+        title_drop_pt(project, settings),
+        declarations(&st.title_page_title, serif)
+    ));
     css.push_str(&format!(".title-page .subtitle {{ {} }}\n", declarations(&st.title_page_subtitle, serif)));
     css.push_str(&format!(".title-page .byline {{ {} }}\n", declarations(&st.title_page_author, serif)));
     css.push_str(".title-page .imprint { margin-top: 4em; font-size: .85em; color: #555; text-align: center; }\n");

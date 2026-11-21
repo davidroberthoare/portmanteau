@@ -787,3 +787,34 @@ fn every_script_writer_numbers_scenes_the_same_way_and_adds_no_heading() {
         assert!(plain.contains("EXT. COLD HARBOR"), "{kind:?} still has the scene");
     }
 }
+
+#[test]
+fn every_flowing_format_drops_the_title_block_to_where_the_pdf_puts_it() {
+    let p = demo();
+    // Letter, automatic book margins: 30% of 792 pt, less the top margin and
+    // one ascent of the 24 pt title.
+    let drop = 792.0 * 0.30 - mm_to_pt(22.0) - 24.0 * 0.93;
+
+    let s = p.settings_for(ExportKind::Docx);
+    let styles = docx_part(&docx_manuscript(&p, &s), "word/styles.xml");
+    let title = docx_style_xml(&styles, "Title");
+    let before = format!("w:before=\"{}\"", pt_to_twips(drop));
+    assert!(title.contains(&before), "{title} should contain {before}");
+
+    let rtf = rtf_manuscript(&p, &p.settings_for(ExportKind::Rtf));
+    assert!(rtf.contains(&format!("\\sb{}", pt_to_twips(drop))), "RTF title spacing");
+
+    let html = html_manuscript(&p, &p.settings_for(ExportKind::Html));
+    assert!(html.contains(&format!(".title-page {{ margin-top: {drop:.1}pt; }}")), "HTML title drop");
+
+    let epub = epub_manuscript(&p, &p.settings_for(ExportKind::Epub));
+    assert!(
+        epub_file(&epub, "OEBPS/style.css").contains(&format!(".title-page {{ margin-top: {drop:.1}pt; }}")),
+        "EPUB title drop"
+    );
+
+    // A taller top margin leaves less to drop; it never goes negative.
+    let mut tall = p.settings_for(ExportKind::Docx);
+    tall.margins = Some(PageMargins { left: 72.0, right: 72.0, top: 400.0, bottom: 72.0 });
+    assert_eq!(title_drop_pt(&p, &tall), 0.0, "a tall margin leaves nothing to drop");
+}

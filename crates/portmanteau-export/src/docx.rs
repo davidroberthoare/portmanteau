@@ -170,7 +170,7 @@ pub(crate) fn docx_style(
 }
 
 /// The whole of `word/styles.xml`, generated from the compile's element styles.
-pub(crate) fn docx_styles(settings: &ExportSettings) -> String {
+pub(crate) fn docx_styles(project: &Project, settings: &ExportSettings) -> String {
     let st = &settings.styles;
     let serif = settings.font.as_str();
     let mono = "Courier New";
@@ -185,7 +185,12 @@ pub(crate) fn docx_styles(settings: &ExportSettings) -> String {
     ));
     out.push_str("<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/></w:style>\n");
     out.push_str(&docx_style("Body", "Body", &st.body, serif, false, false, None));
-    out.push_str(&docx_style("Title", "Title", &st.title_page_title, serif, true, false, None));
+    // The title sits where the PDF puts it: dropped from the top margin.
+    let title = ElementStyle {
+        before: st.title_page_title.before + title_drop_pt(project, settings),
+        ..st.title_page_title.clone()
+    };
+    out.push_str(&docx_style("Title", "Title", &title, serif, true, false, None));
     out.push_str(&docx_style("Subtitle", "Subtitle", &st.title_page_subtitle, serif, false, false, None));
     out.push_str(&docx_style("Byline", "Byline", &st.title_page_author, serif, false, false, None));
     out.push_str(&docx_style("Heading1", "heading 1", &st.chapter_heading, serif, true, true, Some(0)));
@@ -277,7 +282,7 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>{}\n<w:sectPr><w:pgSz w:w=\"{page_w}\" w:h=\"{page_h}\"/><w:pgMar w:top=\"{mt}\" w:right=\"{mr}\" w:bottom=\"{mb}\" w:left=\"{ml}\"/></w:sectPr></w:body></w:document>",
         body
     );
-    let styles = docx_styles(settings);
+    let styles = docx_styles(project, settings);
     let content_types = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>

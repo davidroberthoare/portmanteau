@@ -97,3 +97,21 @@ pub(crate) fn page_margins(project: &Project, settings: &ExportSettings) -> Page
         bottom,
     }
 }
+
+/// How far down the page a title block starts, as a fraction of the page
+/// height. The PDF places it there; the flowing formats use `title_drop_pt`.
+pub(crate) const TITLE_PAGE_DROP: f32 = 0.30;
+
+/// How far the top of a title's first line sits above its baseline, as a
+/// fraction of the type size. Measured on Liberation Serif in a word
+/// processor's layout against this crate's PDF.
+const TITLE_ASCENT: f32 = 0.93;
+
+/// Space to put above the title in a format that flows from the top margin
+/// (DOCX, RTF, HTML, EPUB), so the title lands where the PDF puts it. The PDF
+/// places the title's first *baseline* at `TITLE_PAGE_DROP` of the page height;
+/// a flowing format places the *top* of the line, so one ascent comes off.
+pub(crate) fn title_drop_pt(project: &Project, settings: &ExportSettings) -> f32 {
+    let ascent = settings.styles.title_page_title.size.max(8.0) * TITLE_ASCENT;
+    (paper_pt(settings).1 * TITLE_PAGE_DROP - page_margins(project, settings).top - ascent).max(0.0)
+}

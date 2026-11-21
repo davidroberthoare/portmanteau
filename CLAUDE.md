@@ -66,9 +66,17 @@ Done this session:
   the Contents switch; only the PDF numbered scenes; the Fountain export was
   not valid Fountain (blank line between cue and dialogue).
 
-Verification limits: LibreOffice cannot run in this sandbox, so DOCX and RTF
-were checked structurally (XML well-formed, styles and braces asserted in
-tests) and **not visually**. Open one of each in Word or LibreOffice.
+How to check output visually (all on this machine):
+- PDF: `pdftoppm -png`, and `pdftotext -bbox-layout` to measure positions.
+- EPUB / HTML: `ebook-convert x.epub x.pdf`, or `chromium --headless --print-to-pdf`,
+  then `pdftoppm`. Calibre rescales type, so trust it for structure, not size.
+- **DOCX / RTF: `wordcraft-cli`** (the WordCraft app). `render f out.png --page N`,
+  `info f` (page count), `inspect f` (parsed paragraph properties as JSON),
+  `convert f out.pdf --strict` (fails on undrawable characters or missing pictures).
+  LibreOffice does not run in this sandbox. WordCraft's PNG render of RTF shows
+  space-before at page tops slightly differently from its DOCX render; compare via
+  `convert ... out.pdf` and `pdftotext -bbox-layout` when geometry matters.
+- Rebuild with `cargo build --workspace`: a plain `cargo build` leaves the CLI stale.
 
 ## Next work (priority order)
 
