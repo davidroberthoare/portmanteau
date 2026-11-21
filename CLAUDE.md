@@ -25,7 +25,7 @@ Repo root is `app/` (own `.git`, branch `master`). The parent folder `myScript/`
 - Rust + eframe/egui, native only. No network, accounts, telemetry, background daemons or long-running processes (never start dev servers/watchers).
 - Command layer is authoritative: new behaviour is a command (API arm + catalogue entry + MCP tool + README row + test) before or alongside UI. No domain logic in widgets.
 - `--screenshot` must keep working; a blank PNG is a failure.
-- No backwards compatibility with old project files until a major release (owner's explicit decision). Don't add migrations/aliases.
+- **No backwards compatibility, ever, until the owner says otherwise.** The project has no users; any change may be breaking. Don't add migrations, aliases or compatibility shims.
 - No collaboration features unless the owner asks.
 - Don't run `cargo fmt` repo-wide; format only files you touched.
 - Don't commit `target/`, `shots/`, `exports/`.
@@ -43,21 +43,49 @@ Repo root is `app/` (own `.git`, branch `master`). The parent folder `myScript/`
 
 ## State at handoff (2026-11-21)
 
-- Build green, 193 tests pass. Last commit `afcb0f4` (Letter default).
-- **Uncommitted, working:** `crates/portmanteau-export/src/lib.rs` embeds bundled Liberation fonts in EPUB, builds a font stack with a Liberation fallback, honours italic in prose styles, and drops the first-paragraph indent override in HTML. Review, run the export tests, then commit.
-- Last OpenCode session was "Script formatting in the UI" (ended `failed`); its exact stopping point was not inspected. Treat the screenshots in `../shots/` (newest: script/compile) as the best hint, and verify script-editor behaviour by hand.
+Everything below is on `master`; build is green with no warnings.
+
+Done this session:
+- **Exporters** are one module per format over shared `layout` (margins, paper,
+  script scale), `web` (the HTML/EPUB stylesheet generator), `content` and
+  `util`. Every writer reads styles from `ElementStyle` and margins from
+  `layout::page_margins`; no writer owns a size, indent or margin constant.
+  `ExportSettings.margins` (None = automatic) has a Custom margins control in
+  Compile. Cross-format tests check included documents, the title-page and
+  Contents switches, and scene numbering for every writer.
+- **Importers** (`portmanteau-import`): Fountain, FDX, DOCX, plain text, with a
+  shared `Imported` result and warnings, encoding detection, chapter splitting
+  and a zip-bomb guard. Round-trip tests run through our own exporters.
+- **Undo/redo** (`src/history.rs`): observes the selected document, steps are
+  changed-paragraph windows, typing merges until a 0.7 s pause.
+- **Spell-check** now covers every prose field.
+- **UI cleanup**: dead or repeated controls removed, each with a comment on
+  what it should become; a shell test keeps them out.
+- Bugs found by looking at output: PDF ignored Justify and always centred the
+  title page; EPUB referenced fonts it never packaged; DOCX/RTF/TXT ignored
+  the Contents switch; only the PDF numbered scenes; the Fountain export was
+  not valid Fountain (blank line between cue and dialogue).
+
+Verification limits: LibreOffice cannot run in this sandbox, so DOCX and RTF
+were checked structurally (XML well-formed, styles and braces asserted in
+tests) and **not visually**. Open one of each in Word or LibreOffice.
 
 ## Next work (priority order)
 
-1. Commit the EPUB font work above after review.
-2. **Undo/redo** for all rich editors (largest missing editing feature; see roadmap "Planned: undo / redo").
-3. **Multi-page view**: Continuous vs Print/Paged, with page count (`../notes/next_tasks.md`). Preview estimate currently differs from real export pagination.
-4. Spellcheck in every text editor (prose/script done; confirm other fields).
-5. Per-project, per-target, per-element compile customisation (font, margins, spacing, e.g. title-page font differing between PDF and EPUB): model exists; finish UI coverage and make all writers (DOCX/RTF too) consume it.
-6. Cleanup: remove dead `legacy_script_page` in `src/ui/editor.rs` and unused `insert_image` on `InlineToolbarResult`; fix the 6 warnings in `portmanteau-export`.
-7. Later: drag-and-drop binder, native file pickers (`rfd`), word-level diff, FDX style-mapping dialog, image insertion before first save, packaging.
-
-Open question from the owner's notes: a rename away from "Scriptorium" was decided as **Portmanteau**; confirm no remaining "Scriptorium" strings (`grep -ri scriptorium .`).
+1. **Preview uses its own pagination engine** (`src/ui/page.rs`) that disagrees
+   with the PDF writer (preview said 9 pages, the PDF has 10). Render
+   `portmanteau_export::pdf_layout` pages in the Compile and Settings previews
+   and delete the duplicate engine. This is also the foundation for the paged
+   editor view, which the owner has deferred.
+2. **PDF starts every script document on a new page.** With scenes as separate
+   binder items that puts one scene per page. Confirm the intended rule with
+   the owner (probably: flow continuously, break only between episodes).
+3. **Import review step**: show the split (titles, word counts) before the
+   documents are created. See `docs/roadmap.md` for the rest of the import gaps.
+4. Per-document compile overrides and a "compile with last settings" action.
+5. Undo for binder operations, research and database text.
+6. Drag-and-drop binder, native file pickers (`rfd`), word-level diff, FDX
+   style-mapping dialog, image insertion before first save, packaging.
 
 ## Working style
 
