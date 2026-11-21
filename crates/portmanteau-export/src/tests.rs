@@ -528,3 +528,138 @@ fn automatic_margins_differ_for_prose_and_scripts_and_never_swallow_the_page() {
     let clamped = page_margins(&p, &absurd);
     assert!(clamped.left + clamped.right <= 612.0 * 2.0 / 3.0 + 0.01);
 }
+
+#[test]
+fn a_hostile_font_name_cannot_break_out_of_the_style_element() {
+    let p = demo();
+    let hostile = "Evil</style><script>alert(1)</script>\"; } body { display:none";
+    let mut s = p.settings_for(ExportKind::Html);
+    s.styles.body.font = hostile.into();
+    let html = html_manuscript(&p, &s);
+    assert!(!html.contains("<script>"), "{html}");
+    assert_eq!(html.matches("</style>").count(), 1, "exactly one closing style tag");
+
+    let mut s = p.settings_for(ExportKind::Epub);
+    s.styles.body.font = hostile.into();
+    let bytes = epub_manuscript(&p, &s);
+    let css = epub_file(&bytes, "OEBPS/style.css");
+    assert!(!css.contains("</style>") && !css.contains("<script>"), "{css}");
+}
+
+fn docx_part(bytes: &[u8], name: &str) -> String {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut archive.by_name(name).unwrap(), &mut text).unwrap();
+    text
+}
+
+/// The `<w:style>` element with this id, from styles.xml.
+fn docx_style_xml(styles: &str, id: &str) -> String {
+    let start = styles
+        .find(&format!("w:styleId=\"{id}\""))
+        .unwrap_or_else(|| panic!("style {id} missing"));
+    let end = styles[start..].find("</w:style>").unwrap();
+    styles[start..start + end].to_string()
+}
+
+#[test]
+fn docx_styles_come_from_the_element_styles() {
+    let p = demo();
+    let mut s = p.settings_for(ExportKind::Docx);
+    s.styles.chapter_heading.size = 30.0;
+    s.styles.chapter_heading.before = 50.0;
+    s.styles.chapter_heading.align = Alignment::Right;
+    s.styles.body.leading = 2.0;
+    s.styles.body.first_line_indent = 36.0;
+    s.styles.dialogue.indent = 100.0;
+    s.styles.dialogue.right_indent = 40.0;
+    s.styles.title_page_title.align = Alignment::Left;
+    let bytes = docx_manuscript(&p, &s);
+    let styles = docx_part(&bytes, "word/styles.xml");
+
+    let heading = docx_style_xml(&styles, "Heading1");
+    assert!(heading.contains(r#"w:sz w:val="60""#), "{heading}");
+    assert!(heading.contains(r#"w:before="1000""#), "{heading}");
+    assert!(heading.contains(r#"<w:jc w:val="right"/>"#), "{heading}");
+    assert!(heading.contains("<w:pageBreakBefore/>"), "{heading}");
+
+    let body = docx_style_xml(&styles, "Body");
+    assert!(body.contains(r#"w:line="480""#) && body.contains(r#"w:firstLine="720""#), "{body}");
+
+    let dialogue = docx_style_xml(&styles, "ScriptDialogue");
+    assert!(dialogue.contains(r#"w:left="2000""#) && dialogue.contains(r#"w:right="800""#), "{dialogue}");
+
+    let title = docx_style_xml(&styles, "Title");
+    assert!(!title.contains("<w:jc"), "a left-aligned title carries no jc: {title}");
+}
+
+#[test]
+fn docx_script_paragraphs_use_script_styles_and_print_no_invented_heading() {
+    let p = demo();
+    let mut s = p.settings_for(ExportKind::Docx);
+    s.compile_type = Some(CompileType::TvScript);
+    s.include_title_page = false;
+    let plan = p.compile_plan(&s);
+    assert!(plan.included.iter().any(|d| d.medium.is_script()), "demo has a script");
+    let xml = docx_document_xml(docx_manuscript(&p, &s));
+    assert!(xml.contains(r#"<w:pStyle w:val="ScriptDialogue"/>"#), "{xml}");
+    assert!(xml.contains(r#"<w:pStyle w:val="ScriptCharacter"/>"#));
+    assert!(!xml.contains(r#"w:val="Heading1""#), "scripts add no chapter heading");
+    assert!(!xml.contains("w:ind w:left=\"4320\""), "no hard-coded indents");
+}
+
+fn rtf_braces_balance(rtf: &str) -> bool {
+    let mut depth = 0i32;
+    let mut chars = rtf.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next(); // an escaped character is not a brace
+            }
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth < 0 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth == 0
+}
+
+#[test]
+fn rtf_styles_reach_title_headings_and_script_elements() {
+    let p = demo();
+    let mut s = p.settings_for(ExportKind::Rtf);
+    s.styles.title_page_title.size = 40.0;
+    s.styles.chapter_heading.size = 30.0;
+    s.styles.body.leading = 2.0;
+    let rtf = rtf_manuscript(&p, &s);
+    assert!(rtf.contains("\\fs80"), "title size from the title style");
+    assert!(rtf.contains("\\fs60"), "heading size from the heading style");
+    assert!(rtf.contains("\\sl480\\slmult1"), "body leading reaches RTF");
+    assert!(!rtf.contains("\\fs52") && !rtf.contains("\\fs36"), "no hard-coded sizes");
+    assert!(rtf_braces_balance(&rtf));
+
+    let mut s = p.settings_for(ExportKind::Rtf);
+    s.compile_type = Some(CompileType::TvScript);
+    s.styles.dialogue.indent = 100.0;
+    s.styles.dialogue.right_indent = 40.0;
+    let rtf = rtf_manuscript(&p, &s);
+    assert!(rtf.contains("\\li2000\\ri800"), "dialogue indents come from its style");
+    assert!(!rtf.contains("\\li4400") && !rtf.contains("\\li3200"), "no hard-coded script indents");
+    assert!(rtf_braces_balance(&rtf));
+}
+
+#[test]
+fn rtf_text_with_braces_and_unicode_stays_valid() {
+    let mut p = Project::new("Odd {title} \\ ünïcode — dash", ProjectKind::Novel);
+    let parent = p.folder_id("Draft");
+    let id = p.add_document(parent, "One", DocKind::Chapter, Medium::Prose);
+    p.document_mut(&id).unwrap().set_plain_text("A } stray { brace, a backslash \\ and “quotes”.");
+    let rtf = rtf_manuscript(&p, &p.settings_for(ExportKind::Rtf));
+    assert!(rtf_braces_balance(&rtf), "{rtf}");
+    assert!(rtf.contains("\\u8220?"), "curly quote is written as a unicode escape");
+}

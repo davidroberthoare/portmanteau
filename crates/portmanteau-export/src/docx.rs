@@ -109,110 +109,141 @@ pub(crate) fn docx_prose_paragraph(paragraph: &ProseParagraph, fallback_font: &s
     )
 }
 
-pub(crate) fn docx_basic_paragraph(
-    body: &mut String,
-    text: &str,
-    style: &str,
-    bold: bool,
-    center: bool,
-    mono: bool,
-    indent: i32,
-    prose_font: &str,
-) {
-    let jc = if center { "<w:jc w:val=\"center\"/>" } else { "" };
-    let fonts = if mono {
-        "<w:rFonts w:ascii=\"Courier New\" w:hAnsi=\"Courier New\"/>".to_string()
-    } else {
-        format!(
-            "<w:rFonts w:ascii=\"{}\" w:hAnsi=\"{}\"/>",
-            prose_font, prose_font
-        )
-    };
-    // Element order inside w:pPr matters to Word: pStyle, ind, jc.
+/// A paragraph that only names its style. Appearance lives in `styles.xml`,
+/// so a writer's style change reaches every paragraph that uses it.
+pub(crate) fn docx_styled_paragraph(body: &mut String, text: &str, style_id: &str) {
     body.push_str(&format!(
-        "<w:p><w:pPr><w:pStyle w:val=\"{}\"/><w:ind w:left=\"{}\"/>{}</w:pPr><w:r><w:rPr>{}{}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",
-        style,
-        indent,
-        jc,
-        fonts,
-        if bold { "<w:b/>" } else { "" },
+        "<w:p><w:pPr><w:pStyle w:val=\"{style_id}\"/></w:pPr><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",
         xml_escape(text)
     ));
 }
 
+/// Style id for a screenplay element, e.g. `ScriptSceneHeading`.
+pub(crate) fn docx_script_style_id(kind: ElementKind) -> String {
+    format!("Script{kind:?}")
+}
+
+/// One `<w:style>` generated from an `ElementStyle`. Child order follows the
+/// schema Word enforces: pPr = pageBreakBefore, spacing, ind, jc, outlineLvl;
+/// rPr = rFonts, b, i, sz.
+pub(crate) fn docx_style(
+    id: &str,
+    name: &str,
+    style: &ElementStyle,
+    fallback_font: &str,
+    bold: bool,
+    page_break_before: bool,
+    outline_level: Option<u8>,
+) -> String {
+    let font = xml_escape(if style.font.trim().is_empty() {
+        fallback_font
+    } else {
+        &style.font
+    });
+    let first_line = if style.first_line_indent >= 0.0 {
+        format!("w:firstLine=\"{}\"", pt_to_twips(style.first_line_indent))
+    } else {
+        format!("w:hanging=\"{}\"", pt_to_twips(-style.first_line_indent))
+    };
+    format!(
+        "<w:style w:type=\"paragraph\" w:styleId=\"{id}\"><w:name w:val=\"{name}\"/>{based}<w:qFormat/><w:pPr>{page_break}\
+         <w:spacing w:before=\"{before}\" w:after=\"{after}\" w:line=\"{line}\" w:lineRule=\"auto\"/>\
+         <w:ind w:left=\"{left}\" w:right=\"{right}\" {first_line}/>{jc}{outline}</w:pPr>\
+         <w:rPr><w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\"/>{b}{i}<w:sz w:val=\"{size}\"/></w:rPr></w:style>\n",
+        based = if id == "Normal" { "" } else { "<w:basedOn w:val=\"Normal\"/>" },
+        page_break = if page_break_before { "<w:pageBreakBefore/>" } else { "" },
+        before = pt_to_twips(style.before.max(0.0)),
+        after = pt_to_twips(style.after.max(0.0)),
+        line = (style.leading.max(1.0) * 240.0).round() as i64,
+        left = pt_to_twips(style.indent.max(0.0)),
+        right = pt_to_twips(style.right_indent.max(0.0)),
+        jc = docx_align(style.align)
+            .map(|value| format!("<w:jc w:val=\"{value}\"/>"))
+            .unwrap_or_default(),
+        outline = outline_level
+            .map(|level| format!("<w:outlineLvl w:val=\"{level}\"/>"))
+            .unwrap_or_default(),
+        b = if bold { "<w:b/>" } else { "" },
+        i = if style.italic { "<w:i/>" } else { "" },
+        size = (style.size.max(8.0) * 2.0).round() as i64,
+    )
+}
+
+/// The whole of `word/styles.xml`, generated from the compile's element styles.
+pub(crate) fn docx_styles(settings: &ExportSettings) -> String {
+    let st = &settings.styles;
+    let serif = settings.font.as_str();
+    let mono = "Courier New";
+    let mut out = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
+         <w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n",
+    );
+    let body_font = xml_escape(if st.body.font.trim().is_empty() { serif } else { &st.body.font });
+    out.push_str(&format!(
+        "<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"{body_font}\" w:hAnsi=\"{body_font}\"/><w:sz w:val=\"{}\"/></w:rPr></w:rPrDefault></w:docDefaults>\n",
+        (st.body.size.max(8.0) * 2.0).round() as i64
+    ));
+    out.push_str("<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/></w:style>\n");
+    out.push_str(&docx_style("Body", "Body", &st.body, serif, false, false, None));
+    out.push_str(&docx_style("Title", "Title", &st.title_page_title, serif, true, false, None));
+    out.push_str(&docx_style("Subtitle", "Subtitle", &st.title_page_subtitle, serif, false, false, None));
+    out.push_str(&docx_style("Byline", "Byline", &st.title_page_author, serif, false, false, None));
+    out.push_str(&docx_style("Heading1", "heading 1", &st.chapter_heading, serif, true, true, Some(0)));
+    out.push_str(&docx_style("Heading2", "heading 2", &st.chapter_heading, serif, true, false, Some(1)));
+    for kind in ALL_KINDS {
+        out.push_str(&docx_style(
+            &docx_script_style_id(kind),
+            &format!("Script {}", kind.label()),
+            st.style_for_kind(kind),
+            mono,
+            false,
+            false,
+            None,
+        ));
+    }
+    out.push_str("</w:styles>");
+    out
+}
+
 pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let mut body = String::new();
-    let prose_font = xml_escape(&settings.font);
 
     if settings.include_title_page {
-        docx_basic_paragraph(&mut body, &project.title, "Title", true, true, false, 0, &prose_font);
-        if !project.subtitle.is_empty() {
-            docx_basic_paragraph(
-                &mut body,
-                &project.subtitle,
-                "Subtitle",
-                false,
-                true,
-                false,
-                0,
-                &prose_font,
-            );
+        docx_styled_paragraph(&mut body, &project.title, "Title");
+        if !project.subtitle.trim().is_empty() {
+            docx_styled_paragraph(&mut body, &project.subtitle, "Subtitle");
         }
-        docx_basic_paragraph(
-            &mut body,
-            &format!("by {}", project.author),
-            "Normal",
-            false,
-            true,
-            false,
-            0,
-            &prose_font,
-        );
-        docx_basic_paragraph(&mut body, "", "Normal", false, false, false, 0, &prose_font);
+        if !project.author.trim().is_empty() {
+            docx_styled_paragraph(&mut body, &format!("by {}", project.author), "Byline");
+        }
     }
     for doc in front_matter(project, settings) {
-        docx_basic_paragraph(&mut body, &doc.title, "Heading1", true, false, false, 0, &prose_font);
+        docx_styled_paragraph(&mut body, &doc.title, "Heading1");
         for para in prose_paragraphs(project, doc, settings) {
             body.push_str(&docx_prose_paragraph(&para, &settings.font));
         }
     }
     for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
-        let title = section_title(project, section.doc, i, settings);
-        docx_basic_paragraph(&mut body, &title, "Heading1", true, false, false, 0, &prose_font);
         if section.doc.medium.is_script() {
-            let blocks = screenplay_blocks(project, section.doc);
-            for block in &blocks {
-                let (indent, mono, bold) = match block.kind {
-                    ElementKind::Character => (4320, true, false),
-                    ElementKind::Parenthetical => (3240, true, false),
-                    ElementKind::Dialogue => (2160, true, false),
-                    ElementKind::SceneHeading => (0, true, false),
-                    _ => (0, true, false),
-                };
+            // A script prints only what the writer typed, as in the PDF.
+            for block in screenplay_blocks(project, section.doc) {
                 let text = if settings.styles.style_for_kind(block.kind).uppercase {
                     block.text.to_uppercase()
                 } else {
                     block.text.clone()
                 };
-                docx_basic_paragraph(
-                    &mut body,
-                    &text,
-                    if block.kind == ElementKind::SceneHeading { "Heading2" } else { "Normal" },
-                    bold,
-                    block.kind == ElementKind::Transition,
-                    mono,
-                    indent,
-                    &prose_font,
-                );
+                docx_styled_paragraph(&mut body, &text, &docx_script_style_id(block.kind));
             }
         } else {
+            let title = section_title(project, section.doc, i, settings);
+            docx_styled_paragraph(&mut body, &title, "Heading1");
             for para in prose_paragraphs(project, section.doc, settings) {
                 body.push_str(&docx_prose_paragraph(&para, &settings.font));
             }
         }
     }
     for doc in back_matter(project, settings) {
-        docx_basic_paragraph(&mut body, &doc.title, "Heading1", true, false, false, 0, &prose_font);
+        docx_styled_paragraph(&mut body, &doc.title, "Heading1");
         for para in prose_paragraphs(project, doc, settings) {
             body.push_str(&docx_prose_paragraph(&para, &settings.font));
         }
@@ -230,15 +261,7 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>{}\n<w:sectPr><w:pgSz w:w=\"{page_w}\" w:h=\"{page_h}\"/><w:pgMar w:top=\"{mt}\" w:right=\"{mr}\" w:bottom=\"{mb}\" w:left=\"{ml}\"/></w:sectPr></w:body></w:document>",
         body
     );
-    let styles = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
- <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="24"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="360" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
- <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
- <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="2400" w:after="240"/></w:pPr><w:rPr><w:sz w:val="52"/></w:rPr></w:style>
- <w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:sz w:val="26"/><w:i/></w:rPr></w:style>
- <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:pageBreakBefore/><w:spacing w:before="720" w:after="360"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="36"/></w:rPr></w:style>
- <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr><w:rPr><w:b/></w:rPr></w:style>
-</w:styles>"#.replace("Times New Roman", &prose_font);
+    let styles = docx_styles(settings);
     let content_types = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>

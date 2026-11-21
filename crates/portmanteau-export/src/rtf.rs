@@ -53,18 +53,37 @@ pub(crate) fn rtf_prose_runs(paragraph: &ProseParagraph) -> String {
     out
 }
 
-pub(crate) fn rtf_prose_paragraph(paragraph: &ProseParagraph) -> String {
-    let style = &paragraph.format;
+/// Font-table index: 0 is the book face, 1 is the monospace face.
+fn rtf_font_index(style: &ElementStyle, fallback_font: &str) -> u8 {
+    let family = if style.font.trim().is_empty() {
+        fallback_font
+    } else {
+        &style.font
+    };
+    u8::from(font_is_mono(family))
+}
+
+/// The one place an `ElementStyle` becomes RTF paragraph formatting. Starting
+/// with `\pard` resets everything, so no paragraph inherits its neighbour's
+/// alignment or indents.
+pub(crate) fn rtf_paragraph_format(
+    style: &ElementStyle,
+    fallback_font: &str,
+    page_break_before: bool,
+) -> String {
     let mut out = String::from("\\pard");
-    match style.align {
-        Alignment::Center => out.push_str("\\qc"),
-        Alignment::Right => out.push_str("\\qr"),
-        Alignment::Justify => out.push_str("\\qj"),
-        Alignment::Left => out.push_str("\\ql"),
+    if page_break_before {
+        out.push_str("\\pagebb");
     }
-    let left = (style.indent.max(0.0) * 20.0).round() as i32;
-    let right = (style.right_indent.max(0.0) * 20.0).round() as i32;
-    let first = (style.first_line_indent * 20.0).round() as i32;
+    out.push_str(match style.align {
+        Alignment::Center => "\\qc",
+        Alignment::Right => "\\qr",
+        Alignment::Justify => "\\qj",
+        Alignment::Left => "\\ql",
+    });
+    let left = pt_to_twips(style.indent.max(0.0));
+    let right = pt_to_twips(style.right_indent.max(0.0));
+    let first = pt_to_twips(style.first_line_indent);
     if left > 0 {
         out.push_str(&format!("\\li{left}"));
     }
@@ -74,20 +93,43 @@ pub(crate) fn rtf_prose_paragraph(paragraph: &ProseParagraph) -> String {
     if first != 0 {
         out.push_str(&format!("\\fi{first}"));
     }
-    let before = (style.before.max(0.0) * 20.0).round() as i32;
-    let after = (style.after.max(0.0) * 20.0).round() as i32;
-    if before > 0 {
-        out.push_str(&format!("\\sb{before}"));
-    }
-    if after > 0 {
-        out.push_str(&format!("\\sa{after}"));
-    }
-    let half_points = (style.size.max(8.0) * 2.0).round() as i32;
     out.push_str(&format!(
-        "\\f{}\\fs{} ",
-        if font_is_mono(&style.font) { 1 } else { 0 },
-        half_points
+        "\\sb{}\\sa{}\\sl{}\\slmult1",
+        pt_to_twips(style.before.max(0.0)),
+        pt_to_twips(style.after.max(0.0)),
+        (style.leading.max(1.0) * 240.0).round() as i64,
     ));
+    out.push_str(&format!(
+        "\\f{}\\fs{}",
+        rtf_font_index(style, fallback_font),
+        (style.size.max(8.0) * 2.0).round() as i64,
+    ));
+    if style.italic {
+        out.push_str("\\i");
+    }
+    out.push(' ');
+    out
+}
+
+/// A paragraph that is one plain string in one style (title page lines,
+/// headings, script elements).
+pub(crate) fn rtf_plain_paragraph(
+    style: &ElementStyle,
+    fallback_font: &str,
+    text: &str,
+    bold: bool,
+    page_break_before: bool,
+) -> String {
+    let (on, off) = if bold { ("\\b ", "\\b0 ") } else { ("", "") };
+    format!(
+        "{}{on}{}{off}\\par\n",
+        rtf_paragraph_format(style, fallback_font, page_break_before),
+        rtf_escape(text)
+    )
+}
+
+pub(crate) fn rtf_prose_paragraph(paragraph: &ProseParagraph, fallback_font: &str) -> String {
+    let mut out = rtf_paragraph_format(&paragraph.format, fallback_font, false);
     if paragraph.heading {
         out.push_str("\\b ");
         out.push_str(&rtf_prose_runs(paragraph));
@@ -100,77 +142,63 @@ pub(crate) fn rtf_prose_paragraph(paragraph: &ProseParagraph) -> String {
 }
 
 pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
+    let st = &settings.styles;
+    let serif = settings.font.as_str();
+    let mono = "Courier New";
     let mut out = String::new();
     out.push_str(&format!(
-        "{{\\rtf1\\ansi\\deff0{{\\fonttbl{{\\f0 {};}}{{\\f1 Courier New;}}}}\n",
-        rtf_escape(&settings.font)
+        "{{\\rtf1\\ansi\\deff0{{\\fonttbl{{\\f0 {};}}{{\\f1 {mono};}}}}\n",
+        rtf_escape(serif)
     ));
     let (page_w, page_h) = paper_twips(settings);
     let margins = page_margins(project, settings);
-    let (ml, mr, mt, mb) = (
+    out.push_str(&format!(
+        "\\paperw{page_w}\\paperh{page_h}\\margl{}\\margr{}\\margt{}\\margb{}\n",
         pt_to_twips(margins.left),
         pt_to_twips(margins.right),
         pt_to_twips(margins.top),
         pt_to_twips(margins.bottom),
-    );
-    out.push_str(&format!(
-        "\\paperw{page_w}\\paperh{page_h}\\margl{ml}\\margr{mr}\\margt{mt}\\margb{mb}\n"
     ));
+
     if settings.include_title_page {
-        out.push_str("\\qc\\f0\\fs52 ");
-        out.push_str(&rtf_escape(&project.title));
-        out.push_str("\\par\\fs24\\par ");
-        out.push_str(&rtf_escape(&project.author));
-        out.push_str("\\par\\page\n");
+        out.push_str(&rtf_plain_paragraph(&st.title_page_title, serif, &project.title, true, false));
+        if !project.subtitle.trim().is_empty() {
+            out.push_str(&rtf_plain_paragraph(&st.title_page_subtitle, serif, &project.subtitle, false, false));
+        }
+        if !project.author.trim().is_empty() {
+            out.push_str(&rtf_plain_paragraph(&st.title_page_author, serif, &format!("by {}", project.author), false, false));
+        }
     }
     for doc in front_matter(project, settings) {
-        out.push_str(&format!(
-            "\\f0\\fs32\\b {}\\b0\\fs24\\par\n",
-            rtf_escape(&doc.title)
-        ));
+        out.push_str(&rtf_plain_paragraph(&st.chapter_heading, serif, &doc.title, true, true));
         for para in prose_paragraphs(project, doc, settings) {
-            out.push_str(&rtf_prose_paragraph(&para));
+            out.push_str(&rtf_prose_paragraph(&para, serif));
         }
     }
     for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
-        let title = section_title(project, section.doc, i, settings);
-        out.push_str(&format!(
-            "\\page\\f0\\fs36\\b {}\\b0\\fs24\\par\n",
-            rtf_escape(&title)
-        ));
         if section.doc.medium.is_script() {
-            let blocks = screenplay_blocks(project, section.doc);
-            for block in &blocks {
-                let indent = match block.kind {
-                    ElementKind::Character => 4400,
-                    ElementKind::Parenthetical => 3200,
-                    ElementKind::Dialogue => 2000,
-                    _ => 0,
-                };
-                let text = if settings.styles.style_for_kind(block.kind).uppercase {
+            // A script prints only what the writer typed, as in the PDF.
+            for block in screenplay_blocks(project, section.doc) {
+                let style = st.style_for_kind(block.kind);
+                let text = if style.uppercase {
                     block.text.to_uppercase()
                 } else {
                     block.text.clone()
                 };
-                out.push_str(&format!(
-                    "\\f1\\fs24\\li{}\\ri0 {}\\par\n",
-                    indent,
-                    rtf_escape(&text)
-                ));
+                out.push_str(&rtf_plain_paragraph(style, mono, &text, false, false));
             }
         } else {
+            let title = section_title(project, section.doc, i, settings);
+            out.push_str(&rtf_plain_paragraph(&st.chapter_heading, serif, &title, true, true));
             for para in prose_paragraphs(project, section.doc, settings) {
-                out.push_str(&rtf_prose_paragraph(&para));
+                out.push_str(&rtf_prose_paragraph(&para, serif));
             }
         }
     }
     for doc in back_matter(project, settings) {
-        out.push_str(&format!(
-            "\\page\\f0\\fs32\\b {}\\b0\\fs24\\par\n",
-            rtf_escape(&doc.title)
-        ));
+        out.push_str(&rtf_plain_paragraph(&st.chapter_heading, serif, &doc.title, true, true));
         for para in prose_paragraphs(project, doc, settings) {
-            out.push_str(&rtf_prose_paragraph(&para));
+            out.push_str(&rtf_prose_paragraph(&para, serif));
         }
     }
     out.push_str("}\n");
