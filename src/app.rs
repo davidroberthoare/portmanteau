@@ -622,16 +622,11 @@ impl PortmanteauApp {
                     self.search_field(ui);
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let compile = egui::Button::new(
-                            RichText::new("Compile  ▸").font(ui_body()).color(Color32::WHITE),
-                        )
-                        .fill(ACCENT)
-                        .corner_radius(CornerRadius::same(6))
-                        .min_size(Vec2::new(96.0, 30.0));
-                        if ui.add(compile).on_hover_text("Open the Compile screen").clicked() {
-                            self.view = View::Compile;
-                        }
-                        ui.add_space(8.0);
+                        // Removed: a "Compile ▸" button that only switched to the
+                        // Compile screen. Navigation is the rail and the View
+                        // menu; a one-click "compile with the last settings"
+                        // action would be worth adding here when it can run the
+                        // export itself and report the file.
                         let today = self.ws.project.today_words();
                         let target = self.ws.project.daily_target.max(1);
                         ui.vertical(|ui| {
@@ -894,20 +889,8 @@ impl PortmanteauApp {
             .show(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(2.0);
-                    let (logo, _) = ui.allocate_exact_size(Vec2::new(36.0, 36.0), egui::Sense::hover());
-                    ui.painter().rect_stroke(
-                        logo,
-                        CornerRadius::same(9),
-                        Stroke::new(1.2, ACCENT.gamma_multiply(0.7)),
-                        egui::StrokeKind::Inside,
-                    );
-                    ui.painter().text(
-                        logo.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "S",
-                        serif(20.0),
-                        ACCENT_INK,
-                    );
+                    // The brand mark is drawn once, in the top bar; the rail used
+                    // to repeat it here.
                     ui.add_space(18.0);
                     for view in View::all() {
                         if view == View::Settings {
@@ -922,12 +905,12 @@ impl PortmanteauApp {
                 });
 
                 ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
-                    let (av, _) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), egui::Sense::click());
-                    ui.painter().circle_filled(av.center(), 14.0, SAGE_SOFT);
-                    ui.painter().text(av.center(), egui::Align2::CENTER_CENTER, "AM", ui_small(), SAGE);
-                    ui.add_space(6.0);
-                    // Settings sits just above the avatar, pinned to the foot
-                    // of the rail rather than in the workspace list.
+                    // Removed: an "AM" avatar circle that did nothing. It should
+                    // become the author's profile (name, byline, default author
+                    // for new projects) once the app has a notion of a person;
+                    // until then Settings is the only place that applies.
+                    // Settings is pinned to the foot of the rail rather than listed
+                    // with the workspaces.
                     let active = self.view == View::Settings;
                     if rail_view_button(ui, View::Settings, active) {
                         self.view = View::Settings;
@@ -977,28 +960,14 @@ impl PortmanteauApp {
                         .unwrap_or_else(|| "Demonstration project · in memory".into());
                     ui.label(RichText::new(path).font(mono(10.0)).color(FAINT));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        // Words only. This bar used to add a page estimate and the
+                        // open document's name; the estimate disagreed with the
+                        // Compile screen's, and the name is already in the editor.
                         ui.label(
-                            RichText::new(format!(
-                                "{} words  ·  {} pages estimated",
-                                self.ws.project.words(),
-                                self.ws
-                                    .project
-                                    .manuscript_documents()
-                                    .iter()
-                                    .map(|d| d.pages())
-                                    .sum::<u32>()
-                            ))
-                            .font(ui_body())
-                            .color(MUTED),
+                            RichText::new(format!("{} words", self.ws.project.words()))
+                                .font(ui_body())
+                                .color(MUTED),
                         );
-                        ui.add_space(12.0);
-                        if let Some(doc) = self.current_doc() {
-                            ui.label(
-                                RichText::new(format!("{} · {}", doc.title, doc.medium.label()))
-                                    .font(ui_body())
-                                    .color(FAINT),
-                            );
-                        }
                     });
                 });
             });
@@ -2415,5 +2384,33 @@ mod shell_probe {
             });
         harness.run_steps(3);
         harness.get_by_role_and_label(Role::Link, &short_path(&path));
+    }
+
+    /// The chrome used to carry controls that did nothing or repeated another:
+    /// a rail logo, an "AM" avatar, a top-bar Compile button and snapshot
+    /// controls in two inspector tabs. They are gone, and this keeps them gone.
+    #[test]
+    fn the_shell_has_no_dead_or_repeated_controls() {
+        let (mut harness, app) = shell_harness(PortmanteauApp::new(None));
+        assert!(
+            harness.query_by_label("Compile  ▸").is_none(),
+            "navigation to Compile is the rail and the View menu, not a top-bar button"
+        );
+        assert!(harness.query_by_label("AM").is_none(), "no placeholder avatar");
+        assert!(
+            harness.query_by_label("Session target").is_none(),
+            "the daily target is shown once, in the top bar"
+        );
+        assert!(
+            harness.query_by_label("Take snapshot").is_none(),
+            "snapshots are made on the Versions tab, not the Document tab"
+        );
+
+        app.borrow_mut().inspector_tab = InspectorTab::History;
+        harness.run_steps(3);
+        assert!(
+            harness.query_by_label("Take snapshot").is_some(),
+            "the Versions tab is where a snapshot is taken"
+        );
     }
 }

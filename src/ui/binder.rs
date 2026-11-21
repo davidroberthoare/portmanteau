@@ -393,7 +393,10 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         });
 
     ui.add_space(6.0);
-    target_card(app, ui);
+    // Removed: a "Session target" card (today's words, a streak and a total)
+    // that repeated the top bar's progress meter. The streak is the only
+    // thing it had that is not shown elsewhere; it belongs on the Versions
+    // screen beside the fourteen-day chart.
 
     if let Some(action) = action {
         match action {
@@ -506,68 +509,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             Action::HideBinder => app.set_binder_visible(false),
         }
     }
-}
-
-fn target_card(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
-    Frame::new()
-        .fill(PANEL_2)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::same(11))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                section_label(ui, "Session target");
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(
-                        RichText::new("✓ local").font(ui_small()).color(SAGE),
-                    );
-                });
-            });
-            ui.add_space(5.0);
-            let today = app.ws.project.today_words();
-            let target = app.ws.project.daily_target.max(1);
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(today.to_string())
-                        .font(serif(20.0))
-                        .color(ACCENT_INK),
-                );
-                ui.label(
-                    RichText::new(format!("of {target} words"))
-                        .font(ui_small())
-                        .color(MUTED),
-                );
-            });
-            progress_bar(ui, today as f32 / target as f32, SAGE, 5.0);
-            ui.add_space(7.0);
-            ui.horizontal(|ui| {
-                let streak = streak_days(app);
-                ui.label(
-                    RichText::new(format!("{streak}-day streak")).font(ui_small()).color(MUTED),
-                );
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(
-                        RichText::new(format!("{} total", app.ws.project.words()))
-                            .font(ui_small())
-                            .color(FAINT),
-                    );
-                });
-            });
-        });
-}
-
-fn streak_days(app: &PortmanteauApp) -> u32 {
-    let log = &app.ws.project.session_log;
-    let mut streak = 0;
-    for entry in log.iter().rev() {
-        if entry.words > 0 {
-            streak += 1;
-        } else if streak > 0 {
-            break;
-        }
-    }
-    streak
 }
 
 /// Binder icons: a folder for containers and a small page for everything

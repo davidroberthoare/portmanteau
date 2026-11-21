@@ -293,22 +293,6 @@ pub fn pill(ui: &mut egui::Ui, text: &str, fg: Color32, bg: Color32) {
         });
 }
 
-pub fn progress_bar(ui: &mut egui::Ui, fraction: f32, color: Color32, height: f32) {
-    let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
-    let painter = ui.painter();
-    painter.rect_filled(rect, CornerRadius::same((height / 2.0) as u8), PANEL_3);
-    let filled = egui::Rect::from_min_size(
-        rect.min,
-        egui::vec2(rect.width() * fraction.clamp(0.0, 1.0), rect.height()),
-    );
-    painter.rect_filled(
-        filled,
-        CornerRadius::same((height / 2.0) as u8),
-        color,
-    );
-}
-
 pub fn dot(ui: &mut egui::Ui, color: Color32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(7.0, 7.0), egui::Sense::hover());
     ui.painter().circle_filled(rect.center(), 3.0, color);

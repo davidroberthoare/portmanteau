@@ -98,7 +98,7 @@ PORTMANTEAU_DIFF=1 ./target/debug/portmanteau --screenshot shots/diff.png
 ```
 
 `PORTMANTEAU_VIEW` accepts `write`, `corkboard`, `outline`, `research`,
-`develop`, `characters`, `history`, `compile`, `agent` (or a view's visible
+`database`, `history`, `compile`, `settings`, `agent` (or a view's visible
 label, case-insensitive). `PORTMANTEAU_DOC` matches a substring of a document
 title. `PORTMANTEAU_DIFF` opens the first available snapshot comparison.
 
@@ -152,8 +152,8 @@ app/
         corkboard.rs         chapter/scene cards grouped by part
         outline.rs           table of labels, status, length, include flags
         research.rs          sourcebook list + linked note editor
-        develop.rs           idea cards + three-act beat sheet
-        characters.rs        character sheets and computed appearances
+        database.rs          story database: characters, places, events, props
+        settings.rs          global defaults, style sheets, preferences
         history.rs           checkpoints, snapshots, compare, fourteen-day chart
         compile.rs           format cards, settings, preview, export action
         agent.rs             Command desk (searchable JSON console)

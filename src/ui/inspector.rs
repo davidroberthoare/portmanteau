@@ -83,9 +83,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 }
 
 fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
-    let mut restore: Option<String> = None;
-    let mut compare: Option<String> = None;
-    let mut snapshot = false;
     let styles = app.ws.project.styles.clone();
     let prose_sheet =
         portmanteau_core::StyleSheet::novel_prose(&app.ws.project.styles);
@@ -277,68 +274,9 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 .color(FAINT),
         );
 
-        ui.add_space(12.0);
-        hairline(ui);
-        ui.add_space(10.0);
-        section_label(ui, "Version snapshot");
-        ui.add_space(3.0);
-        ui.add(
-            TextEdit::singleline(&mut app.snapshot_name)
-                .hint_text("Name this version…")
-                .desired_width(f32::INFINITY)
-                .font(ui_body()),
-        );
-        ui.add_space(4.0);
-        let btn = egui::Button::new(RichText::new("Take snapshot").font(ui_body()).color(TEXT))
-            .fill(PANEL_3)
-            .corner_radius(CornerRadius::same(5))
-            .min_size(Vec2::new(ui.available_width(), 27.0));
-        if ui.add(btn).clicked() {
-            snapshot = true;
-        }
-        ui.add_space(8.0);
-        let count = doc.snapshots.len();
-        if count > 0 {
-            ui.label(
-                RichText::new(format!("{count} earlier versions kept")).font(ui_small()).color(FAINT),
-            );
-            let latest = doc.snapshots[0].clone();
-            Frame::new()
-                .fill(PANEL_2)
-                .corner_radius(CornerRadius::same(5))
-                .inner_margin(Margin::same(7))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.vertical(|ui| {
-                            ui.label(RichText::new(&latest.name).font(ui_small()).color(TEXT));
-                            ui.label(RichText::new(&latest.created).font(ui_small()).color(FAINT));
-                        });
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui.small_button("Restore").clicked() {
-                                restore = Some(latest.id.clone());
-                            }
-                            if ui.small_button("Compare").clicked() {
-                                compare = Some(latest.id.clone());
-                            }
-                        });
-                    });
-                });
-        }
-    }
-
-    if snapshot {
-        app.take_snapshot_public();
-    }
-    if let Some(snap_id) = compare {
-        app.open_diff(doc_id, &snap_id);
-    }
-    if let Some(snap_id) = restore {
-        if let Some(doc) = app.ws.project.document_mut(doc_id) {
-            if doc.restore_snapshot(&snap_id) {
-                app.ws.dirty = true;
-                app.toast("Version restored", "The document was rolled back", ToastKind::Info);
-            }
-        }
+        // Taking, comparing and restoring versions lives on the Versions tab
+        // (and in Edit > Take snapshot). This tab used to repeat a snapshot
+        // box and the latest version here; one home is enough.
     }
 }
 
@@ -449,6 +387,29 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
 }
 
 fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
+    let mut take_snapshot = false;
+    section_label(ui, "Save a version");
+    ui.add_space(3.0);
+    ui.add(
+        TextEdit::singleline(&mut app.snapshot_name)
+            .hint_text("Name this version…")
+            .desired_width(f32::INFINITY)
+            .font(ui_body()),
+    );
+    ui.add_space(4.0);
+    let button = egui::Button::new(RichText::new("Take snapshot").font(ui_body()).color(TEXT))
+        .fill(PANEL_3)
+        .corner_radius(CornerRadius::same(5))
+        .min_size(Vec2::new(ui.available_width(), 27.0));
+    if ui.add(button).clicked() {
+        take_snapshot = true;
+    }
+    ui.add_space(10.0);
+    hairline(ui);
+    ui.add_space(8.0);
+    if take_snapshot {
+        app.take_snapshot_public();
+    }
     let Some(doc) = app.ws.project.document(doc_id) else { return };
     section_label(ui, "Document versions");
     ui.add_space(3.0);
@@ -464,7 +425,7 @@ fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     ui.add_space(8.0);
     if doc.snapshots.is_empty() {
         ui.label(
-            RichText::new("No snapshots yet. Use Take snapshot before a big revision.")
+            RichText::new("No snapshots yet. Take one before a big revision.")
                 .font(ui_body())
                 .color(FAINT),
         );

@@ -419,18 +419,9 @@ fn card_ui(
                         .font(ui_small())
                         .color(accent),
                 );
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui
-                        .add(
-                            egui::Button::new(RichText::new("Write").font(ui_small()).color(FAINT))
-                                .frame(false),
-                        )
-                        .on_hover_text("Open this card in the Write editor")
-                        .clicked()
-                    {
-                        *open = Some(card.id.clone());
-                    }
-                });
+                // Removed: a "Write" button on every card. It was navigation,
+                // which belongs to the rail and View menu, and double-clicking
+                // the card already opens it.
             });
             ui.add_space(3.0);
 
@@ -560,7 +551,7 @@ fn card_ui(
 
     if pointer_over {
         resp.clone().on_hover_text(
-            "Click to select · Double-click or Write to open · Drag onto another card to reorder",
+            "Click to select · Double-click to open · Drag onto another card to reorder",
         );
     }
 }

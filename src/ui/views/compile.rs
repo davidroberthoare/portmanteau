@@ -28,17 +28,19 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         "Compile",
         "One manuscript, many finish lines. Pick an output format, then shape what goes in the book.",
         |ui| {
+            let included = app
+                .ws
+                .project
+                .compile_plan_for(&app.ws.project.export, app.selected.as_deref())
+                .included;
+            // Words of what this compile contains, not of the whole project.
+            let words: u32 = included.iter().map(|doc| doc.words()).sum();
             meta_line(
                 ui,
                 &[&format!(
-                    "{} document{} in this compile · {} words",
-                    app.ws
-                        .project
-                        .compile_plan_for(&app.ws.project.export, app.selected.as_deref())
-                        .included
-                        .len(),
-                    if app.ws.project.compile_plan_for(&app.ws.project.export, app.selected.as_deref()).included.len() == 1 { "" } else { "s" },
-                    app.ws.project.words()
+                    "{} document{} in this compile · {words} words",
+                    included.len(),
+                    if included.len() == 1 { "" } else { "s" },
                 )],
             );
         },
