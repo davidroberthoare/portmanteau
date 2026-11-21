@@ -22,7 +22,7 @@ use skrifa::{FontRef, MetadataProvider};
 
 use crate::{
     back_matter, front_matter, manuscript_sections, page_margins, paper_pt, prose_paragraphs,
-    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers, script_cover_lines, ascent_pt, opens_script, TitleRole, starts_new_page, TITLE_PAGE_DROP,
+    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers, script_cover_lines, ascent_pt, ScriptTitleLine, opens_script, TitleRole, starts_new_page, TITLE_PAGE_DROP,
 };
 
 // ---------------------------------------------------------------------------
@@ -751,10 +751,12 @@ fn script_title_page(
 ) -> PdfPageLayout {
     let mut items = Vec::new();
     // The same lines every writer reads (`script_title`); the PDF places them
-    // by baseline. Flowing text starts at the top margin; the draft line is
-    // anchored to the foot of the page instead of floated by spacing.
+    // by baseline. The title and credit flow down from the top margin; the
+    // contact and draft lines stack upward from the foot of the page.
     let mut top = frame.top;
-    for line in script_cover_lines(project, settings) {
+    let lines = script_cover_lines(project, settings);
+    let mut foot = frame.height - frame.bottom - 6.0;
+    let place = |line: &ScriptTitleLine, baseline: f32| {
         let size = line.style.size;
         let width = text_width(&line.text, face, size);
         let available = frame.content_width();
@@ -763,23 +765,26 @@ fn script_title_page(
             Alignment::Right => frame.left + (available - width).max(0.0),
             Alignment::Left | Alignment::Justify => frame.left,
         };
-        let baseline = if line.role == TitleRole::Footer {
-            frame.height - frame.bottom - 6.0 * (size / 12.0)
-        } else {
-            top += line.style.before;
-            let baseline = top + ascent_pt(size);
-            top += size * line.style.leading;
-            baseline
-        };
-        items.push(PdfText {
+        PdfText {
             x,
             baseline,
             size,
             segments: vec![PdfSegment {
-                text: line.text,
+                text: line.text.clone(),
                 face,
             }],
-        });
+        }
+    };
+    for line in lines.iter().filter(|line| !line.role.is_footer()) {
+        top += line.style.before;
+        items.push(place(line, top + ascent_pt(line.style.size)));
+        top += line.style.size * line.style.leading;
+    }
+    for line in lines.iter().rev().filter(|line| line.role.is_footer()) {
+        items.push(place(line, foot));
+        // A blank line above the draft line is part of its `before`.
+        foot -= line.style.size * line.style.leading
+            + if line.role == TitleRole::Draft { line.style.before } else { 0.0 };
     }
     PdfPageLayout { items }
 }

@@ -13,6 +13,7 @@ pub fn tool_definitions() -> Value {
     };
     json!([
         t("project_info", "Summarise the open writing project: title, author, word count, document and version counts.", json!({"type":"object","properties":{}})),
+        t("update_project_details", "Change the project's own details. contact is free text, one line each (name, address, email, phone), printed bottom-left on a script's title page. draft_label is the draft's name (\"Draft\"); draft_date is printed as typed, and blank means the day of export.", json!({"type":"object","properties":{"title":{"type":"string"},"subtitle":{"type":"string"},"author":{"type":"string"},"genre":{"type":"string"},"logline":{"type":"string"},"contact":{"type":"string"},"draft_label":{"type":"string"},"draft_date":{"type":"string"},"daily_target":{"type":"integer"}}})),
         t("project_create", "Create a new project.", json!({"type":"object","properties":{"title":{"type":"string"},"kind":{"type":"string","enum":["Novel","Film","Television","Theatre","Mixed"]}},"required":["title"]})),
         t("project_save", "Save the project to disk as a folder package (or legacy .json).", json!({"type":"object","properties":{"path":{"type":"string"}}})),
         t("project_open", "Open a project folder package or a legacy .json project file.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]})),
@@ -47,6 +48,7 @@ pub fn tool_definitions() -> Value {
 pub fn call_tool(ws: &mut Workspace, name: &str, args: &Value) -> ApiResponse {
     let (command, mut payload) = match name {
         "project_info" => ("project.info", json!({})),
+        "update_project_details" => ("project.update", args.clone()),
         "project_create" => ("project.new", args.clone()),
         "project_save" => ("project.save", args.clone()),
         "project_open" => ("project.open", json!({"path": arg(args, "path")})),

@@ -102,7 +102,10 @@ fn the_fountain_title_page_becomes_metadata_not_action() {
     assert_eq!(imported.author.as_deref(), Some("Stu Maschwitz"));
     let all: String = imported.documents[0].content.paragraphs.iter().map(text_of).collect();
     assert!(!all.contains("Draft date") && !all.contains("Mission Dr"));
-    assert!(has_warning(&imported, "Source, Draft date, Contact"), "{:?}", imported.warnings);
+    assert_eq!(imported.draft_date.as_deref(), Some("1/20/2012"));
+    assert_eq!(imported.contact.as_deref(), Some("Next Level Productions\n1588 Mission Dr."));
+    assert!(has_warning(&imported, "Source"), "{:?}", imported.warnings);
+    assert!(!imported.warnings.iter().any(|w| w.contains("Contact")), "{:?}", imported.warnings);
 }
 
 #[test]

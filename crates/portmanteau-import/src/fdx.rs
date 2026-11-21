@@ -80,6 +80,8 @@ pub(crate) fn import(xml: &str, medium: Medium, notes: &mut Notes) -> Result<Par
     Ok(Parsed {
         title,
         author,
+        contact: None,
+        draft_date: None,
         documents: vec![ImportedDocument {
             title: String::new(),
             kind: DocKind::Scene,

@@ -42,6 +42,8 @@ pub(crate) fn import(text: &str, split: Split) -> Parsed {
     Parsed {
         title: None,
         author: None,
+        contact: None,
+        draft_date: None,
         documents,
     }
 }

@@ -1259,6 +1259,17 @@ pub struct Project {
     pub author: String,
     pub genre: String,
     pub logline: String,
+    /// Who to write to about this work: name, address, email, phone, one per
+    /// line. Printed bottom-left on a script's title page.
+    #[serde(default)]
+    pub contact: String,
+    /// The draft's name on a script cover ("Draft", "Shooting script").
+    #[serde(default)]
+    pub draft_label: String,
+    /// The draft's date as the writer wants it printed. Blank means today's
+    /// date at the moment of export.
+    #[serde(default)]
+    pub draft_date: String,
     pub kind: ProjectKind,
     pub created: String,
     pub updated: String,
@@ -1296,6 +1307,9 @@ impl Project {
             author: "Your name".into(),
             genre: String::new(),
             logline: String::new(),
+            contact: String::new(),
+            draft_label: "Draft".into(),
+            draft_date: String::new(),
             kind,
             created: stamp.clone(),
             updated: stamp,

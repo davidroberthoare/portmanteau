@@ -366,7 +366,8 @@ fn cover_class(role: TitleRole) -> &'static str {
     match role {
         TitleRole::Title => "cover-title",
         TitleRole::Credit => "cover-credit",
-        TitleRole::Footer => "cover-footer",
+        TitleRole::Contact => "cover-contact",
+        TitleRole::Draft => "cover-draft",
     }
 }
 

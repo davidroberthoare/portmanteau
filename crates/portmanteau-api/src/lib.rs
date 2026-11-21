@@ -164,6 +164,15 @@ impl Workspace {
                 if let Some(v) = payload.get("logline").and_then(|v| v.as_str()) {
                     self.project.logline = v.into();
                 }
+                if let Some(v) = payload.get("contact").and_then(|v| v.as_str()) {
+                    self.project.contact = v.into();
+                }
+                if let Some(v) = payload.get("draft_label").and_then(|v| v.as_str()) {
+                    self.project.draft_label = v.into();
+                }
+                if let Some(v) = payload.get("draft_date").and_then(|v| v.as_str()) {
+                    self.project.draft_date = v.into();
+                }
                 if let Some(v) = payload.get("daily_target").and_then(|v| v.as_u64()) {
                     self.project.daily_target = v as u32;
                 }
@@ -390,6 +399,8 @@ impl Workspace {
                         "format": format.label(),
                         "title": imported.title,
                         "author": imported.author,
+                        "contact": imported.contact,
+                        "draft_date": imported.draft_date,
                         "warnings": imported.warnings,
                     }),
                 )
@@ -864,6 +875,11 @@ impl Workspace {
             "title": self.project.title,
             "subtitle": self.project.subtitle,
             "author": self.project.author,
+            "genre": self.project.genre,
+            "logline": self.project.logline,
+            "contact": self.project.contact,
+            "draft_label": self.project.draft_label,
+            "draft_date": self.project.draft_date,
             "kind": self.project.kind,
             "words": self.project.words(),
             "documents": self.project.documents.len(),
@@ -1211,6 +1227,7 @@ fn string_list(values: &[Value]) -> Vec<String> {
 pub fn command_catalogue() -> Vec<Value> {
     let entries = [
         ("project.info", "Summarise the open project", "{}"),
+        ("project.update", "Change the project's details: title, subtitle, author, genre, logline, contact (one line each), draft_label, draft_date (blank = today) and daily_target", r#"{"author":"Ada Marlowe","contact":"Ada Marlowe\nada@example.com","draft_date":"14 March 2027"}"#),
         ("project.new", "Create a project", r#"{"title":"...","kind":"Novel"}"#),
         ("project.open", "Open a project folder package", r#"{"path":"..."}"#),
         ("project.save", "Save the project to a folder package", r#"{"path":"..."}"#),

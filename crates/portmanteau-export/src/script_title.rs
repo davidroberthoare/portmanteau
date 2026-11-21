@@ -3,7 +3,8 @@
 //! One description, read by every writer, so the cover reads the same in each
 //! format. It follows the trade convention rather than a book's: the title in
 //! capitals, centred about a third of the way down; "Written by" and the
-//! author's name beneath it; and the draft line low on the page at the left.
+//! author's name beneath it; the writer's contact details low on the page at
+//! the left; and the draft's name and date at the right.
 //! All of it is in the script's monospaced face at the script's own size, with
 //! none of a book's subtitle or imprint.
 //!
@@ -18,7 +19,17 @@ use super::*;
 pub(crate) enum TitleRole {
     Title,
     Credit,
-    Footer,
+    /// The writer's contact lines, bottom-left.
+    Contact,
+    /// The draft's name and date, bottom-right.
+    Draft,
+}
+
+impl TitleRole {
+    /// Lines the page anchors to its foot rather than flowing after the title.
+    pub(crate) fn is_footer(self) -> bool {
+        matches!(self, TitleRole::Contact | TitleRole::Draft)
+    }
 }
 
 pub(crate) struct ScriptTitleLine {
@@ -85,14 +96,42 @@ pub(crate) fn script_cover_lines(project: &Project, settings: &ExportSettings) -
             push(TitleRole::Credit, text, style(Alignment::Center, 0.0), &mut used);
         }
     }
-    let footer_height = size * COVER_LEADING;
-    let gap = (content_h - used - footer_height - FOOTER_SLACK_LINES * footer_height).max(blank);
-    let today = chrono::Local::now().format("%d %B %Y");
-    push(
-        TitleRole::Footer,
-        format!("Draft · {today}"),
-        style(Alignment::Left, gap),
-        &mut used,
-    );
+    // The foot: contact lines at the left, then the draft line at the right.
+    let contact: Vec<&str> = project
+        .contact
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let draft = draft_line(project);
+    let foot_lines = contact.len() + usize::from(!draft.is_empty());
+    let line_height = size * COVER_LEADING;
+    let gap = (content_h - used - (foot_lines as f32 + FOOTER_SLACK_LINES) * line_height).max(blank);
+    let mut first_footer = true;
+    for text in contact {
+        let before = if first_footer { gap } else { 0.0 };
+        first_footer = false;
+        push(TitleRole::Contact, text.to_string(), style(Alignment::Left, before), &mut used);
+    }
+    if !draft.is_empty() {
+        let before = if first_footer { gap } else { line_height };
+        push(TitleRole::Draft, draft, style(Alignment::Right, before), &mut used);
+    }
     lines
+}
+
+/// "Draft · 14 March 2027": the writer's label and date, the date defaulting
+/// to today so an untouched project never prints a stale one.
+fn draft_line(project: &Project) -> String {
+    let date = if project.draft_date.trim().is_empty() {
+        chrono::Local::now().format("%d %B %Y").to_string()
+    } else {
+        project.draft_date.trim().to_string()
+    };
+    let label = project.draft_label.trim();
+    if label.is_empty() {
+        date
+    } else {
+        format!("{label} · {date}")
+    }
 }

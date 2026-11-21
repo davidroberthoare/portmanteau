@@ -29,6 +29,8 @@ pub(crate) fn import(text: &str, medium: Medium, split: Split, notes: &mut Notes
     Parsed {
         title: page.title,
         author: page.author,
+        contact: page.contact,
+        draft_date: page.draft_date,
         documents,
     }
 }
@@ -66,7 +68,10 @@ fn remove_spans(text: &str, open: &str, close: &str) -> (String, usize) {
 struct TitlePage {
     title: Option<String>,
     author: Option<String>,
-    /// Keys the project has nowhere to put (Contact, Draft date, …).
+    /// The contact block, one line per line of the file.
+    contact: Option<String>,
+    draft_date: Option<String>,
+    /// Keys the project has nowhere to put (Copyright, Revision, …).
     other: Vec<String>,
 }
 
@@ -128,9 +133,16 @@ fn title_page(text: &str) -> (TitlePage, String) {
         if joined.is_empty() {
             continue;
         }
+        if key.eq_ignore_ascii_case("contact") {
+            // Contact is address-shaped: its line breaks matter.
+            let lines: Vec<String> = values.iter().map(|v| plain(v)).filter(|v| !v.is_empty()).collect();
+            page.contact = Some(lines.join("\n"));
+            continue;
+        }
         match key.to_lowercase().as_str() {
             "title" => page.title = Some(joined),
             "author" | "authors" => page.author = Some(joined),
+            "draft date" | "date" => page.draft_date = Some(joined),
             // Credit ("Written by") is wording, not content.
             "credit" => {}
             _ => page.other.push(key),

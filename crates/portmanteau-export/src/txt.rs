@@ -6,16 +6,15 @@ pub(crate) fn txt_manuscript(project: &Project, settings: &ExportSettings) -> St
         // The script cover as plain text: centred on a 60-column page, with
         // a blank line wherever the cover has a gap, then a rule.
         for line in script_cover_lines(project, settings) {
-            if line.role == TitleRole::Footer {
-                out.push('\n');
-                out.push_str(&line.text);
-                out.push('\n');
-                continue;
-            }
             if line.style.before > 0.0 {
                 out.push('\n');
             }
-            let pad = 60usize.saturating_sub(line.text.chars().count()) / 2;
+            let room = 60usize.saturating_sub(line.text.chars().count());
+            let pad = match line.style.align {
+                Alignment::Center => room / 2,
+                Alignment::Right => room,
+                _ => 0,
+            };
             out.push_str(&format!("{}{}\n", " ".repeat(pad), line.text));
         }
         out.push_str("\n\n");

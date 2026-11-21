@@ -917,3 +917,51 @@ fn the_opening_fade_in_is_flush_left_in_every_flowing_format() {
     let rule = html.split(".script-opening {").nth(1).and_then(|r| r.split('}').next()).expect("a rule");
     assert!(rule.contains("text-align: left"), "and left-aligns it: {rule}");
 }
+
+#[test]
+fn the_cover_prints_the_projects_contact_and_the_writers_draft_date() {
+    let mut p = demo();
+    p.contact = "Ada Marlowe\n12 Harbour Lane\nada@example.com".into();
+    p.draft_label = "Shooting script".into();
+    p.draft_date = "14 March 2027".into();
+    for kind in [
+        ExportKind::Pdf,
+        ExportKind::Epub,
+        ExportKind::Docx,
+        ExportKind::Html,
+        ExportKind::Rtf,
+        ExportKind::Txt,
+    ] {
+        let mut s = p.settings_for(kind);
+        s.compile_type = Some(CompileType::TvScript);
+        s.include_title_page = true;
+        s.include_toc = false;
+        let text = output_text(kind, &p, &s);
+        for want in ["12 Harbour Lane", "ada@example.com", "Shooting script", "14 March 2027"] {
+            assert!(text.contains(want), "{kind:?} should print {want:?}");
+        }
+    }
+    // Blank date: today's, so an untouched project never prints a stale one.
+    p.draft_date.clear();
+    let s = {
+        let mut s = p.settings_for(ExportKind::Txt);
+        s.compile_type = Some(CompileType::TvScript);
+        s
+    };
+    let today = chrono::Local::now().format("%d %B %Y").to_string();
+    assert!(output_text(ExportKind::Txt, &p, &s).contains(&today));
+
+    // The draft line is right-aligned; the contact lines are not.
+    let mut s = p.settings_for(ExportKind::Docx);
+    s.compile_type = Some(CompileType::TvScript);
+    let styles = docx_part(&docx_manuscript(&p, &s), "word/styles.xml");
+    assert!(docx_style_xml(&styles, "ScriptCoverDraft").contains("w:jc w:val=\"right\""));
+    assert!(!docx_style_xml(&styles, "ScriptCoverContact").contains("w:jc"));
+
+    // Fountain carries it as a multi-line Contact key and the draft date.
+    let fountain = fountain_manuscript(&p, &p.settings_for(ExportKind::Fountain));
+    assert!(fountain.contains("Contact:\n    Ada Marlowe\n    12 Harbour Lane"), "{fountain}");
+    p.draft_date = "14 March 2027".into();
+    let fountain = fountain_manuscript(&p, &p.settings_for(ExportKind::Fountain));
+    assert!(fountain.contains("Draft date: 14 March 2027"));
+}

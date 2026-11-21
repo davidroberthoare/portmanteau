@@ -86,6 +86,8 @@ pub(crate) fn import(
     Ok(Parsed {
         title: title_paragraph.or(core_title),
         author: core_author,
+        contact: None,
+        draft_date: None,
         documents,
     })
 }

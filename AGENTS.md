@@ -252,6 +252,7 @@ When you add a command, update **all** of these:
 | Command | Purpose | Example payload |
 | --- | --- | --- |
 | `project.info` | Summary of the open project | `{}` |
+| `project.update` | Change title, subtitle, author, genre, logline, contact, draft_label, draft_date, daily_target | `{"contact":"Ada\nada@example.com","draft_date":"14 March 2027"}` |
 | `project.new` | Create a project | `{"title":"…","kind":"Novel"}` |
 | `project.open` | Open a project file | `{"path":"…"}` |
 | `project.save` | Save (optionally as) | `{"path":"…"}` |

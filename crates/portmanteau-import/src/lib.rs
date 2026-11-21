@@ -116,6 +116,10 @@ pub struct Imported {
     /// The work's title and author, when the file states them.
     pub title: Option<String>,
     pub author: Option<String>,
+    /// Contact lines, one per line, when the title page has them.
+    pub contact: Option<String>,
+    /// The draft date as the file writes it.
+    pub draft_date: Option<String>,
     pub documents: Vec<ImportedDocument>,
     /// Human-readable notes on anything not carried across.
     pub warnings: Vec<String>,
@@ -167,15 +171,20 @@ pub fn import(
         medium,
         title: parsed.title,
         author: parsed.author,
+        contact: parsed.contact,
+        draft_date: parsed.draft_date,
         documents: parsed.documents,
         warnings: notes.finish(),
     })
 }
 
 /// What an individual format importer hands back before the shared wrap-up.
+#[derive(Default)]
 pub(crate) struct Parsed {
     pub title: Option<String>,
     pub author: Option<String>,
+    pub contact: Option<String>,
+    pub draft_date: Option<String>,
     pub documents: Vec<ImportedDocument>,
 }
 

@@ -578,8 +578,20 @@ pub fn fountain_title_page(project: &crate::Project) -> String {
     if !project.genre.is_empty() {
         out.push_str(&format!("Genre: {}\n", project.genre));
     }
+    let contact: Vec<&str> = project.contact.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    if !contact.is_empty() {
+        // A multi-line Fountain value: the lines are indented beneath the key.
+        out.push_str("Contact:\n");
+        for line in contact {
+            out.push_str(&format!("    {line}\n"));
+        }
+    }
     out.push_str("Draft date: ");
-    out.push_str(&chrono::Local::now().format("%B %Y").to_string());
+    if project.draft_date.trim().is_empty() {
+        out.push_str(&chrono::Local::now().format("%B %Y").to_string());
+    } else {
+        out.push_str(project.draft_date.trim());
+    }
     out.push_str("\n\n");
     out
 }
