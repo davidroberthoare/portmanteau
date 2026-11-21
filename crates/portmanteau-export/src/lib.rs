@@ -388,8 +388,13 @@ fn prose_inline_style(format: &ElementStyle) -> String {
     // use CSS single quotes rather than the double quotes from the shared
     // stylesheet helper.
     let family = html_escape(&element_css_font(format, "Liberation Serif").replace('"', "'"));
+    let italic = if format.italic {
+        "font-style: italic; "
+    } else {
+        ""
+    };
     format!(
-        "font-family: {family}; font-size: {:.1}pt; line-height: {:.2}; text-align: {}; margin-left: {:.1}pt; margin-right: {:.1}pt; text-indent: {:.1}pt; margin-top: {:.1}pt; margin-bottom: {:.1}pt;",
+        "font-family: {family}; {italic}font-size: {:.1}pt; line-height: {:.2}; text-align: {}; margin-left: {:.1}pt; margin-right: {:.1}pt; text-indent: {:.1}pt; margin-top: {:.1}pt; margin-bottom: {:.1}pt;",
         format.size.max(8.0),
         format.leading.max(1.0),
         css_align(format.align),
@@ -432,11 +437,8 @@ fn html_runs(paragraph: &ProseParagraph) -> String {
     out
 }
 
-fn html_prose_paragraph(paragraph: &ProseParagraph, first: bool) -> String {
-    let mut style = prose_inline_style(&paragraph.format);
-    if first {
-        style.push_str("text-indent: 0;");
-    }
+fn html_prose_paragraph(paragraph: &ProseParagraph) -> String {
+    let style = prose_inline_style(&paragraph.format);
     let runs = html_runs(paragraph);
     if paragraph.heading {
         format!("<h2 style=\"{style}\">{runs}</h2>\n")
@@ -449,10 +451,24 @@ fn html_prose_paragraph(paragraph: &ProseParagraph, first: bool) -> String {
 // PDF
 // ---------------------------------------------------------------------------
 
-/// A CSS font stack built from the settings family with a safe serif fallback.
+/// A CSS font stack built from the settings family. The bundled Liberation
+/// face is the explicit fallback so an EPUB looks the same whether or not the
+/// reader happens to have the named family installed.
 fn css_font_family(family: &str) -> String {
     let safe = family.replace('"', "").replace('\\', "");
-    format!("\"{}\", serif", safe)
+    let lower = safe.to_ascii_lowercase();
+    let (generic, bundled) = if lower.contains("mono") || lower.contains("courier") {
+        ("monospace", "Liberation Mono")
+    } else if lower.contains("sans") || lower.contains("helvetica") || lower.contains("arial") {
+        ("sans-serif", "Liberation Sans")
+    } else {
+        ("serif", "Liberation Serif")
+    };
+    if safe.eq_ignore_ascii_case(bundled) || safe.is_empty() {
+        format!("\"{bundled}\", {generic}")
+    } else {
+        format!("\"{safe}\", \"{bundled}\", {generic}")
+    }
 }
 
 /// CSS family for one element, falling back when its family is unset.
@@ -499,6 +515,125 @@ fn css_indent_margins(style: &ElementStyle) -> String {
 fn font_is_mono(family: &str) -> bool {
     let family = family.to_ascii_lowercase();
     family.contains("courier") || family.contains("mono")
+}
+
+/// A bundled face carried inside the EPUB. The reader may ignore the CSS
+/// family when the writer chooses their own, but every fallback in the stack
+/// then resolves to the same Liberation face the editor draws with.
+struct EpubFont {
+    file: &'static str,
+    family: &'static str,
+    style: &'static str,
+    weight: &'static str,
+    bytes: &'static [u8],
+}
+
+const EPUB_FONTS: [EpubFont; 9] = [
+    EpubFont {
+        file: "LiberationSerif-Regular.ttf",
+        family: "Liberation Serif",
+        style: "normal",
+        weight: "normal",
+        bytes: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/LiberationSerif-Regular.ttf"
+        )),
+    },
+    EpubFont {
+        file: "LiberationSerif-Bold.ttf",
+        family: "Liberation Serif",
+        style: "normal",
+        weight: "bold",
+        bytes: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/LiberationSerif-Bold.ttf"
+        )),
+    },
+    EpubFont {
+        file: "LiberationSerif-Italic.ttf",
+        family: "Liberation Serif",
+        style: "italic",
+        weight: "normal",
+        bytes: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/LiberationSerif-Italic.ttf"
+        )),
+    },
+    EpubFont {
+        file: "LiberationSans-Regular.ttf",
+        family: "Liberation Sans",
+        style: "normal",
+        weight: "normal",
+        bytes: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/LiberationSans-Regular.ttf"
+        )),
+    },
+    EpubFont {
+        file: "LiberationSans-Bold.ttf",
+        family: "Liberation Sans",
+        style: "normal",
+        weight: "bold",
+        bytes: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/LiberationSans-Bold.ttf"
+        )),
+    },
+    EpubFont {
+        file: "LiberationSans-Italic.ttf",
+        family: "Liberation Sans",
+        style: "italic",
+        weight: "normal",
+        bytes: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/LiberationSans-Italic.ttf"
+        )),
+    },
+    EpubFont {
+        file: "LiberationMono-Regular.ttf",
+        family: "Liberation Mono",
+        style: "normal",
+        weight: "normal",
+        bytes: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/LiberationMono-Regular.ttf"
+        )),
+    },
+    EpubFont {
+        file: "LiberationMono-Bold.ttf",
+        family: "Liberation Mono",
+        style: "normal",
+        weight: "bold",
+        bytes: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/LiberationMono-Bold.ttf"
+        )),
+    },
+    EpubFont {
+        file: "LiberationMono-Italic.ttf",
+        family: "Liberation Mono",
+        style: "italic",
+        weight: "normal",
+        bytes: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/LiberationMono-Italic.ttf"
+        )),
+    },
+];
+
+fn epub_font_css() -> String {
+    let mut out = String::new();
+    for font in &EPUB_FONTS {
+        out.push_str(&format!(
+            "@font-face {{ font-family: \"{}\"; src: url(\"fonts/{}\") format(\"truetype\"); font-style: {}; font-weight: {}; }}\n",
+            font.family, font.file, font.style, font.weight
+        ));
+    }
+    out
+}
+
+fn epub_font_id(file: &str) -> String {
+    format!("font-{}", file.trim_end_matches(".ttf"))
 }
 
 // ---------------------------------------------------------------------------
@@ -571,7 +706,7 @@ fn epub_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
         let author_align = css_align(st.title_page_author.align);
         let body_first_indent = st.body.first_line_indent.max(0.0);
         let css = format!(
-            r#"body {{ font-family: {body_font}; line-height: {body_leading:.2}; margin: 5%; {body_margins}text-align: {body_align}; color: #1b1b1b; }}
+            r#"{font_faces}body {{ font-family: {body_font}; line-height: {body_leading:.2}; margin: 5%; {body_margins}text-align: {body_align}; color: #1b1b1b; }}
 h1 {{ font-size: {chapter_size:.1}pt; margin: 2em 0 1em; page-break-before: always; text-align: {heading_align}; {heading_margins}}}
 h2 {{ font-size: 1.25em; margin: 1.5em 0 .8em; text-align: {heading_align}; }}
 p {{ margin: 0 0 0 .2em; text-indent: {body_first_indent:.2}pt; text-align: {body_align}; }}
@@ -591,6 +726,7 @@ p.first {{ text-indent: 0; }}
 .cover {{ text-align: center; margin: 0; padding: 0; }}
 .cover img {{ max-width: 100%; }}
 "#,
+            font_faces = epub_font_css(),
             body_font = body_font,
             body_leading = st.body.leading.max(1.0),
             body_align = body_align,
@@ -624,6 +760,16 @@ p.first {{ text-indent: 0; }}
         zip.write_all(css.as_bytes()).unwrap();
 
         let mut manifest = String::new();
+        for font in &EPUB_FONTS {
+            zip.start_file(format!("OEBPS/fonts/{}", font.file), deflated)
+                .unwrap();
+            zip.write_all(font.bytes).unwrap();
+            manifest.push_str(&format!(
+                "<item id=\"{}\" href=\"fonts/{}\" media-type=\"font/ttf\"/>\n",
+                epub_font_id(font.file),
+                font.file
+            ));
+        }
         let mut spine = String::new();
         let mut toc_entries = String::new();
         let mut metadata_extra = String::new();
@@ -781,7 +927,7 @@ fn xhtml_body(
         }
     } else {
         for (i, para) in prose_paragraphs(project, doc, settings).iter().enumerate() {
-            out.push_str(&html_prose_paragraph(para, i == 0));
+            out.push_str(&html_prose_paragraph(para));
         }
     }
     out
@@ -1275,7 +1421,7 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
             html_escape(&doc.title)
         ));
         for (i, para) in prose_paragraphs(project, doc, settings).iter().enumerate() {
-            body.push_str(&html_prose_paragraph(para, i == 0));
+            body.push_str(&html_prose_paragraph(para));
         }
         body.push_str("</section>\n");
     }
@@ -1315,7 +1461,7 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
                 .iter()
                 .enumerate()
             {
-                body.push_str(&html_prose_paragraph(para, j == 0));
+                body.push_str(&html_prose_paragraph(para));
             }
         }
         body.push_str("</section>\n");
@@ -1326,7 +1472,7 @@ fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
             html_escape(&doc.title)
         ));
         for (i, para) in prose_paragraphs(project, doc, settings).iter().enumerate() {
-            body.push_str(&html_prose_paragraph(para, i == 0));
+            body.push_str(&html_prose_paragraph(para));
         }
         body.push_str("</section>\n");
     }
