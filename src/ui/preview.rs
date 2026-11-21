@@ -11,11 +11,11 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, Sense, Stroke, Vec2};
-use portmanteau_core::{ExportSettings, Project};
+use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2};
+use portmanteau_core::{CompileScope, CompileType, ExportKind, ExportSettings, Project};
 use portmanteau_export::{pdf_layout, text_width, Face, Family, PdfLayout};
 
-use crate::theme::{PAPER, PAPER_EDGE, PAPER_TEXT};
+use crate::theme::{serif, ui_body, ui_small, FAINT, MUTED, PAPER, PAPER_EDGE, PAPER_TEXT};
 
 /// The egui family registered by `theme::install` for one exporter face.
 pub fn family_for_face(face: Face) -> FontFamily {
@@ -131,6 +131,113 @@ pub fn paint_page(ui: &mut egui::Ui, layout: &PdfLayout, index: usize, scale: f3
     rect
 }
 
+/// The pages of one document in the compiled manuscript, as the editor's
+/// Paged view shows them.
+pub struct PagedDocument {
+    pub layout: Arc<PdfLayout>,
+    /// 0-based index of the document's first page in the manuscript.
+    pub first: usize,
+    /// How many pages the document touches.
+    pub count: usize,
+}
+
+/// Lay the manuscript out and find `doc_id`'s pages in it. The document is
+/// shown under its own manuscript type with the project's PDF settings, so
+/// its pages (and their numbers) are the ones the exported PDF will have.
+/// `Err` says why the document has no pages in a compile.
+pub fn paged_document(
+    ui: &egui::Ui,
+    project: &Project,
+    doc_id: &str,
+) -> Result<PagedDocument, String> {
+    let doc = project.document(doc_id).ok_or("No document is open")?;
+    let mut settings = project.settings_for(ExportKind::Pdf);
+    settings.compile_type = Some(CompileType::from_medium(doc.medium));
+    settings.scope = CompileScope::Draft;
+    let layout = manuscript_layout(ui, project, &settings, "editor");
+    if let Some(section) = layout
+        .sections
+        .iter()
+        .find(|section| section.doc_id.as_deref() == Some(doc_id))
+    {
+        let (first, count) = (section.start_page, section.page_count.max(1));
+        return Ok(PagedDocument { layout, first, count });
+    }
+    let reason = project
+        .compile_plan(&settings)
+        .skipped
+        .iter()
+        .find(|skipped| skipped.doc.id == doc_id)
+        .map(|skipped| skipped.reason.clone());
+    Err(match reason {
+        Some(reason) => format!("{reason}, so it has no pages in a compile."),
+        None => "This document has no text to print yet.".to_string(),
+    })
+}
+
+/// The Paged view: the document's pages stacked on a desk, read-only. The
+/// page under the top of the viewport is written to `app.paged_page` (1-based
+/// within the document) for the toolbar.
+pub fn paged_view(
+    app: &mut crate::app::PortmanteauApp,
+    ui: &mut egui::Ui,
+    paged: &Result<PagedDocument, String>,
+) {
+    let paged = match paged {
+        Ok(paged) => paged,
+        Err(reason) => {
+            ui.vertical_centered(|ui| {
+                ui.add_space(120.0);
+                ui.label(RichText::new("Nothing to page").font(serif(26.0)).color(MUTED));
+                ui.add_space(8.0);
+                ui.label(RichText::new(reason).font(ui_body()).color(FAINT));
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new("Switch to Continuous to keep writing.")
+                        .font(ui_small())
+                        .color(FAINT),
+                );
+            });
+            return;
+        }
+    };
+    let layout = &paged.layout;
+    // Fit the page to the column, then apply the editor's zoom.
+    let fit = ((ui.available_width() - 72.0) / layout.width.max(1.0)).clamp(0.3, 1.6);
+    let scale = (fit * app.editor_zoom.clamp(0.7, 1.6) / crate::theme::DEFAULT_EDITOR_ZOOM).clamp(0.3, 2.4);
+    let mut page_tops = Vec::with_capacity(paged.count);
+    let mut viewport_top = f32::NEG_INFINITY;
+    egui::ScrollArea::both()
+        .id_salt("editor_paged_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            viewport_top = ui.clip_rect().top();
+            ui.add_space(22.0);
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    RichText::new("Read-only page preview — switch to Continuous to edit")
+                        .font(ui_small())
+                        .color(FAINT),
+                );
+                ui.add_space(10.0);
+                for page in paged.first..paged.first + paged.count {
+                    let rect = paint_page(ui, layout, page, scale);
+                    page_tops.push(rect.top());
+                    ui.add_space(26.0);
+                }
+            });
+            ui.add_space(36.0);
+        });
+    app.paged_page = page_tops
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, top)| **top <= viewport_top + 1.0)
+        .map(|(index, _)| index + 1)
+        .unwrap_or(1)
+        .min(paged.count.max(1));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +268,52 @@ mod tests {
         })
         .drop_without_applying_deltas();
         assert_eq!(pages, portmanteau_export::pdf_page_count(&project, &settings));
+    }
+
+    fn run<T>(f: impl FnOnce(&egui::Ui) -> T) -> T {
+        let ctx = egui::Context::default();
+        let mut out = None;
+        let mut f = Some(f);
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            out = Some((f.take().unwrap())(ui));
+        })
+        .drop_without_applying_deltas();
+        out.unwrap()
+    }
+
+    #[test]
+    fn a_documents_pages_are_its_pages_in_the_real_layout() {
+        let project = portmanteau_core::sample::demo();
+        let chapter = project
+            .documents
+            .iter()
+            .find(|d| d.kind == portmanteau_core::DocKind::Chapter)
+            .expect("a chapter");
+        let paged = run(|ui| paged_document(ui, &project, &chapter.id)).expect("the chapter has pages");
+        assert!(paged.count >= 1);
+        assert!(paged.first + paged.count <= paged.layout.page_count());
+        // The pages shown are the ones the section list assigns to it.
+        let section = paged
+            .layout
+            .sections
+            .iter()
+            .find(|s| s.doc_id.as_deref() == Some(chapter.id.as_str()))
+            .unwrap();
+        assert_eq!((paged.first, paged.count), (section.start_page, section.page_count));
+    }
+
+    #[test]
+    fn an_excluded_document_says_why_it_has_no_pages() {
+        let mut project = portmanteau_core::sample::demo();
+        let id = project
+            .documents
+            .iter()
+            .find(|d| d.kind == portmanteau_core::DocKind::Chapter)
+            .unwrap()
+            .id
+            .clone();
+        project.document_mut(&id).unwrap().include_in_export = false;
+        let reason = run(|ui| paged_document(ui, &project, &id)).err().expect("no pages");
+        assert!(reason.contains("Excluded from compile"), "{reason}");
     }
 }

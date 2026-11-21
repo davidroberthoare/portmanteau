@@ -14,9 +14,6 @@ use crate::app::{
     ImageInsertState, NewCharacterState, PortmanteauApp, RichTextTarget, WriteMode,
 };
 use crate::theme::*;
-use crate::ui::page::{
-    empty_page_plan, paged_view, prose_plan, script_element_style, script_plan, PagePlan,
-};
 use crate::ui::views::{content_frame, page_head};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
@@ -55,28 +52,23 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     } else {
         Vec::new()
     };
-    let page_plan = match app.write_mode {
-        WriteMode::Paged => build_page_plan(app, &doc_id),
-        WriteMode::Continuous => None,
-    };
+    // The Paged view shows this document's pages from the real export layout.
+    let paged = (app.write_mode == WriteMode::Paged)
+        .then(|| crate::ui::preview::paged_document(ui, &app.ws.project, &doc_id));
     if !app.focus_mode {
-        toolbar(
-            app,
-            ui,
-            page_plan.as_ref().map(|plan| plan.pages.len()),
-            miss.len(),
-        );
+        let paging = paged.as_ref().and_then(|paged| paged.as_ref().ok()).map(|paged| {
+            // (number of the document's first page, pages it touches, pages in the manuscript)
+            (paged.first + 1, paged.count, paged.layout.page_count())
+        });
+        toolbar(app, ui, paging, miss.len());
 
         if app.settings.spellcheck && app.show_spelling {
             spelling_panel(app, ui, &doc_id, &miss);
         }
     }
 
-    if app.write_mode == WriteMode::Paged {
-        let plan = page_plan.unwrap_or_else(|| {
-            build_page_plan(app, &doc_id).unwrap_or_else(empty_page_plan)
-        });
-        paged_view(app, ui, &plan);
+    if let Some(paged) = &paged {
+        crate::ui::preview::paged_view(app, ui, paged);
         return;
     }
 
@@ -339,7 +331,7 @@ fn folder_child_row(
 fn toolbar(
     app: &mut PortmanteauApp,
     ui: &mut egui::Ui,
-    page_total: Option<usize>,
+    paging: Option<(usize, usize, usize)>,
     miss_count: usize,
 ) {
     Frame::new()
@@ -451,8 +443,11 @@ fn toolbar(
 
                     // Continuous vs Paged. Paged is a read-only print preview.
                     if app.write_mode == WriteMode::Paged {
-                        if let Some(total) = page_total {
-                            let current = app.paged_page.clamp(1, total.max(1));
+                        if let Some((first, count, total)) = paging {
+                            // The numbers printed on the pages, not counted
+                            // from this document: page 12 here is page 12 in
+                            // the exported PDF.
+                            let current = first - 1 + app.paged_page.clamp(1, count.max(1));
                             pill(ui, &format!("Page {current} of {total}"), FAINT, PANEL_2);
                         }
                     }
@@ -2636,7 +2631,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                     );
                 }
 
-                let style = script_element_style(&styles, kind);
+                let style = styles.style_for_kind(kind);
                 let indent = style.indent.max(0.0).min(content_width * 0.42);
                 if indent > 0.0 {
                     ui.add_space(indent);
@@ -3211,18 +3206,6 @@ fn paper_rule(ui: &mut egui::Ui) {
         [rect.left_center(), rect.right_center()],
         Stroke::new(1.0, PAPER_EDGE),
     );
-}
-
-/// Page the open document with the active format's settings. The paging
-/// primitives live in [`crate::ui::page`], shared with the Compile preview.
-fn build_page_plan(app: &PortmanteauApp, doc_id: &str) -> Option<PagePlan> {
-    let doc = app.ws.project.document(doc_id)?;
-    let settings = app.ws.project.settings_for(app.ws.project.export.kind);
-    Some(if doc.medium.is_script() {
-        script_plan(doc, &settings)
-    } else {
-        prose_plan(&app.ws.project, doc, &settings)
-    })
 }
 
 fn empty_state(app: &mut PortmanteauApp, ui: &mut egui::Ui) {

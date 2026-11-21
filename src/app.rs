@@ -358,7 +358,12 @@ impl PortmanteauApp {
             view: initial_view(),
             compile_tab: CompileTab::default(),
             settings_tab: 0,
-            write_mode: WriteMode::Continuous,
+            // Development aid, like PORTMANTEAU_VIEW: open Write in Paged mode.
+            write_mode: if std::env::var("PORTMANTEAU_PAGED").is_ok() {
+                WriteMode::Paged
+            } else {
+                WriteMode::Continuous
+            },
             paged_page: 1,
             preview_page: std::env::var("PORTMANTEAU_PREVIEW_PAGE").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
             settings_preview_page: 0,
