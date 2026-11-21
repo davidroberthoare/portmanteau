@@ -853,3 +853,43 @@ fn script_scenes_run_on_and_only_a_chapter_level_document_starts_a_page() {
     let docx = docx_document_xml(docx_manuscript(&p, &s));
     assert_eq!(docx.matches("<w:pageBreakBefore/>").count(), 1, "one episode break after the first");
 }
+
+#[test]
+fn every_script_writer_prints_the_trade_cover_not_a_book_title_page() {
+    let p = demo();
+    assert!(!p.subtitle.is_empty(), "the demo has a subtitle a book cover would print");
+    for kind in [
+        ExportKind::Pdf,
+        ExportKind::Epub,
+        ExportKind::Docx,
+        ExportKind::Html,
+        ExportKind::Rtf,
+        ExportKind::Txt,
+    ] {
+        let mut s = p.settings_for(kind);
+        s.compile_type = Some(CompileType::TvScript);
+        s.include_title_page = true;
+        s.include_toc = false;
+        let text = output_text(kind, &p, &s);
+        assert!(text.contains("THE SALT ROAD"), "{kind:?}: title in capitals");
+        assert!(text.contains("Written by"), "{kind:?}: credit line");
+        assert!(text.contains("Ada Marlowe"), "{kind:?}: author");
+        assert!(
+            !text.contains(">by Ada") && text.lines().all(|l| !l.trim().starts_with("by Ada")),
+            "{kind:?}: not a book byline"
+        );
+        assert!(!text.contains(&p.subtitle), "{kind:?}: no book subtitle");
+        assert!(text.contains("Draft"), "{kind:?}: draft line");
+    }
+
+    // The script starts on its own page after the cover, in the flowing formats.
+    let mut s = p.settings_for(ExportKind::Docx);
+    s.compile_type = Some(CompileType::TvScript);
+    s.include_title_page = true;
+    let xml = docx_document_xml(docx_manuscript(&p, &s));
+    assert!(xml.contains("<w:pageBreakBefore/>"), "DOCX breaks after the cover");
+    let rtf = rtf_manuscript(&p, &s);
+    assert!(rtf.contains("\\pagebb"), "RTF breaks after the cover");
+    s.include_title_page = false;
+    assert!(!docx_document_xml(docx_manuscript(&p, &s)).contains("<w:pageBreakBefore/>"));
+}

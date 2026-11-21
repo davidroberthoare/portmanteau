@@ -22,7 +22,7 @@ use skrifa::{FontRef, MetadataProvider};
 
 use crate::{
     back_matter, front_matter, manuscript_sections, page_margins, paper_pt, prose_paragraphs,
-    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers, starts_new_page, TITLE_PAGE_DROP,
+    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers, script_cover_lines, ascent_pt, TitleRole, starts_new_page, TITLE_PAGE_DROP,
 };
 
 // ---------------------------------------------------------------------------
@@ -596,7 +596,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
     let mut sections: Vec<PdfLayoutSection> = Vec::new();
 
     if settings.include_title_page {
-        pages.push(script_title_page(project, &frame, title_face, scale));
+        pages.push(script_title_page(project, settings, &frame, title_face));
         sections.push(PdfLayoutSection {
             label: "Title page".into(),
             start_page: 0,
@@ -746,67 +746,46 @@ fn style_id_for(kind: ElementKind) -> &'static str {
 
 fn script_title_page(
     project: &Project,
+    settings: &ExportSettings,
     frame: &Frame,
     face: Face,
-    scale: f32,
 ) -> PdfPageLayout {
     let mut items = Vec::new();
-    let mut push = |text: &str, size: f32, y: f32, align: Alignment| {
-        if text.trim().is_empty() {
-            return;
-        }
-        let width = text_width(text, face, size);
+    // The same lines every writer reads (`script_title`); the PDF places them
+    // by baseline. Flowing text starts at the top margin; the draft line is
+    // anchored to the foot of the page instead of floated by spacing.
+    let mut top = frame.top;
+    for line in script_cover_lines(project, settings) {
+        let size = line.style.size;
+        let width = text_width(&line.text, face, size);
         let available = frame.content_width();
-        let x = match align {
+        let x = match line.style.align {
             Alignment::Center => frame.left + (available - width).max(0.0) * 0.5,
             Alignment::Right => frame.left + (available - width).max(0.0),
             Alignment::Left | Alignment::Justify => frame.left,
         };
+        let baseline = if line.role == TitleRole::Footer {
+            frame.height - frame.bottom - 6.0 * (size / 12.0)
+        } else {
+            top += line.style.before;
+            let baseline = top + ascent_pt(size);
+            top += size * line.style.leading;
+            baseline
+        };
         items.push(PdfText {
             x,
-            baseline: y,
+            baseline,
             size,
             segments: vec![PdfSegment {
-                text: text.to_string(),
+                text: line.text,
                 face,
             }],
         });
-    };
-
-    // Courier advances 0.6 em. Wrapping by the frame's real width keeps a long
-    // title inside the page margins on A5 as well as on Letter. The type is
-    // scaled with the sheet, so the title page reduces with it.
-    let title_size = 14.0 * scale;
-    let title_chars = (frame.content_width() / (title_size * 0.6))
-        .floor()
-        .max(12.0) as usize;
-    let mut y = frame.height * TITLE_PAGE_DROP;
-    let title = project.title.trim().to_uppercase();
-    for line in wrap_plain(&title, title_chars) {
-        push(&line, title_size, y, Alignment::Center);
-        y += 18.0 * scale;
     }
-    // Scripts are never titled like a book: no prose subtitle on the cover.
-    y = (frame.height * 0.56).max(y + 24.0 * scale);
-    push("Written by", 12.0 * scale, y, Alignment::Center);
-    let mut author_y = y + 20.0 * scale;
-    for line in wrap_plain(project.author.trim(), title_chars) {
-        push(&line, 12.0 * scale, author_y, Alignment::Center);
-        author_y += 20.0 * scale;
-    }
-
-    let today = chrono::Local::now().format("%d %B %Y");
-    push(
-        &format!("Draft · {today}"),
-        10.0 * scale,
-        frame.height - frame.bottom - 6.0 * scale,
-        Alignment::Left,
-    );
-
     PdfPageLayout { items }
 }
 
-fn wrap_plain(text: &str, max_chars: usize) -> Vec<String> {
+pub(crate) fn wrap_plain(text: &str, max_chars: usize) -> Vec<String> {
     let mut out = Vec::new();
     let mut line = String::new();
     for word in text.split_whitespace() {

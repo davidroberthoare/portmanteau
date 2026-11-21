@@ -220,15 +220,42 @@ pub(crate) fn docx_styles(project: &Project, settings: &ExportSettings) -> Strin
             None,
         ));
     }
+    if project.compile_plan(settings).kind.is_script() {
+        // The cover's three roles; each line's own space above is applied on
+        // the paragraph, so the style itself carries none.
+        for line in script_cover_lines(project, settings) {
+            let id = docx_cover_style_id(line.role);
+            if out.contains(&format!("w:styleId=\"{id}\"")) {
+                continue;
+            }
+            let style = ElementStyle { before: 0.0, ..line.style.clone() };
+            out.push_str(&docx_style(&id, &id, &style, mono, false, false, None));
+        }
+    }
     out.push_str("</w:styles>");
     out
+}
+
+/// Style id for a line of a script's cover page.
+pub(crate) fn docx_cover_style_id(role: TitleRole) -> String {
+    format!("ScriptCover{role:?}")
 }
 
 pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let mut body = String::new();
     let mut scenes = SceneNumbers::default();
 
-    if settings.include_title_page {
+    let is_script = project.compile_plan(settings).kind.is_script();
+    if settings.include_title_page && is_script {
+        for line in script_cover_lines(project, settings) {
+            body.push_str(&format!(
+                "<w:p><w:pPr><w:pStyle w:val=\"{}\"/><w:spacing w:before=\"{}\"/></w:pPr><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",
+                docx_cover_style_id(line.role),
+                pt_to_twips(line.style.before),
+                xml_escape(&line.text)
+            ));
+        }
+    } else if settings.include_title_page {
         docx_styled_paragraph(&mut body, &project.title, "Title");
         if !project.subtitle.trim().is_empty() {
             docx_styled_paragraph(&mut body, &project.subtitle, "Subtitle");
@@ -260,7 +287,8 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
                     block.text.clone()
                 };
                 let text = scenes.apply(block.kind, text, settings.include_scene_numbers);
-                let new_page = first_block && i > 0 && starts_new_page(section.doc);
+                let new_page = first_block
+                    && if i == 0 { settings.include_title_page } else { starts_new_page(section.doc) };
                 first_block = false;
                 docx_paragraph(&mut body, &text, &docx_script_style_id(block.kind), new_page);
             }

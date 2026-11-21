@@ -10,7 +10,7 @@ pub(crate) fn html_manuscript(project: &Project, settings: &ExportSettings) -> S
 
     if settings.include_title_page {
         body.push_str("<header>\n");
-        body.push_str(&html_title_page(project));
+        body.push_str(&html_title_page(project, settings));
         body.push_str("</header>\n");
     }
     if settings.include_toc {

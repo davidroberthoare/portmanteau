@@ -112,6 +112,16 @@ const TITLE_ASCENT: f32 = 0.93;
 /// places the title's first *baseline* at `TITLE_PAGE_DROP` of the page height;
 /// a flowing format places the *top* of the line, so one ascent comes off.
 pub(crate) fn title_drop_pt(project: &Project, settings: &ExportSettings) -> f32 {
-    let ascent = settings.styles.title_page_title.size.max(8.0) * TITLE_ASCENT;
-    (paper_pt(settings).1 * TITLE_PAGE_DROP - page_margins(project, settings).top - ascent).max(0.0)
+    title_drop_for(project, settings, settings.styles.title_page_title.size.max(8.0))
+}
+
+/// `title_drop_pt` for a title set at `size` points (a script cover's is not
+/// a book title's).
+pub(crate) fn title_drop_for(project: &Project, settings: &ExportSettings, size: f32) -> f32 {
+    (paper_pt(settings).1 * TITLE_PAGE_DROP - page_margins(project, settings).top - size * TITLE_ASCENT).max(0.0)
+}
+
+/// How far a line's top sits above its baseline; the PDF places baselines.
+pub(crate) fn ascent_pt(size: f32) -> f32 {
+    size * TITLE_ASCENT
 }

@@ -2,7 +2,24 @@ use super::*;
 
 pub(crate) fn txt_manuscript(project: &Project, settings: &ExportSettings) -> String {
     let mut out = String::new();
-    if settings.include_title_page {
+    if settings.include_title_page && project.compile_plan(settings).kind.is_script() {
+        // The script cover as plain text: centred on a 60-column page, with
+        // a blank line wherever the cover has a gap, then a rule.
+        for line in script_cover_lines(project, settings) {
+            if line.role == TitleRole::Footer {
+                out.push('\n');
+                out.push_str(&line.text);
+                out.push('\n');
+                continue;
+            }
+            if line.style.before > 0.0 {
+                out.push('\n');
+            }
+            let pad = 60usize.saturating_sub(line.text.chars().count()) / 2;
+            out.push_str(&format!("{}{}\n", " ".repeat(pad), line.text));
+        }
+        out.push_str("\n\n");
+    } else if settings.include_title_page {
         out.push_str(&format!("{}\n", project.title.to_uppercase()));
         if !project.subtitle.is_empty() {
             out.push_str(&format!("{}\n", project.subtitle));
