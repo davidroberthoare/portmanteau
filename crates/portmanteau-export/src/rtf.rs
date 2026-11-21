@@ -106,8 +106,15 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
         rtf_escape(&settings.font)
     ));
     let (page_w, page_h) = paper_twips(settings);
+    let margins = page_margins(project, settings);
+    let (ml, mr, mt, mb) = (
+        pt_to_twips(margins.left),
+        pt_to_twips(margins.right),
+        pt_to_twips(margins.top),
+        pt_to_twips(margins.bottom),
+    );
     out.push_str(&format!(
-        "\\paperw{page_w}\\paperh{page_h}\\margl1440\\margr1440\\margt1440\\margb1440\n"
+        "\\paperw{page_w}\\paperh{page_h}\\margl{ml}\\margr{mr}\\margt{mt}\\margb{mb}\n"
     ));
     if settings.include_title_page {
         out.push_str("\\qc\\f0\\fs52 ");

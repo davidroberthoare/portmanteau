@@ -455,3 +455,42 @@ fn lossy_text_export_warns_and_uses_an_image_alt_placeholder() {
     assert!(output.contains("[Image: Harbor map]"));
     let _ = fs::remove_file(path);
 }
+
+#[test]
+fn custom_margins_reach_docx_and_rtf() {
+    let p = demo();
+    let margins = Some(PageMargins {
+        left: 90.0,
+        right: 36.0,
+        top: 54.0,
+        bottom: 108.0,
+    });
+    let mut s = p.settings_for(ExportKind::Docx);
+    s.margins = margins;
+    let xml = docx_document_xml(docx_manuscript(&p, &s));
+    assert!(
+        xml.contains(r#"<w:pgMar w:top="1080" w:right="720" w:bottom="2160" w:left="1800"/>"#),
+        "{xml}"
+    );
+    let mut s = p.settings_for(ExportKind::Rtf);
+    s.margins = margins;
+    let rtf = rtf_manuscript(&p, &s);
+    assert!(rtf.contains("\\margl1800\\margr720\\margt1080\\margb2160"), "{rtf}");
+}
+
+#[test]
+fn automatic_margins_differ_for_prose_and_scripts_and_never_swallow_the_page() {
+    let p = demo();
+    let prose = p.settings_for(ExportKind::Pdf);
+    let auto = page_margins(&p, &prose);
+    assert!((auto.left - mm_to_pt(20.0)).abs() < 0.01);
+    let mut absurd = prose.clone();
+    absurd.margins = Some(PageMargins {
+        left: 300.0,
+        right: 300.0,
+        top: 0.0,
+        bottom: 0.0,
+    });
+    let clamped = page_margins(&p, &absurd);
+    assert!(clamped.left + clamped.right <= 612.0 * 2.0 / 3.0 + 0.01);
+}

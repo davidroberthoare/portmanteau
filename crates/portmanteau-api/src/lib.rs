@@ -965,6 +965,32 @@ fn apply_style_overrides(styles: &mut ElementStyles, payload: &Value) -> Result<
 
 /// Merge the settings fields a caller may supply on top of a resolved set.
 /// Unknown keys are ignored, so a newer client can send extra fields safely.
+/// `null` or `"auto"` returns to automatic margins; an object sets any of
+/// `top`, `bottom`, `left`, `right` (points), starting from the current values.
+fn parse_margins(
+    value: &Value,
+    current: Option<PageMargins>,
+) -> Result<Option<PageMargins>, String> {
+    if value.is_null() || value.as_str().is_some_and(|s| s.trim().eq_ignore_ascii_case("auto")) {
+        return Ok(None);
+    }
+    let Some(map) = value.as_object() else {
+        return Err("margins must be an object like {\"top\":72,\"left\":90} or \"auto\"".into());
+    };
+    let mut margins = current.unwrap_or_default();
+    for (key, slot) in [
+        ("top", &mut margins.top),
+        ("bottom", &mut margins.bottom),
+        ("left", &mut margins.left),
+        ("right", &mut margins.right),
+    ] {
+        if let Some(v) = map.get(key) {
+            *slot = parse_finite_f32(v, key, 0.0, 300.0)?;
+        }
+    }
+    Ok(Some(margins))
+}
+
 fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> Result<(), String> {
     if let Some(v) = payload.get("path").and_then(|v| v.as_str()) {
         settings.output_path = v.into();
@@ -1018,6 +1044,9 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
     }
     if let Some(v) = payload.get("each_separately").and_then(|v| v.as_bool()) {
         settings.each_separately = v;
+    }
+    if let Some(v) = payload.get("margins") {
+        settings.margins = parse_margins(v, settings.margins)?;
     }
     merge_header_footer(&mut settings.header_footer, payload)?;
     if let Some(v) = payload.get("styles") {

@@ -17,7 +17,7 @@ pub use compile::*;
 pub use model::*;
 pub use rich_text::{
     parse_docx, parse_fdx, parse_plain_text, ImageObject, InlineContent, InlineMark,
-    ParagraphStyle, RichDocument, RichParagraph, StyleSheet, TextPosition, TextRun,
+    PageMargins, ParagraphStyle, RichDocument, RichParagraph, StyleSheet, TextPosition, TextRun,
     TextTransform,
 };
 pub use script::ElementKind;

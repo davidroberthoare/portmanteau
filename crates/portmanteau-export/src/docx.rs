@@ -219,8 +219,15 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
     }
 
     let (page_w, page_h) = paper_twips(settings);
+    let margins = page_margins(project, settings);
+    let (mt, mr, mb, ml) = (
+        pt_to_twips(margins.top),
+        pt_to_twips(margins.right),
+        pt_to_twips(margins.bottom),
+        pt_to_twips(margins.left),
+    );
     let document = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>{}\n<w:sectPr><w:pgSz w:w=\"{page_w}\" w:h=\"{page_h}\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\"/></w:sectPr></w:body></w:document>",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>{}\n<w:sectPr><w:pgSz w:w=\"{page_w}\" w:h=\"{page_h}\"/><w:pgMar w:top=\"{mt}\" w:right=\"{mr}\" w:bottom=\"{mb}\" w:left=\"{ml}\"/></w:sectPr></w:body></w:document>",
         body
     );
     let styles = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
