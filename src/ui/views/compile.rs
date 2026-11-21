@@ -3,6 +3,8 @@
 //! plain text or a complete project bundle. Editor display settings live in the
 //! separate Settings workspace.
 
+use std::path::{Path, PathBuf};
+
 use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense,
     Stroke, TextEdit, Vec2,
@@ -484,13 +486,7 @@ fn resolved_export_path(project: &Project, settings: &ExportSettings) -> String 
 /// long absolute path still fits.
 fn export_target_label(project: &Project, settings: &ExportSettings) -> String {
     let path = resolved_export_path(project, settings);
-    if let Ok(home) = std::env::var("HOME") {
-        let home = home.trim_end_matches('/');
-        if let Some(rest) = path.strip_prefix(&format!("{home}/")) {
-            return format!("~/{rest}");
-        }
-    }
-    path
+    crate::app::short_path(Path::new(&path))
 }
 
 fn action_panel(
@@ -1263,15 +1259,18 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
             .data
             .get("path")
             .and_then(|v| v.as_str())
-            .unwrap_or("the export folder");
-        // The toast names the file: a compile that writes somewhere the writer
-        // cannot find is indistinguishable from one that did nothing.
-        app.toast(
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(&target));
+        // The toast names the file and opens it: a compile that writes
+        // somewhere the writer cannot find is indistinguishable from one that
+        // did nothing.
+        app.toast_path(
             "Compile finished",
-            format!("{} · {path}", res.message),
+            res.message.clone(),
+            path.clone(),
             ToastKind::Ok,
         );
-        app.ws.last_message = format!("{} → {}", res.message, path);
+        app.ws.last_message = format!("{} → {}", res.message, path.display());
     } else {
         app.toast("Compile failed", res.message, ToastKind::Error);
     }
@@ -1328,23 +1327,24 @@ mod tests {
             .click();
         harness.run_steps(2);
 
+        let written = dir.join("click.pdf");
+
         let app = app.borrow();
         assert!(
             app.ws.last_message.contains("PDF exported"),
             "the click should run the export, last message: {:?}",
             app.ws.last_message
         );
-        let written = dir.join("click.pdf");
         assert!(
             written.is_file(),
             "the PDF should be on disk at {written:?}"
         );
         let toast = app.toast.as_ref().expect("a finished compile reports itself");
         assert!(matches!(toast.kind, ToastKind::Ok));
-        assert!(
-            toast.detail.contains(&written.display().to_string()),
-            "the toast should name the file, got {:?}",
-            toast.detail
+        assert_eq!(
+            toast.path.as_deref(),
+            Some(written.as_path()),
+            "the toast should carry the file it wrote so the path can be clicked"
         );
     }
 }

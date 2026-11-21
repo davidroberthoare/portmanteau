@@ -293,7 +293,7 @@ fn wrap_chars(chars: &[StyledChar], max_width: f32, size: f32) -> Vec<Vec<Styled
     let mut width = 0.0f32;
     let mut last_space: Option<usize> = None;
 
-    for &styled in chars {
+    for (index, &styled) in chars.iter().enumerate() {
         if styled.c == '\n' {
             trim_trailing_spaces(&mut line);
             lines.push(std::mem::take(&mut line));
@@ -320,7 +320,21 @@ fn wrap_chars(chars: &[StyledChar], max_width: f32, size: f32) -> Vec<Vec<Styled
             }
         }
         if styled.c == ' ' {
-            last_space = Some(line.len());
+            // Do not break around a spaced dash: "BREAKWATER — DAWN" is one
+            // unit, and a line should never open with "— DAWN".
+            let before = line
+                .iter()
+                .rev()
+                .find(|s| s.c != ' ')
+                .map(|s| s.c);
+            let after = chars[index + 1..]
+                .iter()
+                .find(|s| s.c != ' ')
+                .map(|s| s.c);
+            let dash = |c: Option<char>| matches!(c, Some('—' | '–' | '-'));
+            if !dash(before) && !dash(after) {
+                last_space = Some(line.len());
+            }
         }
         width += advance;
         line.push(styled);
@@ -541,6 +555,13 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         &fallback_font,
     );
 
+    // The stylesheet indents are calibrated for a US Letter text column
+    // (3.7" cue, 2.5"-6" dialogue). On narrower paper the same point indents
+    // would leave dialogue only a few characters wide, so scale them with the
+    // column. Twelve-point type stays twelve-point.
+    let letter_content = 612.0 - sheet.margins.left - sheet.margins.right;
+    let indent_scale = (frame.content_width() / letter_content.max(72.0)).clamp(0.3, 1.0);
+
     let mut pages: Vec<PdfPageLayout> = Vec::new();
     let mut sections: Vec<PdfLayoutSection> = Vec::new();
 
@@ -591,8 +612,8 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
             }
             let size = format.size.max(7.0);
             let leading = (size * format.leading.max(0.9)).max(size * 0.9);
-            let indent = format.indent.max(0.0);
-            let right_indent = format.right_indent.max(0.0);
+            let indent = format.indent.max(0.0) * indent_scale;
+            let right_indent = format.right_indent.max(0.0) * indent_scale;
             let width = (frame.content_width() - indent - right_indent).max(18.0);
             let fallback = doc_sheet
                 .style("action")
@@ -624,7 +645,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
                 let line_width = chars_width(line, size);
                 let first = line_index == 0;
                 let first_indent = if first {
-                    format.first_line_indent.max(0.0)
+                    format.first_line_indent.max(0.0) * indent_scale
                 } else {
                     0.0
                 };
@@ -725,21 +746,23 @@ fn script_title_page(
         });
     };
 
+    // Courier advances 0.6 em. Wrapping by the frame's real width keeps a long
+    // title inside the page margins on A5 as well as on Letter.
+    let title_chars = (frame.content_width() / (14.0 * 0.6)).floor().max(12.0) as usize;
     let mut y = frame.height * 0.30;
     let title = project.title.trim().to_uppercase();
-    for line in wrap_plain(&title, 40) {
+    for line in wrap_plain(&title, title_chars) {
         push(&line, 14.0, y, Alignment::Center);
         y += 18.0;
     }
     // Scripts are never titled like a book: no prose subtitle on the cover.
     y = (frame.height * 0.56).max(y + 24.0);
     push("Written by", 12.0, y, Alignment::Center);
-    push(
-        project.author.trim(),
-        12.0,
-        y + 20.0,
-        Alignment::Center,
-    );
+    let mut author_y = y + 20.0;
+    for line in wrap_plain(project.author.trim(), title_chars) {
+        push(&line, 12.0, author_y, Alignment::Center);
+        author_y += 20.0;
+    }
 
     let today = chrono::Local::now().format("%d %B %Y");
     push(
@@ -1375,6 +1398,87 @@ mod tests {
         assert!(
             (left - 108.0).abs() < 1.0,
             "scene action should start at the 1.5in margin, got {left}"
+        );
+    }
+
+    fn item_text(item: &PdfText) -> String {
+        item.segments.iter().map(|segment| segment.text.as_str()).collect()
+    }
+
+    /// Find one laid-out line by the text it starts with.
+    fn line_starting_with<'a>(layout: &'a PdfLayout, prefix: &str) -> &'a PdfText {
+        layout
+            .pages
+            .iter()
+            .flat_map(|page| &page.items)
+            .find(|item| item_text(item).starts_with(prefix))
+            .unwrap_or_else(|| panic!("no laid-out line starts with {prefix:?}"))
+    }
+
+    #[test]
+    fn letter_script_columns_use_the_standard_screenplay_geometry() {
+        let project = demo();
+        let mut settings = script_settings(&project, "tv");
+        settings.include_title_page = false;
+        let layout = pdf_layout(&project, &settings);
+
+        // 1.5" margin, character cue 2.2" further in, dialogue 1" in with a
+        // 1.5" right inset. Dialogue therefore spans 2.5"–6".
+        let cue = layout
+            .pages
+            .iter()
+            .flat_map(|page| &page.items)
+            .find(|item| item_text(item) == "MARA")
+            .expect("a character cue");
+        assert!((cue.x - 266.4).abs() < 1.0, "cue at {}", cue.x);
+        let dialogue = line_starting_with(&layout, "The chart");
+        assert!(
+            (dialogue.x - 180.0).abs() < 1.0,
+            "dialogue at {}",
+            dialogue.x
+        );
+        // The 3.5" dialogue column fits all but the last word on one line.
+        let full_line = line_starting_with(&layout, "The chart says there's a channel");
+        assert!(item_text(full_line).starts_with("The chart says there's a channel"));
+        let last_line = line_starting_with(&layout, "here.");
+        assert!((last_line.x - 180.0).abs() < 1.0, "here. at {}", last_line.x);
+    }
+
+    #[test]
+    fn narrow_paper_scales_script_columns_instead_of_collapsing_them() {
+        let project = demo();
+        let mut settings = script_settings(&project, "tv");
+        settings.paper = portmanteau_core::PaperSize::A5;
+        settings.include_title_page = false;
+        let layout = pdf_layout(&project, &settings);
+
+        // The A5 text column is 239.5 pt. Scaling the Letter-calibrated
+        // indents with it keeps the dialogue column at 139 pt, instead of the
+        // six-point sliver that turned every line into one or two words. The
+        // parenthetical must also fit on one line.
+        let dialogue = line_starting_with(&layout, "The chart");
+        assert!(
+            (dialogue.x - 147.9).abs() < 1.0,
+            "dialogue at {}",
+            dialogue.x
+        );
+        assert!(
+            item_text(line_starting_with(&layout, "(to herself)")).contains("(to herself)"),
+            "the parenthetical should fit on one line"
+        );
+        assert!(
+            item_text(dialogue).chars().count() > 10,
+            "the first dialogue line should hold several words, got {:?}",
+            item_text(dialogue)
+        );
+        // A wrapped scene heading must not leave the em dash opening a line.
+        assert!(
+            layout
+                .pages
+                .iter()
+                .flat_map(|page| &page.items)
+                .any(|item| item_text(item).starts_with("BREAKWATER — DAWN")),
+            "the scene heading should wrap before the place name, not at the dash"
         );
     }
 

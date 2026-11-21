@@ -104,9 +104,11 @@ by every page-based writer — PDF, DOCX and RTF — not just PDF.
 Margins come from the format's stylesheet (`StyleSheet.margins`); element styles,
 italic, alignment, spacing and hanging indents come from the document's own
 stylesheet (film, TV, stage); 12 pt Courier at exactly 12 pt leading; page number
-top right ("12.", none on page 1); scene numbers per the setting; no bold serif
-document title. Prose keeps the book layout (paper size, headers, footers,
-contents, front/back matter).
+top right ("12.", none on the title page, first script page is 1); scene numbers
+per the setting; no bold serif document title. Column indents are Letter
+positions scaled with the text column on smaller paper, so a narrow page never
+collapses dialogue into one-word lines. Prose keeps the book layout (paper size,
+headers, footers, contents, front/back matter).
 
 The compiler never invents content. In particular it does not add a `FADE IN:`,
 `CUT TO:`, `THE END` or any other transition: a script contains exactly the

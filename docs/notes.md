@@ -1167,3 +1167,31 @@ The page image beside it is still a rough visual approximation, labelled as such
   round-trip, en dash, page-number position, no invented transition), skipping
   those checks when the poppler tools are absent. DOCX and RTF page sizes are
   covered for all four papers.
+
+## Script columns on smaller paper (follow-up)
+
+The first real TV export looked wrong on the demonstration project's A5 paper:
+parentheticals printed one character per line and dialogue broke every word or
+two. The indents in the film/TV sheets are absolute positions for the US Letter
+text column (cue at 2.2" from the margin, dialogue at 1" with a 1.5" right
+inset, so 3.5" of dialogue). A5's text column is only 3.3" wide, so subtracting
+those same indents left a six-point sliver.
+
+The column indents now scale with the available text width, while the type size
+and the page margins stay fixed. On Letter nothing changes (scale 1): the cue
+still sits at 3.7" from the page edge and dialogue runs from 2.5" to 6". On A5
+the dialogue column is 1.9" instead of 0.08", parentheticals fit on one line,
+and the block positions match the proportions of the editor's Letter sheet.
+Stage layout scales the same way. Tests cover both the exact Letter geometry
+and the absence of one-character lines on A5.
+
+The compile toast now carries the written file as a link. Its full path is
+shown (home folder abbreviated to `~`); clicking it opens the file, or its
+folder if the file has since moved. A shell-level test renders the toast and
+finds the link by role, and the compile-button test checks the path handed to
+the toast is the file actually written.
+
+The script title page also wraps against the real text width now, so a long
+title cannot run past the right margin on a narrow page. Scene headings treat a
+spaced dash as part of the following phrase, so a wrapped heading breaks before
+"BREAKWATER — DAWN" rather than leaving the dash to open a line.
