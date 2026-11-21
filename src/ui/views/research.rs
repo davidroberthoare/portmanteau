@@ -260,6 +260,9 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
             ui.add_space(10.0);
 
             let rows = ((body.chars().count() as f32) / 75.0).ceil().max(16.0) as usize;
+            let checker = &app.spell;
+            let spell_on = app.settings.spellcheck;
+            let body_spans = crate::ui::editor::field_spans(checker, spell_on, &body);
             let body_id = egui::Id::unique(("research_body", id));
             let ctx = ui.ctx().clone();
             let toolbar = inline_format_toolbar(ui, &ctx, body_id, &mut rich_body);
@@ -290,7 +293,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     &styles_layout,
                     field_text_zoom(),
                     wrap_width,
-                    &[],
+                    &body_spans,
                 );
                 ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
             };
@@ -308,6 +311,20 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                 changed = true;
             }
             crate::ui::editor::remember_selection_anchor(ui.ctx(), body_output.response.id, &body_output.galley, body_output.galley_pos);
+            let fixed = crate::ui::editor::field_spell_menu(
+                ui,
+                checker,
+                spell_on,
+                egui::Id::unique(("spell_menu_research", id)),
+                &body_output,
+                &body,
+                &mut rich_body,
+                &sheet,
+            );
+            if fixed.replaced {
+                changed = true;
+            }
+            crate::ui::editor::apply_field_spell(app, vec![fixed]);
             paint_rich_images(
                 ui,
                 &body_output.galley,

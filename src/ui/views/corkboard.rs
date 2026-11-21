@@ -57,6 +57,9 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut select: Option<String> = None;
     let mut open: Option<String> = None;
     let mut drop_after: Option<(String, String)> = None;
+    let checker = &app.spell;
+    let spell_on = app.settings.spellcheck;
+    let mut spelling: Vec<crate::ui::editor::FieldSpell> = Vec::new();
 
     content_frame().show(ui, |ui| {
         ScrollArea::vertical()
@@ -124,6 +127,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                     &mut select,
                                     &mut open,
                                     &mut drop_after,
+                                    (checker, spell_on),
+                                    &mut spelling,
                                 );
                                 ui.add_space(gap);
                             }
@@ -174,6 +179,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     if let Some(id) = select {
         app.selected = Some(id);
     }
+    crate::ui::editor::apply_field_spell(app, spelling);
     if let Some(id) = open {
         app.open_doc(id);
     }
@@ -340,6 +346,8 @@ fn card_ui(
     select: &mut Option<String>,
     open: &mut Option<String>,
     drop_after: &mut Option<(String, String)>,
+    (checker, spell_on): (&portmanteau_core::spell::SpellChecker, bool),
+    spelling: &mut Vec<crate::ui::editor::FieldSpell>,
 ) {
     let height = (200.0 * zoom).clamp(180.0, 250.0);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
@@ -461,19 +469,28 @@ fn card_ui(
                 .max_height(58.0)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.add(
-                        TextEdit::multiline(&mut card.synopsis)
-                            .id(synopsis_edit_id(&card.id))
-                            .font(ui_small())
-                            .text_color(MUTED)
-                            .frame(Frame::NONE)
-                            .hint_text("Add a synopsis…")
-                            .desired_rows(3)
-                            .desired_width(f32::INFINITY),
-                    )
+                    let (output, fixed) = crate::ui::editor::spelled_text_edit(
+                        ui,
+                        &mut card.synopsis,
+                        checker,
+                        spell_on,
+                        synopsis_edit_id(&card.id),
+                        ui_small(),
+                        MUTED,
+                        |edit| {
+                            edit.frame(Frame::NONE)
+                                .hint_text("Add a synopsis…")
+                                .desired_rows(3)
+                                .desired_width(f32::INFINITY)
+                        },
+                    );
+                    (output.response, fixed)
                 })
                 .inner;
-            if synopsis_resp.changed() {
+            let (synopsis_resp, fixed) = synopsis_resp;
+            let fixed_by_menu = fixed.replaced;
+            spelling.push(fixed);
+            if synopsis_resp.changed() || fixed_by_menu {
                 record_edit(edits, &card.id, None, Some(card.synopsis.clone()));
             }
             if synopsis_resp.clicked() {

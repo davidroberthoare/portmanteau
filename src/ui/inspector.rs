@@ -93,6 +93,11 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         .map(|doc| doc.synopsis.clone())
         .unwrap_or_default();
     let synopsis_images = load_rich_image_textures(app, ui.ctx(), &synopsis_snapshot);
+    // The checker and the setting are borrowed before the document is, so the
+    // layouter and the right-click menu can read them (disjoint app fields).
+    let checker = &app.spell;
+    let spell_on = app.settings.spellcheck;
+    let mut spelling: Vec<crate::ui::editor::FieldSpell> = Vec::new();
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
         section_label(ui, "Document");
@@ -190,6 +195,7 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         }
         let mut synopsis = doc.synopsis.editor_text();
         let synopsis_content = doc.synopsis.clone();
+        let synopsis_spans = crate::ui::editor::field_spans(checker, spell_on, &synopsis);
         let mut synopsis_layouter =
             |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
                 let job = script_flow_layout_job(
@@ -199,7 +205,7 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     &styles,
                     field_text_zoom(),
                     wrap_width,
-                    &[],
+                    &synopsis_spans,
                 );
                 ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
             };
@@ -217,6 +223,21 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             app.ws.dirty = true;
         }
         crate::ui::editor::remember_selection_anchor(ui.ctx(), synopsis_output.response.id, &synopsis_output.galley, synopsis_output.galley_pos);
+        let fixed = crate::ui::editor::field_spell_menu(
+            ui,
+            checker,
+            spell_on,
+            egui::Id::unique(("spell_menu_synopsis", doc_id)),
+            &synopsis_output,
+            &synopsis,
+            &mut doc.synopsis,
+            &prose_sheet,
+        );
+        if fixed.replaced {
+            doc.touch();
+            app.ws.dirty = true;
+        }
+        spelling.push(fixed);
         paint_rich_images(
             ui,
             &synopsis_output.galley,
@@ -278,6 +299,7 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         // (and in Edit > Take snapshot). This tab used to repeat a snapshot
         // box and the latest version here; one home is enough.
     }
+    crate::ui::editor::apply_field_spell(app, spelling);
 }
 
 fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
@@ -299,6 +321,9 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         .map(|doc| doc.notes.clone())
         .unwrap_or_default();
     let notes_images = load_rich_image_textures(app, ui.ctx(), &notes_snapshot);
+    let checker = &app.spell;
+    let spell_on = app.settings.spellcheck;
+    let mut spelling: Vec<crate::ui::editor::FieldSpell> = Vec::new();
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
         section_label(ui, "Author's notes");
@@ -323,6 +348,7 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         }
         let mut notes = doc.notes.editor_text();
         let notes_content = doc.notes.clone();
+        let notes_spans = crate::ui::editor::field_spans(checker, spell_on, &notes);
         let mut notes_layouter = |ui: &egui::Ui,
                                   text: &dyn egui::TextBuffer,
                                   wrap_width: f32| {
@@ -333,7 +359,7 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 &styles,
                 field_text_zoom(),
                 wrap_width,
-                &[],
+                &notes_spans,
             );
             ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
         };
@@ -351,6 +377,21 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             app.ws.dirty = true;
         }
         crate::ui::editor::remember_selection_anchor(ui.ctx(), notes_output.response.id, &notes_output.galley, notes_output.galley_pos);
+        let fixed = crate::ui::editor::field_spell_menu(
+            ui,
+            checker,
+            spell_on,
+            egui::Id::unique(("spell_menu_notes", doc_id)),
+            &notes_output,
+            &notes,
+            &mut doc.notes,
+            &prose_sheet,
+        );
+        if fixed.replaced {
+            doc.touch();
+            app.ws.dirty = true;
+        }
+        spelling.push(fixed);
         paint_rich_images(
             ui,
             &notes_output.galley,
@@ -361,6 +402,7 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             field_text_zoom(),
         );
     }
+    crate::ui::editor::apply_field_spell(app, spelling);
     ui.add_space(14.0);
     hairline(ui);
     ui.add_space(10.0);

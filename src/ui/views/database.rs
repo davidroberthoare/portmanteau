@@ -407,6 +407,10 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                             error: String::new(),
                         });
                     }
+                    let checker = &app.spell;
+                    let spell_on = app.settings.spellcheck;
+                    let notes_spans =
+                        crate::ui::editor::field_spans(checker, spell_on, &draft.notes);
                     let rich_notes_layout = rich_notes.clone();
                     let styles_layout = note_styles.clone();
                     let sheet_layout = sheet.clone();
@@ -420,7 +424,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                             &styles_layout,
                             field_text_zoom(),
                             wrap_width,
-                            &[],
+                            &notes_spans,
                         );
                         ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                     };
@@ -437,6 +441,21 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         apply = true;
                     }
                     crate::ui::editor::remember_selection_anchor(ui.ctx(), notes_output.response.id, &notes_output.galley, notes_output.galley_pos);
+                    let fixed = crate::ui::editor::field_spell_menu(
+                        ui,
+                        checker,
+                        spell_on,
+                        egui::Id::unique(("spell_menu_database", id)),
+                        &notes_output,
+                        &draft.notes,
+                        &mut rich_notes,
+                        &sheet,
+                    );
+                    if fixed.replaced {
+                        draft.notes = rich_notes.editor_text();
+                        apply = true;
+                    }
+                    crate::ui::editor::apply_field_spell(app, vec![fixed]);
                     paint_rich_images(
                         ui,
                         &notes_output.galley,

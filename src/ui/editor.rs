@@ -192,6 +192,9 @@ fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut title = original_title.clone();
     let mut synopsis = original_synopsis.clone();
     let mut open_child: Option<String> = None;
+    let checker = &app.spell;
+    let spell_on = app.settings.spellcheck;
+    let mut spelling: Vec<FieldSpell> = Vec::new();
 
     let subtitle = match children.len() {
         1 => "1 document in this folder.".to_string(),
@@ -216,18 +219,23 @@ fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 ui.add_space(16.0);
                 section_label(ui, "Synopsis");
                 ui.add_space(4.0);
-                ui.add(
-                    TextEdit::multiline(&mut synopsis)
-                        .font(serif(13.0))
-                        .text_color(TEXT)
-                        .desired_width(f32::INFINITY)
-                        .desired_rows(3)
-                        .hint_text(
+                let (_, fixed) = spelled_text_edit(
+                    ui,
+                    &mut synopsis,
+                    checker,
+                    spell_on,
+                    Id::unique(("folder_synopsis", doc_id)),
+                    serif(13.0),
+                    TEXT,
+                    |edit| {
+                        edit.desired_width(f32::INFINITY).desired_rows(3).hint_text(
                             RichText::new("What belongs in this folder?")
                                 .font(serif(13.0))
                                 .color(FAINT),
-                        ),
+                        )
+                    },
                 );
+                spelling.push(fixed);
                 ui.add_space(20.0);
                 section_label(ui, "Contents");
                 ui.add_space(6.0);
@@ -269,6 +277,7 @@ fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         app.ws.dirty = true;
     }
 
+    apply_field_spell(app, spelling);
     if let Some(id) = open_child {
         app.open_doc(id);
     }
@@ -930,6 +939,141 @@ fn spell_menu_byte(
 
 /// Apply the menu's choices after the document borrow has ended, so the
 /// document is never borrowed while a widget runs (AGENTS.md §8).
+/// Misspelled byte ranges of a field's text, for its layouter (empty when
+/// spell-checking is off). One dictionary pass per frame; the layouter reuses it.
+pub(crate) fn field_spans(checker: &SpellChecker, enabled: bool, text: &str) -> Vec<(usize, usize)> {
+    if enabled {
+        checker.misspelled_spans(text)
+    } else {
+        Vec::new()
+    }
+}
+
+/// What the spelling menu on a secondary field asked for, beyond the fix it
+/// already applied to the field itself.
+#[derive(Default)]
+pub(crate) struct FieldSpell {
+    /// A suggestion was applied to the field; the caller marks it edited.
+    pub replaced: bool,
+    ignore: Option<String>,
+    add: Option<String>,
+}
+
+/// The right-click spelling menu for a synopsis, notes, research or database
+/// field. A suggestion is applied to `field` at once; "Ignore" and "Add to
+/// dictionary" change the checker, which the caller may be holding, so they are
+/// returned for `apply_field_spell` to run after its borrows end.
+pub(crate) fn field_spell_menu(
+    ui: &mut egui::Ui,
+    checker: &SpellChecker,
+    enabled: bool,
+    key: Id,
+    output: &egui::text_edit::TextEditOutput,
+    text: &str,
+    field: &mut portmanteau_core::RichDocument,
+    sheet: &portmanteau_core::StyleSheet,
+) -> FieldSpell {
+    let mut outcome = FieldSpell::default();
+    if !enabled {
+        return outcome;
+    }
+    let byte = spell_menu_byte(
+        ui.ctx(),
+        key,
+        &output.response,
+        &output.galley,
+        output.galley_pos,
+        text,
+    );
+    let mut choice = None;
+    output.response.context_menu(|ui| {
+        choice = spell_menu_ui(ui, checker, text, byte);
+    });
+    match choice {
+        Some(SpellChoice::Replace(range, replacement))
+            if text.is_char_boundary(range.start) && text.is_char_boundary(range.end) =>
+        {
+            let start = text[..range.start].chars().count();
+            let end = text[..range.end].chars().count();
+            field.replace_range(start..end, &replacement, sheet);
+            outcome.replaced = true;
+        }
+        Some(SpellChoice::Ignore(word)) => outcome.ignore = Some(word),
+        Some(SpellChoice::Add(word)) => outcome.add = Some(word),
+        _ => {}
+    }
+    outcome
+}
+
+/// A multiline plain-text field with spell-checking: misspelled words are
+/// underlined and the right-click menu offers suggestions. A suggestion is
+/// applied to `text` at once; "Ignore" and "Add to dictionary" are returned
+/// for `apply_field_spell`, as for the rich fields. `configure` styles the
+/// `TextEdit` (font, hint, rows, frame); the layouter is supplied here.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spelled_text_edit(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    checker: &SpellChecker,
+    enabled: bool,
+    id: Id,
+    font: egui::FontId,
+    color: Color32,
+    configure: impl for<'l> FnOnce(TextEdit<'l>) -> TextEdit<'l>,
+) -> (egui::text_edit::TextEditOutput, FieldSpell) {
+    let spans = field_spans(checker, enabled, text);
+    let base = egui::TextFormat {
+        font_id: font,
+        color,
+        ..Default::default()
+    };
+    let mut layouter = |ui: &egui::Ui, buffer: &dyn egui::TextBuffer, wrap_width: f32| {
+        let mut job = spell_layout_job(buffer.as_str(), &spans, &base);
+        job.wrap.max_width = wrap_width;
+        ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
+    };
+    let output = configure(TextEdit::multiline(&mut *text).id(id).layouter(&mut layouter)).show(ui);
+    let mut outcome = FieldSpell::default();
+    if enabled {
+        let byte = spell_menu_byte(
+            ui.ctx(),
+            Id::unique(("spell_menu_plain", id)),
+            &output.response,
+            &output.galley,
+            output.galley_pos,
+            text,
+        );
+        let mut choice = None;
+        output.response.context_menu(|ui| {
+            choice = spell_menu_ui(ui, checker, text, byte);
+        });
+        match choice {
+            Some(SpellChoice::Replace(range, replacement))
+                if text.is_char_boundary(range.start) && text.is_char_boundary(range.end) =>
+            {
+                text.replace_range(range, &replacement);
+                outcome.replaced = true;
+            }
+            Some(SpellChoice::Ignore(word)) => outcome.ignore = Some(word),
+            Some(SpellChoice::Add(word)) => outcome.add = Some(word),
+            _ => {}
+        }
+    }
+    (output, outcome)
+}
+
+/// Run the checker changes a field's spelling menu asked for.
+pub(crate) fn apply_field_spell(app: &mut PortmanteauApp, outcomes: Vec<FieldSpell>) {
+    for outcome in outcomes {
+        if let Some(word) = outcome.ignore {
+            app.spell.ignore(&word);
+        }
+        if let Some(word) = outcome.add {
+            app.add_to_dictionary(&word);
+        }
+    }
+}
+
 fn apply_spell_actions(app: &mut PortmanteauApp, actions: Vec<SpellAction>) {
     for action in actions {
         match action {
@@ -5297,5 +5441,50 @@ mod ui_tests {
                 "the selection should include characters from both paragraphs; got {low}..{high}"
             );
         }
+    }
+
+    /// Every prose field the writer types into must underline misspellings:
+    /// the helpers the secondary fields share find them and respect the switch.
+    #[test]
+    fn secondary_fields_find_misspellings_and_honour_the_spelling_switch() {
+        let app = PortmanteauApp::new(None);
+        let text = "A perfectly good sentence with one wrrod wrong.";
+        let spans = field_spans(&app.spell, true, text);
+        assert_eq!(spans.len(), 1, "{spans:?}");
+        assert_eq!(&text[spans[0].0..spans[0].1], "wrrod");
+        assert!(field_spans(&app.spell, false, text).is_empty(), "off means off");
+    }
+
+    /// The plain-text field underlines a misspelling in its own layout.
+    #[test]
+    fn spelled_text_edit_underlines_in_a_plain_field() {
+        let app = PortmanteauApp::new(None);
+        let checker = std::rc::Rc::new(app.spell);
+        let text = std::rc::Rc::new(std::cell::RefCell::new(String::from("Fine words and a wrrod.")));
+        let (c, t) = (checker.clone(), text.clone());
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(500.0, 200.0))
+            .with_accessibility_check(false)
+            .allow_missing_glyphs()
+            .build_ui(move |ui| {
+                let (output, _) = spelled_text_edit(
+                    ui,
+                    &mut t.borrow_mut(),
+                    &c,
+                    true,
+                    Id::unique("plain_spell_test"),
+                    egui::FontId::proportional(14.0),
+                    Color32::BLACK,
+                    |edit| edit,
+                );
+                let has_underline = output.galley.job.sections.iter().any(|section| {
+                    section.format.underline.width > 0.0
+                });
+                ui.ctx().data_mut(|d| d.insert_temp(Id::unique("underlined"), has_underline));
+            });
+        harness.run_steps(3);
+        let underlined: bool = harness.ctx.data(|d| d.get_temp(Id::unique("underlined"))).unwrap_or(false);
+        assert!(underlined, "the misspelled word should carry an underline section");
+        assert_eq!(&*text.borrow(), "Fine words and a wrrod.", "drawing does not alter the text");
     }
 }
