@@ -260,6 +260,11 @@ pub(crate) fn stylesheet(
         ));
     }
 
+    css.push_str(&format!(
+        ".script-opening {{ {} }}\n",
+        declarations(&opening_transition_style(st.style_for_kind(ElementKind::Transition)), mono)
+    ));
+
     // 4. Prose paragraph formats collected while the body was rendered.
     css.push_str(&paragraphs.css());
     css
@@ -330,11 +335,12 @@ pub(crate) fn html_script_blocks(
             block.text.clone()
         };
         let text = scenes.apply(block.kind, text, settings.include_scene_numbers);
-        out.push_str(&format!(
-            "<p class=\"{}\">{}</p>\n",
-            script_class(block.kind),
-            html_escape(&text)
-        ));
+        let class = if opens_script(block.kind, &text) {
+            format!("{} script-opening", script_class(block.kind))
+        } else {
+            script_class(block.kind).to_string()
+        };
+        out.push_str(&format!("<p class=\"{class}\">{}</p>\n", html_escape(&text)));
     }
     out
 }

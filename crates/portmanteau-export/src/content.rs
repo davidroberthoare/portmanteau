@@ -16,6 +16,21 @@ pub(crate) fn starts_new_page(doc: &Document) -> bool {
     !doc.medium.is_script() || doc.kind == DocKind::Chapter
 }
 
+/// `FADE IN:` opens a script flush left; every other transition is a
+/// right-hand cue. The text is the writer's own; only its alignment is
+/// chosen, and every writer asks here so none of them right-aligns the opening.
+pub(crate) fn opens_script(kind: ElementKind, text: &str) -> bool {
+    kind == ElementKind::Transition && text.trim_start().to_uppercase().starts_with("FADE IN")
+}
+
+/// The transition style, left-aligned, for an opening `FADE IN:`.
+pub(crate) fn opening_transition_style(transition: &ElementStyle) -> ElementStyle {
+    ElementStyle {
+        align: Alignment::Left,
+        ..transition.clone()
+    }
+}
+
 pub(crate) fn rich_document_has_images(document: &RichDocument) -> bool {
     document.paragraphs.iter().any(|paragraph| paragraph.has_image())
 }

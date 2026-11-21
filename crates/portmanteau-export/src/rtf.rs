@@ -201,6 +201,13 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
             let mut first_block = true;
             for block in screenplay_blocks(project, section.doc) {
                 let style = st.style_for_kind(block.kind);
+                let opening;
+                let style = if opens_script(block.kind, &block.text) {
+                    opening = opening_transition_style(style);
+                    &opening
+                } else {
+                    style
+                };
                 let text = if style.uppercase {
                     block.text.to_uppercase()
                 } else {

@@ -893,3 +893,27 @@ fn every_script_writer_prints_the_trade_cover_not_a_book_title_page() {
     s.include_title_page = false;
     assert!(!docx_document_xml(docx_manuscript(&p, &s)).contains("<w:pageBreakBefore/>"));
 }
+
+#[test]
+fn the_opening_fade_in_is_flush_left_in_every_flowing_format() {
+    let p = demo();
+    let mut s = p.settings_for(ExportKind::Docx);
+    s.compile_type = Some(CompileType::TvScript);
+    s.include_title_page = false;
+    let xml = docx_document_xml(docx_manuscript(&p, &s));
+    assert!(xml.contains(r#"<w:pStyle w:val="ScriptOpeningTransition"/>"#), "DOCX uses the opening style");
+    let styles = docx_part(&docx_manuscript(&p, &s), "word/styles.xml");
+    let opening = docx_style_xml(&styles, "ScriptOpeningTransition");
+    assert!(!opening.contains("w:jc w:val=\"right\""), "{opening}");
+    let transition = docx_style_xml(&styles, "ScriptTransition");
+    assert!(transition.contains("w:jc w:val=\"right\""), "other transitions stay right-hand: {transition}");
+
+    let rtf = rtf_manuscript(&p, &s);
+    let fade = rtf.lines().find(|l| l.contains("FADE IN")).expect("FADE IN in the RTF");
+    assert!(fade.contains("\\ql") && !fade.contains("\\qr"), "{fade}");
+
+    let html = html_manuscript(&p, &s);
+    assert!(html.contains("script-transition script-opening\">FADE IN"), "HTML marks the opening");
+    let rule = html.split(".script-opening {").nth(1).and_then(|r| r.split('}').next()).expect("a rule");
+    assert!(rule.contains("text-align: left"), "and left-aligns it: {rule}");
+}

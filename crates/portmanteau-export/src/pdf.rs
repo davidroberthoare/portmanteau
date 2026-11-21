@@ -22,7 +22,7 @@ use skrifa::{FontRef, MetadataProvider};
 
 use crate::{
     back_matter, front_matter, manuscript_sections, page_margins, paper_pt, prose_paragraphs,
-    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers, script_cover_lines, ascent_pt, TitleRole, starts_new_page, TITLE_PAGE_DROP,
+    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers, script_cover_lines, ascent_pt, opens_script, TitleRole, starts_new_page, TITLE_PAGE_DROP,
 };
 
 // ---------------------------------------------------------------------------
@@ -679,8 +679,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
                 // `FADE IN:` opens a script flush left; every other transition
                 // is a right-hand cue. The text is the writer's own block; only
                 // its alignment is chosen here.
-                let fade_in = block.kind == ElementKind::Transition
-                    && text.trim_start().to_uppercase().starts_with("FADE IN");
+                let fade_in = opens_script(block.kind, &text);
                 let x = match format.align {
                     Alignment::Right if !fade_in => left + (available - line_width).max(0.0),
                     Alignment::Center if !fade_in => {

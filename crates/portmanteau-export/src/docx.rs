@@ -220,6 +220,16 @@ pub(crate) fn docx_styles(project: &Project, settings: &ExportSettings) -> Strin
             None,
         ));
     }
+    // The opening FADE IN: is the transition set flush left.
+    out.push_str(&docx_style(
+        DOCX_OPENING_STYLE,
+        "Script Opening Transition",
+        &opening_transition_style(st.style_for_kind(ElementKind::Transition)),
+        mono,
+        false,
+        false,
+        None,
+    ));
     if project.compile_plan(settings).kind.is_script() {
         // The cover's three roles; each line's own space above is applied on
         // the paragraph, so the style itself carries none.
@@ -234,6 +244,17 @@ pub(crate) fn docx_styles(project: &Project, settings: &ExportSettings) -> Strin
     }
     out.push_str("</w:styles>");
     out
+}
+
+const DOCX_OPENING_STYLE: &str = "ScriptOpeningTransition";
+
+/// The style id for a script block: its kind's, or the opening transition's.
+pub(crate) fn docx_block_style_id(kind: ElementKind, text: &str) -> String {
+    if opens_script(kind, text) {
+        DOCX_OPENING_STYLE.to_string()
+    } else {
+        docx_script_style_id(kind)
+    }
 }
 
 /// Style id for a line of a script's cover page.
@@ -290,7 +311,7 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
                 let new_page = first_block
                     && if i == 0 { settings.include_title_page } else { starts_new_page(section.doc) };
                 first_block = false;
-                docx_paragraph(&mut body, &text, &docx_script_style_id(block.kind), new_page);
+                docx_paragraph(&mut body, &text, &docx_block_style_id(block.kind, &text), new_page);
             }
         } else {
             let title = section_title(project, section.doc, i, settings);
