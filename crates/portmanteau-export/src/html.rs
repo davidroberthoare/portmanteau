@@ -41,6 +41,8 @@ pub(crate) fn html_manuscript(project: &Project, settings: &ExportSettings) -> S
     }
 
     let css = stylesheet(project, settings, WebTarget::Html, &classes);
+    // Backstop: nothing in a stylesheet may end the <style> element.
+    let css = css.replace("</", "<\\/");
     format!(
         "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\"/>\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n\

@@ -41,7 +41,14 @@ pub(crate) fn css_align(align: Alignment) -> &'static str {
 /// A CSS font stack. The bundled Liberation face is the explicit fallback so
 /// an EPUB looks the same whether or not the reader has the named family.
 pub(crate) fn css_font_family(family: &str) -> String {
-    let safe = family.replace(['"', '\\'], "");
+    // Font names are stored data and end up inside a CSS string inside a
+    // <style> element, so keep only characters a family name really uses. This
+    // closes quotes, backslashes and `</style>` breakouts at the source.
+    let safe: String = family
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.'))
+        .collect();
+    let safe = safe.trim().to_string();
     let lower = safe.to_ascii_lowercase();
     let (generic, bundled) = if font_is_mono(&lower) {
         ("monospace", "Liberation Mono")
@@ -159,7 +166,7 @@ pub(crate) fn script_class(kind: ElementKind) -> &'static str {
     }
 }
 
-const ALL_KINDS: [ElementKind; 15] = [
+pub(crate) const ALL_KINDS: [ElementKind; 15] = [
     ElementKind::SceneHeading,
     ElementKind::Action,
     ElementKind::Character,
