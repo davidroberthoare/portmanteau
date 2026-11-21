@@ -1,18 +1,16 @@
-//! Page paging and print preview shared by the editor's read-only Paged view
-//! and the Compile screen's live manuscript preview.
+//! Page paging for the editor's read-only Paged view.
 //!
-//! Everything here is a best-effort estimate of the export engine's layout:
-//! paragraphs are wrapped with a character-width approximation and lines are
-//! packed against the page's text height. It is deliberately driven by the real
-//! `ExportSettings`, so changing paper, element styles or margins updates the
-//! preview.
+//! This is a best-effort estimate (character-width wrapping) of one document.
+//! The Compile and Settings previews no longer use it: they draw the PDF
+//! writer's own layout (`crate::ui::preview`). When the paged editor view is
+//! revived it should move to the same exact layout and this module should go.
 
 use eframe::egui::{
     self, Align, Color32, CornerRadius, FontFamily, FontId, Frame, Layout, Margin, RichText,
     ScrollArea, Stroke, Vec2,
 };
 use portmanteau_core::{
-    Alignment, DocKind, Document, ElementKind, ElementStyle, ElementStyles, ExportSettings,
+    Alignment, Document, ElementKind, ElementStyle, ElementStyles, ExportSettings,
     InlineContent, Project, RichParagraph, StyleSheet, TextTransform,
 };
 
@@ -51,46 +49,6 @@ pub struct PagePlan {
     pub content_w: f32,
     pub content_h: f32,
     pub pages: Vec<Vec<PageLine>>,
-}
-
-/// One entry in the compiled manuscript's running order: the generated title
-/// page, a front-matter document, a draft section or a back-matter document.
-/// `page_count` is how many pages that section contributed, so the section
-/// start pages are the cumulative counts.
-pub struct PreviewSection {
-    pub label: String,
-    pub page_count: usize,
-}
-
-/// The whole compiled manuscript, paged, plus the section boundaries the
-/// Compile screen uses for its section picker.
-pub struct ManuscriptPreview {
-    pub plans: Vec<PagePlan>,
-    pub sections: Vec<PreviewSection>,
-}
-
-impl ManuscriptPreview {
-    /// Total pages across every section.
-    pub fn page_count(&self) -> usize {
-        self.plans.iter().map(|plan| plan.pages.len()).sum()
-    }
-
-    /// The 0-based page index where `section` starts, from the cumulative page
-    /// counts of the sections before it.
-    pub fn section_start(&self, section: usize) -> usize {
-        self.sections
-            .iter()
-            .take(section)
-            .map(|section| section.page_count)
-            .sum()
-    }
-
-    /// Every section's start page in order, parallel to `sections`.
-    pub fn section_starts(&self) -> Vec<usize> {
-        (0..self.sections.len())
-            .map(|section| self.section_start(section))
-            .collect()
-    }
 }
 
 pub fn empty_page_plan() -> PagePlan {
@@ -385,236 +343,6 @@ pub fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
         out.push(String::new());
     }
     out
-}
-
-/// Page the whole compiled manuscript: optional title page, front matter,
-/// body sections (prose + script), back matter — with section boundaries for
-/// the Compile preview's page and section navigation.
-pub fn manuscript_preview(project: &Project, settings: &ExportSettings) -> ManuscriptPreview {
-    let mut plans: Vec<PagePlan> = Vec::new();
-    let mut sections: Vec<PreviewSection> = Vec::new();
-
-    let compile = project.compile_plan(settings);
-    if settings.include_title_page {
-        let plan = if compile.kind.is_script() {
-            script_title_page_plan(project, settings)
-        } else {
-            title_page_plan(project, settings)
-        };
-        sections.push(PreviewSection {
-            label: "Title page".to_string(),
-            page_count: plan.pages.len(),
-        });
-        plans.push(plan);
-    }
-
-    // Front matter first, in binder order, matching the export assembly. A
-    // script compile has no book front matter.
-    for doc in compile
-        .included
-        .iter()
-        .copied()
-        .filter(|d| d.kind == DocKind::FrontMatter)
-    {
-        let plan = prose_plan(project, doc, settings);
-        sections.push(section_for(doc, &plan));
-        plans.push(plan);
-    }
-
-    // The draft: only the documents this compile includes.
-    for doc in compile.included.iter().copied() {
-        if matches!(doc.kind, DocKind::FrontMatter | DocKind::BackMatter) {
-            continue;
-        }
-        let plan = if doc.medium.is_script() {
-            script_plan(doc, settings)
-        } else {
-            prose_plan(project, doc, settings)
-        };
-        sections.push(section_for(doc, &plan));
-        plans.push(plan);
-    }
-
-    // Back matter last.
-    for doc in compile
-        .included
-        .iter()
-        .copied()
-        .filter(|d| d.kind == DocKind::BackMatter)
-    {
-        let plan = prose_plan(project, doc, settings);
-        sections.push(section_for(doc, &plan));
-        plans.push(plan);
-    }
-
-    // Always show at least one page so an empty manuscript still reads as a
-    // page of paper rather than a blank panel.
-    if plans.is_empty() {
-        let (page_w, page_h) = page_geometry(settings);
-        plans.push(PagePlan {
-            page_w,
-            content_w: page_w - 108.0,
-            content_h: page_h - 78.0,
-            pages: vec![Vec::new()],
-        });
-        sections.push(PreviewSection {
-            label: "Manuscript".to_string(),
-            page_count: 1,
-        });
-    }
-
-    ManuscriptPreview { plans, sections }
-}
-
-/// Section label and page count for one paged document. The label is the
-/// document title, matching the binder.
-fn section_for(doc: &Document, plan: &PagePlan) -> PreviewSection {
-    let title = doc.title.trim();
-    PreviewSection {
-        label: if title.is_empty() {
-            "Untitled".to_string()
-        } else {
-            title.to_string()
-        },
-        page_count: plan.pages.len(),
-    }
-}
-
-/// A script title page: the work's title, then "Written by" and the author,
-/// set in the script face. Scripts are never titled like a book.
-fn script_title_page_plan(project: &Project, settings: &ExportSettings) -> PagePlan {
-    let (page_w, page_h) = page_geometry(settings);
-    let scale = script_page_scale(settings);
-    let content_w = page_w - 2.5 * 25.4 * 3.0 * scale;
-    let content_h = page_h - 78.0;
-    let face = settings.styles.action.font.clone();
-    let mut lines: Vec<PageLine> = Vec::new();
-    let push = |lines: &mut Vec<PageLine>, text: &str, size: f32, gap: f32| {
-        lines.push(PageLine {
-            text: text.to_owned(),
-            size,
-            lead: size * 1.2,
-            gap_before: gap,
-            mono: true,
-            font: face.clone(),
-            align: Alignment::Center,
-            indent: 0.0,
-            first_line_indent: 0.0,
-            right_indent: 0.0,
-            after: 0.0,
-            right: false,
-            center: true,
-        });
-    };
-    let top = (content_h * 0.32).max(24.0);
-    push(
-        &mut lines,
-        &project.title.to_uppercase(),
-        14.0 * scale,
-        top,
-    );
-    push(&mut lines, "Written by", 12.0 * scale, 60.0 * scale);
-    push(&mut lines, project.author.trim(), 12.0 * scale, 24.0 * scale);
-    PagePlan {
-        page_w,
-        content_w,
-        content_h,
-        pages: vec![lines],
-    }
-}
-
-/// A single centered title page: title, subtitle and byline, set with the
-/// title-page styles from the active format.
-fn title_page_plan(project: &Project, settings: &ExportSettings) -> PagePlan {
-    let (page_w, page_h) = page_geometry(settings);
-    let content_w = page_w - 108.0;
-    let content_h = page_h - 78.0;
-    let styles = &settings.styles;
-    let mut lines: Vec<PageLine> = Vec::new();
-
-    let title = project.title.trim();
-    let subtitle = project.subtitle.trim();
-    let author = project.author.trim();
-
-    let title_style = &styles.title_page_title;
-    let title_size = title_style.size.max(8.0);
-    let title_lead = (title_size * title_style.leading.max(1.0)).max(12.0);
-    let subtitle_style = &styles.title_page_subtitle;
-    let subtitle_size = subtitle_style.size.max(8.0);
-    let subtitle_lead = (subtitle_size * subtitle_style.leading.max(1.0)).max(10.0);
-    let author_style = &styles.title_page_author;
-    let author_size = author_style.size.max(8.0);
-    let author_lead = (author_size * author_style.leading.max(1.0)).max(10.0);
-
-    // Start well down the page, like a printed half-title.
-    let mut gap = (content_h * 0.30).max(24.0);
-
-    if !title.is_empty() {
-        for (i, line) in wrap_words(title, 34).into_iter().enumerate() {
-            lines.push(PageLine {
-                text: line,
-                size: title_size,
-                lead: title_lead,
-                gap_before: if i == 0 { gap } else { 0.0 },
-                mono: false,
-                font: title_style.font.clone(),
-                align: title_style.align,
-                indent: 0.0,
-                first_line_indent: 0.0,
-                right_indent: 0.0,
-                after: 0.0,
-                right: false,
-                center: true,
-            });
-        }
-        gap = 28.0;
-    }
-
-    if !subtitle.is_empty() {
-        for (i, line) in wrap_words(subtitle, 50).into_iter().enumerate() {
-            lines.push(PageLine {
-                text: line,
-                size: subtitle_size,
-                lead: subtitle_lead,
-                gap_before: if i == 0 { gap } else { 0.0 },
-                mono: false,
-                font: subtitle_style.font.clone(),
-                align: subtitle_style.align,
-                indent: 0.0,
-                first_line_indent: 0.0,
-                right_indent: 0.0,
-                after: 0.0,
-                right: false,
-                center: true,
-            });
-        }
-        gap = 44.0;
-    }
-
-    if !author.is_empty() {
-        lines.push(PageLine {
-            text: format!("by {author}"),
-            size: author_size,
-            lead: author_lead,
-            gap_before: gap,
-            mono: false,
-            font: author_style.font.clone(),
-            align: author_style.align,
-            indent: 0.0,
-            first_line_indent: 0.0,
-            right_indent: 0.0,
-            after: 0.0,
-            right: false,
-            center: true,
-        });
-    }
-
-    PagePlan {
-        page_w,
-        content_w,
-        content_h,
-        pages: vec![lines],
-    }
 }
 
 pub fn paged_view(app: &mut PortmanteauApp, ui: &mut egui::Ui, plan: &PagePlan) {

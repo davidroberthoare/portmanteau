@@ -5,4 +5,5 @@ pub mod binder;
 pub mod editor;
 pub mod inspector;
 pub mod page;
+pub mod preview;
 pub mod views;

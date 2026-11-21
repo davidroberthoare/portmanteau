@@ -195,6 +195,36 @@ pub fn install(ctx: &egui::Context) {
             .or_default()
             .push("portmanteau-symbols".into());
     }
+    // One egui family per face the exporters lay out with, so the manuscript
+    // preview draws exactly the glyphs (and so the widths) the PDF writer
+    // measured. See `crate::ui::preview`.
+    for family in ["serif", "sans", "mono"] {
+        for (suffix, style) in [("Regular", ""), ("Bold", "-bold"), ("Italic", "-italic")] {
+            let key = format!("page-{family}{style}");
+            let bytes: &'static [u8] = match (family, suffix) {
+                ("serif", "Regular") => include_bytes!("../assets/LiberationSerif-Regular.ttf"),
+                ("serif", "Bold") => include_bytes!("../assets/LiberationSerif-Bold.ttf"),
+                ("serif", _) => include_bytes!("../assets/LiberationSerif-Italic.ttf"),
+                ("sans", "Regular") => include_bytes!("../assets/LiberationSans-Regular.ttf"),
+                ("sans", "Bold") => include_bytes!("../assets/LiberationSans-Bold.ttf"),
+                ("sans", _) => include_bytes!("../assets/LiberationSans-Italic.ttf"),
+                ("mono", "Regular") => include_bytes!("../assets/LiberationMono-Regular.ttf"),
+                ("mono", "Bold") => include_bytes!("../assets/LiberationMono-Bold.ttf"),
+                _ => include_bytes!("../assets/LiberationMono-Italic.ttf"),
+            };
+            fonts.font_data.insert(key.clone(), FontData::from_static(bytes).into());
+            fonts
+                .families
+                .entry(FontFamily::Name(key.clone().into()))
+                .or_default()
+                .extend([key, "portmanteau-symbols".into()]);
+        }
+    }
+    fonts
+        .families
+        .entry(FontFamily::Name("page-fallback".into()))
+        .or_default()
+        .push("portmanteau-symbols".into());
     // Keep the default emoji/symbol fonts available behind the Latin faces.
     ctx.set_fonts(fonts);
 

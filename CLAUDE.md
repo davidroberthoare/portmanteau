@@ -80,11 +80,11 @@ How to check output visually (all on this machine):
 
 ## Next work (priority order)
 
-1. **Preview uses its own pagination engine** (`src/ui/page.rs`) that disagrees
-   with the PDF writer (preview said 9 pages, the PDF has 10). Render
-   `portmanteau_export::pdf_layout` pages in the Compile and Settings previews
-   and delete the duplicate engine. This is also the foundation for the paged
-   editor view, which the owner has deferred.
+1. ~~Preview pagination~~ Done on branch `preview-real-layout`: Compile and
+   Settings draw `pdf_layout` pages (`src/ui/preview.rs`), so page count and line
+   breaks match the PDF. Still on the old estimator: the editor's read-only Paged
+   view (`src/ui/page.rs`); move it to the exact layout when that view is revived,
+   then delete `page.rs`.
 2. ~~PDF page per script document~~ Done: scenes run on; only a chapter-level
    document (episode/act) starts a page (`content::starts_new_page`, all writers).
 3. **Import review step**: show the split (titles, word counts) before the

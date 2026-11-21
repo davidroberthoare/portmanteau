@@ -164,7 +164,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 &app.ws.project,
                                 &effective,
                                 &mut app.preview_page,
- height,
+                                height,
+                                "compile",
                                 ui,
                             );
                         });

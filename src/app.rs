@@ -358,7 +358,7 @@ impl PortmanteauApp {
             settings_tab: 0,
             write_mode: WriteMode::Continuous,
             paged_page: 1,
-            preview_page: 0,
+            preview_page: std::env::var("PORTMANTEAU_PREVIEW_PAGE").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
             settings_preview_page: 0,
             selected,
             selected_block: 0,

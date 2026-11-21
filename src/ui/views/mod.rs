@@ -21,7 +21,7 @@ use portmanteau_core::{
 
 use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
-use crate::ui::page::{manuscript_preview, page_frame, PageLine, PagePlan};
+use crate::ui::preview::{manuscript_layout, paint_page};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     match app.view {
@@ -708,32 +708,36 @@ pub fn style_sheets_editor(ui: &mut egui::Ui, sheets: &mut Vec<StyleSheet>) -> b
 
 /// A live single-page "print preview" of the compiled manuscript, with
 /// `‹ Prev` / page count / `Next ›` and a section picker. Shared by the Compile
-/// screen and Settings → Display so both read the same paging estimate.
+/// screen and Settings → Display.
 ///
-/// `page` is the caller's current 0-based page cursor; it is clamped when the
-/// preview's page count shrinks and moved when the section picker changes.
+/// The pages are the PDF writer's own layout (see `crate::ui::preview`), so the
+/// page count and every line break match the exported PDF. `page` is the
+/// caller's current 0-based page cursor; it is clamped when the page count
+/// shrinks and moved when the section picker changes. `slot` names the cached
+/// layout so two previews on screen never share one.
 pub fn manuscript_preview_navigator(
     project: &Project,
     settings: &ExportSettings,
     page: &mut usize,
     max_height: f32,
+    slot: &'static str,
     ui: &mut egui::Ui,
 ) {
-    let preview = manuscript_preview(project, settings);
-    let total = preview.page_count().max(1);
+    let layout = manuscript_layout(ui, project, settings, slot);
+    let total = layout.page_count().max(1);
     if *page >= total {
         *page = total - 1;
     }
-
-    // Flatten the section plans so one index selects a page across the whole
-    // manuscript.
-    let mut pages: Vec<(&PagePlan, &[PageLine])> = Vec::with_capacity(total);
-    for plan in &preview.plans {
-        for lines in &plan.pages {
-            pages.push((plan, lines.as_slice()));
-        }
-    }
-    let starts = preview.section_starts();
+    let sections: Vec<(String, usize)> = if layout.sections.is_empty() {
+        vec![("Manuscript".to_string(), 0)]
+    } else {
+        layout
+            .sections
+            .iter()
+            .map(|section| (section.label.clone(), section.start_page))
+            .collect()
+    };
+    let starts: Vec<usize> = sections.iter().map(|(_, start)| *start).collect();
 
     Frame::new()
         .fill(BG)
@@ -745,11 +749,12 @@ pub fn manuscript_preview_navigator(
             ui.horizontal(|ui| {
                 section_label(ui, "Live preview");
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    meta_line(ui, &[&format!("{total} pages · approx.")]);
+                    let plural = if total == 1 { "" } else { "s" };
+                    meta_line(ui, &[&format!("{total} page{plural}")]);
                 });
             });
             ui.label(
-                RichText::new("Approximate — rendered from your compile settings")
+                RichText::new("The exported PDF's own pages, from your compile settings")
                     .font(ui_small())
                     .color(FAINT),
             );
@@ -796,15 +801,14 @@ pub fn manuscript_preview_navigator(
                     let mut chosen = current;
                     egui::ComboBox::from_id_salt("preview_section")
                         .selected_text(
-                            RichText::new(preview.sections[current].label.as_str())
+                            RichText::new(sections[current].0.as_str())
                                 .font(ui_small())
                                 .color(TEXT),
                         )
                         .width(170.0)
                         .show_ui(ui, |ui| {
-                            for (index, section) in preview.sections.iter().enumerate() {
-                                let label =
-                                    format!("{}  ·  page {}", section.label, starts[index] + 1);
+                            for (index, (label, start)) in sections.iter().enumerate() {
+                                let label = format!("{label}  ·  page {}", start + 1);
                                 ui.selectable_value(&mut chosen, index, label);
                             }
                         });
@@ -827,25 +831,12 @@ pub fn manuscript_preview_navigator(
                 .max_height(page_height_budget + 12.0)
                 .show(ui, |ui| {
                     ui.vertical_centered(|ui| {
-                        if let Some((plan, lines)) = pages.get(*page) {
-                            let page_w = plan.content_w + 108.0;
-                            let page_h = plan.content_h + 78.0;
-                            let scale = (width_budget / page_w)
-                                .min(page_height_budget / page_h)
-                                .clamp(0.2, 1.0);
-                            page_frame(ui, plan, lines, *page + 1, scale);
-                        }
+                        let scale = (width_budget / layout.width.max(1.0))
+                            .min(page_height_budget / layout.height.max(1.0))
+                            .clamp(0.2, 2.0);
+                        paint_page(ui, &layout, *page, scale);
                     });
                 });
-
-            ui.add_space(4.0);
-            ui.label(
-                RichText::new(
-                    "Each section starts on its own page, matching the exported manuscript.",
-                )
-                .font(ui_small())
-                .color(FAINT),
-            );
         });
 }
 
