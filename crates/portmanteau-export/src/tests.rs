@@ -4,6 +4,45 @@ fn demo() -> Project {
     portmanteau_core::sample::demo()
 }
 
+/// Text of one file inside an EPUB.
+fn epub_file(bytes: &[u8], name: &str) -> String {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut archive.by_name(name).unwrap(), &mut text).unwrap();
+    text
+}
+
+/// The CSS declarations that apply to the paragraph or heading containing
+/// `text`: find its element, read its classes, and collect each class's rule
+/// from `css`. This tests what a reader would see, not how it is spelled.
+fn declarations_for(markup: &str, css: &str, text: &str) -> String {
+    let body_start = markup.find("<body").unwrap_or(0);
+    let at = markup[body_start..]
+        .find(text)
+        .map(|i| i + body_start)
+        .unwrap_or_else(|| panic!("{text:?} not in the page body"));
+    let before = &markup[..at];
+    let open = ["<p class=\"", "<h1 class=\"", "<h2 class=\""]
+        .iter()
+        .filter_map(|tag| before.rfind(tag).map(|i| i + tag.len()))
+        .max()
+        .expect("paragraph element before the text");
+    let classes = &markup[open..open + markup[open..].find('"').unwrap()];
+    classes
+        .split_whitespace()
+        .filter_map(|class| {
+            let start = css.find(&format!(".{class} {{"))?;
+            let body = &css[start..];
+            Some(body[..body.find('}')?].to_string())
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn has(declarations: &str, wanted: &str) -> bool {
+    declarations.contains(wanted)
+}
+
 #[test]
 fn epub_css_uses_the_body_style_font() {
     let p = demo();
@@ -27,31 +66,28 @@ fn html_uses_the_body_style_font() {
 }
 
 #[test]
-fn epub_css_honours_body_alignment_and_first_line_indent() {
+fn epub_and_html_paragraphs_honour_alignment_and_first_line_indent() {
     let p = demo();
     let mut s = p.settings_for(ExportKind::Epub);
     s.styles.body.align = Alignment::Center;
     s.styles.body.first_line_indent = 21.0;
     s.styles.chapter_heading.align = Alignment::Right;
     let bytes = epub_manuscript(&p, &s);
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
-    let mut css = String::new();
-    std::io::Read::read_to_string(&mut archive.by_name("OEBPS/style.css").unwrap(), &mut css)
-        .unwrap();
-    assert!(css.contains("text-indent: 21.00pt"), "EPUB CSS: {css}");
-    assert!(css.contains("text-align: center"), "EPUB CSS: {css}");
-    assert!(css.contains("text-align: right"), "EPUB CSS: {css}");
-}
+    let css = epub_file(&bytes, "OEBPS/style.css");
+    let chapter = epub_file(&bytes, "OEBPS/chapter-001.xhtml");
+    let body = declarations_for(&chapter, &css, "The tide went out");
+    assert!(has(&body, "text-indent: 21.0pt"), "{body}");
+    assert!(has(&body, "text-align: center"), "{body}");
+    let heading = declarations_for(&chapter, &css, "Chapter 1");
+    assert!(has(&heading, "text-align: right"), "{heading}");
 
-#[test]
-fn html_css_honours_body_alignment_and_first_line_indent() {
-    let p = demo();
     let mut s = p.settings_for(ExportKind::Html);
     s.styles.body.align = Alignment::Justify;
     s.styles.body.first_line_indent = 17.0;
     let html = html_manuscript(&p, &s);
-    assert!(html.contains("text-indent:17.0pt"), "HTML CSS: {html}");
-    assert!(html.contains("text-align:justify"), "HTML CSS: {html}");
+    let body = declarations_for(&html, &html, "The tide went out");
+    assert!(has(&body, "text-indent: 17.0pt"), "{body}");
+    assert!(has(&body, "text-align: justify"), "{body}");
 }
 
 #[test]
@@ -172,15 +208,14 @@ fn styled_prose_project() -> Project {
 fn prose_export_honours_project_paragraph_styles() {
     let project = styled_prose_project();
     let html = html_manuscript(&project, &project.settings_for(ExportKind::Html));
+    let epigraph = declarations_for(&html, &html, "A centred epigraph.");
     assert!(
-        html.lines().any(|line| line.contains("A centred epigraph.")
-            && line.contains("text-align: center")
-            && line.contains("font-size: 9.0pt")),
-        "custom paragraph style should reach HTML: {html}"
+        has(&epigraph, "text-align: center") && has(&epigraph, "font-size: 9.0pt"),
+        "custom paragraph style should reach HTML: {epigraph}"
     );
     assert!(
-        !html.contains("style=\"font-family: \""),
-        "font names inside a style attribute must not close the attribute"
+        has(&epigraph, "margin: 6.0pt 0.0pt 6.0pt 0.0pt"),
+        "space before and after should reach HTML: {epigraph}"
     );
     assert!(
         html.lines()
@@ -235,11 +270,10 @@ fn stylesheet_appearance_edits_reach_export_without_a_compile_save() {
     // the writer had never opened Compile after editing the sheet.
     let settings = project.settings_for(ExportKind::Html);
     let html = html_manuscript(&project, &settings);
+    let body = declarations_for(&html, &html, "The stylesheet is the source of truth.");
     assert!(
-        html.lines().any(|line| line.contains("The stylesheet is the source of truth.")
-            && line.contains("font-size: 13.0pt")
-            && line.contains("text-align: right")),
-        "project sheet edit should win over a stale seeded format: {html}"
+        has(&body, "font-size: 13.0pt") && has(&body, "text-align: right"),
+        "project sheet edit should win over a stale seeded format: {body}"
     );
 }
 

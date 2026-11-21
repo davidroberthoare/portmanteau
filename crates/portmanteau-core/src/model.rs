@@ -736,8 +736,14 @@ impl Default for ElementStyles {
         Self {
             // A title block is centred in every format; the writer can change
             // it per format in Compile.
-            title_page_title: centred(base_element(serif, 24.0, 1.2)),
-            title_page_subtitle: centred(base_element(serif, 14.0, 1.3)),
+            title_page_title: ElementStyle {
+                after: 18.0,
+                ..centred(base_element(serif, 24.0, 1.2))
+            },
+            title_page_subtitle: ElementStyle {
+                after: 24.0,
+                ..centred(base_element(serif, 14.0, 1.3))
+            },
             title_page_author: centred(base_element(serif, 12.0, 1.4)),
             chapter_heading: ElementStyle {
                 before: 12.0,

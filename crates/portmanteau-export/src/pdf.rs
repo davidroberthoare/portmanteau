@@ -1011,7 +1011,7 @@ fn prose_title_page(
         push_aligned(&mut items, frame, &line, title_size, y, title_face, title_style.align);
         y += (title_size * title_style.leading.max(1.0)).max(12.0);
     }
-    y += 18.0;
+    y += title_style.after.max(0.0);
 
     if !project.subtitle.trim().is_empty() {
         let style = &styles.title_page_subtitle;
@@ -1021,7 +1021,7 @@ fn prose_title_page(
             push_aligned(&mut items, frame, &line, size, y, face, style.align);
             y += (size * style.leading.max(1.1)).max(10.0);
         }
-        y += 24.0;
+        y += style.after.max(0.0);
     }
 
     let style = &styles.title_page_author;
