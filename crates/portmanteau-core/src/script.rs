@@ -293,15 +293,82 @@ pub fn block_to_fountain(block: &Block, medium: crate::Medium) -> String {
     }
 }
 
-pub fn to_fountain(blocks: &[Block], medium: crate::Medium) -> String {
+/// Fountain for other programs (Highland, Fade In, Final Draft's importer).
+///
+/// This is the interchange form: standard Fountain with no hidden markers.
+/// Portmanteau's own storage uses `to_storage_fountain` instead, because it
+/// has to keep every element kind apart. What matters here is that another
+/// reader classifies each element the way the writer did:
+///
+/// * a cue, its parentheticals and its dialogue are consecutive lines, with no
+///   blank between them (a blank would turn the dialogue into action);
+/// * one speech in several paragraphs is joined by a line of two spaces;
+/// * text a reader would misread is *forced*: `!` for action that is all caps
+///   or opens with a Fountain symbol, `.` for a scene heading that does not
+///   start with INT/EXT, `@` for a character name with no letters.
+pub fn to_fountain(blocks: &[Block], _medium: crate::Medium) -> String {
     let mut out = String::new();
-    for (i, b) in blocks.iter().enumerate() {
-        if i > 0 {
-            out.push_str("\n\n");
+    let mut previous: Option<ElementKind> = None;
+    for block in blocks {
+        let Some(text) = interchange_text(block) else { continue };
+        if let Some(before) = previous {
+            out.push_str(match (before, block.kind) {
+                (ElementKind::Character | ElementKind::Parenthetical | ElementKind::Dialogue,
+                 ElementKind::Parenthetical) => "\n",
+                (ElementKind::Character | ElementKind::Parenthetical, ElementKind::Dialogue) => "\n",
+                (ElementKind::Dialogue, ElementKind::Dialogue) => "\n  \n",
+                _ => "\n\n",
+            });
         }
-        out.push_str(&block_to_fountain(b, medium));
+        out.push_str(&text);
+        previous = Some(block.kind);
     }
-    out.trim().to_string() + "\n"
+    out.trim_end().to_string() + "\n"
+}
+
+/// Would a Fountain reader take this first line for something other than action?
+fn reads_as_something_else(line: &str) -> bool {
+    is_all_caps(line)
+        || line.starts_with(['!', '@', '#', '.', '>', '~', '=', '[', '('])
+        || is_standard_heading(line)
+}
+
+fn is_standard_heading(text: &str) -> bool {
+    let upper = text.to_uppercase();
+    ["INT.", "INT ", "EXT.", "EXT ", "EST.", "EST ", "INT./EXT", "INT/EXT", "I/E"]
+        .iter()
+        .any(|prefix| upper.starts_with(prefix))
+}
+
+fn interchange_text(block: &Block) -> Option<String> {
+    let text = block.text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let first_line = text.lines().next().unwrap_or("");
+    Some(match block.kind {
+        ElementKind::SceneHeading => {
+            let heading = if is_all_caps(text) { text.to_string() } else { text.to_uppercase() };
+            if is_standard_heading(&heading) { heading } else { format!(".{heading}") }
+        }
+        ElementKind::Action | ElementKind::General | ElementKind::StageDirection => {
+            if reads_as_something_else(first_line) { format!("!{text}") } else { text.to_string() }
+        }
+        ElementKind::Shot | ElementKind::Extension | ElementKind::Subheading => {
+            format!("!{}", text.to_uppercase())
+        }
+        ElementKind::Character => {
+            let name = text.to_uppercase();
+            if name.chars().any(char::is_alphabetic) { name } else { format!("@{name}") }
+        }
+        ElementKind::Parenthetical => format!("({})", text.trim_matches(|c| c == '(' || c == ')')),
+        ElementKind::Dialogue => text.to_string(),
+        ElementKind::Transition => format!("> {}", text.to_uppercase()),
+        ElementKind::Act => format!("# {text}"),
+        ElementKind::Scene => format!("## {text}"),
+        ElementKind::Lyric => format!("~{text}"),
+        ElementKind::Intercut => format!("> INTERCUT: {}", text.to_uppercase()),
+    })
 }
 
 fn boneyard_marker(kind: ElementKind) -> &'static str {
@@ -520,6 +587,25 @@ pub fn fountain_title_page(project: &crate::Project) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interchange_fountain_keeps_a_speech_together_and_forces_what_would_be_misread() {
+        let blocks = vec![
+            Block::new(ElementKind::SceneHeading, "A quiet room"),
+            Block::new(ElementKind::Action, "THE END"),
+            Block::new(ElementKind::Character, "Mara"),
+            Block::new(ElementKind::Parenthetical, "quietly"),
+            Block::new(ElementKind::Dialogue, "First."),
+            Block::new(ElementKind::Dialogue, "Second."),
+            Block::new(ElementKind::Action, "She leaves."),
+        ];
+        let fountain = to_fountain(&blocks, crate::Medium::Screenplay);
+        assert_eq!(
+            fountain,
+            ".A QUIET ROOM\n\n!THE END\n\nMARA\n(quietly)\nFirst.\n  \nSecond.\n\nShe leaves.\n",
+            "a cue and its speech are consecutive lines; odd headings and all-caps action are forced"
+        );
+    }
 
     #[test]
     fn scene_headings_are_recognised() {
