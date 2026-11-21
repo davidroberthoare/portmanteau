@@ -670,6 +670,13 @@ impl Default for ElementStyle {
     }
 }
 
+fn centred(style: ElementStyle) -> ElementStyle {
+    ElementStyle {
+        align: Alignment::Center,
+        ..style
+    }
+}
+
 fn base_element(font: &str, size: f32, leading: f32) -> ElementStyle {
     ElementStyle {
         font: font.into(),
@@ -727,9 +734,17 @@ impl Default for ElementStyles {
         let serif = "Liberation Serif";
         let mono = "Courier New";
         Self {
-            title_page_title: base_element(serif, 24.0, 1.2),
-            title_page_subtitle: base_element(serif, 14.0, 1.3),
-            title_page_author: base_element(serif, 12.0, 1.4),
+            // A title block is centred in every format; the writer can change
+            // it per format in Compile.
+            title_page_title: ElementStyle {
+                after: 18.0,
+                ..centred(base_element(serif, 24.0, 1.2))
+            },
+            title_page_subtitle: ElementStyle {
+                after: 24.0,
+                ..centred(base_element(serif, 14.0, 1.3))
+            },
+            title_page_author: centred(base_element(serif, 12.0, 1.4)),
             chapter_heading: ElementStyle {
                 before: 12.0,
                 after: 8.0,
@@ -1192,6 +1207,13 @@ pub struct ExportSettings {
     /// Script types only: write one file per script instead of one combined file.
     #[serde(default)]
     pub each_separately: bool,
+    /// Page margins in points for this output format. `None` is automatic:
+    /// prose uses the book default and scripts use their style sheet's margins
+    /// (scaled to the paper). Every writer resolves this through
+    /// `portmanteau_export::layout::page_margins`, so no writer owns a margin
+    /// constant of its own.
+    #[serde(default)]
+    pub margins: Option<crate::rich_text::PageMargins>,
 }
 
 impl Default for ExportSettings {
@@ -1219,6 +1241,7 @@ impl Default for ExportSettings {
             compile_type: None,
             scope: crate::CompileScope::Draft,
             each_separately: false,
+            margins: None,
         }
     }
 }

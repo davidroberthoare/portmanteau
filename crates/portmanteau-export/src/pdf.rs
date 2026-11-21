@@ -21,7 +21,8 @@ use skrifa::metrics::GlyphMetrics;
 use skrifa::{FontRef, MetadataProvider};
 
 use crate::{
-    back_matter, front_matter, manuscript_sections, prose_paragraphs, section_title, ProseParagraph,
+    back_matter, front_matter, manuscript_sections, page_margins, paper_pt, prose_paragraphs,
+    script_scale, script_sheet, section_title, ProseParagraph, SceneNumbers,
 };
 
 // ---------------------------------------------------------------------------
@@ -448,6 +449,47 @@ impl Flow {
         leading: f32,
         gap_before: f32,
     ) {
+        self.place(&[(x, chars)], size, leading, gap_before);
+    }
+
+    /// A line stretched to `available` points by widening the gaps between
+    /// words. A line with a single word, or one already wider than the measure,
+    /// is set flush left instead.
+    fn text_line_justified(
+        &mut self,
+        chars: &[StyledChar],
+        x: f32,
+        available: f32,
+        size: f32,
+        leading: f32,
+        gap_before: f32,
+    ) {
+        let words: Vec<&[StyledChar]> = chars
+            .split(|styled| styled.c == ' ')
+            .filter(|word| !word.is_empty())
+            .collect();
+        let natural: f32 = words.iter().map(|word| chars_width(word, size)).sum();
+        if words.len() < 2 || natural >= available {
+            return self.text_line(chars, x, size, leading, gap_before);
+        }
+        let gap = (available - natural) / (words.len() - 1) as f32;
+        let mut cursor = x;
+        let mut pieces = Vec::with_capacity(words.len());
+        for word in words {
+            pieces.push((cursor, word));
+            cursor += chars_width(word, size) + gap;
+        }
+        self.place(&pieces, size, leading, gap_before);
+    }
+
+    /// One baseline carrying one or more separately positioned runs.
+    fn place(
+        &mut self,
+        pieces: &[(f32, &[StyledChar])],
+        size: f32,
+        leading: f32,
+        gap_before: f32,
+    ) {
         let gap = if self.current.items.is_empty() {
             0.0
         } else {
@@ -456,14 +498,16 @@ impl Flow {
         self.ensure(gap + leading);
         self.cursor += gap;
         let baseline = self.cursor + size * 0.80;
-        let segments = segments(chars);
-        if !segments.is_empty() {
-            self.current.items.push(PdfText {
-                x,
-                baseline,
-                size,
-                segments,
-            });
+        for (x, chars) in pieces {
+            let segments = segments(chars);
+            if !segments.is_empty() {
+                self.current.items.push(PdfText {
+                    x: *x,
+                    baseline,
+                    size,
+                    segments,
+                });
+            }
         }
         self.cursor += leading;
     }
@@ -505,11 +549,6 @@ pub fn pdf_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     draw(project, &layout)
 }
 
-fn paper_pt(settings: &ExportSettings) -> (f32, f32) {
-    let (w_mm, h_mm) = settings.paper.mm();
-    (w_mm * 72.0 / 25.4, h_mm * 72.0 / 25.4)
-}
-
 // ---------------------------------------------------------------------------
 // Scripts
 // ---------------------------------------------------------------------------
@@ -522,27 +561,22 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         .copied()
         .filter(|doc| !matches!(doc.kind, DocKind::FrontMatter | DocKind::BackMatter))
         .collect();
-    let first = included.first().copied();
-    let sheet = first
-        .map(|doc| project.style_sheet_for(doc))
-        .unwrap_or_else(|| portmanteau_core::StyleSheet::for_medium(
-            portmanteau_core::Medium::Screenplay,
-            &project.styles,
-        ));
+    let sheet = script_sheet(project, settings);
     let (width, height) = paper_pt(settings);
     // A script sheet is designed for US Letter: 12 pt Courier, 1.5" left and
     // 1" elsewhere, 3.5" of dialogue. On a narrower page, scaling only the
     // indents leaves the type and margins huge relative to the page. Scale the
     // whole sheet instead, so a smaller page is the Letter page reduced — the
     // same look as the editor's paper. Letter itself stays exactly 1:1.
-    let scale = (width / 612.0).clamp(0.3, 1.0);
+    let scale = script_scale(settings);
+    let margins = page_margins(project, settings);
     let frame = Frame {
         width,
         height,
-        left: sheet.margins.left * scale,
-        right: sheet.margins.right * scale,
-        top: sheet.margins.top * scale,
-        bottom: sheet.margins.bottom * scale,
+        left: margins.left,
+        right: margins.right,
+        top: margins.top,
+        bottom: margins.bottom,
     };
 
     let fallback_font = sheet
@@ -571,7 +605,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
     }
 
     let mut flow = Flow::with_pages(frame, pages);
-    let mut scene_number = 1u32;
+    let mut scenes = SceneNumbers::default();
 
     for (index, doc) in included.iter().enumerate() {
         if index > 0 {
@@ -600,12 +634,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
             } else {
                 block.text.clone()
             };
-            let mut text = text;
-            let scene_heading = block.kind == ElementKind::SceneHeading;
-            if scene_heading && settings.include_scene_numbers {
-                text = format!("{}   {}", scene_number, text);
-                scene_number += 1;
-            }
+            let text = scenes.apply(block.kind, text, settings.include_scene_numbers);
             let size = format.size.max(7.0) * scale;
             let leading = (size * format.leading.max(0.9)).max(size * 0.9);
             let indent = format.indent.max(0.0) * scale;
@@ -804,22 +833,21 @@ fn wrap_plain(text: &str, max_chars: usize) -> Vec<String> {
 // Prose
 // ---------------------------------------------------------------------------
 
-fn prose_frame(settings: &ExportSettings) -> Frame {
+fn prose_frame(project: &Project, settings: &ExportSettings) -> Frame {
     let (width, height) = paper_pt(settings);
-    let margin = 20.0 * 72.0 / 25.4;
-    let vertical = 22.0 * 72.0 / 25.4;
+    let margins = page_margins(project, settings);
     Frame {
         width,
         height,
-        left: margin,
-        right: margin,
-        top: vertical,
-        bottom: vertical,
+        left: margins.left,
+        right: margins.right,
+        top: margins.top,
+        bottom: margins.bottom,
     }
 }
 
 fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
-    let frame = prose_frame(settings);
+    let frame = prose_frame(project, settings);
     let body = settings.styles.body.clone();
     let body_size = body.size.max(8.0);
     let body_face = Face::from_style(&body, &settings.font);
@@ -970,65 +998,84 @@ fn prose_title_page(
     let styles = &settings.styles;
     let mut items = Vec::new();
     let mut y = frame.height * 0.30;
+
     let title_style = &styles.title_page_title;
     let title_size = title_style.size.max(8.0);
     let title_face = Face::from_style(title_style, &settings.font).with_marks(true, false);
-    for line in wrap_plain(project.title.trim(), 34) {
-        push_centered(&mut items, frame, &line, title_size, y, title_face);
+    for line in wrap_measured(project.title.trim(), title_face, title_size, frame.content_width()) {
+        push_aligned(&mut items, frame, &line, title_size, y, title_face, title_style.align);
         y += (title_size * title_style.leading.max(1.0)).max(12.0);
     }
-    y += 18.0;
+    y += title_style.after.max(0.0);
+
     if !project.subtitle.trim().is_empty() {
         let style = &styles.title_page_subtitle;
         let size = style.size.max(8.0);
         let face = Face::from_style(style, &settings.font);
-        for line in wrap_plain(project.subtitle.trim(), 50) {
-            push_centered(&mut items, frame, &line, size, y, face);
+        for line in wrap_measured(project.subtitle.trim(), face, size, frame.content_width()) {
+            push_aligned(&mut items, frame, &line, size, y, face, style.align);
             y += (size * style.leading.max(1.1)).max(10.0);
         }
-        y += 24.0;
+        y += style.after.max(0.0);
     }
+
     let style = &styles.title_page_author;
     let size = style.size.max(8.0);
     let face = Face::from_style(style, &settings.font);
-    let byline = if project.author.trim().is_empty() {
-        String::new()
-    } else {
-        format!("by {}", project.author.trim())
-    };
-    push_centered(&mut items, frame, &byline, size, y.max(frame.height * 0.58), face);
+    if !project.author.trim().is_empty() {
+        let byline = format!("by {}", project.author.trim());
+        push_aligned(&mut items, frame, &byline, size, y.max(frame.height * 0.58), face, style.align);
+    }
 
     let footer = if project.genre.trim().is_empty() {
         chrono::Local::now().format("%Y").to_string()
     } else {
         format!("{} · {}", project.genre.trim(), chrono::Local::now().format("%Y"))
     };
-    push_centered(
+    push_aligned(
         &mut items,
         frame,
         &footer,
         9.0,
         frame.height - 42.0,
         Face::new(Family::Serif, false, false),
+        Alignment::Center,
     );
 
     PdfPageLayout { items }
 }
 
-fn push_centered(
+/// Greedy line breaking by measured width, so a larger title size wraps
+/// earlier instead of running off the page.
+fn wrap_measured(text: &str, face: Face, size: f32, width: f32) -> Vec<String> {
+    let mut chars = Vec::new();
+    push_text(&mut chars, text, face);
+    wrap_chars(&chars, width, size)
+        .into_iter()
+        .map(|line| line.iter().map(|styled| styled.c).collect::<String>())
+        .collect()
+}
+
+fn push_aligned(
     items: &mut Vec<PdfText>,
     frame: &Frame,
     text: &str,
     size: f32,
     baseline: f32,
     face: Face,
+    align: Alignment,
 ) {
     if text.trim().is_empty() {
         return;
     }
-    let width = text_width(text, face, size);
+    let spare = (frame.content_width() - text_width(text, face, size)).max(0.0);
+    let offset = match align {
+        Alignment::Center => spare * 0.5,
+        Alignment::Right => spare,
+        Alignment::Left | Alignment::Justify => 0.0,
+    };
     items.push(PdfText {
-        x: frame.left + (frame.content_width() - width).max(0.0) * 0.5,
+        x: frame.left + offset,
         baseline,
         size,
         segments: vec![PdfSegment {
@@ -1141,7 +1188,13 @@ fn flow_prose_paragraph(
             Alignment::Center => left + (available - line_width).max(0.0) * 0.5,
             Alignment::Left | Alignment::Justify => left,
         };
-        flow.text_line(line, x, size, leading, if first { before } else { 0.0 });
+        let gap_before = if first { before } else { 0.0 };
+        // The last line of a justified paragraph stays ragged, as in print.
+        if format.align == Alignment::Justify && index + 1 < lines.len() {
+            flow.text_line_justified(line, left, available, size, leading, gap_before);
+        } else {
+            flow.text_line(line, x, size, leading, gap_before);
+        }
     }
     flow.space(after);
 }
@@ -1366,10 +1419,104 @@ fn draw(project: &Project, layout: &PdfLayout) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mm_to_pt;
     use portmanteau_core::{ExportKind, Project};
 
     fn demo() -> Project {
         portmanteau_core::sample::demo()
+    }
+
+    fn plain_prose_settings(project: &Project) -> ExportSettings {
+        let mut settings = project.settings_for(ExportKind::Pdf);
+        settings.paper = portmanteau_core::PaperSize::Letter;
+        settings.include_title_page = false;
+        settings.include_toc = false;
+        settings.header_footer.page_numbers = false;
+        settings.header_footer.running_header = false;
+        settings
+    }
+
+    fn right_edge(item: &PdfText) -> f32 {
+        let size = item.size;
+        item.x
+            + item
+                .segments
+                .iter()
+                .map(|segment| text_width(&segment.text, segment.face, size))
+                .sum::<f32>()
+    }
+
+    #[test]
+    fn custom_margins_move_the_prose_text_block() {
+        let project = demo();
+        let mut settings = plain_prose_settings(&project);
+        settings.margins = Some(portmanteau_core::PageMargins {
+            left: 90.0,
+            right: 36.0,
+            top: 54.0,
+            bottom: 108.0,
+        });
+        let layout = pdf_layout(&project, &settings);
+        let items: Vec<&PdfText> = layout.pages.iter().flat_map(|page| &page.items).collect();
+        let left = items.iter().map(|item| item.x).fold(f32::MAX, f32::min);
+        let right = items.iter().map(|item| right_edge(item)).fold(0.0, f32::max);
+        assert!((left - 90.0).abs() < 0.5, "left edge {left}");
+        assert!(right <= 612.0 - 36.0 + 0.5, "right edge {right}");
+        let bottom = items.iter().map(|item| item.baseline).fold(0.0, f32::max);
+        assert!(bottom <= 792.0 - 108.0 + 0.5, "lowest baseline {bottom}");
+    }
+
+    #[test]
+    fn justified_lines_fill_the_measure_and_the_last_line_stays_ragged() {
+        let project = demo();
+        let mut settings = plain_prose_settings(&project);
+        settings.styles.body.align = Alignment::Justify;
+        settings.styles.body.indent = 0.0;
+        settings.styles.body.right_indent = 0.0;
+        let layout = pdf_layout(&project, &settings);
+        let edge = 612.0 - mm_to_pt(20.0);
+        // Group words back into lines by baseline, then look at each line's end.
+        let mut ends: Vec<(f32, f32)> = Vec::new();
+        for page in &layout.pages {
+            for item in &page.items {
+                match ends.iter_mut().find(|(baseline, _)| (*baseline - item.baseline).abs() < 0.01) {
+                    Some((_, end)) => *end = end.max(right_edge(item)),
+                    None => ends.push((item.baseline, right_edge(item))),
+                }
+            }
+        }
+        let full = ends.iter().filter(|(_, end)| (end - edge).abs() < 0.5).count();
+        let beyond = ends.iter().filter(|(_, end)| *end > edge + 0.5).count();
+        assert!(full >= 5, "expected justified lines to reach the right edge, got {full}");
+        assert_eq!(beyond, 0, "no line may pass the right margin");
+        assert!(full < ends.len(), "last lines of paragraphs must stay ragged");
+    }
+
+    #[test]
+    fn title_page_honours_each_title_alignment() {
+        let project = demo();
+        let mut settings = plain_prose_settings(&project);
+        settings.include_title_page = true;
+        let find = |settings: &ExportSettings| {
+            let layout = pdf_layout(&project, settings);
+            let title = layout.pages[0]
+                .items
+                .iter()
+                .find(|item| item.segments.iter().any(|s| s.text.contains("The Salt Road")))
+                .expect("title on the first page")
+                .clone();
+            (title.x, right_edge(&title))
+        };
+        settings.styles.title_page_title.align = Alignment::Left;
+        let (x_left, _) = find(&settings);
+        settings.styles.title_page_title.align = Alignment::Right;
+        let (_, end_right) = find(&settings);
+        settings.styles.title_page_title.align = Alignment::Center;
+        let (x_mid, end_mid) = find(&settings);
+        let margin = mm_to_pt(20.0);
+        assert!((x_left - margin).abs() < 0.5);
+        assert!((end_right - (612.0 - margin)).abs() < 0.5);
+        assert!(((x_mid + end_mid) / 2.0 - 306.0).abs() < 0.5);
     }
 
     fn script_settings(project: &Project, kind: &str) -> ExportSettings {
@@ -1822,7 +1969,7 @@ mod tests {
         settings.header_footer.page_numbers = false;
         settings.include_chapter_numbers = false;
 
-        let heading_x = |align: Alignment, settings: &ExportSettings| {
+        let heading_x = |settings: &ExportSettings| {
             let layout = pdf_layout(&project, settings);
             layout
                 .pages
@@ -1837,9 +1984,9 @@ mod tests {
                 .expect("the chapter heading")
         };
         settings.styles.chapter_heading.align = Alignment::Left;
-        let left = heading_x(Alignment::Left, &settings);
+        let left = heading_x(&settings);
         settings.styles.chapter_heading.align = Alignment::Center;
-        let centered = heading_x(Alignment::Center, &settings);
+        let centered = heading_x(&settings);
         assert!(
             centered > left + 40.0,
             "centred heading should move right: left {left}, centred {centered}"
