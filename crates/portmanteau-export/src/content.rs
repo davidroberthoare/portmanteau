@@ -1,0 +1,163 @@
+use super::*;
+
+/// One exportable section of the manuscript.
+pub(crate) struct Section<'a> {
+    pub(crate) doc: &'a Document,
+    pub(crate) heading: String,
+}
+
+pub(crate) fn rich_document_has_images(document: &RichDocument) -> bool {
+    document.paragraphs.iter().any(|paragraph| paragraph.has_image())
+}
+
+pub(crate) fn manuscript_sections<'a>(project: &'a Project, settings: &ExportSettings) -> Vec<Section<'a>> {
+    project
+        .compile_plan(settings)
+        .included
+        .into_iter()
+        .filter(|d| !matches!(d.kind, DocKind::FrontMatter | DocKind::BackMatter))
+        .map(|doc| Section {
+            heading: doc.title.clone(),
+            doc,
+        })
+        .collect()
+}
+
+pub(crate) fn screenplay_blocks(project: &Project, doc: &Document) -> Vec<Block> {
+    let sheet = project.style_sheet_for(doc);
+    doc.content.to_script_blocks(&sheet)
+}
+
+/// One prose paragraph after its stylesheet has been resolved for output.
+/// Paragraphs stay separate here rather than being flattened into one string:
+/// the rich model's styles, inline marks and hard breaks all need to survive.
+pub(crate) struct ProseParagraph {
+    pub(crate) format: ElementStyle,
+    pub(crate) content: Vec<InlineContent>,
+    pub(crate) heading: bool,
+    pub(crate) uppercase: bool,
+}
+
+impl ProseParagraph {
+    /// Text for plain formats: a hard break remains a newline.
+    pub(crate) fn plain_text(&self) -> String {
+        self.content
+            .iter()
+            .map(|item| match item {
+                InlineContent::Text(run) => self.transform(&run.text),
+                InlineContent::HardBreak => "\n".to_owned(),
+                InlineContent::Image(image) if image.alt_text.is_empty() => {
+                    "[Image]".to_owned()
+                }
+                InlineContent::Image(image) => {
+                    format!("[Image: {}]", self.transform(&image.alt_text))
+                }
+            })
+            .collect()
+    }
+
+    pub(crate) fn transform(&self, text: &str) -> String {
+        if self.uppercase {
+            text.to_uppercase()
+        } else {
+            text.to_owned()
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        !self
+            .content
+            .iter()
+            .any(|item| match item {
+                InlineContent::Text(run) => !run.text.trim().is_empty(),
+                InlineContent::Image(_) => true,
+                InlineContent::HardBreak => false,
+            })
+    }
+}
+
+/// Resolve a paragraph style for output. A format's saved element style wins
+/// only when it deliberately differs from the project style; otherwise the
+/// project stylesheet is authoritative, so an appearance edit reaches every
+/// writer even before the Compile screen has saved a per-format copy.
+pub(crate) fn prose_style(
+    project: &Project,
+    settings: &ExportSettings,
+    style: Option<&ParagraphStyle>,
+) -> ElementStyle {
+    let Some(style) = style else {
+        return settings.styles.body.clone();
+    };
+    let mut format = project.paragraph_format_for(style, &settings.styles);
+    if format.font.trim().is_empty() {
+        format.font = settings.styles.body.font.clone();
+    }
+    if format.font.trim().is_empty() {
+        format.font = settings.font.clone();
+    }
+    format
+}
+
+/// Every visible paragraph of a prose document, in order, with its effective
+/// output style. This is the single reading path the prose writers share.
+pub(crate) fn prose_paragraphs(
+    project: &Project,
+    doc: &Document,
+    settings: &ExportSettings,
+) -> Vec<ProseParagraph> {
+    let sheet = project.style_sheet_for(doc);
+    doc.content
+        .paragraphs
+        .iter()
+        .filter_map(|paragraph| {
+            let style = sheet.style(&paragraph.style_id);
+            let format = prose_style(project, settings, style);
+            let name = style
+                .map(|style| style.name.to_ascii_lowercase())
+                .unwrap_or_default();
+            let heading = paragraph.style_id == "chapter-heading" || name.contains("heading");
+            let uppercase = style
+                .map(|style| style.text_transform == TextTransform::Uppercase)
+                .unwrap_or(false)
+                || format.uppercase;
+            let resolved = ProseParagraph {
+                format,
+                content: paragraph.content.clone(),
+                heading,
+                uppercase,
+            };
+            (!resolved.is_empty()).then_some(resolved)
+        })
+        .collect()
+}
+
+pub(crate) fn front_matter<'a>(project: &'a Project, settings: &ExportSettings) -> Vec<&'a Document> {
+    project
+        .compile_plan(settings)
+        .included
+        .into_iter()
+        .filter(|d| d.kind == DocKind::FrontMatter)
+        .collect()
+}
+
+pub(crate) fn back_matter<'a>(project: &'a Project, settings: &ExportSettings) -> Vec<&'a Document> {
+    project
+        .compile_plan(settings)
+        .included
+        .into_iter()
+        .filter(|d| d.kind == DocKind::BackMatter)
+        .collect()
+}
+
+pub(crate) fn section_title(_project: &Project, doc: &Document, index: usize, settings: &ExportSettings) -> String {
+    if !settings.include_chapter_numbers {
+        return doc.title.clone();
+    }
+    if doc.kind == DocKind::Chapter {
+        format!("Chapter {}", index + 1)
+    } else if doc.kind == DocKind::Scene {
+        doc.title.clone()
+    } else {
+        doc.title.clone()
+    }
+}
