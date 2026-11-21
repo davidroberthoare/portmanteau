@@ -7,6 +7,7 @@ pub mod compile;
 pub mod corkboard;
 pub mod history;
 pub mod outline;
+pub mod project;
 pub mod research;
 pub mod settings;
 
@@ -30,6 +31,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         View::Research => research::show(app, ui),
         View::Database => database::show(app, ui),
         View::History => history::show(app, ui),
+        View::Project => project::show(app, ui),
         View::Compile => compile::show(app, ui),
         View::Agent => agent::show(app, ui),
         View::Settings => settings::show(app, ui),

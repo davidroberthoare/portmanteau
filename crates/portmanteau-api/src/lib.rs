@@ -1637,6 +1637,25 @@ mod tests {
     }
 
     #[test]
+    fn project_details_are_set_by_command_and_survive_a_save() {
+        let mut ws = Workspace::demo();
+        let res = ws.execute(
+            "project.update",
+            json!({"contact":"Ada Marlowe\nada@example.com","draft_label":"Revised","draft_date":"1 May 2027"}),
+        );
+        assert!(res.ok, "{}", res.message);
+        let info = ws.execute("project.info", json!({}));
+        assert_eq!(info.data["contact"], "Ada Marlowe\nada@example.com");
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("api-details"));
+        ws.save(Some(dir.clone())).expect("save");
+        let reopened = Workspace::open(&dir).expect("open");
+        assert_eq!(reopened.project.contact, "Ada Marlowe\nada@example.com");
+        assert_eq!(reopened.project.draft_label, "Revised");
+        assert_eq!(reopened.project.draft_date, "1 May 2027");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn workspace_saves_and_opens_a_folder() {
         let mut ws = Workspace::demo();
         let dir = std::env::temp_dir().join(portmanteau_core::new_id("api-ws-folder"));

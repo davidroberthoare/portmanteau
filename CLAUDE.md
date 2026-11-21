@@ -78,6 +78,13 @@ How to check output visually (all on this machine):
   `convert ... out.pdf` and `pdftotext -bbox-layout` when geometry matters.
 - Rebuild with `cargo build --workspace`: a plain `cargo build` leaves the CLI stale.
 
+- **Project page** (`src/ui/views/project.rs`, rail icon between Versions and
+  Compile): title, subtitle, author, genre, logline, contact, draft label and
+  date, daily goal. Edits go through `project.update`. A script cover prints
+  contact bottom-left and the draft line bottom-right (`script_title.rs`); a
+  blank draft date means the day of export. Prose title pages do not print
+  contact yet (a copyright page would).
+
 ## Next work (priority order)
 
 1. ~~Preview pagination~~ Done on branch `preview-real-layout`: Compile and

@@ -12,6 +12,7 @@ pub enum Icon {
     Research,
     Database,
     History,
+    Project,
     Compile,
     Agent,
     Settings,
@@ -80,6 +81,14 @@ pub fn draw(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 Stroke::NONE,
             ));
             let _ = circle;
+        }
+        Icon::Project => {
+            // A title card: a sheet with a heading rule and two lines of detail.
+            let sheet = Rect::from_center_size(c, Vec2::new(r * 1.7, r * 2.0));
+            painter.rect_stroke(sheet, CornerRadius::same(2), s, StrokeKind::Inside);
+            line(p(-0.5, -0.45), p(0.5, -0.45));
+            line(p(-0.5, 0.15), p(0.3, 0.15));
+            line(p(-0.5, 0.5), p(0.1, 0.5));
         }
         Icon::Compile => {
             line(p(0.0, -0.9), p(0.0, 0.25));

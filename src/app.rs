@@ -27,6 +27,7 @@ pub enum View {
     Research,
     Database,
     History,
+    Project,
     Compile,
     Agent,
     Settings,
@@ -41,6 +42,7 @@ impl View {
             View::Research => "Research",
             View::Database => "Database",
             View::History => "Versions",
+            View::Project => "Project",
             View::Compile => "Compile",
             View::Agent => "Command desk",
             View::Settings => "Settings",
@@ -54,12 +56,13 @@ impl View {
             View::Research => Icon::Research,
             View::Database => Icon::Database,
             View::History => Icon::History,
+            View::Project => Icon::Project,
             View::Compile => Icon::Compile,
             View::Agent => Icon::Agent,
             View::Settings => Icon::Settings,
         }
     }
-    pub fn all() -> [View; 8] {
+    pub fn all() -> [View; 9] {
         [
             View::Write,
             View::Corkboard,
@@ -67,6 +70,7 @@ impl View {
             View::Research,
             View::Database,
             View::History,
+            View::Project,
             View::Compile,
             View::Settings,
         ]
