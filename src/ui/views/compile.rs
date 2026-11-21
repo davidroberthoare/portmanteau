@@ -11,7 +11,7 @@ use eframe::egui::{
 };
 use portmanteau_core::{
     Alignment, CompileScope, CompileType, DocKind, ElementStyles, ExportKind, ExportSettings,
-    HfLocation, NumberFormat, PaperSize, Project, ProjectKind,
+    HfLocation, NumberFormat, PageMargins, PaperSize, Project, ProjectKind,
 };
 
 use crate::app::{CompileTab, PortmanteauApp, ToastKind};
@@ -665,6 +665,8 @@ fn type_panel(
                 ui.add_space(4.0);
             }
 
+            margins_row(ui, kind, settings, compile_type);
+
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Font").font(ui_small()).color(MUTED));
                 if compile_type.is_script() {
@@ -696,6 +698,74 @@ fn type_panel(
                 );
             }
         });
+}
+
+/// What "Custom margins" starts from, so ticking the box changes nothing until
+/// a value is edited: the automatic margins for this manuscript type, in points.
+fn automatic_margins(compile_type: CompileType) -> PageMargins {
+    if compile_type.is_script() {
+        // Film and TV: a 1.5" binding edge, 1" elsewhere (before any paper scaling).
+        PageMargins::default()
+    } else {
+        // The book default: 20 mm at the sides, 22 mm top and bottom.
+        let (side, vertical) = (20.0 * 72.0 / 25.4, 22.0 * 72.0 / 25.4);
+        PageMargins {
+            left: side,
+            right: side,
+            top: vertical,
+            bottom: vertical,
+        }
+    }
+}
+
+/// Page margins, in inches. Off means automatic. An EPUB reflows, so only its
+/// side margins apply; the paged formats use all four.
+fn margins_row(
+    ui: &mut egui::Ui,
+    kind: ExportKind,
+    settings: &mut ExportSettings,
+    compile_type: CompileType,
+) {
+    let mut custom = settings.margins.is_some();
+    if ui
+        .checkbox(&mut custom, "Custom margins")
+        .on_hover_text("Off: book or script margins for the chosen paper")
+        .changed()
+    {
+        settings.margins = custom.then(|| automatic_margins(compile_type));
+    }
+    let Some(margins) = settings.margins.as_mut() else {
+        ui.add_space(4.0);
+        return;
+    };
+    let reflows = kind == ExportKind::Epub;
+    ui.indent("custom_margins", |ui| {
+        ui.horizontal(|ui| {
+            margin_field(ui, "Left", &mut margins.left);
+            margin_field(ui, "Right", &mut margins.right);
+        });
+        if !reflows {
+            ui.horizontal(|ui| {
+                margin_field(ui, "Top", &mut margins.top);
+                margin_field(ui, "Bottom", &mut margins.bottom);
+            });
+        }
+    });
+    ui.add_space(4.0);
+}
+
+/// One margin edge: a label and a field in inches, stored as points.
+fn margin_field(ui: &mut egui::Ui, label: &str, points: &mut f32) {
+    let mut inches = *points / 72.0;
+    ui.label(RichText::new(label).font(ui_small()).color(MUTED));
+    let field = egui::DragValue::new(&mut inches)
+        .speed(0.02)
+        .range(0.0..=3.0)
+        .fixed_decimals(2)
+        .suffix(" in");
+    if ui.add(field).changed() {
+        *points = inches * 72.0;
+    }
 }
 
 fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings) {
@@ -1345,6 +1415,53 @@ mod tests {
             toast.path.as_deref(),
             Some(written.as_path()),
             "the toast should carry the file it wrote so the path can be clicked"
+        );
+    }
+
+    #[test]
+    fn ticking_custom_margins_seeds_the_automatic_values_and_unticking_returns_to_auto() {
+        let mut app = PortmanteauApp::new(None);
+        app.compile_tab = crate::app::CompileTab::Format(ExportKind::Pdf);
+        let before = app.ws.project.settings_for(ExportKind::Pdf);
+        assert!(before.margins.is_none(), "margins start automatic");
+
+        let app = Rc::new(RefCell::new(app));
+        let ui_app = Rc::clone(&app);
+        let mut harness = Harness::builder()
+            .with_size(Vec2::new(1440.0, 930.0))
+            .with_accessibility_check(false)
+            .allow_missing_glyphs()
+            .build_ui(move |ui| {
+                show(&mut ui_app.borrow_mut(), ui);
+            });
+        harness.run_steps(3);
+        harness
+            .get_by_role_and_label(Role::CheckBox, "Custom margins")
+            .click_accesskit();
+        harness.run_steps(3);
+        let seeded = app
+            .borrow()
+            .ws
+            .project
+            .settings_for(ExportKind::Pdf)
+            .margins
+            .expect("ticking the box makes the margins custom");
+        assert!((seeded.left - 20.0 * 72.0 / 25.4).abs() < 0.01, "prose seeds the book margin");
+        // The four edges are now on screen.
+        for label in ["Left", "Right", "Top", "Bottom"] {
+            assert!(
+                harness.query_all_by_label(label).next().is_some(),
+                "the {label} margin field should be on screen"
+            );
+        }
+
+        harness
+            .get_by_role_and_label(Role::CheckBox, "Custom margins")
+            .click_accesskit();
+        harness.run_steps(3);
+        assert!(
+            app.borrow().ws.project.settings_for(ExportKind::Pdf).margins.is_none(),
+            "unticking returns to automatic"
         );
     }
 }

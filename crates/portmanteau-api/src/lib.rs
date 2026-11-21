@@ -1236,7 +1236,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("export.preview", "Preview the compiled manuscript: included and skipped documents for one manuscript type", r#"{"compile_type":"screenplay","scope":"draft"}"#),
         ("export.formats", "List supported output formats", "{}"),
         ("export.settings.get", "Read the settings for one output format", r#"{"format":"PDF"}"#),
-        ("export.settings.update", "Change the settings for one output format", r#"{"format":"PDF","font_size":11.5}"#),
+        ("export.settings.update", "Change the settings for one output format (paper, margins in points or \"auto\", header/footer, element styles, include flags)", r#"{"format":"PDF","margins":{"left":90,"right":54},"font_size":11.5}"#),
         ("style.get", "Read the project's per-element styles", "{}"),
         ("style.update", "Change one or more per-element styles", r#"{"body":{"size":12,"font":"Georgia"},"dialogue":{"indent":80}}"#),
         ("export.run", "Export the manuscript", r#"{"format":"PDF","path":"exports","compile_type":"tv","scope":"draft","each_separately":false}"#),
