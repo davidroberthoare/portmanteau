@@ -3,6 +3,7 @@ members = [
     "crates/portmanteau-core",
     "crates/portmanteau-export",
     "crates/portmanteau-api",
+    "crates/portmanteau-import",
     "crates/portmanteau-mcp",
     "crates/portmanteau-cli",
 ]

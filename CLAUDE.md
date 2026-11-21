@@ -18,7 +18,7 @@ Export tests call `pdfinfo`/`pdffonts`/`pdftotext` (poppler) and skip if absent.
 
 ## Layout
 
-Repo root is `app/` (own `.git`, branch `master`). The parent folder `myScript/` holds only tooling and evidence: `.opencode/agents/` (old OpenCode conductor/implementer/tester team), `.kilo/`, `notes/next_tasks.md`, `shots/`, `exports/`. Edit inside `app/`. Crates: `portmanteau-core` (model, no I/O) <- `-export` (ten writers; PDF via krilla) <- `-api` (command bus, persistence) <- `-mcp`/`-cli`, plus the egui shell in `src/`.
+Repo root is `app/` (own `.git`, branch `master`). The parent folder `myScript/` holds only tooling and evidence: `.opencode/agents/` (old OpenCode conductor/implementer/tester team), `.kilo/`, `notes/next_tasks.md`, `shots/`, `exports/`. Edit inside `app/`. Crates: `portmanteau-core` (model, no I/O) <- `-export` (one module per format over shared `layout`, `web` and `content` modules; PDF via krilla) and `-import` (Fountain, FDX, DOCX, plain text) <- `-api` (command bus, persistence) <- `-mcp`/`-cli`, plus the egui shell in `src/`.
 
 ## Rules that still hold
 

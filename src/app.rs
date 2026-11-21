@@ -1700,7 +1700,7 @@ impl PortmanteauApp {
                         PathDialog::Open => "Unsaved changes in the current project are left untouched.",
                         PathDialog::SaveAs => "A new copy is written; the open project switches to it.",
                         PathDialog::Import => {
-                            "Fountain and FDX become screenplays; DOCX and text become prose in the Draft folder."
+                            "Fountain and FDX become screenplays; DOCX and text become prose. Long files split into chapters at their headings. Everything lands in the Draft folder."
                         }
                     })
                     .font(ui_small())
@@ -1779,7 +1779,12 @@ impl PortmanteauApp {
                         self.selected = id;
                         self.view = View::Write;
                         self.path_dialog = None;
-                        self.toast("Manuscript imported", res.message, ToastKind::Ok);
+                        let kind = if res.data["warnings"].as_array().is_some_and(|w| !w.is_empty()) {
+                            ToastKind::Info
+                        } else {
+                            ToastKind::Ok
+                        };
+                        self.toast("Manuscript imported", res.message, kind);
                     } else {
                         self.toast("Could not import manuscript", res.message, ToastKind::Error);
                     }

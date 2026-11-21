@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 pub mod storage;
 
 use portmanteau_core::*;
+use portmanteau_import::{detect as import_detect, ImportFormat, ImportOptions, Split};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -262,16 +263,6 @@ impl Workspace {
             "document.import" => {
                 let inline_text = str_arg(&payload, "text");
                 let path = str_arg(&payload, "path");
-                let requested = str_arg(&payload, "format");
-                let format = requested
-                    .clone()
-                    .or_else(|| {
-                        path.as_deref()
-                            .and_then(|path| Path::new(path).extension())
-                            .and_then(|extension| extension.to_str())
-                            .map(|extension| extension.to_ascii_lowercase())
-                    })
-                    .unwrap_or_default();
                 let bytes = match (&inline_text, &path) {
                     (Some(text), _) => text.clone().into_bytes(),
                     (None, Some(path)) => match std::fs::read(path) {
@@ -290,76 +281,117 @@ impl Workspace {
                         )
                     }
                 };
-                let source = String::from_utf8_lossy(&bytes).into_owned();
-                let medium = payload
-                    .get("medium")
-                    .and_then(|v| v.as_str())
-                    .and_then(parse_medium)
+                let format = match str_arg(&payload, "format") {
+                    Some(name) => match ImportFormat::from_name(&name) {
+                        Some(format) => format,
+                        None => {
+                            return ApiResponse::err(
+                                command,
+                                format!("Unsupported import format {name:?}; use Fountain, FDX, DOCX or plain text"),
+                            )
+                        }
+                    },
+                    None => match import_detect(path.as_deref().map(Path::new), &bytes) {
+                        Some(format) => format,
+                        None => {
+                            return ApiResponse::err(
+                                command,
+                                "Could not tell the file format; name it with \"format\" (fountain, fdx, docx or text)",
+                            )
+                        }
+                    },
+                };
+                let options = ImportOptions {
+                    medium: payload.get("medium").and_then(|v| v.as_str()).and_then(parse_medium),
+                    split: match payload.get("split") {
+                        Some(v) if v.as_bool() == Some(false) || v.as_str() == Some("never") => {
+                            Split::Never
+                        }
+                        _ => Split::Auto,
+                    },
+                };
+                let imported = match portmanteau_import::import(format, &bytes, &options) {
+                    Ok(imported) => imported,
+                    Err(error) => return ApiResponse::err(command, error),
+                };
+
+                // The title a document falls back on: what the caller said,
+                // then what the file says, then the file's name.
+                let base = str_arg(&payload, "title")
+                    .or_else(|| imported.title.clone())
+                    .or_else(|| {
+                        path.as_deref()
+                            .and_then(|path| Path::new(path).file_stem())
+                            .and_then(|stem| stem.to_str())
+                            .map(|stem| stem.to_owned())
+                    })
                     .unwrap_or_else(|| {
-                        if matches!(format.as_str(), "fountain" | "fdx") {
-                            Medium::Screenplay
+                        if imported.medium.is_script() {
+                            "Imported screenplay".into()
                         } else {
-                            Medium::Prose
+                            "Imported manuscript".into()
                         }
                     });
-                let content = match format.as_str() {
-                    "fountain" => RichDocument::from_fountain(&source, medium),
-                    "fdx" => match portmanteau_core::parse_fdx(&source) {
-                        Ok(document) => document,
-                        Err(error) => return ApiResponse::err(command, error),
-                    },
-                    "docx" => match portmanteau_core::parse_docx(&bytes, medium) {
-                        Ok(document) => document,
-                        Err(error) => return ApiResponse::err(command, error),
-                    },
-                    "text" | "txt" | "plain" => {
-                        portmanteau_core::parse_plain_text(&source, medium)
-                    }
-                    _ => {
-                        return ApiResponse::err(
-                            command,
-                            format!(
-                                "Unsupported import format {format:?}; use Fountain, FDX, DOCX or plain text"
-                            ),
-                        )
-                    }
-                };
-                let paragraph_count = content.paragraphs.len();
-                if paragraph_count == 0 {
-                    return ApiResponse::err(command, "The imported file contains no text");
-                }
-                let title = str_arg(&payload, "title").or_else(|| {
-                    path.as_deref()
-                        .and_then(|path| Path::new(path).file_stem())
-                        .and_then(|stem| stem.to_str())
-                        .map(|stem| stem.to_owned())
-                });
-                let title = title.unwrap_or_else(|| {
-                    if medium.is_script() {
-                        "Imported screenplay".into()
-                    } else {
-                        "Imported manuscript".into()
-                    }
-                });
                 let parent = str_arg(&payload, "parent")
                     .or_else(|| self.project.folder_id("Draft"));
-                let kind = payload
+                let kind_override = payload
                     .get("kind")
                     .and_then(|v| v.as_str())
-                    .and_then(parse_doc_kind)
-                    .unwrap_or(DocKind::Chapter);
-                let id = self
-                    .project
-                    .add_document(parent, &title, kind, medium);
-                if let Some(doc) = self.project.document_mut(&id) {
-                    doc.content = content;
-                    doc.touch();
+                    .and_then(parse_doc_kind);
+                let many = imported.documents.len() > 1;
+                let mut created = Vec::new();
+                for (index, part) in imported.documents.iter().enumerate() {
+                    let title = if !part.title.is_empty() {
+                        part.title.clone()
+                    } else if many {
+                        format!("{base} · {}", index + 1)
+                    } else {
+                        base.clone()
+                    };
+                    let id = self.project.add_document(
+                        parent.clone(),
+                        &title,
+                        kind_override.unwrap_or(part.kind),
+                        part.medium,
+                    );
+                    if let Some(doc) = self.project.document_mut(&id) {
+                        doc.content = part.content.clone();
+                        if !part.synopsis.is_empty() {
+                            doc.synopsis.set_plain_text(part.synopsis.clone(), "body");
+                        }
+                        doc.touch();
+                    }
+                    created.push(json!({
+                        "id": id,
+                        "title": title,
+                        "paragraphs": part.content.paragraphs.len(),
+                    }));
                 }
                 self.dirty = true;
+
+                let paragraphs = imported.paragraph_count();
+                let mut message = format!(
+                    "Imported {} document{} ({paragraphs} paragraphs) from {}",
+                    created.len(),
+                    if created.len() == 1 { "" } else { "s" },
+                    format.label()
+                );
+                if !imported.warnings.is_empty() {
+                    message.push_str(" — ");
+                    message.push_str(&imported.warnings.join("; "));
+                }
                 ApiResponse::ok(
                     command,
-                    format!("Imported {paragraph_count} paragraphs from {format}"),
-                    json!({"id": id, "paragraphs": paragraph_count, "format": format}),
+                    message,
+                    json!({
+                        "id": created[0]["id"],
+                        "documents": created,
+                        "paragraphs": paragraphs,
+                        "format": format.label(),
+                        "title": imported.title,
+                        "author": imported.author,
+                        "warnings": imported.warnings,
+                    }),
                 )
             }
             "document.update" => {
@@ -1188,7 +1220,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("document.list", "List every binder document", "{}"),
         ("document.get", "Read one document", r#"{"id":"doc-..."}"#),
         ("document.create", "Add a document", r#"{"parent":"doc-...","title":"...","kind":"Chapter","medium":"Prose"}"#),
-        ("document.import", "Import a Fountain, FDX, DOCX or plain-text file as a document", r#"{"path":"manuscript.docx","title":"..."}"#),
+        ("document.import", "Import a Fountain, FDX, DOCX or plain-text file as one or more documents (chapters split at headings, sections or chapter lines); returns warnings for anything not carried across", r#"{"path":"manuscript.docx","split":true}"#),
         ("document.update", "Change title, text, synopsis or metadata", r#"{"id":"doc-...","text":"..."}"#),
         ("document.delete", "Delete a document and its children", r#"{"id":"doc-..."}"#),
         ("document.move", "Move a document up, down or into a folder", r#"{"id":"doc-...","direction":"up"}"#),
@@ -1232,6 +1264,74 @@ mod tests {
         );
         assert!(res.ok);
         assert_eq!(ws.project.documents.len(), before + 1);
+    }
+
+    #[test]
+    fn importing_chapters_creates_one_document_each_in_order_under_draft() {
+        let mut ws = Workspace::demo();
+        let draft = ws.project.folder_id("Draft").expect("draft folder");
+        let before = ws.project.documents.len();
+        let text = "Prologue\n\nIt began.\n\nChapter 1\n\nOut it went.\n\nChapter 2\n\nAnd back.\n";
+        let res = ws.execute("document.import", json!({"format":"text","title":"My Book","text":text}));
+        assert!(res.ok, "{}", res.message);
+        assert_eq!(ws.project.documents.len(), before + 3);
+        let docs = res.data["documents"].as_array().expect("document list");
+        let titles: Vec<&str> = docs.iter().map(|d| d["title"].as_str().unwrap()).collect();
+        assert_eq!(titles, ["Prologue", "Chapter 1", "Chapter 2"]);
+        let orders: Vec<u32> = docs
+            .iter()
+            .map(|d| ws.project.document(d["id"].as_str().unwrap()).unwrap().order as u32)
+            .collect();
+        assert!(orders.windows(2).all(|w| w[0] < w[1]), "binder order follows the file: {orders:?}");
+        assert_eq!(
+            ws.project.document(docs[0]["id"].as_str().unwrap()).unwrap().parent.as_deref(),
+            Some(draft.as_str())
+        );
+        assert_eq!(res.data["id"], docs[0]["id"], "id points at the first document");
+
+        // "split": false keeps it whole, and untitled parts fall back on the title given.
+        let res = ws.execute(
+            "document.import",
+            json!({"format":"text","title":"Whole","text":text,"split":false}),
+        );
+        assert!(res.ok);
+        assert_eq!(res.data["documents"].as_array().unwrap().len(), 1);
+        assert_eq!(res.data["documents"][0]["title"], "Whole");
+    }
+
+    #[test]
+    fn import_reports_what_it_could_not_carry_across() {
+        let mut ws = Workspace::demo();
+        let fdx = r#"<FinalDraft><Content>
+            <Paragraph Type="Action"><Text>Kept.</Text></Paragraph>
+            <Paragraph Type="Strange"><Text>Odd one.</Text></Paragraph>
+        </Content></FinalDraft>"#;
+        let res = ws.execute("document.import", json!({"format":"fdx","text":fdx}));
+        assert!(res.ok, "an unknown paragraph type must not fail the import");
+        let warnings = res.data["warnings"].as_array().expect("warnings");
+        assert!(warnings.iter().any(|w| w.as_str().unwrap().contains("Strange")), "{warnings:?}");
+        assert!(res.message.contains("Strange"), "the message carries the warning: {}", res.message);
+    }
+
+    #[test]
+    fn import_detects_the_format_from_the_file_extension_and_rejects_the_unknown() {
+        let mut ws = Workspace::demo();
+        let dir = std::env::temp_dir().join(format!("portmanteau-api-import-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("pilot.fountain");
+        std::fs::write(&script, "Title: Pilot\nAuthor: Ada\n\nINT. ROOM - DAY\n\nMARA\nHi.\n").unwrap();
+        let res = ws.execute("document.import", json!({"path": script.display().to_string()}));
+        assert!(res.ok, "{}", res.message);
+        assert_eq!(res.data["title"], "Pilot");
+        assert_eq!(res.data["author"], "Ada");
+        let id = res.data["id"].as_str().unwrap();
+        assert_eq!(ws.project.document(id).unwrap().title, "Pilot", "the file's own title wins over its file name");
+
+        let odd = dir.join("notes.pdf");
+        std::fs::write(&odd, "x").unwrap();
+        let res = ws.execute("document.import", json!({"path": odd.display().to_string()}));
+        assert!(!res.ok && res.message.contains("format"), "{}", res.message);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

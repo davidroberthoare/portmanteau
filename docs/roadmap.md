@@ -138,22 +138,38 @@ in `docs/ui-style-guidelines.md`.
 **Why.** Professional workflows start with a script someone else sent, or a
 novel in Word. Exporting without importing is a one-way door.
 
-**Start with Fountain, Final Draft and plain text**, then DOCX (confirmed future work):
+**State.** The four importers live in `crates/portmanteau-import`, one module
+per format over a shared `Imported` result (documents, title, author,
+warnings). `document.import` places the documents in the binder; the MCP tool
+and File → Import call the same command.
 
-- `parse_fountain`, `parse_fdx`, `parse_docx` and `parse_plain_text` now exist
-  in the core, and `document.import` is wired through the API, MCP and the File
-  menu. DOCX reads `word/document.xml` out of the zip and maps paragraph styles
-  and inline marks without pulling in a full document model.
+- **Fountain 1.1**: title page to metadata, boneyard and `[[notes]]` removed,
+  forced elements, scene numbers, two-space speech continuation, emphasis to
+  marks, `#` sections to separate documents with `=` synopses.
+- **Final Draft**: unknown paragraph types, images and script notes are
+  reported, never fatal; title page read.
+- **Word**: `styles.xml` decides what a heading is (renamed or localised
+  styles work); headings split chapters; text boxes are not duplicated;
+  footnotes, images, tables and list formatting are counted in the warnings.
+- **Plain text**: hard-wrap rejoining, chapter detection, UTF-8/UTF-16/
+  Windows-1252.
+- Round trips through our own Fountain, FDX, DOCX and plain-text exporters are
+  tested; that is how the non-standard Fountain export was found and fixed.
 
-**Done when** real `.fountain`, `.fdx`, `.docx` and plain-text files round-trip
-through import and export without losing scene headings, character/dialogue
-pairing or transitions, and a manuscript becomes chapters with readable prose.
+**Not done yet** (ordered by value):
 
-**Deferred import workflow.** FDX import is in place. A later pass should add a
-review dialog for mapping unknown paragraph styles/objects to built-in or
-project custom styles. Let writers revise those mappings, create custom styles,
-and save mapping profiles for reuse on future imports. This is recorded for
-later; do not build the dialog as part of the unified-editor work.
+1. A review step before the documents are created: show the split (titles and
+   word counts), let the writer merge, rename or skip, and choose the parent.
+2. Dual dialogue, centred text and Fountain outline markers are flattened;
+   model them if writers use them.
+3. Word: images (needs asset embedding), footnotes, tables, tracked changes,
+   comments.
+4. Character extraction: offer to create database characters from the cues.
+5. Markdown and RTF readers.
+
+**Deferred import workflow.** A review dialog for mapping unknown paragraph
+styles/objects to built-in or project custom styles, with mapping profiles for
+reuse. Recorded for later; do not build it as part of the unified-editor work.
 
 ## 2. Drag-and-drop binder
 
