@@ -376,6 +376,10 @@ impl Workspace {
                         "paragraphs": part.content.paragraphs.len(),
                     }));
                 }
+                let applied = self.apply_import_details(
+                    &imported,
+                    payload.get("replace_details").and_then(|v| v.as_bool()).unwrap_or(false),
+                );
                 self.dirty = true;
 
                 let paragraphs = imported.paragraph_count();
@@ -385,6 +389,9 @@ impl Workspace {
                     if created.len() == 1 { "" } else { "s" },
                     format.label()
                 );
+                if !applied.is_empty() {
+                    message.push_str(&format!(" · project {} set from the file", applied.join(", ")));
+                }
                 if !imported.warnings.is_empty() {
                     message.push_str(" — ");
                     message.push_str(&imported.warnings.join("; "));
@@ -401,6 +408,7 @@ impl Workspace {
                         "author": imported.author,
                         "contact": imported.contact,
                         "draft_date": imported.draft_date,
+                        "applied_details": applied,
                         "warnings": imported.warnings,
                     }),
                 )
@@ -867,6 +875,34 @@ impl Workspace {
             "commands" => ApiResponse::ok(command, "Command catalogue", json!(command_catalogue())),
             _ => ApiResponse::err(command, format!("Unknown command: {command}")),
         }
+    }
+
+    /// Carry the file's title page into the project's own details. By default
+    /// only details the project has not set yet are filled (a blank field, the
+    /// placeholder title "Untitled" or author "Your name"), so importing a
+    /// chapter into a finished project never renames it; `replace` takes the
+    /// file's word for everything it states. Returns the names of what changed.
+    fn apply_import_details(&mut self, imported: &portmanteau_import::Imported, replace: bool) -> Vec<&'static str> {
+        let project = &mut self.project;
+        let mut applied = Vec::new();
+        let mut take = |name: &'static str, field: &mut String, value: &Option<String>, placeholder: &str| {
+            let Some(value) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) else {
+                return;
+            };
+            let unset = field.trim().is_empty() || field.trim() == placeholder;
+            if (replace || unset) && field.as_str() != value {
+                *field = value.to_string();
+                applied.push(name);
+            }
+        };
+        take("title", &mut project.title, &imported.title, "Untitled");
+        take("author", &mut project.author, &imported.author, "Your name");
+        take("contact", &mut project.contact, &imported.contact, "");
+        take("draft date", &mut project.draft_date, &imported.draft_date, "");
+        if !applied.is_empty() {
+            project.touch();
+        }
+        applied
     }
 
     pub fn project_summary(&self) -> Value {
@@ -1349,6 +1385,39 @@ mod tests {
         let res = ws.execute("document.import", json!({"path": odd.display().to_string()}));
         assert!(!res.ok && res.message.contains("format"), "{}", res.message);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn import_fills_unset_project_details_from_the_title_page_and_never_overwrites_by_default() {
+        let script = "Title: Tidewrack\nAuthor: Ada Marlowe\nContact:\n    Ada Marlowe\n    ada@example.com\nDraft date: 2 June 2027\n\nINT. HARBOR - DAWN\n\nMARA\nWe missed the tide.\n";
+
+        // A fresh project has placeholders only: the file fills them.
+        let mut ws = Workspace::new_project("Untitled", ProjectKind::Film);
+        let res = ws.execute("document.import", json!({"format":"fountain","text":script}));
+        assert!(res.ok, "{}", res.message);
+        assert_eq!(ws.project.title, "Tidewrack");
+        assert_eq!(ws.project.author, "Ada Marlowe");
+        assert_eq!(ws.project.contact, "Ada Marlowe\nada@example.com");
+        assert_eq!(ws.project.draft_date, "2 June 2027");
+        assert!(res.message.contains("title, author, contact, draft date"), "{}", res.message);
+        assert_eq!(res.data["applied_details"].as_array().map(Vec::len), Some(4));
+
+        // A project that already has its own details keeps them.
+        let mut ws = Workspace::demo();
+        let (title, author) = (ws.project.title.clone(), ws.project.author.clone());
+        let res = ws.execute("document.import", json!({"format":"fountain","text":script}));
+        assert!(res.ok, "{}", res.message);
+        assert_eq!((ws.project.title.clone(), ws.project.author.clone()), (title, author));
+        assert_eq!(ws.project.contact, "Ada Marlowe\nada@example.com", "blank details are still filled");
+
+        // Unless the writer says the file is the authority.
+        let res = ws.execute(
+            "document.import",
+            json!({"format":"fountain","text":script,"replace_details":true}),
+        );
+        assert!(res.ok, "{}", res.message);
+        assert_eq!(ws.project.title, "Tidewrack");
+        assert_eq!(ws.project.author, "Ada Marlowe");
     }
 
     #[test]
