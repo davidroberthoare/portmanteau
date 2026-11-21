@@ -273,6 +273,10 @@ pub struct PortmanteauApp {
     pub selected_block: usize,
     pub block_focus: Option<usize>,
     pub inspector_tab: InspectorTab,
+    /// Undo and redo for the selected document's text (see `history.rs`).
+    pub history: crate::history::History,
+    /// A burst of typing is open and needs a repaint to close on a pause.
+    history_pending: bool,
     pub collapsed: HashSet<String>,
     pub search: String,
     pub focus_search: bool,
@@ -360,6 +364,8 @@ impl PortmanteauApp {
             selected_block: 0,
             block_focus: None,
             inspector_tab: InspectorTab::Document,
+            history: crate::history::History::default(),
+            history_pending: false,
             collapsed,
             search: String::new(),
             focus_search: false,
@@ -752,6 +758,22 @@ impl PortmanteauApp {
             }
         });
         ui.menu_button(menu_text("Edit"), |ui| {
+            let ctx = ui.ctx().clone();
+            if ui
+                .add_enabled(self.can_undo(), egui::Button::new("Undo    ⌘Z"))
+                .clicked()
+            {
+                self.step_history(&ctx, true);
+                ui.close();
+            }
+            if ui
+                .add_enabled(self.can_redo(), egui::Button::new("Redo    ⇧⌘Z"))
+                .clicked()
+            {
+                self.step_history(&ctx, false);
+                ui.close();
+            }
+            ui.separator();
             if ui.button("Search manuscript").clicked() {
                 self.focus_search = true;
                 ui.close();
@@ -1849,8 +1871,17 @@ fn slug(title: &str) -> String {
 
 impl eframe::App for PortmanteauApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.draw(ui);
+    }
+}
+
+impl PortmanteauApp {
+    /// One frame of the whole window. Separate from `eframe::App::ui` so tests
+    /// can drive the real thing without an `eframe::Frame`.
+    pub(crate) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.handle_shortcuts(&ctx);
+        self.undo_redo_shortcuts(&ctx);
 
         let focus = self.focus_mode && self.view == View::Write;
         if focus {
@@ -1890,7 +1921,92 @@ impl eframe::App for PortmanteauApp {
         }
 
         self.modals(&ctx);
+        self.track_history(&ctx);
         self.screenshot_tick(&ctx);
+    }
+}
+
+impl PortmanteauApp {
+    /// Cmd/Ctrl+Z undoes, Shift+Cmd+Z (or Ctrl+Y) redoes. The keys are consumed
+    /// here, before the editor draws, so egui's own per-widget undo (which
+    /// would rewind a rebuilt text buffer and lose marks) never sees them.
+    fn undo_redo_shortcuts(&mut self, ctx: &egui::Context) {
+        if self.view != View::Write || self.selected.is_none() {
+            return;
+        }
+        use egui::Modifiers;
+        let (redo, undo) = ctx.input_mut(|input| {
+            let redo = input.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z)
+                || input.consume_key(Modifiers::COMMAND, Key::Y);
+            let undo = !redo && input.consume_key(Modifiers::COMMAND, Key::Z);
+            (redo, undo)
+        });
+        if undo {
+            self.step_history(ctx, true);
+        } else if redo {
+            self.step_history(ctx, false);
+        }
+    }
+
+    /// Undo (or redo) one step in the selected document and put the caret
+    /// where the change was.
+    pub fn step_history(&mut self, ctx: &egui::Context, undo: bool) {
+        let Some(id) = self.selected.clone() else { return };
+        // Close any open burst first, so the very latest typing is undoable.
+        self.observe_history(ctx);
+        let Some(doc) = self.ws.project.document_mut(&id) else { return };
+        let applied = if undo {
+            self.history.undo(doc)
+        } else {
+            self.history.redo(doc)
+        };
+        let Some(applied) = applied else { return };
+        doc.touch();
+        self.ws.dirty = true;
+        if applied.field == crate::history::Field::Body {
+            // The editor keeps its caret in egui's text state under these ids.
+            for key in ["prose_body", "script_flow"] {
+                let edit_id = Id::unique((key, id.as_str()));
+                let mut state =
+                    egui::text_edit::TextEditState::load(ctx, edit_id).unwrap_or_default();
+                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+                    egui::text::CCursor::new(applied.caret),
+                )));
+                state.store(ctx, edit_id);
+            }
+        }
+        ctx.request_repaint();
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.selected.as_deref().is_some_and(|id| self.history.can_undo(id))
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.selected.as_deref().is_some_and(|id| self.history.can_redo(id))
+    }
+
+    /// Show the history the selected document, on frames where something was
+    /// typed or clicked and while a burst of typing waits to close.
+    fn track_history(&mut self, ctx: &egui::Context) {
+        let input = ctx.input(|i| !i.events.is_empty() || i.pointer.any_released());
+        if input || self.history_pending {
+            self.observe_history(ctx);
+        }
+    }
+
+    fn observe_history(&mut self, ctx: &egui::Context) {
+        let Some(id) = self.selected.clone() else { return };
+        let Some(doc) = self.ws.project.document(&id) else { return };
+        match self.history.observe(doc, Instant::now()) {
+            Some(left) => {
+                self.history_pending = true;
+                ctx.request_repaint_after(left + Duration::from_millis(30));
+            }
+            None => self.history_pending = false,
+        }
+        let project = &self.ws.project;
+        self.history.retain(|doc_id| project.document(doc_id).is_some());
     }
 }
 
@@ -2412,5 +2528,90 @@ mod shell_probe {
             harness.query_by_label("Take snapshot").is_some(),
             "the Versions tab is where a snapshot is taken"
         );
+    }
+
+    /// A harness that draws the app through `draw`, exactly as a frame of the
+    /// running program does (keys, history tracking and all).
+    fn app_harness(app: PortmanteauApp) -> (Harness<'static>, Rc<RefCell<PortmanteauApp>>) {
+        let app = Rc::new(RefCell::new(app));
+        let ui_app = Rc::clone(&app);
+        let mut themed = false;
+        let mut harness = Harness::builder()
+            .with_size(SHELL)
+            .with_max_steps(96)
+            .with_accessibility_check(false)
+            .allow_missing_glyphs()
+            .build_ui(move |ui| {
+                if !themed {
+                    crate::theme::install(ui.ctx());
+                    themed = true;
+                    return;
+                }
+                ui_app.borrow_mut().draw(ui);
+            });
+        harness.run_steps(6);
+        (harness, app)
+    }
+
+    fn press(harness: &mut Harness<'static>, modifiers: egui::Modifiers, key: Key) {
+        harness.input_mut().events.push(Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        });
+        harness.run_steps(3);
+    }
+
+    fn body_of(app: &Rc<RefCell<PortmanteauApp>>, doc_id: &str) -> String {
+        app.borrow()
+            .ws
+            .project
+            .document(doc_id)
+            .unwrap()
+            .content
+            .editor_text()
+    }
+
+    /// The whole feature through the real window: typing in the prose editor,
+    /// Cmd+Z, then Cmd+Shift+Z. egui's own text undo must not interfere.
+    #[test]
+    fn cmd_z_undoes_typing_in_the_real_window_and_cmd_shift_z_redoes_it() {
+        let app = PortmanteauApp::new(None);
+        let doc_id = app.selected.clone().expect("the demo opens on a chapter");
+        let (mut harness, app) = app_harness(app);
+        let original = body_of(&app, &doc_id);
+
+        harness
+            .get_all_by_role(Role::MultilineTextInput)
+            .find(|node| in_editor_column(node.rect()) && node.value().is_some())
+            .expect("the prose editor")
+            .click();
+        harness.run_steps(2);
+        let edit_id = Id::unique(("prose_body", doc_id.as_str()));
+        let mut state = egui::text_edit::TextEditState::load(&harness.ctx, edit_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(0))));
+        state.store(&harness.ctx, edit_id);
+        harness.run_steps(1);
+
+        harness.input_mut().events.push(Event::Text("ZZZ ".into()));
+        harness.run_steps(3);
+        let typed = body_of(&app, &doc_id);
+        assert!(typed.starts_with("ZZZ "), "typing reached the document: {:?}", &typed[..20]);
+        assert!(app.borrow().can_undo(), "the typing is undoable");
+
+        press(&mut harness, egui::Modifiers::COMMAND, Key::Z);
+        assert_eq!(body_of(&app, &doc_id), original, "Cmd+Z removes the typing");
+        assert!(app.borrow().can_redo());
+
+        press(&mut harness, egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::Z);
+        assert_eq!(body_of(&app, &doc_id), typed, "Cmd+Shift+Z puts it back");
+
+        // And once more down and up, to be sure nothing was left half-applied.
+        press(&mut harness, egui::Modifiers::COMMAND, Key::Z);
+        assert_eq!(body_of(&app, &doc_id), original);
+        press(&mut harness, egui::Modifiers::COMMAND, Key::Y);
+        assert_eq!(body_of(&app, &doc_id), typed, "Ctrl+Y also redoes");
     }
 }

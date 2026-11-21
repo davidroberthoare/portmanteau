@@ -10,6 +10,7 @@ Suggestions, bug reports and ideas are very welcome — open an issue.
 
 - One rich-text editor for prose and scripts. Paragraph styles (with "next style" rules, like Enter after a character cue giving dialogue) decide how things look; bold, italic, underline, strikethrough and inline images are supported.
 - Screenplay helpers: style dropdown, character-name suggestions drawn from the story database and the script, and a paged print preview.
+- Undo and redo (⌘Z / ⇧⌘Z) for the open document's text, styles and marks, per document for the session.
 - Binder, corkboard, outline, search, a story database (characters, places and so on), research notes, snapshots and a writing calendar.
 - Import Fountain, Final Draft (FDX), Word (DOCX) and plain text.
 - Export to PDF, EPUB, DOCX, FDX, Fountain, HTML, Markdown, RTF, plain text, or a project bundle. Each compile is one kind of manuscript (prose, film, TV or stage), drawn from the whole draft or one binder item; TV and stage scripts can compile as one file per script.
@@ -32,7 +33,6 @@ cargo run -p portmanteau-cli -- commands
 
 ## Known gaps
 
-- No undo/redo yet.
 - PDF layout is measured and writes embedded fonts, but it is not a full typesetter; the editor's paged preview is still only an estimate.
 - No drag-and-drop in the binder, no native file dialogs, no tracked changes.
 

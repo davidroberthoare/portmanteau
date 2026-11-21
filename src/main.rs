@@ -6,6 +6,7 @@
 //! export engine.
 
 mod app;
+mod history;
 mod icons;
 mod settings;
 mod spellcheck;

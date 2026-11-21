@@ -280,10 +280,16 @@ open the sample project.
 - Interface type scale lives in `theme.rs` (`ui_small`/`ui_body`/`ui_strong`) with a Settings ▸ Interface text size preference.
 - Binder uses drawn folder and page icons, tinted by document type.
 
-## Planned: undo / redo history
-- Document-level undo/redo for every rich editor (typing, style changes, mark toggles, image inserts), spanning paragraph boundaries in the single flow.
-- Coalesce typing into word-sized steps; keep history per document for the session.
-- Edit menu Undo/Redo with ⌘Z / ⇧⌘Z; complements, not replaces, named version snapshots.
+## Undo / redo history (done)
+
+`src/history.rs` watches the selected document once per frame in which input
+arrived and records the changed paragraph window as a step; typing merges until
+the writer pauses (0.7 s). It covers the body, synopsis and notes, every edit
+path (typing, styles, marks, images, spell fixes, snapshot restores), and is
+per document for the session. ⌘Z / ⇧⌘Z / Ctrl+Y and Edit > Undo / Redo.
+
+Not yet: undo for binder changes (move, delete, rename), research and database
+text, and a visible history list. Steps are not saved with the project.
 
 ## Session log: UI polish, character cues and export styling (latest)
 
@@ -296,7 +302,6 @@ Done and merged to `master`:
 - Toolbar, search and Compile field alignment; corkboard synopsis scrolls.
 
 Next session candidates:
-- Undo/redo history (see above) — the largest missing editing feature.
 - Verify cue popup and empty-paragraph caret by hand on more screenplays (stage play, prose with custom styles); only headless-tested.
 - Preview page-fit estimate vs real export pagination (clipped lines when estimate is off).
 - FDX style/object mapping review dialog; optional dark theme on the same tokens; further reduction of persistent control rows in Compile.
