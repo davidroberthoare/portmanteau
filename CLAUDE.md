@@ -124,6 +124,19 @@ How to check output visually (all on this machine):
   shown in the list, "used elsewhere" suggestions on the item, and `@` matches tags.
 - **Binder** no longer lists the Research folder; research is reached from the
   "Research notes" entry under Collections (and the Research page).
+- **Find and replace** (`portmanteau-core/src/find.rs`; commands `search.find` /
+  `search.replace`; MCP `search_project`, `replace_text`): one engine with plain,
+  case, whole-word and regex options, groups (Manuscript, Front & back matter,
+  Research, Database) and an option to include synopses/notes. Replacing snapshots
+  each changed document first (not for a single-match replace). Two UIs: the
+  **Search page** (`views/search.rs`, rail icon, Ctrl/Cmd+Shift+F; results open the
+  document with the match selected via `CaretRequest.select`) and the editor's
+  **find bar** (`ui/find_bar.rs`, Ctrl/Cmd+F, Ctrl/Cmd+H with Replace; Write view,
+  Continuous mode only; shades matches via `paint_matches`). The top-bar search
+  field hands its text to the Search page on Enter. Not done: replace undo in the
+  editor's own history (use Versions), search inside the Paged view.
+- New documents are created in the selected document's folder, else the top of
+  the Draft (`Project::new_document_home`). The binder no longer lists Research.
 - **Project page** (`src/ui/views/project.rs`, rail icon between Versions and
   Compile): title, subtitle, author, genre, logline, contact, draft label and
   date, daily goal. Edits go through `project.update`. A script cover prints

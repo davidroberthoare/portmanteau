@@ -71,6 +71,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         crate::ui::preview::paged_view(app, ui, paged, &doc_id);
         return;
     }
+    crate::ui::find_bar::show(app, ui, &doc_id);
 
     let wide = if app.focus_mode { 860.0 } else { 780.0 };
     let is_script_view = app
@@ -1296,6 +1297,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             &image_textures,
             zoom,
         );
+        crate::ui::find_bar::paint_matches(ui, &app.find_bar, &output.galley, output.galley_pos);
         if spell_on {
             let key = Id::unique(("spell_menu", doc_id));
             let byte = spell_menu_byte(
@@ -1777,6 +1779,7 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             &image_textures,
             zoom,
         );
+        crate::ui::find_bar::paint_matches(ui, &app.find_bar, &output.galley, output.galley_pos);
         if output.response.has_focus() {
             ui.memory_mut(|memory| {
                 memory.set_focus_lock_filter(
@@ -2412,7 +2415,9 @@ pub(crate) fn take_caret_request(
         .unwrap_or(0);
     let caret = rich_paragraph_start(content, request.paragraph) + request.offset.min(length);
     let selected_to = caret + request.select.min(length.saturating_sub(request.offset.min(length)));
-    ui.memory_mut(|memory| memory.request_focus(text_id));
+    if request.focus {
+        ui.memory_mut(|memory| memory.request_focus(text_id));
+    }
     let mut state = egui::text_edit::TextEditState::load(ui.ctx(), text_id).unwrap_or_default();
     state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
         egui::text::CCursor::new(caret),
@@ -3937,13 +3942,13 @@ mod caret_request_tests {
         let content = portmanteau_core::RichDocument::from_plain_text("First paragraph.\n\nSecond paragraph here.", "body");
         // Paragraph indices count the blank one between the two lines of text.
         let target = content.paragraphs.iter().position(|p| p.plain_text().starts_with("Second")).unwrap();
-        let mut request = Some(crate::app::CaretRequest { doc_id: "doc".into(), paragraph: target, offset: 7, select: 0 });
+        let mut request = Some(crate::app::CaretRequest { doc_id: "doc".into(), paragraph: target, offset: 7, select: 0, focus: true });
         let id = Id::unique("caret-test");
         let mut other = None;
         let mut placed = None;
         ctx.run_ui(egui::RawInput::default(), |ui| {
             // Someone else's request is left alone.
-            let mut theirs = Some(crate::app::CaretRequest { doc_id: "other".into(), paragraph: 0, offset: 0, select: 0 });
+            let mut theirs = Some(crate::app::CaretRequest { doc_id: "other".into(), paragraph: 0, offset: 0, select: 0, focus: true });
             other = take_caret_request(&mut theirs, ui, "doc", &content, id);
             assert!(theirs.is_some());
             placed = take_caret_request(&mut request, ui, "doc", &content, id);

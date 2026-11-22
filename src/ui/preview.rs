@@ -300,6 +300,7 @@ pub fn paged_view(
                                     paragraph,
                                     offset,
                                     select: 0,
+                                    focus: true,
                                 });
                             }
                         }

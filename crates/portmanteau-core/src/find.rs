@@ -124,6 +124,8 @@ pub enum ReplaceScope {
     All,
     /// Everything in one document or item.
     Source(FindSource),
+    /// Everything in one field of one document or item (its text, say).
+    Field(FindSource, HitField),
     /// A single hit, as reported by `find_all` (source, field and start).
     Hit(FindSource, HitField, usize),
 }
@@ -333,7 +335,9 @@ impl Project {
             let in_scope = match scope {
                 ReplaceScope::All => true,
                 ReplaceScope::Source(wanted) => *wanted == source,
-                ReplaceScope::Hit(wanted, wanted_field, _) => *wanted == source && *wanted_field == field,
+                ReplaceScope::Field(wanted, wanted_field) | ReplaceScope::Hit(wanted, wanted_field, _) => {
+                    *wanted == source && *wanted_field == field
+                }
             };
             if !in_scope {
                 continue;
@@ -358,7 +362,8 @@ impl Project {
                     let Some(doc) = self.document(id) else { continue };
                     let sheet = self.style_sheet_for(doc);
                     let Some(doc) = self.document_mut(id) else { continue };
-                    if job.field == HitField::Body {
+                    // A single replacement is too small to snapshot; bigger ones are.
+                    if job.field == HitField::Body && !matches!(scope, ReplaceScope::Hit(..)) {
                         doc.snapshot("Before replace", format!("Replacing “{}”", query.text));
                     }
                     let target = match job.field {
@@ -483,6 +488,15 @@ mod tests {
         let scope = ReplaceScope::Hit(second.source.clone(), second.field, second.start);
         assert_eq!(p.replace_matches(&query, "<$1>", &scope).unwrap(), 1);
         assert_eq!(p.document(&ch).unwrap().content.plain_text(), "The harbour wall.\nA <Harbour> light, harbourside.");
+    }
+
+    #[test]
+    fn a_field_scope_leaves_the_asides_alone() {
+        let (mut p, ch, _) = project();
+        p.document_mut(&ch).unwrap().synopsis = RichDocument::from_plain_text("harbour synopsis", "body");
+        let scope = ReplaceScope::Field(FindSource::Document(ch.clone()), HitField::Body);
+        assert_eq!(p.replace_matches(&q("harbour"), "port", &scope).unwrap(), 3);
+        assert_eq!(p.document(&ch).unwrap().synopsis.plain_text(), "harbour synopsis");
     }
 
     #[test]

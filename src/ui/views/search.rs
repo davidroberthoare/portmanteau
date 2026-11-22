@@ -62,6 +62,7 @@ impl SearchPage {
     pub fn stale(&mut self) {
         self.ran = None;
     }
+    #[cfg(test)]
     pub fn hits(&self) -> &[FindHit] {
         &self.hits
     }

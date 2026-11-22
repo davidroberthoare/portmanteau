@@ -291,6 +291,8 @@ pub struct CaretRequest {
     pub offset: usize,
     /// Characters to select from there (a found word); 0 places a bare caret.
     pub select: usize,
+    /// Move the keyboard focus into the text (false while typing in the find bar).
+    pub focus: bool,
 }
 
 pub struct Toast {
@@ -390,6 +392,7 @@ pub struct PortmanteauApp {
     pub search: String,
     pub focus_search: bool,
     pub search_page: ui::views::search::SearchPage,
+    pub find_bar: ui::find_bar::FindBar,
     pub focus_mode: bool,
     pub snapshot_name: String,
     pub checkpoint_label: String,
@@ -514,6 +517,16 @@ impl PortmanteauApp {
             collapsed,
             search: String::new(),
             focus_search: false,
+            // Development aid: PORTMANTEAU_FIND=text opens the editor's find bar with that text.
+            find_bar: {
+                let mut bar = ui::find_bar::FindBar::default();
+                if let Ok(text) = std::env::var("PORTMANTEAU_FIND") {
+                    bar.open = true;
+                    bar.query = text;
+                    bar.show_replace = true;
+                }
+                bar
+            },
             // Development aid: PORTMANTEAU_SEARCH=text opens the Search page with that query.
             search_page: {
                 let mut page = ui::views::search::SearchPage::default();
@@ -1909,6 +1922,18 @@ impl PortmanteauApp {
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::F)) {
             self.open_search(None);
         }
+        // Ctrl/Cmd+F: the find bar over the open document (Ctrl/Cmd+H opens it with Replace).
+        let can_find = self.view == View::Write
+            && self.write_mode == WriteMode::Continuous
+            && self.selected.as_deref().and_then(|id| self.ws.project.document(id)).is_some_and(|d| !d.kind.is_folder());
+        if can_find {
+            let (find, replace) = ctx.input_mut(|i| {
+                (i.consume_key(egui::Modifiers::COMMAND, Key::F), i.consume_key(egui::Modifiers::COMMAND, Key::H))
+            });
+            if find || replace {
+                ui::find_bar::open(self, replace);
+            }
+        }
         let (save, save_as, open, compile, focus_toggle) = ctx.input(|i| {
             (
                 i.modifiers.command && i.key_pressed(Key::S),
@@ -2239,14 +2264,14 @@ impl PortmanteauApp {
                 self.selected_research = Some(id.clone());
                 self.view = View::Research;
                 if hit.field == HitField::Body {
-                    self.caret_request = Some(CaretRequest { doc_id: id.clone(), paragraph: hit.paragraph, offset: hit.offset, select: hit.end - hit.start });
+                    self.caret_request = Some(CaretRequest { doc_id: id.clone(), paragraph: hit.paragraph, offset: hit.offset, select: hit.end - hit.start, focus: true });
                 }
             }
             FindSource::Document(id) => {
                 self.open_doc(id.clone());
                 self.write_mode = WriteMode::Continuous;
                 if hit.field == HitField::Body {
-                    self.caret_request = Some(CaretRequest { doc_id: id.clone(), paragraph: hit.paragraph, offset: hit.offset, select: hit.end - hit.start });
+                    self.caret_request = Some(CaretRequest { doc_id: id.clone(), paragraph: hit.paragraph, offset: hit.offset, select: hit.end - hit.start, focus: true });
                 }
             }
         }
@@ -2260,14 +2285,14 @@ impl PortmanteauApp {
             self.selected_research = Some(appearance.doc_id.clone());
             self.view = View::Research;
             if let Some((paragraph, offset)) = appearance.place {
-                self.caret_request = Some(CaretRequest { doc_id: appearance.doc_id.clone(), paragraph, offset, select: 0 });
+                self.caret_request = Some(CaretRequest { doc_id: appearance.doc_id.clone(), paragraph, offset, select: 0, focus: true });
             }
             return;
         }
         self.open_doc(appearance.doc_id.clone());
         self.write_mode = WriteMode::Continuous;
         if let Some((paragraph, offset)) = appearance.place {
-            self.caret_request = Some(CaretRequest { doc_id: appearance.doc_id.clone(), paragraph, offset, select: 0 });
+            self.caret_request = Some(CaretRequest { doc_id: appearance.doc_id.clone(), paragraph, offset, select: 0, focus: true });
         }
     }
 
@@ -3008,6 +3033,43 @@ mod shell_probe {
             .unwrap()
             .content
             .editor_text()
+    }
+
+    /// Ctrl+F opens the find bar over the open document; typing finds matches,
+    /// Enter steps through them and Replace all goes through the command layer.
+    #[test]
+    fn ctrl_f_finds_in_the_open_document_and_replace_all_changes_it() {
+        let app = PortmanteauApp::new(None);
+        let doc_id = app.selected.clone().expect("the demo opens on a chapter");
+        let (mut harness, app) = app_harness(app);
+        press(&mut harness, egui::Modifiers::COMMAND, Key::F);
+        assert!(app.borrow().find_bar.open, "Ctrl+F opens the bar");
+
+        harness.input_mut().events.push(Event::Text("harbour".into()));
+        harness.run_steps(4);
+        let total = app.borrow().find_bar.matches.len();
+        assert!(total >= 2, "the first chapter mentions the harbour more than once");
+        assert!(harness.query_by_label_contains(&format!("1 of {total}")).is_some());
+
+        press(&mut harness, egui::Modifiers::NONE, Key::Enter);
+        assert_eq!(app.borrow().find_bar.current, 1, "Enter goes to the next match");
+
+        {
+            let mut app = app.borrow_mut();
+            app.find_bar.show_replace = true;
+            app.find_bar.replacement = "port".into();
+        }
+        harness.run_steps(3);
+        let before = body_of(&app, &doc_id);
+        harness.get_by_label("Replace all").click();
+        harness.run_steps(4);
+        let after = body_of(&app, &doc_id);
+        assert_ne!(before, after);
+        assert!(!after.to_lowercase().contains("harbour"));
+        assert!(app.borrow().find_bar.matches.is_empty());
+
+        press(&mut harness, egui::Modifiers::NONE, Key::Escape);
+        assert!(!app.borrow().find_bar.open, "Esc closes the bar");
     }
 
     /// The whole feature through the real window: typing in the prose editor,

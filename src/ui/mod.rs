@@ -3,6 +3,7 @@
 
 pub mod binder;
 pub mod editor;
+pub mod find_bar;
 pub mod find_ui;
 pub mod import_review;
 pub mod inspector;

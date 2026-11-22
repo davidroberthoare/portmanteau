@@ -280,7 +280,7 @@ When you add a command, update **all** of these:
 | `idea.add` / `idea.update` / `idea.delete` | Idea board | `{"title":"…","body":"…"}` |
 | `beat.update` | Tick or rewrite a beat | `{"id":"beat-…","done":true}` |
 | `search.find` | Find text (plain/whole word/regex; groups Manuscript, Matter, Research, Database) | `{"query":"…","regex":false,"groups":["Research"]}` |
-| `search.replace` | Replace matches, optionally in one document/item; snapshots first | `{"query":"…","replacement":"…","id":"doc-…"}` |
+| `search.replace` | Replace matches, optionally in one document/item; snapshots first | `{"query":"…","replacement":"…","id":"doc-…","field":"Text","start":12}` (`field` alone: every match in that field; `start` picks one) |
 | `stats` | Words, pages, scenes, log | `{}` |
 | `script.parse` | Loose text → typed blocks + Fountain | `{"text":"INT. …"}` |
 | `export.preview` | What a compile would contain: included and skipped documents for one manuscript type | `{"compile_type":"screenplay","scope":"draft"}` |

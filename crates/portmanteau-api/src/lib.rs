@@ -780,17 +780,18 @@ impl Workspace {
                         None => None,
                     };
                     // `start` (a hit's character offset, with its `field`) narrows it to that one match.
-                    let scope = match (source, payload.get("start").and_then(|v| v.as_u64())) {
-                        (Some(source), Some(start)) => {
-                            let field = match str_arg(&payload, "field").as_deref() {
-                                Some("Synopsis") => HitField::Synopsis,
-                                Some("Notes") => HitField::Notes,
-                                _ => HitField::Body,
-                            };
-                            ReplaceScope::Hit(source, field, start as usize)
-                        }
-                        (Some(source), None) => ReplaceScope::Source(source),
-                        (None, _) => ReplaceScope::All,
+                    let field = match str_arg(&payload, "field").as_deref() {
+                        Some("Text") => Some(HitField::Body),
+                        Some("Synopsis") => Some(HitField::Synopsis),
+                        Some("Notes") => Some(HitField::Notes),
+                        Some(other) => return ApiResponse::err(command, format!("Unknown field {other} (Text, Synopsis, Notes)")),
+                        None => None,
+                    };
+                    let scope = match (source, field, payload.get("start").and_then(|v| v.as_u64())) {
+                        (Some(source), field, Some(start)) => ReplaceScope::Hit(source, field.unwrap_or(HitField::Body), start as usize),
+                        (Some(source), Some(field), None) => ReplaceScope::Field(source, field),
+                        (Some(source), None, None) => ReplaceScope::Source(source),
+                        (None, _, _) => ReplaceScope::All,
                     };
                     match self.project.replace_matches(&query, replacement, &scope) {
                         Ok(count) => {
@@ -1730,7 +1731,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("research.detach", "Remove an attachment from a research note", r#"{"id":"doc-...","name":"file.pdf"}"#),
         ("research.delete", "Delete a research note and its attached files", r#"{"id":"doc-..."}"#),
         ("search.find", "Find text across documents, research and database notes (plain, whole-word or regex; filter by group)", r#"{"query":"...","case_sensitive":false,"whole_word":false,"regex":false,"groups":["Manuscript","Research"],"asides":true,"limit":200}"#),
-        ("search.replace", "Replace every match (or those in one document/item); each changed document gets a snapshot first", r#"{"query":"...","replacement":"...","id":"doc-...","field":"Text","start":12}"#),
+        ("search.replace", "Replace every match, or just those in one document/item (id), one field of it (field) or one match (start); each changed document gets a snapshot first", r#"{"query":"...","replacement":"...","id":"doc-...","field":"Text","start":12}"#),
         ("stats", "Word, page and session statistics", "{}"),
         ("script.parse", "Parse plain text into script blocks", r#"{"text":"INT. ..."}"#),
         ("export.preview", "Preview the compiled manuscript: included and skipped documents for one manuscript type", r#"{"compile_type":"screenplay","scope":"draft"}"#),
