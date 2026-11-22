@@ -92,7 +92,7 @@ How to check output visually (all on this machine):
    Paged shows a document's pages of the real compile with real page numbers.
    Page counts everywhere (inspector, paper header, Compile list, API) come from
    `portmanteau_export::page_counts`, refreshed a moment after typing pauses.
-   The paged view is read-only by design (see the notes in docs/roadmap.md).
+   The Paged view is read-only; see "Editing on pages" in docs/roadmap.md.
 2. ~~PDF page per script document~~ Done: scenes run on; only a chapter-level
    document (episode/act) starts a page (`content::starts_new_page`, all writers).
 3. **Import review step**: show the split (titles, word counts) before the

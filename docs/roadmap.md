@@ -306,3 +306,17 @@ Next session candidates:
 - Preview page-fit estimate vs real export pagination (clipped lines when estimate is off).
 - FDX style/object mapping review dialog; optional dark theme on the same tokens; further reduction of persistent control rows in Compile.
 - Remove dead `legacy_script_page` in `src/ui/editor.rs` and the unused `insert_image` field on `InlineToolbarResult`.
+
+## Editing on pages (decision pending with the owner)
+
+The continuous editor is one egui `TextEdit` over the whole document; the page
+layout comes from the exporter's own text engine (font advances via skrifa, its
+own line breaking). Editing directly on the exported pages would need a second
+editing engine (caret hit-testing, selection, IME, clipboard, undo, spell
+underlines, inline marks), so every editing feature would be written twice.
+Recommended instead, keeping one editor:
+
+1. Page-break markers in the continuous view, from `pdf_layout` (needs a
+   paragraph index on each layout item).
+2. Click a paragraph in Paged to open Continuous with the caret there.
+3. Keep Paged read-only.
