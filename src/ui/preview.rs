@@ -299,6 +299,7 @@ pub fn paged_view(
                                     doc_id: doc_id.to_string(),
                                     paragraph,
                                     offset,
+                                    select: 0,
                                 });
                             }
                         }

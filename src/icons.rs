@@ -10,6 +10,7 @@ pub enum Icon {
     Corkboard,
     Outline,
     Research,
+    Search,
     Database,
     History,
     Project,
@@ -49,10 +50,14 @@ pub fn draw(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             }
         }
         Icon::Research => {
+            // An open book.
+            line(p(0.0, -0.6), p(0.0, 0.75));
+            painter.add(egui::Shape::line(vec![p(0.0, -0.6), p(-0.55, -0.8), p(-0.95, -0.6), p(-0.95, 0.6), p(-0.55, 0.4), p(0.0, 0.75)], s));
+            painter.add(egui::Shape::line(vec![p(0.0, -0.6), p(0.55, -0.8), p(0.95, -0.6), p(0.95, 0.6), p(0.55, 0.4), p(0.0, 0.75)], s));
+        }
+        Icon::Search => {
             painter.circle_stroke(p(-0.15, -0.15), r * 0.75, s);
             line(p(0.4, 0.4), p(0.95, 0.95));
-            line(p(-0.5, -0.15), p(0.2, -0.15));
-            line(p(-0.15, -0.5), p(-0.15, 0.2));
         }
         Icon::Database => {
             let db = Rect::from_min_max(p(-0.9, -0.75), p(0.9, 0.75));

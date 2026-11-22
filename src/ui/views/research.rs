@@ -586,6 +586,8 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                     };
                     // `@` mentions: the list's keys are taken before the field sees them.
                     let mention_pick = crate::ui::mention::pre_edit(ui.ctx(), body_id);
+                    // A search result or appearance asks for the caret at a place in this note.
+                    let reveal = crate::ui::editor::take_caret_request(&mut app.caret_request, ui, id, &rich_body, body_id);
                     let body_output = TextEdit::multiline(&mut body)
                         .id(body_id)
                         .layouter(&mut layouter)
@@ -595,6 +597,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                         .frame(Frame::NONE)
                         .hint_text("What did you find, and why does it matter to the story?")
                         .show(ui);
+                    crate::ui::editor::reveal_caret(ui, &body_output, reveal);
                     if body_output.response.changed() {
                         rich_body.sync_editor_text(&body, &sheet);
                         let caret = body_output.cursor_range.map(|r| r.primary.index.0);

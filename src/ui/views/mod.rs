@@ -9,6 +9,7 @@ pub mod history;
 pub mod outline;
 pub mod project;
 pub mod research;
+pub mod search;
 pub mod settings;
 
 use eframe::egui::{
@@ -29,6 +30,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         View::Corkboard => corkboard::show(app, ui),
         View::Outline => outline::show(app, ui),
         View::Research => research::show(app, ui),
+        View::Search => search::show(app, ui),
         View::Database => database::show(app, ui),
         View::History => history::show(app, ui),
         View::Project => project::show(app, ui),

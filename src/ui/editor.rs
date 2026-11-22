@@ -2397,7 +2397,7 @@ pub(crate) fn is_rich_field(ctx: &egui::Context, id: Id) -> bool {
 /// A request from the Paged view for this document: put the caret where the
 /// writer clicked and let the text box take focus. Returns the character to
 /// bring into view once the text is laid out.
-fn take_caret_request(
+pub(crate) fn take_caret_request(
     request: &mut Option<crate::app::CaretRequest>,
     ui: &egui::Ui,
     doc_id: &str,
@@ -2411,17 +2411,19 @@ fn take_caret_request(
         .map(|paragraph| paragraph.editor_text().chars().count())
         .unwrap_or(0);
     let caret = rich_paragraph_start(content, request.paragraph) + request.offset.min(length);
+    let selected_to = caret + request.select.min(length.saturating_sub(request.offset.min(length)));
     ui.memory_mut(|memory| memory.request_focus(text_id));
     let mut state = egui::text_edit::TextEditState::load(ui.ctx(), text_id).unwrap_or_default();
-    state
-        .cursor
-        .set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(caret))));
+    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+        egui::text::CCursor::new(caret),
+        egui::text::CCursor::new(selected_to),
+    )));
     state.store(ui.ctx(), text_id);
     Some(caret)
 }
 
 /// Scroll the character a caret request chose into the middle of the view.
-fn reveal_caret(ui: &egui::Ui, output: &egui::text_edit::TextEditOutput, caret: Option<usize>) {
+pub(crate) fn reveal_caret(ui: &egui::Ui, output: &egui::text_edit::TextEditOutput, caret: Option<usize>) {
     let Some(caret) = caret else { return };
     let rect = output
         .galley
@@ -3935,13 +3937,13 @@ mod caret_request_tests {
         let content = portmanteau_core::RichDocument::from_plain_text("First paragraph.\n\nSecond paragraph here.", "body");
         // Paragraph indices count the blank one between the two lines of text.
         let target = content.paragraphs.iter().position(|p| p.plain_text().starts_with("Second")).unwrap();
-        let mut request = Some(crate::app::CaretRequest { doc_id: "doc".into(), paragraph: target, offset: 7 });
+        let mut request = Some(crate::app::CaretRequest { doc_id: "doc".into(), paragraph: target, offset: 7, select: 0 });
         let id = Id::unique("caret-test");
         let mut other = None;
         let mut placed = None;
         ctx.run_ui(egui::RawInput::default(), |ui| {
             // Someone else's request is left alone.
-            let mut theirs = Some(crate::app::CaretRequest { doc_id: "other".into(), paragraph: 0, offset: 0 });
+            let mut theirs = Some(crate::app::CaretRequest { doc_id: "other".into(), paragraph: 0, offset: 0, select: 0 });
             other = take_caret_request(&mut theirs, ui, "doc", &content, id);
             assert!(theirs.is_some());
             placed = take_caret_request(&mut request, ui, "doc", &content, id);

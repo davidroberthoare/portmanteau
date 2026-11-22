@@ -25,6 +25,7 @@ pub enum View {
     Corkboard,
     Outline,
     Research,
+    Search,
     Database,
     History,
     Project,
@@ -40,6 +41,7 @@ impl View {
             View::Corkboard => "Corkboard",
             View::Outline => "Outline",
             View::Research => "Research",
+            View::Search => "Search",
             View::Database => "Database",
             View::History => "Versions",
             View::Project => "Project",
@@ -54,6 +56,7 @@ impl View {
             View::Corkboard => Icon::Corkboard,
             View::Outline => Icon::Outline,
             View::Research => Icon::Research,
+            View::Search => Icon::Search,
             View::Database => Icon::Database,
             View::History => Icon::History,
             View::Project => Icon::Project,
@@ -62,12 +65,13 @@ impl View {
             View::Settings => Icon::Settings,
         }
     }
-    pub fn all() -> [View; 9] {
+    pub fn all() -> [View; 10] {
         [
             View::Write,
             View::Corkboard,
             View::Outline,
             View::Research,
+            View::Search,
             View::Database,
             View::History,
             View::Project,
@@ -285,6 +289,8 @@ pub struct CaretRequest {
     pub paragraph: usize,
     /// Characters into the paragraph.
     pub offset: usize,
+    /// Characters to select from there (a found word); 0 places a bare caret.
+    pub select: usize,
 }
 
 pub struct Toast {
@@ -383,6 +389,7 @@ pub struct PortmanteauApp {
     pub collapsed: HashSet<String>,
     pub search: String,
     pub focus_search: bool,
+    pub search_page: ui::views::search::SearchPage,
     pub focus_mode: bool,
     pub snapshot_name: String,
     pub checkpoint_label: String,
@@ -507,6 +514,15 @@ impl PortmanteauApp {
             collapsed,
             search: String::new(),
             focus_search: false,
+            // Development aid: PORTMANTEAU_SEARCH=text opens the Search page with that query.
+            search_page: {
+                let mut page = ui::views::search::SearchPage::default();
+                if let Ok(text) = std::env::var("PORTMANTEAU_SEARCH") {
+                    page.query = text;
+                    page.show_replace = true;
+                }
+                page
+            },
             focus_mode: std::env::var("PORTMANTEAU_FOCUS").is_ok(),
             snapshot_name: String::new(),
             checkpoint_label: String::new(),
@@ -897,8 +913,8 @@ impl PortmanteauApp {
                 ui.close();
             }
             ui.separator();
-            if ui.button("Search manuscript").clicked() {
-                self.focus_search = true;
+            if ui.button("Search project… (Ctrl+Shift+F)").clicked() {
+                self.open_search(None);
                 ui.close();
             }
             if ui.button("Take snapshot").clicked() {
@@ -1017,10 +1033,10 @@ impl PortmanteauApp {
                         resp.request_focus();
                         self.focus_search = false;
                     }
-                    if !self.search.is_empty() {
-                        if ui.small_button("×").clicked() {
-                            self.search.clear();
-                        }
+                    // Enter hands what was typed to the Search page.
+                    if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !self.search.trim().is_empty() {
+                        let text = std::mem::take(&mut self.search);
+                        self.open_search(Some(text));
                     }
                 });
             });
@@ -1886,6 +1902,13 @@ impl PortmanteauApp {
     }
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
+        if self.view != View::Search {
+            // Results are worked out again each time the page is opened.
+            self.search_page.stale();
+        }
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::F)) {
+            self.open_search(None);
+        }
         let (save, save_as, open, compile, focus_toggle) = ctx.input(|i| {
             (
                 i.modifiers.command && i.key_pressed(Key::S),
@@ -2193,6 +2216,42 @@ impl PortmanteauApp {
         }
     }
 
+    /// Show the Search page, optionally with a new query, ready to type in.
+    pub fn open_search(&mut self, text: Option<String>) {
+        if let Some(text) = text {
+            self.search_page.query = text;
+        }
+        self.search_page.focus = true;
+        self.search_page.stale();
+        self.view = View::Search;
+    }
+
+    /// Go to a search result: the document (or note, or item) with the found
+    /// text selected where it can be.
+    pub fn open_hit(&mut self, hit: &portmanteau_core::FindHit) {
+        use portmanteau_core::{FindSource, HitField};
+        match &hit.source {
+            FindSource::Item(id) => {
+                self.selected_item = Some(id.clone());
+                self.view = View::Database;
+            }
+            FindSource::Document(id) if hit.group == portmanteau_core::SearchGroup::Research => {
+                self.selected_research = Some(id.clone());
+                self.view = View::Research;
+                if hit.field == HitField::Body {
+                    self.caret_request = Some(CaretRequest { doc_id: id.clone(), paragraph: hit.paragraph, offset: hit.offset, select: hit.end - hit.start });
+                }
+            }
+            FindSource::Document(id) => {
+                self.open_doc(id.clone());
+                self.write_mode = WriteMode::Continuous;
+                if hit.field == HitField::Body {
+                    self.caret_request = Some(CaretRequest { doc_id: id.clone(), paragraph: hit.paragraph, offset: hit.offset, select: hit.end - hit.start });
+                }
+            }
+        }
+    }
+
     /// Open a document at the first place a database item appears in it. A
     /// research note opens in Research (it has no caret target); an appearance
     /// only in a synopsis or notes just opens the document.
@@ -2200,12 +2259,15 @@ impl PortmanteauApp {
         if appearance.in_research {
             self.selected_research = Some(appearance.doc_id.clone());
             self.view = View::Research;
+            if let Some((paragraph, offset)) = appearance.place {
+                self.caret_request = Some(CaretRequest { doc_id: appearance.doc_id.clone(), paragraph, offset, select: 0 });
+            }
             return;
         }
         self.open_doc(appearance.doc_id.clone());
         self.write_mode = WriteMode::Continuous;
         if let Some((paragraph, offset)) = appearance.place {
-            self.caret_request = Some(CaretRequest { doc_id: appearance.doc_id.clone(), paragraph, offset });
+            self.caret_request = Some(CaretRequest { doc_id: appearance.doc_id.clone(), paragraph, offset, select: 0 });
         }
     }
 
@@ -2301,7 +2363,7 @@ impl PortmanteauApp {
         match self.view {
             View::Research => self.selected_research.clone().map(HistoryTarget::Doc),
             View::Database => self.selected_item.clone().map(HistoryTarget::Item),
-            View::Settings | View::Compile | View::Agent | View::Project | View::History => None,
+            View::Settings | View::Compile | View::Agent | View::Project | View::History | View::Search => None,
             _ => self.selected.clone().map(HistoryTarget::Doc),
         }
     }
