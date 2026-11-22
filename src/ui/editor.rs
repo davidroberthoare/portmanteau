@@ -2763,6 +2763,17 @@ pub(crate) fn link_support(ctx: &egui::Context, id: Id, content: &mut portmantea
     changed
 }
 
+/// Open the link dialog for `range` of this field's text (the toolbars' Link
+/// button). The dialog itself is shown by `link_support`.
+pub(crate) fn begin_link_edit(
+    ctx: &egui::Context,
+    field: Id,
+    content: &portmanteau_core::RichDocument,
+    range: std::ops::Range<usize>,
+) {
+    ctx.data_mut(|data| data.insert_temp(Id::unique(("link_edit", field)), LinkEdit::for_range(content, range)));
+}
+
 /// A link being made or changed: the characters it covers and its address.
 #[derive(Clone, Debug)]
 struct LinkEdit {

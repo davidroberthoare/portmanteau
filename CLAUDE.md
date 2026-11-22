@@ -95,6 +95,14 @@ How to check output visually (all on this machine):
   only http/https ever reach the system opener; email links are deliberately unsupported); pasting text links the
   addresses in it; HTML and Markdown exports write anchors (hrefs percent-encoded,
   `export_href`); DOCX/RTF/PDF print the text only.
+- **Fixed formatting toolbar** (`src/ui/rich_toolbar.rs`): `show(ui, field_id,
+  &mut content, &Options{styles})` above any rich `TextEdit`, plus `after_edit(...)`
+  after the edited text is synced back. Works on the selection, or holds "pending
+  marks" for the next typing at the caret; shows which marks are active; paragraph
+  style dropdown; Link button; Ctrl/Cmd+B/I/U. Used on research notes only for now;
+  the other fields still use the floating popup (`inline_format_toolbar`). Both
+  share the link dialog (`link_support`). Lists (bullets, numbering) were
+  considered and set aside: the model has no list concept.
 - **Project page** (`src/ui/views/project.rs`, rail icon between Versions and
   Compile): title, subtitle, author, genre, logline, contact, draft label and
   date, daily goal. Edits go through `project.update`. A script cover prints

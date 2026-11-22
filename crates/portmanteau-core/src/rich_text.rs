@@ -847,6 +847,120 @@ impl RichDocument {
         None
     }
 
+    /// The marks that every character in `range` carries, for showing which
+    /// buttons are "on". An empty range is a caret: the marks of the character
+    /// just before it (typing continues in that style), or of the one after it
+    /// at the start of a paragraph.
+    pub fn marks_in(&self, range: Range<usize>) -> Vec<InlineMark> {
+        let (start, end) = (range.start.min(range.end), range.start.max(range.end));
+        let (from, to) = if start == end {
+            let mut offset = 0usize;
+            let mut found = None;
+            for paragraph in &self.paragraphs {
+                let length = content_char_count(&paragraph.content);
+                if start >= offset && start <= offset + length {
+                    // Within the paragraph: the character before the caret, else the first.
+                    found = Some(if start > offset { (start - 1, start) } else { (start, start + 1) });
+                    break;
+                }
+                offset += length + 1;
+            }
+            match found {
+                Some(span) => span,
+                None => return Vec::new(),
+            }
+        } else {
+            (start, end)
+        };
+        let mut common: Option<Vec<InlineMark>> = None;
+        let mut offset = 0usize;
+        for paragraph in &self.paragraphs {
+            let mut at = offset;
+            for item in &paragraph.content {
+                let length = match item {
+                    InlineContent::Text(run) => run.text.chars().count(),
+                    _ => 1,
+                };
+                if let InlineContent::Text(run) = item {
+                    if length > 0 && at < to && at + length > from {
+                        common = Some(match common {
+                            None => run.marks.clone(),
+                            Some(so_far) => so_far.into_iter().filter(|m| run.marks.contains(m)).collect(),
+                        });
+                    }
+                }
+                at += length;
+            }
+            offset += content_char_count(&paragraph.content) + 1;
+        }
+        common.unwrap_or_default()
+    }
+
+    /// Add and remove marks over a document-wide character range in one go
+    /// (what "bold the text I just typed" needs). Returns whether anything changed.
+    pub fn set_marks(&mut self, range: Range<usize>, add: &[InlineMark], remove: &[InlineMark]) -> bool {
+        let start = range.start.min(range.end).min(self.char_count());
+        let end = range.start.max(range.end).min(self.char_count());
+        if start == end {
+            return false;
+        }
+        let mut changed = false;
+        let mut document_offset = 0usize;
+        for paragraph in &mut self.paragraphs {
+            let paragraph_len = content_char_count(&paragraph.content);
+            let local_start = start.saturating_sub(document_offset).min(paragraph_len);
+            let local_end = end.saturating_sub(document_offset).min(paragraph_len);
+            if local_start < local_end {
+                let (left_and_middle, right) = split_content(&paragraph.content, local_end);
+                let (left, mut middle) = split_content(&left_and_middle, local_start);
+                let mut did_change = false;
+                for item in &mut middle {
+                    if let InlineContent::Text(run) = item {
+                        let before = run.marks.clone();
+                        run.marks.retain(|m| !remove.contains(m));
+                        for mark in add {
+                            if !run.marks.contains(mark) {
+                                run.marks.push(*mark);
+                            }
+                        }
+                        run.marks.sort();
+                        did_change |= run.marks != before;
+                    }
+                }
+                if did_change {
+                    let mut content = left;
+                    append_content(&mut content, middle);
+                    append_content(&mut content, right);
+                    paragraph.content = content;
+                    changed = true;
+                }
+            }
+            document_offset += paragraph_len + 1;
+        }
+        changed
+    }
+
+    /// The style of the paragraph holding a character offset.
+    pub fn style_at(&self, offset: usize) -> Option<&str> {
+        self.paragraphs.get(self.position_at(offset).paragraph).map(|p| p.style_id.as_str())
+    }
+
+    /// Give every paragraph touched by `range` (or holding the caret, for an
+    /// empty range) a paragraph style. Returns whether anything changed.
+    pub fn set_paragraph_style(&mut self, range: Range<usize>, style_id: &str) -> bool {
+        let (start, end) = (range.start.min(range.end), range.start.max(range.end));
+        let first = self.position_at(start).paragraph;
+        let last = self.position_at(end).paragraph;
+        let mut changed = false;
+        for paragraph in self.paragraphs.iter_mut().skip(first).take(last + 1 - first.min(last + 1)) {
+            if paragraph.style_id != style_id {
+                paragraph.style_id = style_id.to_string();
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Every linked stretch, as a document-wide character range and its target.
     pub fn links(&self) -> Vec<(Range<usize>, String)> {
         let mut out = Vec::new();
@@ -1608,6 +1722,56 @@ mod tests {
                 InlineContent::Text(run) => !run.marks.contains(&InlineMark::Bold),
                 _ => true,
             }));
+    }
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+
+    fn doc(text: &str) -> RichDocument {
+        RichDocument::from_plain_text(text, "body")
+    }
+
+    #[test]
+    fn marks_are_reported_for_a_selection_and_for_a_caret() {
+        let mut d = doc("plain bold both");
+        d.set_marks(6..15, &[InlineMark::Bold], &[]);
+        d.set_marks(11..15, &[InlineMark::Italic], &[]);
+        assert_eq!(d.marks_in(0..5), []);
+        assert_eq!(d.marks_in(6..10), [InlineMark::Bold]);
+        assert_eq!(d.marks_in(6..15), [InlineMark::Bold], "only what every character shares");
+        assert_eq!(d.marks_in(11..15), [InlineMark::Bold, InlineMark::Italic]);
+        // A caret takes the style of the character before it.
+        assert_eq!(d.marks_in(8..8), [InlineMark::Bold]);
+        assert_eq!(d.marks_in(6..6), [], "just after the plain space, typing is plain");
+        assert_eq!(d.marks_in(0..0), []);
+        let mut starts_bold = doc("bold start");
+        starts_bold.set_marks(0..4, &[InlineMark::Bold], &[]);
+        assert_eq!(starts_bold.marks_in(0..0), [InlineMark::Bold], "at a paragraph start, the first character");
+    }
+
+    #[test]
+    fn marks_can_be_added_and_removed_together_without_touching_the_text() {
+        let mut d = doc("one two three");
+        assert!(d.set_marks(0..13, &[InlineMark::Bold, InlineMark::Underline], &[]));
+        assert!(d.set_marks(4..7, &[], &[InlineMark::Bold]));
+        assert_eq!(d.plain_text(), "one two three");
+        assert_eq!(d.marks_in(0..3), [InlineMark::Bold, InlineMark::Underline]);
+        assert_eq!(d.marks_in(4..7), [InlineMark::Underline]);
+        assert!(!d.set_marks(4..7, &[], &[InlineMark::Bold]), "nothing left to remove");
+    }
+
+    #[test]
+    fn paragraph_styles_apply_to_every_paragraph_the_selection_touches() {
+        let mut d = doc("one\ntwo\nthree");
+        assert!(d.set_paragraph_style(5..9, "heading"));
+        let styles: Vec<_> = d.paragraphs.iter().map(|p| p.style_id.as_str()).collect();
+        assert_eq!(styles, ["body", "heading", "heading"]);
+        assert_eq!(d.style_at(5), Some("heading"));
+        assert!(d.set_paragraph_style(0..0, "quote"), "an empty range is the caret's paragraph");
+        assert_eq!(d.style_at(0), Some("quote"));
+        assert!(!d.set_paragraph_style(0..0, "quote"));
     }
 }
 

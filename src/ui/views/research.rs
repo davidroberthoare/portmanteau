@@ -16,11 +16,9 @@ use eframe::egui::{
 use portmanteau_core::{Document, StyleSheet, RESEARCH_KINDS};
 use serde_json::json;
 
-use crate::app::{ImageInsertState, PortmanteauApp, RichTextTarget, ToastKind};
+use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::*;
-use crate::ui::editor::{
-    inline_format_toolbar, load_rich_image_textures, paint_rich_images, script_flow_layout_job,
-};
+use crate::ui::editor::{load_rich_image_textures, paint_rich_images, script_flow_layout_job};
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button, quiet_button};
 
 // ---------------------------------------------------------------------------
@@ -562,22 +560,15 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                     let spell_on = app.settings.spellcheck;
                     let body_spans = crate::ui::editor::field_spans(checker, spell_on, &body);
                     let body_id = egui::Id::unique(("research_body", id));
-                    let ctx = ui.ctx().clone();
-                    let toolbar = inline_format_toolbar(ui, &ctx, body_id, &mut rich_body);
-                    if toolbar.changed {
-                        changed = true;
-                    }
-                    if let Some(range) = toolbar.insert_image {
-                        app.image_insert = Some(ImageInsertState {
-                            target: RichTextTarget::DocumentBody(id.to_owned()),
-                            range,
-                            path: String::new(),
-                            alt_text: String::new(),
-                            caption: String::new(),
-                            standalone: false,
-                            error: String::new(),
-                        });
-                    }
+                    // The fixed formatting bar (bold, italic, link, paragraph style) above the text.
+                    let bar = crate::ui::rich_toolbar::show(
+                        ui,
+                        body_id,
+                        &mut rich_body,
+                        &crate::ui::rich_toolbar::Options { styles: Some(&sheet) },
+                    );
+                    changed |= bar.changed;
+                    ui.add_space(6.0);
                     let (rich_layout, styles_layout, sheet_layout) = (rich_body.clone(), styles.clone(), sheet.clone());
                     let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
                         let job = script_flow_layout_job(
@@ -602,7 +593,9 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                         .show(ui);
                     if body_output.response.changed() {
                         rich_body.sync_editor_text(&body, &sheet);
-                        crate::ui::editor::autolink_pasted(ui.ctx(), &mut rich_body, body_output.cursor_range.map(|r| r.primary.index.0));
+                        let caret = body_output.cursor_range.map(|r| r.primary.index.0);
+                        crate::ui::editor::autolink_pasted(ui.ctx(), &mut rich_body, caret);
+                        crate::ui::rich_toolbar::after_edit(ui.ctx(), body_id, &mut rich_body, caret);
                         changed = true;
                     }
                     crate::ui::editor::remember_selection_anchor(ui.ctx(), body_output.response.id, &body_output.galley, body_output.galley_pos);
@@ -1145,5 +1138,29 @@ mod tests {
             assert!(jpeg.starts_with(&[0xFF, 0xD8]), "a JPEG");
         }
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The fixed bar formats the selection in the note itself, and a Bold press
+    /// with only a caret formats the text typed next.
+    #[test]
+    fn the_fixed_toolbar_formats_the_selection_of_a_research_note() {
+        use egui_kittest::kittest::Queryable;
+        let (mut harness, app) = research_harness(PortmanteauApp::new(None));
+        harness.run_steps(4);
+        let id = app.borrow().selected_research.clone().unwrap();
+        let body_id = egui::Id::unique(("research_body", id.as_str()));
+        harness.ctx.memory_mut(|m| m.request_focus(body_id));
+        let mut state = egui::text_edit::TextEditState::load(&harness.ctx, body_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+            egui::text::CCursor::new(0),
+            egui::text::CCursor::new(4),
+        )));
+        state.store(&harness.ctx, body_id);
+        harness.run_steps(2);
+        harness.get_by_label("I").click();
+        harness.run_steps(3);
+        let marks = app.borrow().ws.project.document(&id).unwrap().content.marks_in(0..4);
+        assert_eq!(marks, [portmanteau_core::InlineMark::Italic]);
+        assert!(app.borrow().ws.dirty);
     }
 }

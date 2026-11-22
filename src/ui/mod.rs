@@ -6,4 +6,5 @@ pub mod editor;
 pub mod import_review;
 pub mod inspector;
 pub mod preview;
+pub mod rich_toolbar;
 pub mod views;
