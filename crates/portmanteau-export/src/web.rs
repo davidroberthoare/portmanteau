@@ -293,7 +293,8 @@ pub(crate) fn html_runs(paragraph: &ProseParagraph) -> String {
                     text = format!("<s>{text}</s>");
                 }
                 if let Some(href) = run.link.as_deref().and_then(export_href) {
-                    text = format!("<a href=\"{}\">{text}</a>", html_escape(href));
+                    // `href` has no quote, angle bracket or space left in it; `&` still needs escaping.
+                    text = format!("<a href=\"{}\">{text}</a>", html_escape(&href));
                 }
                 out.push_str(&text);
             }

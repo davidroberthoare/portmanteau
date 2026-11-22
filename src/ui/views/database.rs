@@ -438,6 +438,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         .show(ui);
                     if notes_output.response.changed() {
                         rich_notes.sync_editor_text(&draft.notes, &sheet);
+                        crate::ui::editor::autolink_pasted(ui.ctx(), &mut rich_notes, notes_output.cursor_range.map(|r| r.primary.index.0));
                         apply = true;
                     }
                     crate::ui::editor::remember_selection_anchor(ui.ctx(), notes_output.response.id, &notes_output.galley, notes_output.galley_pos);

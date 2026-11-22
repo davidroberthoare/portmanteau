@@ -1020,6 +1020,21 @@ fn links_become_anchors_in_web_formats_and_never_unsafe_ones() {
     let md = markdown_manuscript(&p, &m);
     assert!(md.contains("[the chart](https://example.org/a?b=1&c=2)"), "{md}");
     assert!(!md.contains("javascript:"));
-    assert_eq!(export_href(" HTTPS://X.test "), Some("HTTPS://X.test"));
+    assert_eq!(export_href(" HTTPS://X.test "), Some("HTTPS://X.test".to_string()));
     assert_eq!(export_href("ftp://x"), None);
+
+    // An address cannot break out of its attribute, whatever the project file says.
+    let hostile = r#"https://x.test/" onmouseover="alert(1)" data-x='1'><script>"#;
+    let encoded = export_href(hostile).unwrap();
+    assert!(!encoded.contains(['"', '\'', '<', '>', ' ']), "{encoded}");
+    {
+        let doc = p.document_mut(&id).unwrap();
+        doc.content = RichDocument::from_plain_text("click me", "body");
+        doc.content.set_link(0..8, Some(hostile));
+    }
+    let html = html_manuscript(&p, &s);
+    assert!(!html.contains(r#"onmouseover=""#) && !html.contains("<script>"), "{html}");
+    assert!(html.contains(r#"href="https://x.test/%22%20onmouseover=%22alert%281%29%22%20data-x=%271%27%3E%3Cscript%3E""#), "{html}");
+    let md = markdown_manuscript(&p, &m);
+    assert!(!md.contains(" onmouseover") && !md.contains('<'), "{md}");
 }

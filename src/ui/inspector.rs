@@ -220,6 +220,7 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             .show(ui);
         if synopsis_output.response.changed() {
             doc.synopsis.sync_editor_text(&synopsis, &prose_sheet);
+            crate::ui::editor::autolink_pasted(ui.ctx(), &mut doc.synopsis, synopsis_output.cursor_range.map(|r| r.primary.index.0));
             doc.touch();
             app.ws.dirty = true;
         }
@@ -379,6 +380,7 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             .show(ui);
         if notes_output.response.changed() {
             doc.notes.sync_editor_text(&notes, &prose_sheet);
+            crate::ui::editor::autolink_pasted(ui.ctx(), &mut doc.notes, notes_output.cursor_range.map(|r| r.primary.index.0));
             doc.touch();
             app.ws.dirty = true;
         }

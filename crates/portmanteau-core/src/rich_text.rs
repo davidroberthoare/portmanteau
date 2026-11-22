@@ -847,10 +847,39 @@ impl RichDocument {
         None
     }
 
+    /// Every linked stretch, as a document-wide character range and its target.
+    pub fn links(&self) -> Vec<(Range<usize>, String)> {
+        let mut out = Vec::new();
+        let mut document_offset = 0usize;
+        for paragraph in &self.paragraphs {
+            let mut at = document_offset;
+            for item in &paragraph.content {
+                let length = match item {
+                    InlineContent::Text(run) => run.text.chars().count(),
+                    _ => 1,
+                };
+                if let InlineContent::Text(run) = item {
+                    if let Some(link) = &run.link {
+                        out.push((at..at + length, link.clone()));
+                    }
+                }
+                at += length;
+            }
+            document_offset += content_char_count(&paragraph.content) + 1;
+        }
+        out
+    }
+
     /// Turn every web address in the text (`http://…`, `https://…`) into a
     /// link to itself. Text that is already linked is left alone. Returns how
     /// many addresses were linked.
     pub fn autolink_urls(&mut self) -> usize {
+        self.autolink_urls_in(None)
+    }
+
+    /// `autolink_urls`, limited to addresses lying (even partly) inside `within`
+    /// when it is given: what was just pasted, not the rest of the document.
+    pub fn autolink_urls_in(&mut self, within: Option<Range<usize>>) -> usize {
         let plain: Vec<(usize, String)> = {
             let mut offset = 0usize;
             self.paragraphs
@@ -878,8 +907,10 @@ impl RichDocument {
                     while end > i && ".,;:!?)]}'".contains(chars[end - 1]) {
                         end -= 1;
                     }
-                    if end > i + 8 {
-                        found.push((base + i..base + end, chars[i..end].iter().collect()));
+                    let range = base + i..base + end;
+                    let touches = within.as_ref().is_none_or(|w| range.start < w.end && range.end > w.start);
+                    if end > i + 8 && touches {
+                        found.push((range, chars[i..end].iter().collect()));
                     }
                     i = end.max(i + 1);
                 } else {
@@ -1647,6 +1678,15 @@ mod link_tests {
         let plain_json = serde_json::to_string(&plain).unwrap();
         assert!(!plain_json.contains("link"), "{plain_json}");
         assert_eq!(serde_json::from_str::<RichDocument>(&plain_json).unwrap(), plain);
+    }
+
+    #[test]
+    fn only_addresses_in_the_pasted_range_are_linked() {
+        let mut d = doc("old https://old.test and new https://new.test here");
+        // The second address (chars 29..45) is the pasted part.
+        assert_eq!(d.autolink_urls_in(Some(29..45)), 1);
+        let linked: Vec<_> = d.links().into_iter().map(|(_, l)| l).collect();
+        assert_eq!(linked, ["https://new.test"]);
     }
 
     #[test]

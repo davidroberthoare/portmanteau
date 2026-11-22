@@ -267,6 +267,10 @@ fn paste_clipping(app: &mut PortmanteauApp) {
     let title: String = first.chars().take(70).collect();
     let source = (first.starts_with("http://") || first.starts_with("https://")).then_some(first);
     run_add(app, &title, text.trim(), source);
+    // Web addresses in a clipping become links.
+    if let Some(doc) = app.selected_research.clone().and_then(|id| app.ws.project.document_mut(&id)) {
+        doc.content.autolink_urls();
+    }
 }
 
 /// Files dropped on the window become attachments of the open note.
@@ -598,6 +602,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                         .show(ui);
                     if body_output.response.changed() {
                         rich_body.sync_editor_text(&body, &sheet);
+                        crate::ui::editor::autolink_pasted(ui.ctx(), &mut rich_body, body_output.cursor_range.map(|r| r.primary.index.0));
                         changed = true;
                     }
                     crate::ui::editor::remember_selection_anchor(ui.ctx(), body_output.response.id, &body_output.galley, body_output.galley_pos);
@@ -979,5 +984,37 @@ mod tests {
         harness.get_by_label("Add the first note").click();
         harness.run_steps(3);
         assert_eq!(app.borrow().ws.project.research_docs().len(), 1);
+    }
+
+    /// Select some text in a note, press Ctrl/Cmd+K, give an address, and the
+    /// selection becomes a link in the note itself.
+    #[test]
+    fn ctrl_k_links_the_selected_text_of_a_research_note() {
+        use egui_kittest::kittest::Queryable;
+        let (mut harness, app) = research_harness(PortmanteauApp::new(None));
+        harness.run_steps(4);
+        let id = app.borrow().selected_research.clone().unwrap();
+        let body_id = egui::Id::unique(("research_body", id.as_str()));
+        // Focus the body, select "Mean low water" (the first 14 characters), then Ctrl/Cmd+K.
+        harness.ctx.memory_mut(|m| m.request_focus(body_id));
+        let mut state = egui::text_edit::TextEditState::load(&harness.ctx, body_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+            egui::text::CCursor::new(0),
+            egui::text::CCursor::new(14),
+        )));
+        state.store(&harness.ctx, body_id);
+        harness.run_steps(2);
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+        harness.run_steps(3);
+        assert!(harness.query_by_label("Address").is_some(), "the link dialog opened");
+        // The dialog's address field is the last text box on screen.
+        harness.get_all_by_role(egui::accesskit::Role::TextInput).last().expect("address field").type_text("example.org/tides");
+        harness.run_steps(2);
+        harness.get_by_label("Apply link").click();
+        harness.run_steps(3);
+        let app = app.borrow();
+        let links = app.ws.project.document(&id).unwrap().content.links();
+        assert_eq!(links, [(0..14, "https://example.org/tides".to_string())]);
+        assert!(app.ws.dirty);
     }
 }

@@ -179,6 +179,30 @@ fn browse_for(mode: PathDialog, current: &str) -> Option<String> {
     picked.map(|path| path.display().to_string())
 }
 
+/// A link the desktop may be asked to open: web and mail addresses only, no
+/// whitespace or control characters. A project from elsewhere could carry any
+/// link it likes (`file:`, a custom scheme, a command-looking string), so
+/// nothing else ever reaches the system's opener.
+pub(crate) fn safe_external_url(link: &str) -> Option<&str> {
+    let link = link.trim();
+    let lower = link.to_ascii_lowercase();
+    let scheme_ok = ["http://", "https://", "mailto:"].iter().any(|s| lower.starts_with(s));
+    (scheme_ok && !link.chars().any(|c| c.is_whitespace() || c.is_control())).then_some(link)
+}
+
+/// Ask the desktop to open a web or mail address (already vetted by
+/// `safe_external_url`). The address is one argument to the opener, never part
+/// of a shell command line, so `&` or `;` in it mean nothing.
+fn open_url(url: &str) {
+    #[cfg(target_os = "macos")]
+    let mut command = std::process::Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut command = std::process::Command::new("explorer");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut command = std::process::Command::new("xdg-open");
+    let _ = command.arg(url).spawn();
+}
+
 /// Ask the desktop to open a file. When the file has been moved or deleted,
 /// open its folder instead so the click still leads somewhere useful.
 pub(crate) fn open_path(path: &Path) {
@@ -1890,6 +1914,10 @@ impl PortmanteauApp {
         let ctx = ui.ctx().clone();
         self.handle_shortcuts(&ctx);
         self.undo_redo_shortcuts(&ctx);
+        crate::ui::editor::publish_link_targets(&ctx, &self.ws.project);
+        if let Some(link) = crate::ui::editor::take_clicked_link(&ctx) {
+            self.open_link(&link);
+        }
 
         let focus = self.focus_mode && self.view == View::Write;
         if focus {
@@ -2001,6 +2029,25 @@ impl PortmanteauApp {
             // (and complain) every frame.
             self.ws.dirty = false;
             self.toast("Autosave failed", error, ToastKind::Error);
+        }
+    }
+
+    /// Follow a link the writer Ctrl/Cmd-clicked: another document in the
+    /// project (a research note opens in Research), or a web or mail address.
+    pub fn open_link(&mut self, link: &str) {
+        if let Some(id) = link.strip_prefix(portmanteau_core::rich_text::NOTE_LINK) {
+            match self.ws.project.document(id) {
+                Some(doc) if self.ws.project.in_research(doc) && !doc.kind.is_folder() => {
+                    self.selected_research = Some(id.to_string());
+                    self.view = View::Research;
+                }
+                Some(_) => self.open_doc(id.to_string()),
+                None => self.toast("That document no longer exists", "The link points at something that was deleted.", ToastKind::Info),
+            }
+        } else if let Some(url) = safe_external_url(link) {
+            open_url(url);
+        } else {
+            self.toast("Not opened", "Only web and email links are opened from here.", ToastKind::Info);
         }
     }
 
@@ -2877,5 +2924,43 @@ mod shell_probe {
         crate::ui::editor::mark_rich(&ctx, rich);
         assert!(crate::ui::editor::is_rich_field(&ctx, rich));
         assert!(!crate::ui::editor::is_rich_field(&ctx, plain));
+    }
+
+    /// Following a link: a research note opens in Research, a manuscript
+    /// document in Write, and only web and mail addresses ever reach the
+    /// system's opener.
+    #[test]
+    fn links_open_the_right_place_and_only_safe_addresses_leave_the_app() {
+        let mut app = PortmanteauApp::new(None);
+        let note = app.ws.project.research_docs()[0].id.clone();
+        app.open_link(&format!("note:{note}"));
+        assert_eq!((app.view, app.selected_research.as_deref()), (View::Research, Some(note.as_str())));
+        let chapter = app
+            .ws
+            .project
+            .documents
+            .iter()
+            .find(|d| d.kind == DocKind::Chapter)
+            .unwrap()
+            .id
+            .clone();
+        app.open_link(&format!("note:{chapter}"));
+        assert_eq!((app.view, app.selected.as_deref()), (View::Write, Some(chapter.as_str())));
+        app.open_link("note:no-such-document");
+        assert!(app.toast.as_ref().is_some_and(|t| t.message.contains("no longer exists")));
+
+        assert_eq!(safe_external_url("https://example.org/a?b=1"), Some("https://example.org/a?b=1"));
+        assert_eq!(safe_external_url("  MAILTO:a@b.test "), Some("MAILTO:a@b.test"));
+        for hostile in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "ssh://host",
+            "https://x.test/a b",
+            "https://x.test/\nrm -rf",
+            "-oProxyCommand=evil",
+            "",
+        ] {
+            assert_eq!(safe_external_url(hostile), None, "{hostile:?}");
+        }
     }
 }

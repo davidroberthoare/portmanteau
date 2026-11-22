@@ -1274,6 +1274,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             let caret = output.cursor_range.map(|range| range.primary.index.0);
             doc.content
                 .sync_editor_text_with_caret(&edit_text, &sheet, caret);
+            autolink_pasted(ui.ctx(), &mut doc.content, caret);
             doc.touch();
             dirty = true;
             if let Some(caret) = caret {
@@ -1873,6 +1874,7 @@ pub(crate) fn script_flow_layout_job(
 ) -> egui::text::LayoutJob {
     use egui::text::LayoutJob;
 
+    remember_link_spans(text, content);
     let mut job = LayoutJob::default();
     job.wrap.max_width = wrap_width;
     let mut byte_start = 0usize;
@@ -2038,7 +2040,8 @@ fn append_script_paragraph(
         let marks = paragraph
             .map(|paragraph| inline_marks_at(&paragraph.content, char_index))
             .unwrap_or_default();
-        keys.push((marks, misspelled_char));
+        let linked = paragraph.is_some_and(|paragraph| inline_linked_at(&paragraph.content, char_index));
+        keys.push((marks, misspelled_char, linked));
     }
     if keys.is_empty() {
         job.append("", leading, format);
@@ -2068,6 +2071,11 @@ fn append_script_paragraph(
                 run_format.line_height = Some(image_height.max(font_size));
                 run_format.color = Color32::TRANSPARENT;
             }
+        }
+        if key.2 {
+            // A link reads as one: blue and underlined.
+            run_format.color = LINK_COLOR;
+            run_format.underline = Stroke::new(1.0, LINK_COLOR);
         }
         if key.1 {
             run_format.underline = Stroke::new(1.4, Color32::from_rgb(196, 64, 64));
@@ -2126,6 +2134,27 @@ fn inline_marks_at(
         }
     }
     Vec::new()
+}
+
+/// The colour links are drawn in, in every rich-text field.
+const LINK_COLOR: Color32 = Color32::from_rgb(40, 96, 168);
+
+fn inline_linked_at(content: &[portmanteau_core::InlineContent], char_index: usize) -> bool {
+    let mut offset = 0usize;
+    for item in content {
+        match item {
+            portmanteau_core::InlineContent::Text(run) => {
+                let length = run.text.chars().count();
+                if char_index < offset + length {
+                    return run.link.is_some();
+                }
+                offset += length;
+            }
+            portmanteau_core::InlineContent::HardBreak
+            | portmanteau_core::InlineContent::Image(_) => offset += 1,
+        }
+    }
+    false
 }
 
 fn inline_image_at(
@@ -2294,6 +2323,31 @@ pub(crate) fn paint_rich_images(
     }
 }
 
+/// After a paste into a rich-text field, turn the web addresses it brought in
+/// into links. Only the pasted stretch (which ends at the caret) is looked at,
+/// so a plain address typed earlier stays as the writer left it.
+pub(crate) fn autolink_pasted(
+    ctx: &egui::Context,
+    content: &mut portmanteau_core::RichDocument,
+    caret: Option<usize>,
+) {
+    let pasted: usize = ctx.input(|input| {
+        input
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                egui::Event::Paste(text) => Some(text.chars().count()),
+                _ => None,
+            })
+            .sum()
+    });
+    if pasted == 0 {
+        return;
+    }
+    let end = caret.unwrap_or_else(|| content.char_count());
+    content.autolink_urls_in(Some(end.saturating_sub(pasted)..end));
+}
+
 /// Note that this widget is a rich-text field the app's own undo covers.
 /// Called by every such field each frame it is drawn.
 pub(crate) fn mark_rich(ctx: &egui::Context, id: Id) {
@@ -2368,6 +2422,79 @@ struct SelectionAnchor {
     popup_hovered: bool,
 }
 
+thread_local! {
+    /// The link spans of the text each layouter was last asked to lay out,
+    /// keyed by a hash of that text, so a click on the finished galley can
+    /// tell whether it landed on a link.
+    static LINK_SPANS: std::cell::RefCell<std::collections::HashMap<u64, Vec<(std::ops::Range<usize>, String)>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+fn text_key(text: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn remember_link_spans(text: &str, content: &portmanteau_core::RichDocument) {
+    let spans = content.links();
+    LINK_SPANS.with(|spans_by_text| {
+        let mut map = spans_by_text.borrow_mut();
+        if map.len() > 64 {
+            map.clear();
+        }
+        if spans.is_empty() {
+            map.remove(&text_key(text));
+        } else {
+            map.insert(text_key(text), spans);
+        }
+    });
+}
+
+/// Ctrl/Cmd+click on a link opens it: the target is left for `app::draw` to
+/// act on (see `take_clicked_link`). While the modifier is held the pointer
+/// shows it is a link.
+fn handle_link_click(ctx: &egui::Context, galley: &egui::Galley, galley_pos: egui::Pos2) {
+    let Some(pointer) = ctx.pointer_hover_pos() else { return };
+    let spans = LINK_SPANS.with(|map| map.borrow().get(&text_key(&galley.job.text)).cloned());
+    let Some(spans) = spans else { return };
+    let local = pointer - galley_pos.to_vec2();
+    if !galley.rect.expand(2.0).contains(local) {
+        return;
+    }
+    let index = galley.cursor_from_pos(local.to_vec2()).index.0;
+    let Some((_, link)) = spans.iter().find(|(range, _)| range.contains(&index)) else { return };
+    if ctx.input(|i| i.modifiers.command) {
+        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+        if ctx.input(|i| i.pointer.primary_clicked()) {
+            ctx.data_mut(|data| data.insert_temp(Id::unique("clicked-link"), link.clone()));
+        }
+    }
+}
+
+/// The link the writer Ctrl/Cmd-clicked this frame, if any.
+pub(crate) fn take_clicked_link(ctx: &egui::Context) -> Option<String> {
+    ctx.data_mut(|data| data.remove_temp::<String>(Id::unique("clicked-link")))
+}
+
+/// The documents a link can point at: (id, title, is a research note).
+pub(crate) fn publish_link_targets(ctx: &egui::Context, project: &portmanteau_core::Project) {
+    let mut targets: Vec<(String, String, bool)> = project
+        .research_docs()
+        .into_iter()
+        .map(|d| (d.id.clone(), d.title.clone(), true))
+        .collect();
+    targets.extend(
+        project
+            .ordered_documents()
+            .into_iter()
+            .filter(|d| !d.kind.is_folder() && !project.in_research(d))
+            .map(|d| (d.id.clone(), d.title.clone(), false)),
+    );
+    ctx.data_mut(|data| data.insert_temp(Id::unique("link-targets"), std::sync::Arc::new(targets)));
+}
+
 /// Remember where the current text selection sits on screen so the floating
 /// format popup can be placed beside it on the next frame. Call after the
 /// `TextEdit` has been shown.
@@ -2377,6 +2504,7 @@ pub(crate) fn remember_selection_anchor(
     galley: &egui::Galley,
     galley_pos: egui::Pos2,
 ) {
+    handle_link_click(ctx, galley, galley_pos);
     // Every rich-text field reports its selection here, which is also how the
     // app knows Cmd+Z is its own to handle while such a field has the focus.
     mark_rich(ctx, id);
@@ -2409,13 +2537,41 @@ pub(crate) fn inline_format_toolbar(
     let key = Id::unique(("selection_anchor", id));
     let mut anchor: SelectionAnchor = ctx.data(|data| data.get_temp(key)).unwrap_or_default();
     let mut changed = false;
-    let selection = egui::text_edit::TextEditState::load(ctx, id)
-        .and_then(|state| state.cursor.char_range())
+    let caret_range = egui::text_edit::TextEditState::load(ctx, id).and_then(|state| state.cursor.char_range());
+    let selection = caret_range
         .map(|range| {
             range.primary.index.0.min(range.secondary.index.0)
                 ..range.primary.index.0.max(range.secondary.index.0)
         })
         .filter(|range| range.start < range.end);
+
+    // ---- Links: Ctrl/Cmd+K, or the Link button in the popup below ------
+    let link_key = Id::unique(("link_edit", id));
+    let mut link_edit: Option<LinkEdit> = ctx.data(|data| data.get_temp(link_key));
+    if ctx.memory(|memory| memory.has_focus(id))
+        && ctx.input_mut(|input| input.consume_key(Modifiers::COMMAND, Key::K))
+    {
+        let caret = caret_range.map_or(0, |range| range.primary.index.0);
+        link_edit = match &selection {
+            Some(range) => Some(LinkEdit::for_range(content, range.clone())),
+            // No selection: edit the link the caret is in, if it is in one.
+            None => content.link_at(caret, true).map(|(_, range)| LinkEdit::for_range(content, range)),
+        };
+    }
+    if let Some(edit) = link_edit.take() {
+        match link_editor_window(ctx, id, edit, content) {
+            LinkOutcome::Open(edit) => link_edit = Some(edit),
+            LinkOutcome::Changed => changed = true,
+            LinkOutcome::Closed => {}
+        }
+    }
+    ctx.data_mut(|data| match &link_edit {
+        Some(edit) => {
+            data.insert_temp(link_key, edit.clone());
+        }
+        None => data.remove::<LinkEdit>(link_key),
+    });
+    let mut start_link: Option<std::ops::Range<usize>> = None;
     let visible = selection.is_some() && (anchor.focused || anchor.popup_hovered);
     let (Some(rect), true) = (anchor.rect, visible) else {
         anchor.popup_hovered = false;
@@ -2423,7 +2579,7 @@ pub(crate) fn inline_format_toolbar(
         return InlineToolbarResult { changed, insert_image: None };
     };
     let screen = ctx.content_rect();
-    let width = 4.0 * 30.0 + 14.0;
+    let width = 4.0 * 30.0 + 58.0;
     let x = (rect.left() - 6.0).clamp(screen.left() + 4.0, (screen.right() - width - 4.0).max(0.0));
     let y = if rect.top() - 44.0 < screen.top() + 4.0 {
         rect.bottom() + 8.0
@@ -2472,6 +2628,14 @@ pub(crate) fn inline_format_toolbar(
                                 }
                             }
                         }
+                        let link_button = egui::Button::new(RichText::new("Link").font(ui_small()).color(LINK_COLOR))
+                            .fill(Color32::TRANSPARENT)
+                            .stroke(Stroke::NONE)
+                            .corner_radius(CornerRadius::same(5))
+                            .min_size(Vec2::new(40.0, 26.0));
+                        if ui.add(link_button).on_hover_text("Make the selection a link (Ctrl/Cmd+K)").clicked() {
+                            start_link = selection.clone();
+                        }
                     });
                 });
         });
@@ -2479,7 +2643,142 @@ pub(crate) fn inline_format_toolbar(
         .pointer_hover_pos()
         .is_some_and(|pos| area.response.rect.expand(4.0).contains(pos));
     ctx.data_mut(|data| data.insert_temp(key, anchor));
+    if let Some(range) = start_link {
+        ctx.data_mut(|data| data.insert_temp(link_key, LinkEdit::for_range(content, range)));
+    }
     InlineToolbarResult { changed, insert_image: None }
+}
+
+/// A link being made or changed: the characters it covers and its address.
+#[derive(Clone, Debug)]
+struct LinkEdit {
+    range: std::ops::Range<usize>,
+    url: String,
+    /// The text already links somewhere (so "Remove link" is offered).
+    existing: bool,
+    first_frame: bool,
+}
+
+impl LinkEdit {
+    fn for_range(content: &portmanteau_core::RichDocument, range: std::ops::Range<usize>) -> Self {
+        let existing = content.link_at(range.start, false).map(|(url, _)| url);
+        Self { range, existing: existing.is_some(), url: existing.unwrap_or_default(), first_frame: true }
+    }
+}
+
+enum LinkOutcome {
+    Open(LinkEdit),
+    Changed,
+    Closed,
+}
+
+/// What the writer typed, made into something a link can point at: a bare
+/// domain gets `https://`; an address with no recognised scheme is refused.
+pub(crate) fn normalise_link(typed: &str) -> Option<String> {
+    let typed = typed.trim();
+    if typed.is_empty() || typed.chars().any(char::is_whitespace) {
+        return None;
+    }
+    let lower = typed.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:") {
+        return Some(typed.to_string());
+    }
+    if lower.starts_with(portmanteau_core::rich_text::NOTE_LINK) {
+        return Some(typed.to_string());
+    }
+    if typed.contains("://") || typed.contains(':') && !typed.contains('.') {
+        return None; // some other scheme (file:, javascript:, …)
+    }
+    if typed.contains('@') && typed.contains('.') {
+        return Some(format!("mailto:{typed}"));
+    }
+    typed.contains('.').then(|| format!("https://{typed}"))
+}
+
+fn link_editor_window(
+    ctx: &egui::Context,
+    id: Id,
+    mut edit: LinkEdit,
+    content: &mut portmanteau_core::RichDocument,
+) -> LinkOutcome {
+    let targets: std::sync::Arc<Vec<(String, String, bool)>> = ctx
+        .data(|data| data.get_temp(Id::unique("link-targets")))
+        .unwrap_or_default();
+    let mut outcome = None;
+    let mut open = true;
+    egui::Window::new("Link")
+        .id(Id::unique(("link_window", id)))
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .min_width(420.0)
+        .show(ctx, |ui| {
+            ui.label(RichText::new("Address").font(ui_small()).color(FAINT));
+            let field = ui.add(
+                TextEdit::singleline(&mut edit.url)
+                    .hint_text("https://…, an email address, or choose a document below")
+                    .font(mono(10.5))
+                    .desired_width(f32::INFINITY),
+            );
+            if edit.first_frame {
+                field.request_focus();
+                edit.first_frame = false;
+            }
+            ui.add_space(6.0);
+            let current = edit
+                .url
+                .strip_prefix(portmanteau_core::rich_text::NOTE_LINK)
+                .and_then(|doc_id| targets.iter().find(|(id, _, _)| id == doc_id))
+                .map_or("Or link to a document in this project…".to_string(), |(_, title, _)| title.clone());
+            egui::ComboBox::from_id_salt("link_target")
+                .selected_text(current)
+                .width(380.0)
+                .show_ui(ui, |ui| {
+                    for (research, heading) in [(true, "Research"), (false, "Manuscript")] {
+                        let group: Vec<_> = targets.iter().filter(|(_, _, r)| *r == research).collect();
+                        if group.is_empty() {
+                            continue;
+                        }
+                        ui.label(RichText::new(heading).font(ui_small()).color(FAINT));
+                        for (doc_id, title, _) in group {
+                            let value = format!("{}{doc_id}", portmanteau_core::rich_text::NOTE_LINK);
+                            if ui.selectable_label(edit.url == value, title).clicked() {
+                                edit.url = value;
+                            }
+                        }
+                    }
+                });
+            let normalised = normalise_link(&edit.url);
+            if !edit.url.trim().is_empty() && normalised.is_none() {
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("Use a web address (https://…), an email address, or pick a document.")
+                        .font(ui_small())
+                        .color(RED_INK),
+                );
+            }
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                let apply = ui.add_enabled(normalised.is_some(), egui::Button::new("Apply link"));
+                let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                if (apply.clicked() || (enter && normalised.is_some())) && normalised.is_some() {
+                    let changed = content.set_link(edit.range.clone(), normalised.as_deref());
+                    outcome = Some(if changed { LinkOutcome::Changed } else { LinkOutcome::Closed });
+                }
+                if edit.existing && ui.button("Remove link").clicked() {
+                    let changed = content.set_link(edit.range.clone(), None);
+                    outcome = Some(if changed { LinkOutcome::Changed } else { LinkOutcome::Closed });
+                }
+                if ui.button("Cancel").clicked() {
+                    outcome = Some(LinkOutcome::Closed);
+                }
+            });
+        });
+    if !open {
+        return LinkOutcome::Closed;
+    }
+    outcome.unwrap_or(LinkOutcome::Open(edit))
 }
 
 /// Transitional reference implementation retained while the flow editor is
@@ -3306,6 +3605,64 @@ fn empty_state(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 /// window, GPU or display is involved: `cargo test` runs them like any other
 /// unit test. Frames are fed by hand with synthetic [`egui::RawInput`], which
 /// is exactly what an eframe integration would deliver.
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+
+    #[test]
+    fn typed_addresses_become_safe_links_or_are_refused() {
+        assert_eq!(normalise_link(" https://example.org/x "), Some("https://example.org/x".into()));
+        assert_eq!(normalise_link("example.org/page"), Some("https://example.org/page".into()));
+        assert_eq!(normalise_link("ada@example.org"), Some("mailto:ada@example.org".into()));
+        assert_eq!(normalise_link("note:doc-123"), Some("note:doc-123".into()));
+        for refused in ["", "javascript:alert(1)", "file:///etc/passwd", "two words.org", "ftp://x.test", "localhost"] {
+            assert_eq!(normalise_link(refused), None, "{refused:?}");
+        }
+    }
+
+    #[test]
+    fn a_paste_links_the_addresses_it_brought_and_nothing_else() {
+        let ctx = egui::Context::default();
+        let pasted = "see https://example.org/map now";
+        let mut content = portmanteau_core::RichDocument::from_plain_text(
+            &format!("typed https://typed.test earlier. {pasted}"),
+            "body",
+        );
+        let caret = content.char_count();
+        let input = egui::RawInput { events: vec![egui::Event::Paste(pasted.into())], ..Default::default() };
+        ctx.run_ui(input, |ui| {
+            autolink_pasted(ui.ctx(), &mut content, Some(caret));
+        })
+        .drop_without_applying_deltas();
+        let linked: Vec<_> = content.links().into_iter().map(|(_, l)| l).collect();
+        assert_eq!(linked, ["https://example.org/map"], "the earlier typed address is left alone");
+        // With no paste this frame nothing is linked.
+        let mut other = portmanteau_core::RichDocument::from_plain_text("https://plain.test", "body");
+        ctx.run_ui(egui::RawInput::default(), |ui| autolink_pasted(ui.ctx(), &mut other, None))
+            .drop_without_applying_deltas();
+        assert!(other.links().is_empty());
+    }
+
+    #[test]
+    fn linked_text_is_drawn_as_a_link_and_a_ctrl_click_is_noted() {
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        let mut content = portmanteau_core::RichDocument::from_plain_text("See the chart now.", "body");
+        content.set_link(4..13, Some("https://example.org"));
+        let styles = portmanteau_core::ElementStyles::default();
+        let sheet = portmanteau_core::StyleSheet::novel_prose(&styles);
+        let text = content.editor_text();
+        let job = script_flow_layout_job(&text, &content, &sheet, &styles, 1.0, 400.0, &[]);
+        let linked: Vec<_> = job.sections.iter().filter(|s| s.format.color == LINK_COLOR).collect();
+        assert_eq!(linked.len(), 1, "exactly the linked words are link-coloured");
+        assert_eq!(&job.text[linked[0].byte_range.start.0..linked[0].byte_range.end.0], "the chart");
+        // The layout remembered where the link is, for click handling.
+        let spans = LINK_SPANS.with(|map| map.borrow().get(&text_key(&text)).cloned()).expect("spans registered");
+        assert_eq!(spans, [(4..13, "https://example.org".to_string())]);
+        assert_eq!(take_clicked_link(&ctx), None);
+    }
+}
+
 #[cfg(test)]
 mod caret_request_tests {
     use super::*;

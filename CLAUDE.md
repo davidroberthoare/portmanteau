@@ -82,6 +82,19 @@ How to check output visually (all on this machine):
   `convert ... out.pdf` and `pdftotext -bbox-layout` when geometry matters.
 - Rebuild with `cargo build --workspace`: a plain `cargo build` leaves the CLI stale.
 
+- **Research** (`src/ui/views/research.rs`): a research note is an ordinary binder
+  document in the Research folder carrying `Document.research: ResearchMeta` (kind,
+  source, attachments); there is no separate research list any more. Commands:
+  `research.add/list/update/attach/detach/delete`. Attachment paths are checked in
+  the API (`checked_research_dir`, `research_file_path`): the folder must be exactly
+  `<project>/assets/research/<id>` as a real directory, names must be bare file
+  names (dropped on load otherwise), and a symlink anywhere is refused. The UI
+  never builds attachment paths itself.
+- **Links** (`TextRun.link`): a web/mail address or `note:<document id>`. Ctrl/Cmd+K
+  or the popup's Link button edits one; Ctrl/Cmd+click follows it (`App::open_link`;
+  only http/https/mailto ever reach the system opener); pasting text links the
+  addresses in it; HTML and Markdown exports write anchors (hrefs percent-encoded,
+  `export_href`); DOCX/RTF/PDF print the text only.
 - **Project page** (`src/ui/views/project.rs`, rail icon between Versions and
   Compile): title, subtitle, author, genre, logline, contact, draft label and
   date, daily goal. Edits go through `project.update`. A script cover prints
@@ -108,7 +121,8 @@ How to check output visually (all on this machine):
 4. Per-document compile overrides and a "compile with last settings" action.
 5. Undo for binder operations, research and database text.
 6. Drag-and-drop binder, native file pickers (`rfd`), word-level diff, FDX
-   style-mapping dialog, image insertion before first save, packaging.
+   image insertion before first save, packaging. Also: DOCX import of hyperlinks,
+   hyperlinks in DOCX/RTF/PDF export, research tags.
 
 ## Working style
 

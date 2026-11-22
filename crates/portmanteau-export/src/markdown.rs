@@ -22,7 +22,7 @@ pub(crate) fn markdown_runs(paragraph: &ProseParagraph) -> String {
                     text = format!("~~{text}~~");
                 }
                 if let Some(href) = run.link.as_deref().and_then(export_href) {
-                    text = format!("[{text}]({})", href.replace(')', "%29").replace(' ', "%20"));
+                    text = format!("[{text}]({})", href.replace('(', "%28").replace(')', "%29"));
                 }
                 out.push_str(&text);
             }

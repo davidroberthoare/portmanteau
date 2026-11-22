@@ -16,16 +16,30 @@ pub(crate) fn starts_new_page(doc: &Document) -> bool {
     !doc.medium.is_script() || doc.kind == DocKind::Chapter
 }
 
-/// A link as a writer's format may carry it: web and mail addresses only.
-/// A `note:` link points inside the project and means nothing outside it, so
-/// the text prints plain; anything else (a `javascript:` address in a file
-/// from elsewhere, say) is never written out as a link.
-pub(crate) fn export_href(link: &str) -> Option<&str> {
-    let lower = link.trim().to_ascii_lowercase();
-    ["http://", "https://", "mailto:"]
-        .iter()
-        .any(|scheme| lower.starts_with(scheme))
-        .then_some(link.trim())
+/// A link as a writer's format may carry it, made safe to place in an HTML
+/// attribute or a Markdown destination: web and mail addresses only, with every
+/// character that could end the attribute or start markup (quotes, angle
+/// brackets, spaces, control characters, backslashes, anything non-ASCII)
+/// percent-encoded. A `note:` link points inside the project and means nothing
+/// outside it, so its text prints plain; anything else (a `javascript:`
+/// address in a file from elsewhere, say) is never written out as a link.
+pub(crate) fn export_href(link: &str) -> Option<String> {
+    let link = link.trim();
+    let lower = link.to_ascii_lowercase();
+    if !["http://", "https://", "mailto:"].iter().any(|scheme| lower.starts_with(scheme)) {
+        return None;
+    }
+    let mut out = String::with_capacity(link.len());
+    for byte in link.bytes() {
+        let keep = byte.is_ascii_alphanumeric()
+            || b"-._~:/?#[]@!$&*+,;=%".contains(&byte);
+        if keep {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    Some(out)
 }
 
 /// `FADE IN:` opens a script flush left; every other transition is a
