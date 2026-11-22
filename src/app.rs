@@ -2204,6 +2204,22 @@ impl PortmanteauApp {
         }
     }
 
+    /// Open a document at the first place a database item appears in it. A
+    /// research note opens in Research (it has no caret target); an appearance
+    /// only in a synopsis or notes just opens the document.
+    pub fn open_appearance(&mut self, appearance: &portmanteau_core::Appearance) {
+        if appearance.in_research {
+            self.selected_research = Some(appearance.doc_id.clone());
+            self.view = View::Research;
+            return;
+        }
+        self.open_doc(appearance.doc_id.clone());
+        self.write_mode = WriteMode::Continuous;
+        if let Some((paragraph, offset)) = appearance.place {
+            self.caret_request = Some(CaretRequest { doc_id: appearance.doc_id.clone(), paragraph, offset });
+        }
+    }
+
     /// Follow a link the writer Ctrl/Cmd-clicked: another document in the
     /// project (a research note opens in Research), or a web address.
     pub fn open_link(&mut self, link: &str) {

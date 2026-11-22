@@ -276,6 +276,18 @@ pub fn demo() -> Project {
         3,
     );
 
+    // Tags, so the list's tag filter and the mention list have something to show.
+    for (name, tags) in [
+        ("Mara Venn", &["family", "harbour"][..]),
+        ("Elias Rook", &["harbour", "archive"][..]),
+        ("The Boy", &["mystery"][..]),
+        ("Ruth Alder", &["family"][..]),
+    ] {
+        if let Some(item) = p.items.iter_mut().find(|i| i.title == name) {
+            item.tags = tags.iter().map(|t| t.to_string()).collect();
+        }
+    }
+
     // ---- Front and back matter -------------------------------------------
     let front = p.folder_id("Front Matter").unwrap();
     let copyright = p.add_document(Some(front.clone()), "Copyright", DocKind::FrontMatter, Medium::Prose);

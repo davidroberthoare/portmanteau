@@ -413,7 +413,6 @@ pub struct DatabaseItem {
     pub title: String,
     pub notes: RichDocument,
     pub tags: Vec<String>,
-    pub related: Vec<String>,
     pub color: u8,
 }
 
@@ -425,10 +424,73 @@ impl DatabaseItem {
             title: title.into(),
             notes: RichDocument::empty("body"),
             tags: Vec::new(),
-            related: Vec::new(),
             color: 0,
         }
     }
+}
+
+/// One place a database item is named or linked in the writing.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Appearance {
+    pub doc_id: String,
+    pub title: String,
+    /// The first place in the document's text: its paragraph and the character
+    /// offset in it. `None` when the item is only named in the synopsis or notes.
+    pub place: Option<(usize, usize)>,
+    /// The words around it.
+    pub excerpt: String,
+    /// Found by an `@` link rather than by its name.
+    pub by_link: bool,
+    pub in_research: bool,
+}
+
+/// The names to look for: the whole title, and a character's first name.
+fn item_names(item: &DatabaseItem) -> Vec<Vec<char>> {
+    let title = item.title.trim();
+    let mut names = Vec::new();
+    if !title.is_empty() {
+        names.push(title.to_lowercase().chars().collect());
+        if item.kind == ItemKind::Character {
+            if let Some(first) = title.split_whitespace().next().filter(|w| w.chars().count() >= 3 && w.len() < title.len()) {
+                names.push(first.to_lowercase().chars().collect());
+            }
+        }
+    }
+    names
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '\'' || c == '’'
+}
+
+/// The first whole-word, case-insensitive occurrence of any name, as a char offset.
+fn find_name(text: &[char], names: &[Vec<char>]) -> Option<usize> {
+    let lower: Vec<char> = text.iter().flat_map(|c| c.to_lowercase()).collect();
+    if lower.len() != text.len() {
+        return None; // case mapping changed the length; offsets would be wrong
+    }
+    let mut best: Option<usize> = None;
+    for name in names.iter().filter(|n| !n.is_empty()) {
+        let mut i = 0;
+        while i + name.len() <= lower.len() {
+            if lower[i..i + name.len()] == name[..]
+                && (i == 0 || !is_word_char(lower[i - 1]))
+                && (i + name.len() == lower.len() || !is_word_char(lower[i + name.len()]))
+            {
+                best = Some(best.map_or(i, |b| b.min(i)));
+                break;
+            }
+            i += 1;
+        }
+    }
+    best
+}
+
+fn excerpt_around(text: &[char], at: usize) -> String {
+    let start = at.saturating_sub(28);
+    let end = (at + 48).min(text.len());
+    let body: String = text[start..end].iter().collect::<String>().replace('\n', " ");
+    format!("{}{}{}", if start > 0 { "…" } else { "" }, body.trim(), if end < text.len() { "…" } else { "" })
 }
 
 /// What makes a binder document a research note: a category, where it came
@@ -1529,6 +1591,76 @@ impl Project {
         self.documents.iter().find(|d| d.id == id)
     }
 
+    /// Where a database item shows up in the writing: every document (research
+    /// notes included) that names it or links to it, in binder order, with the
+    /// first such place in the document's own text. A character is also found by
+    /// its first name (a screenplay cue says MARA for Mara Venn). Matching is
+    /// whole-word and ignores case.
+    pub fn appearances_of(&self, item: &DatabaseItem) -> Vec<Appearance> {
+        let names = item_names(item);
+        let link = format!("item:{}", item.id);
+        let mut found = Vec::new();
+        for doc in self.ordered_documents().into_iter().filter(|d| !d.kind.is_folder()) {
+            let mut best: Option<(usize, usize, usize, String, bool)> = None; // (doc-wide start, paragraph, offset, excerpt, by link)
+            let mut consider = |start: usize, paragraph: usize, offset: usize, excerpt: String, by_link: bool| {
+                if best.as_ref().is_none_or(|b| start < b.0) {
+                    best = Some((start, paragraph, offset, excerpt, by_link));
+                }
+            };
+            let mut base = 0usize;
+            for (index, paragraph) in doc.content.paragraphs.iter().enumerate() {
+                let text = paragraph.editor_text();
+                let chars: Vec<char> = text.chars().collect();
+                if let Some(at) = find_name(&chars, &names) {
+                    consider(base + at, index, at, excerpt_around(&chars, at), false);
+                }
+                base += chars.len() + 1;
+            }
+            for (range, target) in doc.content.links() {
+                if target == link {
+                    let position = doc.content.position_at(range.start);
+                    let text: Vec<char> = doc.content.paragraphs[position.paragraph].editor_text().chars().collect();
+                    consider(range.start, position.paragraph, position.offset, excerpt_around(&text, position.offset), true);
+                }
+            }
+            match best {
+                Some((_, paragraph, offset, excerpt, by_link)) => found.push(Appearance {
+                    doc_id: doc.id.clone(),
+                    title: doc.title.clone(),
+                    place: Some((paragraph, offset)),
+                    excerpt,
+                    by_link,
+                    in_research: self.in_research(doc),
+                }),
+                None => {
+                    // Not in the text itself: named in its synopsis or notes.
+                    let aside = format!("{}\n{}", doc.synopsis.plain_text(), doc.notes.plain_text());
+                    let chars: Vec<char> = aside.chars().collect();
+                    if let Some(at) = find_name(&chars, &names) {
+                        found.push(Appearance {
+                            doc_id: doc.id.clone(),
+                            title: doc.title.clone(),
+                            place: None,
+                            excerpt: excerpt_around(&chars, at),
+                            by_link: false,
+                            in_research: self.in_research(doc),
+                        });
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    /// The other database items whose notes link to this one.
+    pub fn items_linking_to(&self, item: &DatabaseItem) -> Vec<&DatabaseItem> {
+        let link = format!("item:{}", item.id);
+        self.items
+            .iter()
+            .filter(|other| other.id != item.id && other.notes.links().iter().any(|(_, target)| *target == link))
+            .collect()
+    }
+
     /// Every research note, in binder order: a document inside the Research
     /// folder that is not itself a folder.
     pub fn research_docs(&self) -> Vec<&Document> {
@@ -2242,5 +2374,77 @@ mod tests {
         value.as_object_mut().unwrap().remove("custom");
         let old: ElementStyles = serde_json::from_value(value).unwrap();
         assert!(old.custom.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod appearance_tests {
+    use super::*;
+
+    fn project_with(text: &str) -> (Project, DatabaseItem, String) {
+        let mut p = Project::new("Test", ProjectKind::Novel);
+        let item = DatabaseItem::new(ItemKind::Character, "Mara Venn");
+        let id = p.add_document(p.folder_id("Draft"), "Chapter", DocKind::Chapter, Medium::Prose);
+        p.document_mut(&id).unwrap().content = RichDocument::from_plain_text(text, "body");
+        p.items.push(item.clone());
+        (p, item, id)
+    }
+
+    #[test]
+    fn an_item_is_found_by_its_name_or_a_characters_first_name_at_the_first_place() {
+        let (p, item, id) = project_with("The tide came in.\nThen MARA stood up. Mara Venn smiled.");
+        let found = p.appearances_of(&item);
+        assert_eq!(found.len(), 1);
+        let a = &found[0];
+        assert_eq!(a.doc_id, id);
+        // Second paragraph, after "Then ".
+        assert_eq!(a.place, Some((1, 5)));
+        assert!(a.excerpt.contains("MARA stood up"), "{}", a.excerpt);
+        assert!(!a.by_link && !a.in_research);
+    }
+
+    #[test]
+    fn matching_is_whole_word_and_a_place_is_not_found_by_a_first_name() {
+        let (p, item, _) = project_with("The Maraud was loud. Maras everywhere.");
+        assert!(p.appearances_of(&item).is_empty(), "Maraud and Maras are other words");
+        let mut place = DatabaseItem::new(ItemKind::Place, "Cold Harbor");
+        place.id = "place-1".into();
+        let mut p = p;
+        p.document_mut(&p.documents.iter().find(|d| d.title == "Chapter").unwrap().id.clone()).unwrap().content =
+            RichDocument::from_plain_text("Cold weather at the harbor.", "body");
+        assert!(p.appearances_of(&place).is_empty(), "only the whole title (or a character's first name) counts");
+    }
+
+    #[test]
+    fn a_link_counts_even_where_the_words_differ_and_notes_only_hits_have_no_place() {
+        let (mut p, item, id) = project_with("She waved to the surveyor.");
+        {
+            let doc = p.document_mut(&id).unwrap();
+            doc.content.set_link(8..14, Some(&format!("item:{}", item.id)));
+        }
+        let found = p.appearances_of(&item);
+        assert_eq!(found.len(), 1);
+        assert!(found[0].by_link);
+        assert_eq!(found[0].place, Some((0, 8)));
+
+        let other = p.add_document(p.folder_id("Draft"), "Scene", DocKind::Scene, Medium::Prose);
+        p.document_mut(&other).unwrap().set_notes_text("Remember to check Mara Venn's timeline.");
+        let found = p.appearances_of(&item);
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[1].title, "Scene");
+        assert_eq!(found[1].place, None, "named in the notes, not the text");
+    }
+
+    #[test]
+    fn items_that_link_to_this_one_are_listed() {
+        let (mut p, item, _) = project_with("x");
+        let mut other = DatabaseItem::new(ItemKind::Place, "Cold Harbor");
+        other.notes = RichDocument::from_plain_text("Home of Mara.", "body");
+        other.notes.set_link(8..12, Some(&format!("item:{}", item.id)));
+        p.items.push(other.clone());
+        let linking = p.items_linking_to(&item);
+        assert_eq!(linking.len(), 1);
+        assert_eq!(linking[0].title, "Cold Harbor");
+        assert!(p.items_linking_to(&other).is_empty());
     }
 }

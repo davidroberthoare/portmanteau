@@ -113,6 +113,15 @@ How to check output visually (all on this machine):
   offered for HTML, EPUB, Markdown, DOCX and RTF (`ExportKind::writes_hyperlinks`);
   off strips links in `prose_paragraphs`, so no writer needs its own switch. PDF
   does not write links yet (would need link annotations).
+- **Database page** (`ui/views/database.rs`): items have a kind, colour, tags and
+  rich notes (the fixed toolbar is on the notes). The old "Related" list is gone:
+  link items by typing `@` in notes (`ui/mention.rs`, also on research notes; a
+  link `item:<id>` or `note:<id>`, followed with Ctrl/Cmd+click). "Linked from"
+  and "Appearances" are derived (`Project::items_linking_to`, `appearances_of`):
+  appearances are every document naming or linking the item (a character is also
+  found by first name), and clicking one opens it at the first place
+  (`App::open_appearance`, via `CaretRequest`). Tags: search, tag chips and tags
+  shown in the list, "used elsewhere" suggestions on the item, and `@` matches tags.
 - **Project page** (`src/ui/views/project.rs`, rail icon between Versions and
   Compile): title, subtitle, author, genre, logline, contact, draft label and
   date, daily goal. Edits go through `project.update`. A script cover prints

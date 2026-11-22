@@ -72,6 +72,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
         let height = (ui.available_height() - 8.0).max(340.0);
         let mut select: Option<String> = None;
+        let filter_id = ui.make_persistent_id("database-list-filter");
+        let mut filter: ListFilter = ui.data(|d| d.get_temp(filter_id)).unwrap_or_default();
         ui.horizontal_top(|ui| {
             ui.allocate_ui_with_layout(
                 Vec2::new(300.0, height),
@@ -84,10 +86,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         .inner_margin(Margin::same(9))
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
+                            filter_ui(ui, &app.ws.project.items, &mut filter);
+                            ui.add_space(6.0);
                             ScrollArea::vertical()
                                 .id_salt("database_list")
                                 .auto_shrink([false, false])
-                                .max_height(height - 20.0)
+                                .max_height(height - 20.0 - filter_height(&app.ws.project.items))
                                 .show(ui, |ui| {
                                     for kind in ItemKind::all() {
                                         let count = app
@@ -95,7 +99,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                             .project
                                             .items
                                             .iter()
-                                            .filter(|i| i.kind == kind)
+                                            .filter(|i| i.kind == kind && filter.allows(i))
                                             .count();
                                         ui.horizontal(|ui| {
                                             ui.label(
@@ -132,8 +136,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                             );
                                         });
                                         ui.add_space(2.0);
-                                        for item in
-                                            app.ws.project.items.iter().filter(|i| i.kind == kind)
+                                        for item in app
+                                            .ws
+                                            .project
+                                            .items
+                                            .iter()
+                                            .filter(|i| i.kind == kind && filter.allows(i))
                                         {
                                             let selected = app.selected_item.as_deref()
                                                 == Some(item.id.as_str());
@@ -154,6 +162,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 }
             });
         });
+        ui.data_mut(|d| d.insert_temp(filter_id, filter));
         if let Some(id) = select {
             app.selected_item = Some(id);
         }
@@ -181,10 +190,12 @@ fn add_item(app: &mut PortmanteauApp, kind: ItemKind) {
 }
 
 fn item_row(ui: &mut egui::Ui, item: &DatabaseItem, selected: bool) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), 34.0),
-        Sense::click(),
-    );
+    // A row with tags is a little taller: the tags sit under the name.
+    let height = if item.tags.is_empty() { 34.0 } else { 46.0 };
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
+    resp.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::Button, true, selected, format!("{} · {}", item.title, item.kind.label()))
+    });
     if selected {
         ui.painter()
             .rect_filled(rect, CornerRadius::same(6), ACCENT_SOFT);
@@ -193,16 +204,91 @@ fn item_row(ui: &mut egui::Ui, item: &DatabaseItem, selected: bool) -> bool {
             .rect_filled(rect, CornerRadius::same(6), PANEL_2);
     }
     let color = FACE_COLORS[item.color as usize % FACE_COLORS.len()];
-    ui.painter()
-        .circle_filled(egui::pos2(rect.left() + 14.0, rect.center().y), 4.5, color);
+    let top = if item.tags.is_empty() { rect.center().y } else { rect.top() + 16.0 };
+    ui.painter().circle_filled(egui::pos2(rect.left() + 14.0, top), 4.5, color);
     ui.painter().text(
-        egui::pos2(rect.left() + 28.0, rect.center().y),
+        egui::pos2(rect.left() + 28.0, top),
         egui::Align2::LEFT_CENTER,
         &item.title,
         ui_body(),
         if selected { TEXT } else { MUTED },
     );
+    if !item.tags.is_empty() {
+        let clip = ui.painter().with_clip_rect(rect.shrink2(Vec2::new(6.0, 0.0)));
+        clip.text(
+            egui::pos2(rect.left() + 28.0, rect.top() + 33.0),
+            egui::Align2::LEFT_CENTER,
+            item.tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join("  "),
+            ui_small(),
+            FAINT,
+        );
+    }
     resp.clicked()
+}
+
+/// What the list shows: a search, and optionally one tag.
+#[derive(Clone, Default)]
+struct ListFilter {
+    search: String,
+    tag: Option<String>,
+}
+
+impl ListFilter {
+    fn allows(&self, item: &DatabaseItem) -> bool {
+        let needle = self.search.trim().to_lowercase();
+        (self.tag.is_none() || item.tags.iter().any(|t| Some(t) == self.tag.as_ref()))
+            && (needle.is_empty()
+                || item.title.to_lowercase().contains(&needle)
+                || item.tags.iter().any(|t| t.to_lowercase().contains(&needle))
+                || item.notes.plain_text().to_lowercase().contains(&needle))
+    }
+}
+
+/// Every tag in use with how many items carry it, most used first.
+fn tag_counts(items: &[DatabaseItem]) -> Vec<(String, usize)> {
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for tag in items.iter().flat_map(|i| i.tags.iter()) {
+        match counts.iter_mut().find(|(t, _)| t == tag) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((tag.clone(), 1)),
+        }
+    }
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase())));
+    counts
+}
+
+/// Roughly how much room the search box and tag chips take, so the list scrolls inside what is left.
+fn filter_height(items: &[DatabaseItem]) -> f32 {
+    let tags = tag_counts(items).len();
+    34.0 + if tags == 0 { 0.0 } else { 28.0 * (1.0 + (tags as f32 / 4.0).floor().min(3.0)) }
+}
+
+fn filter_ui(ui: &mut egui::Ui, items: &[DatabaseItem], filter: &mut ListFilter) {
+    ui.add(
+        TextEdit::singleline(&mut filter.search)
+            .hint_text("Search names, tags and notes")
+            .font(ui_small())
+            .desired_width(f32::INFINITY),
+    );
+    let tags = tag_counts(items);
+    if tags.is_empty() {
+        return;
+    }
+    ui.add_space(4.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+        for (tag, count) in tags {
+            let active = filter.tag.as_deref() == Some(tag.as_str());
+            let button = egui::Button::new(RichText::new(format!("#{tag} {count}")).font(ui_small()).color(if active { TEXT } else { MUTED }))
+                .fill(if active { ACCENT_SOFT } else { PANEL_2 })
+                .stroke(Stroke::new(1.0, if active { ACCENT } else { BORDER_SOFT }))
+                .corner_radius(CornerRadius::same(10))
+                .min_size(Vec2::new(0.0, 20.0));
+            if ui.add(button).on_hover_text("Show only items with this tag").clicked() {
+                filter.tag = if active { None } else { Some(tag) };
+            }
+        }
+    });
 }
 
 struct ItemDraft {
@@ -211,7 +297,6 @@ struct ItemDraft {
     title: String,
     notes: String,
     tags_text: String,
-    related: Vec<String>,
     color: u8,
 }
 
@@ -236,40 +321,28 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
         title: item.title.clone(),
         notes: rich_notes.editor_text(),
         tags_text: app.database_tags_text.clone(),
-        related: item.related.clone(),
         color: item.color,
     };
-    let others: Vec<(String, String)> = app
+    // Where the item is named or linked in the writing (kept a moment while typing).
+    let appearances = appearances_cached(ui.ctx(), &app.ws.project, &item);
+    let linked_from: Vec<(String, String)> = app
         .ws
         .project
-        .items
-        .iter()
-        .filter(|i| i.id != id)
-        .map(|i| (i.id.clone(), i.title.clone()))
+        .items_linking_to(&item)
+        .into_iter()
+        .map(|other| (other.id.clone(), other.title.clone()))
         .collect();
-    let appearances: Vec<String> = if item.kind == ItemKind::Character {
-        let needle = item.title.trim().to_uppercase();
-        if needle.is_empty() {
-            Vec::new()
-        } else {
-            app.ws
-                .project
-                .manuscript_documents()
-                .iter()
-                .filter(|d| d.body_text().to_uppercase().contains(&needle))
-                .map(|d| d.title.clone())
-                .take(8)
-                .collect()
-        }
-    } else {
-        Vec::new()
-    };
+    let tag_suggestions: Vec<String> = tag_counts(&app.ws.project.items)
+        .into_iter()
+        .map(|(tag, _)| tag)
+        .filter(|tag| !item.tags.contains(tag))
+        .take(10)
+        .collect();
+    let mut open_appearance: Option<portmanteau_core::Appearance> = None;
 
     let mut apply = false;
     let mut delete = false;
     let mut select: Option<String> = None;
-    let mut link_add: Option<String> = None;
-    let mut link_remove: Option<String> = None;
     let color = FACE_COLORS[item.color as usize % FACE_COLORS.len()];
 
     Frame::new()
@@ -383,6 +456,32 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     {
                         apply = true;
                     }
+                    if !tag_suggestions.is_empty() {
+                        ui.add_space(3.0);
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                            ui.label(RichText::new("Used elsewhere:").font(ui_small()).color(FAINT));
+                            for tag in &tag_suggestions {
+                                if ui
+                                    .add(
+                                        egui::Button::new(RichText::new(format!("+ #{tag}")).font(ui_small()).color(MUTED))
+                                            .fill(PANEL_2)
+                                            .stroke(Stroke::new(1.0, BORDER_SOFT))
+                                            .corner_radius(CornerRadius::same(10))
+                                            .min_size(Vec2::new(0.0, 20.0)),
+                                    )
+                                    .on_hover_text("Add this tag")
+                                    .clicked()
+                                {
+                                    if !draft.tags_text.trim().is_empty() && !draft.tags_text.trim_end().ends_with(',') {
+                                        draft.tags_text.push_str(", ");
+                                    }
+                                    draft.tags_text.push_str(tag);
+                                    apply = true;
+                                }
+                            }
+                        });
+                    }
                     ui.add_space(10.0);
 
                     section_label(ui, "Notes");
@@ -469,104 +568,68 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     hairline(ui);
                     ui.add_space(10.0);
 
-                    section_label(ui, "Related");
+                    section_label(ui, "Linked from");
                     ui.add_space(4.0);
-                    if draft.related.is_empty() {
+                    if linked_from.is_empty() {
                         ui.label(
-                            RichText::new("No links yet.")
+                            RichText::new("No other item links here. Type @ in another item's notes to link to this one.")
                                 .font(ui_small())
                                 .color(FAINT),
                         );
                     }
                     ui.horizontal_wrapped(|ui| {
-                        for rid in draft.related.iter() {
-                            let title = others
-                                .iter()
-                                .find(|(oid, _)| oid == rid)
-                                .map(|(_, t)| t.clone())
-                                .unwrap_or_else(|| "Missing item".into());
+                        for (oid, title) in &linked_from {
                             if ui
                                 .add(
-                                    egui::Button::new(
-                                        RichText::new(&title).font(ui_body()).color(TEXT),
-                                    )
-                                    .fill(PANEL_2)
-                                    .stroke(Stroke::new(1.0, BORDER_SOFT))
-                                    .corner_radius(CornerRadius::same(20))
-                                    .min_size(Vec2::new(0.0, 24.0)),
+                                    egui::Button::new(RichText::new(title).font(ui_body()).color(TEXT))
+                                        .fill(PANEL_2)
+                                        .stroke(Stroke::new(1.0, BORDER_SOFT))
+                                        .corner_radius(CornerRadius::same(20))
+                                        .min_size(Vec2::new(0.0, 24.0)),
                                 )
                                 .on_hover_text("Open this item")
                                 .clicked()
                             {
-                                select = Some(rid.clone());
-                            }
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        RichText::new("×").font(ui_small()).color(FAINT),
-                                    )
-                                    .frame(false),
-                                )
-                                .on_hover_text("Remove link")
-                                .clicked()
-                            {
-                                link_remove = Some(rid.clone());
+                                select = Some(oid.clone());
                             }
                         }
                     });
-                    ComboBox::from_id_salt(("related_add", draft.id.clone()))
-                        .selected_text("Link an item…")
-                        .width(200.0)
-                        .show_ui(ui, |ui| {
-                            let candidates: Vec<(String, String)> = others
-                                .iter()
-                                .filter(|(oid, _)| !draft.related.contains(oid))
-                                .cloned()
-                                .collect();
-                            if candidates.is_empty() {
-                                ui.label(
-                                    RichText::new("Everything is already linked.")
-                                        .font(ui_small())
-                                        .color(FAINT),
-                                );
-                            }
-                            for (oid, title) in candidates {
-                                if ui.selectable_label(false, title).clicked() {
-                                    link_add = Some(oid);
-                                }
-                            }
-                        });
 
-                    if item.kind == ItemKind::Character {
-                        ui.add_space(14.0);
-                        hairline(ui);
-                        ui.add_space(10.0);
-                        section_label(ui, "Appearances");
-                        ui.add_space(4.0);
-                        if appearances.is_empty() {
-                            ui.label(
-                                RichText::new("Not yet named in the manuscript.")
-                                    .font(ui_small())
-                                    .color(FAINT),
-                            );
-                        } else {
-                            ui.label(
-                                RichText::new(format!(
-                                    "Named in {} document{}",
-                                    appearances.len(),
-                                    if appearances.len() == 1 { "" } else { "s" }
-                                ))
+                    ui.add_space(14.0);
+                    hairline(ui);
+                    ui.add_space(10.0);
+                    section_label(ui, "Appearances");
+                    ui.add_space(4.0);
+                    if appearances.is_empty() {
+                        ui.label(
+                            RichText::new("Not yet named or linked in your writing.")
                                 .font(ui_small())
-                                .color(MUTED),
-                            );
-                            for title in &appearances {
-                                ui.horizontal(|ui| {
-                                    dot(ui, color);
-                                    ui.label(
-                                        RichText::new(title).font(ui_small()).color(MUTED),
-                                    );
-                                });
-                            }
+                                .color(FAINT),
+                        );
+                    } else {
+                        ui.label(
+                            RichText::new(format!(
+                                "In {} document{} · click one to go to the first place",
+                                appearances.len(),
+                                if appearances.len() == 1 { "" } else { "s" }
+                            ))
+                            .font(ui_small())
+                            .color(MUTED),
+                        );
+                        ui.add_space(2.0);
+                        for appearance in appearances.iter().take(30) {
+                            ui.horizontal(|ui| {
+                                dot(ui, color);
+                                let title = if appearance.by_link { format!("{}  @", appearance.title) } else { appearance.title.clone() };
+                                if ui
+                                    .add(egui::Button::new(RichText::new(title).font(ui_body()).color(BLUE)).frame(false))
+                                    .on_hover_text(if appearance.place.is_some() { "Open at the first appearance" } else { "Open (named in its notes or synopsis)" })
+                                    .clicked()
+                                {
+                                    open_appearance = Some(appearance.clone());
+                                }
+                                ui.label(RichText::new(&appearance.excerpt).font(ui_small()).color(FAINT));
+                            });
                         }
                     }
                 });
@@ -579,15 +642,8 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
         return;
     }
 
-    if let Some(rid) = link_add {
-        if !draft.related.contains(&rid) {
-            draft.related.push(rid);
-        }
-        apply = true;
-    }
-    if let Some(rid) = link_remove {
-        draft.related.retain(|x| x != &rid);
-        apply = true;
+    if let Some(appearance) = open_appearance {
+        app.open_appearance(&appearance);
     }
     if apply {
         let tags: Vec<String> = draft
@@ -604,13 +660,32 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
         slot.title = draft.title;
         slot.notes = rich_notes;
         slot.tags = tags;
-        slot.related = draft.related;
         slot.color = draft.color;
         app.ws.dirty = true;
     }
     if let Some(new_id) = select {
         app.selected_item = Some(new_id);
     }
+}
+
+/// Appearances change only when the writing does, and computing them reads every
+/// document, so keep the last answer for a moment while the writer types.
+fn appearances_cached(ctx: &egui::Context, project: &portmanteau_core::Project, item: &DatabaseItem) -> Vec<portmanteau_core::Appearance> {
+    use std::time::{Duration, Instant};
+    type Cached = (String, String, Instant, Vec<portmanteau_core::Appearance>);
+    let key = egui::Id::unique("database-appearances");
+    let fingerprint = format!("{}|{}|{}", project.updated, project.documents.len(), item.title);
+    if let Some((id, seen, at, found)) = ctx.data(|d| d.get_temp::<Cached>(key)) {
+        if id == item.id && (seen == fingerprint || at.elapsed() < Duration::from_millis(900)) {
+            if seen != fingerprint {
+                ctx.request_repaint_after(Duration::from_millis(950));
+            }
+            return found;
+        }
+    }
+    let found = project.appearances_of(item);
+    ctx.data_mut(|d| d.insert_temp(key, (item.id.clone(), fingerprint, Instant::now(), found.clone())));
+    found
 }
 
 fn counts_line(items: &[DatabaseItem]) -> String {
@@ -638,4 +713,87 @@ fn initials(name: &str) -> String {
         .take(2)
         .collect::<String>()
         .to_uppercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn db_harness(app: PortmanteauApp) -> (egui_kittest::Harness<'static>, std::rc::Rc<std::cell::RefCell<PortmanteauApp>>) {
+        let app = std::rc::Rc::new(std::cell::RefCell::new(app));
+        let ui_app = std::rc::Rc::clone(&app);
+        let mut themed = false;
+        let harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(1440.0, 930.0))
+            .with_accessibility_check(false)
+            .allow_missing_glyphs()
+            .build_ui(move |ui| {
+                if !themed {
+                    crate::theme::install(ui.ctx());
+                    themed = true;
+                    return;
+                }
+                crate::ui::mention::publish_targets(ui.ctx(), &ui_app.borrow().ws.project);
+                show(&mut ui_app.borrow_mut(), ui);
+            });
+        (harness, app)
+    }
+
+    #[test]
+    fn tags_filter_the_list_and_show_under_each_name() {
+        use egui_kittest::kittest::Queryable;
+        let (mut harness, _app) = db_harness(PortmanteauApp::new(None));
+        harness.run_steps(4);
+        // List rows are named "<title> · <kind>"; the open item's own heading is not a row.
+        let listed = |harness: &egui_kittest::Harness<'static>, name: &str| harness.query_by_label_contains(&format!("{name} · ")).is_some();
+        for name in ["Mara Venn", "Elias Rook", "The Boy", "Ruth Alder"] {
+            assert!(listed(&harness, name), "{name} is listed");
+        }
+        // The chip for a tag used by two items; pressing it narrows the list to them.
+        harness.get_by_label_contains("#harbour 2").click();
+        harness.run_steps(3);
+        assert!(listed(&harness, "Mara Venn"));
+        assert!(listed(&harness, "Elias Rook"));
+        assert!(!listed(&harness, "The Boy"), "no harbour tag");
+        assert!(!listed(&harness, "Ruth Alder"));
+        // Pressing it again clears the filter.
+        harness.get_by_label_contains("#harbour 2").click();
+        harness.run_steps(3);
+        assert!(listed(&harness, "The Boy"));
+    }
+
+    #[test]
+    fn tag_counts_are_most_used_first_and_the_search_reaches_names_tags_and_notes() {
+        let project = portmanteau_core::sample::demo();
+        let counts = tag_counts(&project.items);
+        assert_eq!(counts[0].1, 2, "the most used tags come first: {counts:?}");
+        assert!(counts.iter().any(|(t, n)| t == "mystery" && *n == 1));
+        let filter = |search: &str, tag: Option<&str>| ListFilter { search: search.into(), tag: tag.map(String::from) };
+        let mara = project.items.iter().find(|i| i.title == "Mara Venn").unwrap();
+        assert!(filter("mara", None).allows(mara));
+        assert!(filter("FAMILY", None).allows(mara), "by tag");
+        assert!(filter("surveyor", None).allows(mara), "by notes");
+        assert!(!filter("mara", Some("mystery")).allows(mara));
+        assert!(!filter("zzz", None).allows(mara));
+    }
+
+    /// Clicking where a character appears opens that document with the caret
+    /// at the first place the name is used.
+    #[test]
+    fn an_appearance_opens_the_document_at_the_first_place() {
+        use egui_kittest::kittest::Queryable;
+        let (mut harness, app) = db_harness(PortmanteauApp::new(None));
+        harness.run_steps(4);
+        let mara = app.borrow().ws.project.items.iter().find(|i| i.title == "Mara Venn").unwrap().clone();
+        let first = app.borrow().ws.project.appearances_of(&mara).into_iter().next().expect("Mara appears");
+        let (paragraph, offset) = first.place.expect("in the text");
+        // The list is below the fold of this window, so activate it through accessibility rather than a pointer click.
+        harness.get_by_label(first.title.as_str()).click_accesskit();
+        harness.run_steps(3);
+        let app = app.borrow();
+        assert_eq!(app.selected.as_deref(), Some(first.doc_id.as_str()));
+        assert_eq!(app.view, crate::app::View::Write);
+        let request = app.caret_request.as_ref().unwrap_or_else(|| panic!("no caret request; clicked {:?}, appearance {first:?}", first.title));
+        assert_eq!((request.doc_id.as_str(), request.paragraph, request.offset), (first.doc_id.as_str(), paragraph, offset));
+    }
 }

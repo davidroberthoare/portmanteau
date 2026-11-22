@@ -625,9 +625,6 @@ impl Workspace {
                 if let Some(Value::Array(tags)) = payload.get("tags") {
                     item.tags = string_list(tags);
                 }
-                if let Some(Value::Array(related)) = payload.get("related") {
-                    item.related = string_list(related);
-                }
                 if let Some(v) = payload.get("color").and_then(|v| v.as_u64()) {
                     item.color = v as u8;
                 }
