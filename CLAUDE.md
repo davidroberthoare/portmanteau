@@ -90,9 +90,9 @@ How to check output visually (all on this machine):
   `<project>/assets/research/<id>` as a real directory, names must be bare file
   names (dropped on load otherwise), and a symlink anywhere is refused. The UI
   never builds attachment paths itself.
-- **Links** (`TextRun.link`): a web/mail address or `note:<document id>`. Ctrl/Cmd+K
+- **Links** (`TextRun.link`): a web address or `note:<document id>`. Ctrl/Cmd+K
   or the popup's Link button edits one; Ctrl/Cmd+click follows it (`App::open_link`;
-  only http/https/mailto ever reach the system opener); pasting text links the
+  only http/https ever reach the system opener; email links are deliberately unsupported); pasting text links the
   addresses in it; HTML and Markdown exports write anchors (hrefs percent-encoded,
   `export_href`); DOCX/RTF/PDF print the text only.
 - **Project page** (`src/ui/views/project.rs`, rail icon between Versions and

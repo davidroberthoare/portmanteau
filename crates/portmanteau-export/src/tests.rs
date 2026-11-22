@@ -1022,6 +1022,7 @@ fn links_become_anchors_in_web_formats_and_never_unsafe_ones() {
     assert!(!md.contains("javascript:"));
     assert_eq!(export_href(" HTTPS://X.test "), Some("HTTPS://X.test".to_string()));
     assert_eq!(export_href("ftp://x"), None);
+    assert_eq!(export_href("mailto:a@b.test"), None, "email links are not written out");
 
     // An address cannot break out of its attribute, whatever the project file says.
     let hostile = r#"https://x.test/" onmouseover="alert(1)" data-x='1'><script>"#;

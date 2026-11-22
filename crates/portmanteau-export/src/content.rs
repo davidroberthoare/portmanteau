@@ -17,7 +17,7 @@ pub(crate) fn starts_new_page(doc: &Document) -> bool {
 }
 
 /// A link as a writer's format may carry it, made safe to place in an HTML
-/// attribute or a Markdown destination: web and mail addresses only, with every
+/// attribute or a Markdown destination: `http` and `https` addresses only, with every
 /// character that could end the attribute or start markup (quotes, angle
 /// brackets, spaces, control characters, backslashes, anything non-ASCII)
 /// percent-encoded. A `note:` link points inside the project and means nothing
@@ -26,7 +26,7 @@ pub(crate) fn starts_new_page(doc: &Document) -> bool {
 pub(crate) fn export_href(link: &str) -> Option<String> {
     let link = link.trim();
     let lower = link.to_ascii_lowercase();
-    if !["http://", "https://", "mailto:"].iter().any(|scheme| lower.starts_with(scheme)) {
+    if !["http://", "https://"].iter().any(|scheme| lower.starts_with(scheme)) {
         return None;
     }
     let mut out = String::with_capacity(link.len());

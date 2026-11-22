@@ -180,71 +180,29 @@ fn browse_for(mode: PathDialog, current: &str) -> Option<String> {
 }
 
 /// A link the desktop may be asked to open: web addresses with a host, and
-/// mail addresses without attachment parameters. A project from elsewhere could
-/// carry any link it likes (`file:`, a custom scheme, a command-looking string,
-/// `mailto:x?attach=/etc/passwd`), so nothing else ever reaches the system's
-/// opener. Whitespace, control characters, backslashes, quotes, angle brackets
-/// and the characters shells and URL handlers treat specially are refused too.
+/// nothing else. A project from elsewhere could carry any link it likes
+/// (`file:`, a custom scheme, a command-looking string), so nothing but a plain
+/// `http` or `https` address ever reaches the system's opener. (Email links are
+/// deliberately not followed: `mailto:` can carry attachment and header
+/// parameters that mail programs act on.) Whitespace, control characters,
+/// backslashes, quotes, angle brackets and the characters shells and URL
+/// handlers treat specially are refused too.
 pub(crate) fn safe_external_url(link: &str) -> Option<&str> {
     let link = link.trim();
     if link.chars().any(|c| c.is_whitespace() || c.is_control() || "\\\"<>|^`".contains(c)) {
         return None;
     }
     let lower = link.to_ascii_lowercase();
-    if let Some(rest) = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://")) {
-        let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-        let host = authority.rsplit('@').next().unwrap_or("");
-        let host = host.rsplit_once(':').map_or(host, |(h, port)| if port.chars().all(|c| c.is_ascii_digit()) { h } else { host });
-        return (!host.is_empty() && host != "." && !host.starts_with('-')).then_some(link);
-    }
-    if let Some(rest) = lower.strip_prefix("mailto:") {
-        // A mail client may decode the whole link before splitting it, so a
-        // delimiter written as an escape (`%3F`, `%26`, `%3D`, `%23`, `%25`)
-        // could turn a harmless-looking value into a new field. Refuse them
-        // anywhere in the link rather than guess how a particular client reads it.
-        let encoded_delimiter = rest
-            .match_indices('%')
-            .any(|(at, _)| rest.get(at + 1..at + 3).is_some_and(|hex| ["3f", "26", "3d", "23", "25"].contains(&hex)));
-        if encoded_delimiter {
-            return None;
-        }
-        let (address, query) = rest.split_once('?').unwrap_or((rest, ""));
-        // The address is a plain list of mailboxes, nothing cleverer.
-        if address.is_empty() || !address.chars().all(|c| c.is_ascii_alphanumeric() || ".@_+-,".contains(c)) {
-            return None;
-        }
-        // Only the header fields a message is composed from; anything else
-        // (`attach`, however it is spelled or percent-encoded) is refused, as
-        // is a key that does not decode.
-        let known = query.split('&').filter(|pair| !pair.is_empty()).all(|pair| {
-            let key = pair.split('=').next().unwrap_or("");
-            percent_decode(key)
-                .is_some_and(|key| ["to", "cc", "bcc", "subject", "body"].contains(&key.to_ascii_lowercase().as_str()))
-        });
-        return known.then_some(link);
-    }
-    None
+    let rest = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://"))?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority.rsplit('@').next().unwrap_or("");
+    let host = host
+        .rsplit_once(':')
+        .map_or(host, |(h, port)| if port.chars().all(|c| c.is_ascii_digit()) { h } else { host });
+    (!host.is_empty() && host != "." && !host.starts_with('-')).then_some(link)
 }
 
-/// `%XX` escapes undone; `None` for a malformed escape or bytes that are not UTF-8.
-fn percent_decode(text: &str) -> Option<String> {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' {
-            let hex = text.get(i + 1..i + 3)?;
-            out.push(u8::from_str_radix(hex, 16).ok()?);
-            i += 3;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
-    }
-    String::from_utf8(out).ok()
-}
-
-/// Ask the desktop to open a web or mail address (already vetted by
+/// Ask the desktop to open a web address (already vetted by
 /// `safe_external_url`). The address is one argument to the opener, never part
 /// of a shell command line, so `&` or `;` in it mean nothing.
 fn open_url(url: &str) {
@@ -2093,7 +2051,7 @@ impl PortmanteauApp {
     }
 
     /// Follow a link the writer Ctrl/Cmd-clicked: another document in the
-    /// project (a research note opens in Research), or a web or mail address.
+    /// project (a research note opens in Research), or a web address.
     pub fn open_link(&mut self, link: &str) {
         if let Some(id) = link.strip_prefix(portmanteau_core::rich_text::NOTE_LINK) {
             match self.ws.project.document(id) {
@@ -2107,7 +2065,7 @@ impl PortmanteauApp {
         } else if let Some(url) = safe_external_url(link) {
             open_url(url);
         } else {
-            self.toast("Not opened", "Only web and email links are opened from here.", ToastKind::Info);
+            self.toast("Not opened", "Only web links are opened from here.", ToastKind::Info);
         }
     }
 
@@ -2987,7 +2945,7 @@ mod shell_probe {
     }
 
     /// Following a link: a research note opens in Research, a manuscript
-    /// document in Write, and only web and mail addresses ever reach the
+    /// document in Write, and only web addresses ever reach the
     /// system's opener.
     #[test]
     fn links_open_the_right_place_and_only_safe_addresses_leave_the_app() {
@@ -3010,14 +2968,7 @@ mod shell_probe {
         assert!(app.toast.as_ref().is_some_and(|t| t.message.contains("no longer exists")));
 
         assert_eq!(safe_external_url("https://example.org/a?b=1"), Some("https://example.org/a?b=1"));
-        assert_eq!(safe_external_url("  MAILTO:a@b.test "), Some("MAILTO:a@b.test"));
         assert_eq!(safe_external_url("https://user@host.test:8080/p?q=1,2#f"), Some("https://user@host.test:8080/p?q=1,2#f"));
-        assert_eq!(safe_external_url("mailto:a@b.test?subject=Hello%20there"), Some("mailto:a@b.test?subject=Hello%20there"));
-        assert_eq!(safe_external_url("mailto:a@b.test,c@d.test"), Some("mailto:a@b.test,c@d.test"));
-        assert_eq!(
-            safe_external_url("mailto:a@b.test?cc=c@d.test&BODY=Hi%0AThere"),
-            Some("mailto:a@b.test?cc=c@d.test&BODY=Hi%0AThere"),
-        );
         for hostile in [
             "file:///etc/passwd",
             "javascript:alert(1)",
@@ -3030,22 +2981,9 @@ mod shell_probe {
             "https://-evil.test",
             "https://x.test\\evil",
             "https://x.test/\"q",
-            "mailto:",
+            "mailto:a@b.test",
+            "MAILTO:a@b.test?subject=Hello",
             "mailto:a@b.test?attach=/etc/passwd",
-            "mailto:a@b.test?subject=hi&Attachment=/x",
-            "mailto:a@b.test?%61ttach=/etc/passwd",
-            "mailto:a@b.test?%41TTACH=/etc/passwd",
-            "mailto:a@b.test?att%61ch=/x",
-            "mailto:a@b.test?x-custom=1",
-            "mailto:a@b.test%3Fattach=/etc/passwd",
-            "mailto:a@b.test%3fattach%3d/x",
-            "mailto:a@b.test?subject=hi%26attach%3D/etc/passwd",
-            "mailto:a@b.test?body=100%25",
-            "mailto:a@b.test?subject=x%23y",
-            "mailto:a b@c.test",
-            "mailto:a@b.test;c@d.test",
-            "mailto:<a>@b.test",
-            "mailto:a@b.test?subject=ok&%zz=1",
             "",
         ] {
             assert_eq!(safe_external_url(hostile), None, "{hostile:?}");

@@ -2673,14 +2673,15 @@ enum LinkOutcome {
 }
 
 /// What the writer typed, made into something a link can point at: a bare
-/// domain gets `https://`; an address with no recognised scheme is refused.
+/// domain gets `https://`; an address with no recognised scheme (an email
+/// address included: email links are not supported) is refused.
 pub(crate) fn normalise_link(typed: &str) -> Option<String> {
     let typed = typed.trim();
     if typed.is_empty() || typed.chars().any(char::is_whitespace) {
         return None;
     }
     let lower = typed.to_ascii_lowercase();
-    if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:") {
+    if lower.starts_with("http://") || lower.starts_with("https://") {
         return Some(typed.to_string());
     }
     if lower.starts_with(portmanteau_core::rich_text::NOTE_LINK) {
@@ -2689,8 +2690,8 @@ pub(crate) fn normalise_link(typed: &str) -> Option<String> {
     if typed.contains("://") || typed.contains(':') && !typed.contains('.') {
         return None; // some other scheme (file:, javascript:, …)
     }
-    if typed.contains('@') && typed.contains('.') {
-        return Some(format!("mailto:{typed}"));
+    if typed.contains('@') {
+        return None;
     }
     typed.contains('.').then(|| format!("https://{typed}"))
 }
@@ -2717,7 +2718,7 @@ fn link_editor_window(
             ui.label(RichText::new("Address").font(ui_small()).color(FAINT));
             let field = ui.add(
                 TextEdit::singleline(&mut edit.url)
-                    .hint_text("https://…, an email address, or choose a document below")
+                    .hint_text("https://… or choose a document below")
                     .font(mono(10.5))
                     .desired_width(f32::INFINITY),
             );
@@ -2753,7 +2754,7 @@ fn link_editor_window(
             if !edit.url.trim().is_empty() && normalised.is_none() {
                 ui.add_space(4.0);
                 ui.label(
-                    RichText::new("Use a web address (https://…), an email address, or pick a document.")
+                    RichText::new("Use a web address (https://…) or pick a document.")
                         .font(ui_small())
                         .color(RED_INK),
                 );
@@ -3613,9 +3614,8 @@ mod link_tests {
     fn typed_addresses_become_safe_links_or_are_refused() {
         assert_eq!(normalise_link(" https://example.org/x "), Some("https://example.org/x".into()));
         assert_eq!(normalise_link("example.org/page"), Some("https://example.org/page".into()));
-        assert_eq!(normalise_link("ada@example.org"), Some("mailto:ada@example.org".into()));
         assert_eq!(normalise_link("note:doc-123"), Some("note:doc-123".into()));
-        for refused in ["", "javascript:alert(1)", "file:///etc/passwd", "two words.org", "ftp://x.test", "localhost"] {
+        for refused in ["", "ada@example.org", "mailto:ada@example.org", "javascript:alert(1)", "file:///etc/passwd", "two words.org", "ftp://x.test", "localhost"] {
             assert_eq!(normalise_link(refused), None, "{refused:?}");
         }
     }
