@@ -228,6 +228,33 @@ pub struct PdfText {
     pub baseline: f32,
     pub size: f32,
     pub segments: Vec<PdfSegment>,
+    /// The document text this line was set from, when it is document text
+    /// (not a title page, heading or page number).
+    pub source: Option<PdfSource>,
+}
+
+/// Where a laid-out line came from in its document. The editor uses it to put
+/// page markers in the text and to turn a click on a page into a caret.
+#[derive(Clone, Debug)]
+pub struct PdfSource {
+    pub doc_id: std::sync::Arc<str>,
+    /// Paragraph index within the document.
+    pub paragraph: usize,
+    /// Characters into the paragraph where this piece of the line starts
+    /// (approximate by a few characters: wrapping drops the spaces it breaks on).
+    pub offset: usize,
+    /// Which line of the paragraph this is, and how many it has.
+    pub line: usize,
+    pub lines: usize,
+}
+
+/// The source a flow stamps on lines until told otherwise.
+#[derive(Clone)]
+struct LineSource {
+    paragraph: usize,
+    offset: usize,
+    line: usize,
+    lines: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -399,6 +426,9 @@ struct Flow {
     pages: Vec<PdfPageLayout>,
     current: PdfPageLayout,
     cursor: f32,
+    /// The document whose text is being set, and the line of it in hand.
+    doc: Option<std::sync::Arc<str>>,
+    line: Option<LineSource>,
 }
 
 impl Flow {
@@ -408,6 +438,8 @@ impl Flow {
             current: PdfPageLayout { items: Vec::new() },
             cursor: frame.top,
             frame,
+            doc: None,
+            line: None,
         }
     }
 
@@ -511,16 +543,31 @@ impl Flow {
         self.ensure(gap + leading);
         self.cursor += gap;
         let baseline = self.cursor + size * 0.80;
+        // Pieces of one justified line are separate words; each knows how far
+        // into the line it starts (a word and the space after it).
+        let mut piece_offset = 0usize;
         for (x, chars) in pieces {
             let segments = segments(chars);
             if !segments.is_empty() {
+                let source = match (&self.doc, &self.line) {
+                    (Some(doc), Some(line)) => Some(PdfSource {
+                        doc_id: doc.clone(),
+                        paragraph: line.paragraph,
+                        offset: line.offset + piece_offset,
+                        line: line.line,
+                        lines: line.lines,
+                    }),
+                    _ => None,
+                };
                 self.current.items.push(PdfText {
                     x: *x,
                     baseline,
                     size,
                     segments,
+                    source,
                 });
             }
+            piece_offset += chars.len() + 1;
         }
         self.cursor += leading;
     }
@@ -560,6 +607,21 @@ pub struct PageCounts {
     /// Pages in the manuscripts, one per manuscript type present (a project
     /// with a novel and a pilot has a book and a script).
     pub total: usize,
+    /// Where each page of a document begins in its text, by document id, in
+    /// page order. The editor draws "Page N" markers from these.
+    pub starts: std::collections::HashMap<String, Vec<PageStart>>,
+}
+
+/// A page boundary inside a document's text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageStart {
+    /// 0-based page in the manuscript.
+    pub page: usize,
+    pub paragraph: usize,
+    /// Characters into the paragraph, and which of its lines starts the page.
+    pub offset: usize,
+    pub line: usize,
+    pub lines: usize,
 }
 
 impl PageCounts {
@@ -594,9 +656,30 @@ pub fn page_counts(project: &Project) -> PageCounts {
         }
         counts.total += layout.page_count();
         for section in &layout.sections {
-            if let Some(id) = &section.doc_id {
-                counts.by_doc.insert(id.clone(), section.page_count);
+            let Some(id) = &section.doc_id else { continue };
+            counts.by_doc.insert(id.clone(), section.page_count);
+            // The first line of this document's own text on each page it
+            // touches (a run-on page may begin with a neighbour's text).
+            let mut starts = Vec::new();
+            for page in section.start_page..section.start_page + section.page_count {
+                let first = layout.pages.get(page).and_then(|layout_page| {
+                    layout_page
+                        .items
+                        .iter()
+                        .filter_map(|item| item.source.as_ref())
+                        .find(|source| &*source.doc_id == id.as_str())
+                });
+                if let Some(source) = first {
+                    starts.push(PageStart {
+                        page,
+                        paragraph: source.paragraph,
+                        offset: source.offset,
+                        line: source.line,
+                        lines: source.lines,
+                    });
+                }
             }
+            counts.starts.insert(id.clone(), starts);
         }
     }
     counts
@@ -678,12 +761,16 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         }
         let start = flow.here();
         let doc_sheet = project.style_sheet_for(doc);
-        let mut blocks: Vec<Block> = crate::screenplay_blocks(project, doc);
+        // Blocks keep their paragraph index: dropping blank ones must not
+        // shift which paragraph a laid-out line points back at.
+        let mut blocks: Vec<(usize, Block)> =
+            crate::screenplay_blocks(project, doc).into_iter().enumerate().collect();
         // Blank blocks are not content; the writer never inserts separators or
         // transitions of its own.
-        blocks.retain(|block| !block.text.trim().is_empty());
+        blocks.retain(|(_, block)| !block.text.trim().is_empty());
+        flow.doc = Some(doc.id.as_str().into());
 
-        for block in &blocks {
+        for (paragraph_index, block) in &blocks {
             let style_ref = doc_sheet
                 .style(style_id_for(block.kind))
                 .map(|style| (&style.format, style.text_transform))
@@ -731,7 +818,18 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
                 flow.page_break();
             }
 
+            // Scene numbers lengthen the printed text but are not in the
+            // paragraph; the offset into the paragraph leaves them out.
+            let lead = text.chars().count().saturating_sub(block.text.chars().count());
+            let mut offset = 0usize;
             for (line_index, line) in lines.iter().enumerate() {
+                flow.line = Some(LineSource {
+                    paragraph: *paragraph_index,
+                    offset: offset.saturating_sub(lead),
+                    line: line_index,
+                    lines: lines.len(),
+                });
+                offset += line.len() + 1;
                 let line_width = chars_width(line, size);
                 let first = line_index == 0;
                 let first_indent = if first {
@@ -760,8 +858,10 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
                     if first { before } else { 0.0 },
                 );
             }
+            flow.line = None;
             flow.space(after);
         }
+        flow.doc = None;
 
         sections.push(PdfLayoutSection {
             label: doc.title.clone(),
@@ -793,6 +893,7 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
                 baseline,
                 size: number_size,
                 segments: vec![PdfSegment { text, face }],
+                source: None,
             });
         }
     }
@@ -839,7 +940,8 @@ fn script_title_page(
                 text: line.text.clone(),
                 face,
             }],
-        }
+                source: None,
+            }
     };
     for line in lines.iter().filter(|line| !line.role.is_footer()) {
         top += line.style.before;
@@ -926,9 +1028,11 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
             &body,
             &settings.font,
         );
+        flow.doc = Some(doc.id.as_str().into());
         for paragraph in prose_paragraphs(project, doc, settings) {
             flow_prose_paragraph(&mut flow, &paragraph, &body, &settings.font);
         }
+        flow.doc = None;
         sections.push(PdfLayoutSection {
             label: doc.title.clone(),
             doc_id: Some(doc.id.clone()),
@@ -963,9 +1067,11 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
             );
             flow.space(format.after.max(6.0));
         }
+        flow.doc = Some(section.doc.id.as_str().into());
         for paragraph in prose_paragraphs(project, section.doc, settings) {
             flow_prose_paragraph(&mut flow, &paragraph, &body, &settings.font);
         }
+        flow.doc = None;
         if settings.include_notes && !section.doc.notes.is_empty() {
             let mut format = body.clone();
             format.size = (body_size - 1.0).max(7.0);
@@ -996,9 +1102,11 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
             &body,
             &settings.font,
         );
+        flow.doc = Some(doc.id.as_str().into());
         for paragraph in prose_paragraphs(project, doc, settings) {
             flow_prose_paragraph(&mut flow, &paragraph, &body, &settings.font);
         }
+        flow.doc = None;
         sections.push(PdfLayoutSection {
             label: doc.title.clone(),
             doc_id: Some(doc.id.clone()),
@@ -1136,7 +1244,8 @@ fn push_aligned(
             text: text.to_string(),
             face,
         }],
-    });
+                source: None,
+            });
 }
 
 fn flow_chapter_heading(
@@ -1231,7 +1340,15 @@ fn flow_prose_paragraph(
     let before = format.before.max(0.0);
     let after = format.after.max(0.0);
 
+    let mut offset = 0usize;
     for (index, line) in lines.iter().enumerate() {
+        flow.line = paragraph.index.map(|paragraph| LineSource {
+            paragraph,
+            offset,
+            line: index,
+            lines: lines.len(),
+        });
+        offset += line.len() + 1;
         let first = index == 0;
         let line_width = chars_width(line, size);
         let extra = if first { first_indent } else { 0.0 };
@@ -1250,6 +1367,7 @@ fn flow_prose_paragraph(
             flow.text_line(line, x, size, leading, gap_before);
         }
     }
+    flow.line = None;
     flow.space(after);
 }
 
@@ -1264,6 +1382,7 @@ fn flow_wrapped_text(
         content: vec![InlineContent::Text(portmanteau_core::TextRun::plain(text))],
         heading: false,
         uppercase: false,
+        index: None,
     };
     flow_prose_paragraph(flow, &paragraph, format, fallback_font);
 }
@@ -1287,7 +1406,8 @@ fn prose_contents_page(
             text: "Contents".into(),
             face: heading_face,
         }],
-    });
+                source: None,
+            });
 
     let step = (size * 1.8).max(14.0);
     let mut y = frame.top + 56.0;
@@ -1313,6 +1433,7 @@ fn prose_contents_page(
                 baseline: y,
                 size,
                 segments: segments(line),
+                source: None,
             });
         }
         items.push(PdfText {
@@ -1323,7 +1444,8 @@ fn prose_contents_page(
                 text: number,
                 face,
             }],
-        });
+                source: None,
+            });
         y += step;
     }
     Some(PdfPageLayout { items })
@@ -1356,6 +1478,7 @@ fn apply_prose_furniture(
                     text: text.clone(),
                     face,
                 }],
+                source: None,
             });
         }
         if hf.page_numbers && (index > 0 || hf.number_on_first_page) {
@@ -1376,6 +1499,7 @@ fn apply_prose_furniture(
                     text: number,
                     face,
                 }],
+                source: None,
             });
         }
     }

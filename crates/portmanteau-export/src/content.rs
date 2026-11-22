@@ -61,6 +61,10 @@ pub(crate) struct ProseParagraph {
     pub(crate) content: Vec<InlineContent>,
     pub(crate) heading: bool,
     pub(crate) uppercase: bool,
+    /// Which paragraph of the source document this is, so a laid-out line can
+    /// point back at the text it came from. `None` for generated text
+    /// (synopsis and note blocks).
+    pub(crate) index: Option<usize>,
 }
 
 impl ProseParagraph {
@@ -134,7 +138,8 @@ pub(crate) fn prose_paragraphs(
     doc.content
         .paragraphs
         .iter()
-        .filter_map(|paragraph| {
+        .enumerate()
+        .filter_map(|(index, paragraph)| {
             let style = sheet.style(&paragraph.style_id);
             let format = prose_style(project, settings, style);
             let name = style
@@ -150,6 +155,7 @@ pub(crate) fn prose_paragraphs(
                 content: paragraph.content.clone(),
                 heading,
                 uppercase,
+                index: Some(index),
             };
             (!resolved.is_empty()).then_some(resolved)
         })
