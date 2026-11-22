@@ -1039,3 +1039,49 @@ fn links_become_anchors_in_web_formats_and_never_unsafe_ones() {
     let md = markdown_manuscript(&p, &m);
     assert!(!md.contains(" onmouseover") && !md.contains('<'), "{md}");
 }
+
+#[test]
+fn the_hyperlinks_option_controls_links_in_every_format_that_can_carry_them() {
+    let mut p = Project::new("Links", ProjectKind::Novel);
+    let id = p.add_document(None, "Chapter", DocKind::Chapter, Medium::Prose);
+    {
+        let doc = p.document_mut(&id).unwrap();
+        doc.content = RichDocument::from_plain_text("See the chart for more.", "body");
+        doc.content.set_link(4..13, Some("https://example.org/chart?a=1&b=2"));
+    }
+    let carries = |kind: ExportKind, text: &str| match kind {
+        ExportKind::Html | ExportKind::Epub => text.contains(r#"<a href="https://example.org/chart?a=1&amp;b=2">the chart</a>"#),
+        ExportKind::Markdown => text.contains("[the chart](https://example.org/chart?a=1&b=2)"),
+        ExportKind::Docx => text.contains(r#"HYPERLINK &quot;https://example.org/chart?a=1&amp;b=2&quot;"#),
+        ExportKind::Rtf => text.contains(r#"{\field{\*\fldinst{HYPERLINK "https://example.org/chart?a=1&b=2"}}"#),
+        _ => false,
+    };
+    for kind in [ExportKind::Html, ExportKind::Epub, ExportKind::Markdown, ExportKind::Docx, ExportKind::Rtf] {
+        assert!(kind.writes_hyperlinks());
+        let mut s = p.settings_for(kind);
+        s.compile_type = Some(CompileType::Prose);
+        s.include_title_page = false;
+        s.include_toc = false;
+        assert!(s.include_hyperlinks, "{kind:?}: on by default");
+        let with = match kind {
+            ExportKind::Docx => docx_document_xml(docx_manuscript(&p, &s)),
+            ExportKind::Epub => epub_file(&epub_manuscript(&p, &s), "OEBPS/chapter-001.xhtml")
+                .to_string(),
+            _ => output_text(kind, &p, &s),
+        };
+        assert!(carries(kind, &with), "{kind:?} should carry the link: {with}");
+        assert!(with.contains("the chart"), "{kind:?}: the words are there either way");
+
+        s.include_hyperlinks = false;
+        let without = match kind {
+            ExportKind::Docx => docx_document_xml(docx_manuscript(&p, &s)),
+            ExportKind::Epub => epub_file(&epub_manuscript(&p, &s), "OEBPS/chapter-001.xhtml").to_string(),
+            _ => output_text(kind, &p, &s),
+        };
+        assert!(!carries(kind, &without) && !without.contains("example.org"), "{kind:?} should print plain text: {without}");
+        assert!(without.contains("the chart"));
+    }
+    for kind in [ExportKind::Pdf, ExportKind::Txt, ExportKind::Fountain, ExportKind::Fdx] {
+        assert!(!kind.writes_hyperlinks(), "{kind:?} has no links to write yet");
+    }
+}

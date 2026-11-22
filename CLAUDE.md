@@ -103,6 +103,16 @@ How to check output visually (all on this machine):
   the other fields still use the floating popup (`inline_format_toolbar`). Both
   share the link dialog (`link_support`). Lists (bullets, numbering) were
   considered and set aside: the model has no list concept.
+- **Pictures in text**: Insert > Image… (with a Browse button) puts one at the caret;
+  Ctrl/Cmd+V with a picture on the clipboard pastes it at the caret (egui only passes
+  text through a paste, so `paste_image_shortcut` watches the key); dropped picture
+  files are inserted in Write (attached in Research). All keep the file in
+  `assets/images` and need a saved project. Headings (chapter heading and any style
+  named "heading") draw bold in the editor, as every export sets them.
+- **Hyperlinks in exports**: `ExportSettings.include_hyperlinks` (default on),
+  offered for HTML, EPUB, Markdown, DOCX and RTF (`ExportKind::writes_hyperlinks`);
+  off strips links in `prose_paragraphs`, so no writer needs its own switch. PDF
+  does not write links yet (would need link annotations).
 - **Project page** (`src/ui/views/project.rs`, rail icon between Versions and
   Compile): title, subtitle, author, genre, logline, contact, draft label and
   date, daily goal. Edits go through `project.update`. A script cover prints

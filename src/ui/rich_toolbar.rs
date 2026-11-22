@@ -1,20 +1,44 @@
 //! A fixed formatting toolbar for any rich-text field.
 //!
-//! Put it above a `TextEdit` that edits a `RichDocument` through the editor's
-//! usual layouter:
+//! **Where it is used now:** the research note body (`views/research.rs`), and
+//! nowhere else on purpose. The other fields (synopsis, notes, database notes,
+//! the prose and script editors) use the floating popup
+//! (`editor::inline_format_toolbar`). Nothing else needs changing to leave it
+//! that way.
 //!
-//! ```ignore
-//! let bar = rich_toolbar::show(ui, field_id, &mut content, &Options::default());
-//! // … show the TextEdit with `.id(field_id)` …
-//! // after syncing the edited text back into `content`:
-//! rich_toolbar::after_edit(ctx, field_id, &mut content, caret);
-//! ```
+//! # How to add it to another field
 //!
-//! It works on the field's selection, or on the caret: with nothing selected
-//! a button means "the text I type next", held as *pending marks* until the
-//! text arrives. The toolbar knows nothing about what the field belongs to, so
-//! the same bar can go on a note, a synopsis or a manuscript. It sits beside
-//! the floating popup (`inline_format_toolbar`) and shares its link dialog.
+//! The field must be an egui `TextEdit` that edits a `RichDocument` through the
+//! editor's usual layouter (as the research body is). Then, in that field's
+//! code:
+//!
+//! 1. **Pick one id** for the field and give the `TextEdit` that same id
+//!    (`TextEdit::multiline(..).id(field_id)`).
+//! 2. **Draw the bar above the field**, each frame, before the `TextEdit`:
+//!    ```ignore
+//!    let bar = rich_toolbar::show(ui, field_id, &mut content,
+//!        &rich_toolbar::Options { styles: Some(&style_sheet) }); // styles: None hides the style menu
+//!    changed |= bar.changed;
+//!    ```
+//! 3. **After the edited text is synced back into `content`** (inside the
+//!    `if response.changed()` block), call
+//!    ```ignore
+//!    rich_toolbar::after_edit(ctx, field_id, &mut content, caret);
+//!    ```
+//!    so a Bold pressed with only a caret applies to the text typed next.
+//! 4. **Report the selection** after showing the `TextEdit`:
+//!    `editor::remember_selection_anchor(ctx, id, &galley, galley_pos)`. This
+//!    is also what makes Ctrl/Cmd+Z, links and link clicks treat the field as
+//!    rich text; every rich field already does it.
+//! 5. **Do not also call `inline_format_toolbar`** for the same field: two bars
+//!    would fight over the same selection.
+//!
+//! The bar works on the field's selection, or on the caret: with nothing
+//! selected a button means "the text I type next", held as *pending marks*
+//! until the text arrives. It knows nothing about what the field belongs to. It
+//! shares the link dialog with the popup (`editor::link_support`), and its marks
+//! and styles are plain `RichDocument` calls (`toggle_mark`, `set_marks`,
+//! `set_paragraph_style`), so it adds no state to the document.
 
 use std::ops::Range;
 

@@ -176,9 +176,18 @@ pub(crate) fn prose_paragraphs(
                 .map(|style| style.text_transform == TextTransform::Uppercase)
                 .unwrap_or(false)
                 || format.uppercase;
+            let mut content = paragraph.content.clone();
+            if !settings.include_hyperlinks {
+                // The writer chose not to carry links: every writer then sees plain text.
+                for item in &mut content {
+                    if let InlineContent::Text(run) = item {
+                        run.link = None;
+                    }
+                }
+            }
             let resolved = ProseParagraph {
                 format,
-                content: paragraph.content.clone(),
+                content,
                 heading,
                 uppercase,
                 index: Some(index),

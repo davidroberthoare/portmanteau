@@ -55,8 +55,24 @@ pub(crate) fn docx_prose_runs(paragraph: &ProseParagraph, fallback_font: &str) -
     for item in &paragraph.content {
         match item {
             InlineContent::Text(run) => {
-                let properties = docx_run_properties(paragraph, &run.marks, fallback_font);
-                out.push_str(&docx_text_run(&paragraph.transform(&run.text), &properties));
+                let mut properties = docx_run_properties(paragraph, &run.marks, fallback_font);
+                let href = run.link.as_deref().and_then(export_href);
+                if href.is_some() {
+                    // Hyperlink blue, underlined (unless the text already is).
+                    properties.push_str("<w:color w:val=\"0563C1\"/>");
+                    if !run.marks.contains(&InlineMark::Underline) {
+                        properties.push_str("<w:u w:val=\"single\"/>");
+                    }
+                }
+                let text_run = docx_text_run(&paragraph.transform(&run.text), &properties);
+                match href {
+                    // A field, not a relationship: no extra package part to keep in step.
+                    Some(href) => out.push_str(&format!(
+                        "<w:fldSimple w:instr=\" HYPERLINK &quot;{}&quot; \">{text_run}</w:fldSimple>",
+                        xml_escape(&href)
+                    )),
+                    None => out.push_str(&text_run),
+                }
             }
             InlineContent::HardBreak => out.push_str("<w:r><w:br/></w:r>"),
             InlineContent::Image(image) => {

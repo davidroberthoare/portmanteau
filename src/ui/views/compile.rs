@@ -1118,6 +1118,9 @@ fn body_panel(
             );
             check(ui, settings, |s| &mut s.include_synopsis, "Include synopses");
             check(ui, settings, |s| &mut s.include_notes, "Include author notes");
+            if kind.writes_hyperlinks() {
+                check(ui, settings, |s| &mut s.include_hyperlinks, "Write links as links");
+            }
             ui.add_space(7.0);
             hairline(ui);
             ui.add_space(7.0);
@@ -1320,6 +1323,7 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
         "include_scene_numbers": settings.include_scene_numbers,
         "include_synopsis": settings.include_synopsis,
         "include_notes": settings.include_notes,
+        "include_hyperlinks": settings.include_hyperlinks,
         "compile_type": settings.compile_type.map(|t| t.key()).unwrap_or("auto"),
         "scope": match &settings.scope {
             CompileScope::Draft => "draft".to_owned(),

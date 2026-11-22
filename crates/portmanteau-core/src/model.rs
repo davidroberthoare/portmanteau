@@ -490,6 +490,15 @@ pub enum ExportKind {
 }
 
 impl ExportKind {
+    /// Whether this format can carry a link in the text. (PDF would need link
+    /// annotations; plain text, Fountain and Final Draft have no links.)
+    pub fn writes_hyperlinks(self) -> bool {
+        matches!(
+            self,
+            ExportKind::Html | ExportKind::Epub | ExportKind::Markdown | ExportKind::Docx | ExportKind::Rtf
+        )
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             ExportKind::Pdf => "PDF",
@@ -1260,6 +1269,10 @@ pub struct ExportSettings {
     pub include_scene_numbers: bool,
     pub include_synopsis: bool,
     pub include_notes: bool,
+    /// Write links in the text as links, in the formats that can carry them
+    /// (see `ExportKind::writes_hyperlinks`).
+    #[serde(default = "default_true")]
+    pub include_hyperlinks: bool,
     pub output_path: String,
     /// Per-format output filename, joined to `output_path` on compile. Blank
     /// falls back to the export engine's standard name.
@@ -1306,6 +1319,7 @@ impl Default for ExportSettings {
             include_scene_numbers: true,
             include_synopsis: false,
             include_notes: false,
+            include_hyperlinks: true,
             output_path: String::new(),
             output_filename: String::new(),
             styles: ElementStyles::default(),

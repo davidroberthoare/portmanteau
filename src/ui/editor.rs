@@ -2000,6 +2000,15 @@ pub(crate) fn script_flow_galley(
     std::sync::Arc::new(out)
 }
 
+/// Whether a paragraph style is a heading: the chapter heading, or any style
+/// the sheet names as one. The exporters make the same call.
+pub(crate) fn is_heading_style(style_id: &str, sheet: &portmanteau_core::StyleSheet) -> bool {
+    style_id == "chapter-heading"
+        || sheet
+            .style(style_id)
+            .is_some_and(|style| style.name.to_ascii_lowercase().contains("heading"))
+}
+
 fn append_script_paragraph(
     job: &mut egui::text::LayoutJob,
     line: &str,
@@ -2028,6 +2037,7 @@ fn append_script_paragraph(
     };
     let display_line = transform_for_display(line, uppercase);
     let paragraph = content.paragraphs.get(index);
+    let heading = paragraph.is_some_and(|p| is_heading_style(&p.style_id, sheet));
     let raw_char_bytes: Vec<usize> = line.char_indices().map(|(byte, _)| byte).collect();
     let display_char_bytes: Vec<usize> =
         display_line.char_indices().map(|(byte, _)| byte).collect();
@@ -2068,7 +2078,12 @@ fn append_script_paragraph(
             .copied()
             .unwrap_or(display_line.len());
         let mut run_format = format.clone();
-        apply_inline_marks(&mut run_format, &key.0);
+        // A heading is set bold, as every export sets it.
+        let mut marks = key.0.clone();
+        if heading && !marks.contains(&portmanteau_core::InlineMark::Bold) {
+            marks.push(portmanteau_core::InlineMark::Bold);
+        }
+        apply_inline_marks(&mut run_format, &marks);
         if end_char == start_char + 1 {
             if let Some(image) = paragraph
                 .and_then(|paragraph| inline_image_at(&paragraph.content, start_char))
@@ -2192,7 +2207,14 @@ fn apply_inline_marks(
 ) {
     use portmanteau_core::InlineMark;
     if marks.contains(&InlineMark::Bold) {
-        format.font_id.family = egui::FontFamily::Name("portmanteau-sans-bold".into());
+        // The bold face of the family the text is already in (a serif stays a
+        // serif); these families are registered in `theme::install`.
+        let family = match &format.font_id.family {
+            egui::FontFamily::Monospace => "page-mono-bold",
+            egui::FontFamily::Name(name) if name.contains("sans") => "page-sans-bold",
+            _ => "page-serif-bold",
+        };
+        format.font_id.family = egui::FontFamily::Name(family.into());
     }
     format.italics = marks.contains(&InlineMark::Italic);
     format.underline = if marks.contains(&InlineMark::Underline) {
@@ -3743,6 +3765,31 @@ mod link_tests {
         for refused in ["", "ada@example.org", "mailto:ada@example.org", "javascript:alert(1)", "file:///etc/passwd", "two words.org", "ftp://x.test", "localhost"] {
             assert_eq!(normalise_link(refused), None, "{refused:?}");
         }
+    }
+
+    /// A heading is set bold, in the same family as the text around it.
+    #[test]
+    fn headings_are_bold_and_bold_keeps_the_serif() {
+        let styles = portmanteau_core::ElementStyles::default();
+        let sheet = portmanteau_core::StyleSheet::novel_prose(&styles);
+        let mut content = portmanteau_core::RichDocument::from_plain_text("A heading\nBody text here", "body");
+        content.set_paragraph_style(0..0, "chapter-heading");
+        assert!(is_heading_style("chapter-heading", &sheet) && !is_heading_style("body", &sheet));
+        let text = content.editor_text();
+        let job = script_flow_layout_job(&text, &content, &sheet, &styles, 1.0, 400.0, &[]);
+        let family_of = |needle: &str| {
+            job.sections
+                .iter()
+                .find(|s| job.text[s.byte_range.start.0..s.byte_range.end.0].contains(needle))
+                .map(|s| s.format.font_id.family.clone())
+                .unwrap()
+        };
+        assert_eq!(family_of("A heading"), egui::FontFamily::Name("page-serif-bold".into()));
+        assert_ne!(family_of("Body text"), egui::FontFamily::Name("page-serif-bold".into()));
+        // A Bold mark in prose no longer turns the text into sans.
+        let mut format = egui::TextFormat { font_id: FontId::new(14.0, egui::FontFamily::Name("portmanteau-serif".into())), ..Default::default() };
+        apply_inline_marks(&mut format, &[portmanteau_core::InlineMark::Bold]);
+        assert_eq!(format.font_id.family, egui::FontFamily::Name("page-serif-bold".into()));
     }
 
     #[test]

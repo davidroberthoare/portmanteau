@@ -561,6 +561,8 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                     let body_spans = crate::ui::editor::field_spans(checker, spell_on, &body);
                     let body_id = egui::Id::unique(("research_body", id));
                     // The fixed formatting bar (bold, italic, link, paragraph style) above the text.
+                    // It is used here only; to put it on another field see the steps at the top
+                    // of `ui/rich_toolbar.rs`.
                     let bar = crate::ui::rich_toolbar::show(
                         ui,
                         body_id,

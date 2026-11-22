@@ -38,9 +38,23 @@ pub(crate) fn rtf_prose_runs(paragraph: &ProseParagraph) -> String {
                     prefix.push_str("\\strike ");
                     suffix.insert_str(0, "\\strike0 ");
                 }
-                out.push_str(&prefix);
-                out.push_str(&rtf_escape(&paragraph.transform(&run.text)));
-                out.push_str(&suffix);
+                let href = run.link.as_deref().and_then(export_href);
+                if href.is_some() {
+                    prefix.push_str("\\ul ");
+                    suffix.insert_str(0, "\\ulnone ");
+                }
+                let text = rtf_escape(&paragraph.transform(&run.text));
+                match href {
+                    // The address has no backslash or brace left in it (export_href).
+                    Some(href) => out.push_str(&format!(
+                        "{{\\field{{\\*\\fldinst{{HYPERLINK \"{href}\"}}}}{{\\fldrslt{{{prefix}{text}{suffix}}}}}}}"
+                    )),
+                    None => {
+                        out.push_str(&prefix);
+                        out.push_str(&text);
+                        out.push_str(&suffix);
+                    }
+                }
             }
             InlineContent::HardBreak => out.push_str("\\line "),
             InlineContent::Image(image) if image.alt_text.is_empty() => out.push_str("[Image]"),

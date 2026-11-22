@@ -179,6 +179,27 @@ fn browse_for(mode: PathDialog, current: &str) -> Option<String> {
     picked.map(|path| path.display().to_string())
 }
 
+/// The image's stored description: displayed at most 240 points on a side as
+/// a figure on its own paragraph, 20 as a glyph within a line of text.
+fn image_object(
+    file_name: &str,
+    pixel_width: u32,
+    pixel_height: u32,
+    standalone: bool,
+    alt: &str,
+    caption: &str,
+) -> portmanteau_core::ImageObject {
+    let display_max = if standalone { 240.0 } else { 20.0 };
+    let scale = display_max / pixel_width.max(pixel_height).max(1) as f32;
+    portmanteau_core::ImageObject {
+        asset_id: format!("images/{file_name}"),
+        alt_text: alt.trim().to_owned(),
+        caption: caption.trim().to_owned(),
+        width: Some(pixel_width as f32 * scale),
+        height: Some(pixel_height as f32 * scale),
+    }
+}
+
 /// A link the desktop may be asked to open: web addresses with a host, and
 /// nothing else. A project from elsewhere could carry any link it likes
 /// (`file:`, a custom scheme, a command-looking string), so nothing but a plain
@@ -945,10 +966,14 @@ impl PortmanteauApp {
             if ui.button("Image…").clicked() {
                 if let Some(id) = self.selected.clone() {
                     if let Some(doc) = self.ws.project.document(&id) {
+                        // At the caret if the document has been clicked into, else at the end.
                         let end = doc.content.char_count();
+                        let caret = egui::text_edit::TextEditState::load(ui.ctx(), Id::unique(("prose_body", id.as_str())))
+                            .and_then(|state| state.cursor.char_range())
+                            .map_or(end, |range| range.primary.index.0.min(end));
                         self.image_insert = Some(ImageInsertState {
                             target: RichTextTarget::DocumentBody(id),
-                            range: end..end,
+                            range: caret..caret,
                             path: String::new(),
                             alt_text: String::new(),
                             caption: String::new(),
@@ -1359,12 +1384,23 @@ impl PortmanteauApp {
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .min_width(420.0)
             .show(ctx, |ui| {
-                section_label(ui, "Image file path");
-                ui.add(
-                    TextEdit::singleline(&mut state.path)
-                        .hint_text("/path/to/image.png")
-                        .desired_width(f32::INFINITY),
-                );
+                section_label(ui, "Image file");
+                ui.horizontal(|ui| {
+                    ui.add(
+                        TextEdit::singleline(&mut state.path)
+                            .hint_text("/path/to/image.png")
+                            .desired_width(ui.available_width() - 90.0),
+                    );
+                    if ui.button("Browse…").clicked() {
+                        if let Some(file) = rfd::FileDialog::new()
+                            .set_title("Choose an image")
+                            .add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp"])
+                            .pick_file()
+                        {
+                            state.path = file.display().to_string();
+                        }
+                    }
+                });
                 ui.add_space(8.0);
                 section_label(ui, "Alt text");
                 ui.add(
@@ -1415,17 +1451,17 @@ impl PortmanteauApp {
         }
     }
 
-    fn insert_image_from_state(&mut self, state: &ImageInsertState) -> Result<(), String> {
+    /// Copy an image file into the project and describe it.
+    fn store_image_file(&mut self, source: &Path, standalone: bool, alt: &str, caption: &str) -> Result<portmanteau_core::ImageObject, String> {
         let root = self
             .ws
             .path
             .clone()
             .ok_or_else(|| "Save the project before inserting images.".to_string())?;
-        let source = PathBuf::from(state.path.trim());
         if !source.is_file() {
             return Err("Choose an existing image file.".into());
         }
-        let (pixel_width, pixel_height) = image::image_dimensions(&source)
+        let (pixel_width, pixel_height) = image::image_dimensions(source)
             .map_err(|error| format!("Could not read image dimensions: {error}"))?;
         let extension = source
             .extension()
@@ -1436,20 +1472,57 @@ impl PortmanteauApp {
         let image_dir = root.join("assets").join("images");
         std::fs::create_dir_all(&image_dir)
             .map_err(|error| format!("Could not create the project image folder: {error}"))?;
-        std::fs::copy(&source, image_dir.join(&file_name))
+        std::fs::copy(source, image_dir.join(&file_name))
             .map_err(|error| format!("Could not copy the image into the project: {error}"))?;
+        Ok(image_object(&file_name, pixel_width, pixel_height, standalone, alt, caption))
+    }
 
-        let display_max = if state.standalone { 240.0 } else { 20.0 };
-        let source_max = pixel_width.max(pixel_height).max(1) as f32;
-        let image_scale = display_max / source_max;
-        let width = pixel_width as f32 * image_scale;
-        let height = pixel_height as f32 * image_scale;
-        let image = portmanteau_core::ImageObject {
-            asset_id: format!("images/{file_name}"),
-            alt_text: state.alt_text.trim().to_owned(),
-            caption: state.caption.trim().to_owned(),
-            width: Some(width),
-            height: Some(height),
+    /// Store pixels (a pasted picture) in the project as a PNG and describe it.
+    fn store_image_pixels(&mut self, width: u32, height: u32, rgba: Vec<u8>, standalone: bool) -> Result<portmanteau_core::ImageObject, String> {
+        let root = self
+            .ws
+            .path
+            .clone()
+            .ok_or_else(|| "Save the project before pasting images: they are kept in its folder.".to_string())?;
+        let buffer = image::RgbaImage::from_raw(width, height, rgba)
+            .ok_or_else(|| "The clipboard image did not have the expected size.".to_string())?;
+        let file_name = format!("{}.png", portmanteau_core::new_id("img"));
+        let image_dir = root.join("assets").join("images");
+        std::fs::create_dir_all(&image_dir)
+            .map_err(|error| format!("Could not create the project image folder: {error}"))?;
+        image::DynamicImage::ImageRgba8(buffer)
+            .save(image_dir.join(&file_name))
+            .map_err(|error| format!("Could not store the image: {error}"))?;
+        Ok(image_object(&file_name, width, height, standalone, "", ""))
+    }
+
+    fn insert_image_from_state(&mut self, state: &ImageInsertState) -> Result<(), String> {
+        let image = self.store_image_file(
+            &PathBuf::from(state.path.trim()),
+            state.standalone,
+            &state.alt_text,
+            &state.caption,
+        )?;
+        self.insert_image_object(&state.target, state.range.clone(), image, state.standalone)
+    }
+
+    /// Put a stored image into a text field at `range`.
+    fn insert_image_object(
+        &mut self,
+        target: &RichTextTarget,
+        range: std::ops::Range<usize>,
+        image: portmanteau_core::ImageObject,
+        standalone: bool,
+    ) -> Result<(), String> {
+        let alt_text = image.alt_text.clone();
+        let state = ImageInsertState {
+            target: target.clone(),
+            range,
+            path: String::new(),
+            alt_text: alt_text.clone(),
+            caption: String::new(),
+            standalone,
+            error: String::new(),
         };
         let sheet = match &state.target {
             RichTextTarget::DocumentBody(doc_id)
@@ -1537,7 +1610,7 @@ impl PortmanteauApp {
         }
         self.ws.project.touch();
         self.ws.dirty = true;
-        self.toast("Image inserted", state.alt_text.clone(), ToastKind::Ok);
+        self.toast("Image inserted", alt_text, ToastKind::Ok);
         Ok(())
     }
 
@@ -1946,6 +2019,8 @@ impl PortmanteauApp {
         let ctx = ui.ctx().clone();
         self.handle_shortcuts(&ctx);
         self.undo_redo_shortcuts(&ctx);
+        self.paste_image_shortcut(&ctx);
+        self.insert_dropped_images(&ctx);
         crate::ui::editor::publish_link_targets(&ctx, &self.ws.project);
         ctx.data_mut(|data| data.insert_temp(Id::unique("spell-on"), self.settings.spellcheck));
         if let Some(link) = crate::ui::editor::take_clicked_link(&ctx) {
@@ -2062,6 +2137,89 @@ impl PortmanteauApp {
             // (and complain) every frame.
             self.ws.dirty = false;
             self.toast("Autosave failed", error, ToastKind::Error);
+        }
+    }
+
+    /// The text field a paste or drop should reach: the document body (or
+    /// research note) being written in, and where its caret is. Scripts take no
+    /// pictures.
+    fn image_target(&self, ctx: &egui::Context) -> Option<(RichTextTarget, std::ops::Range<usize>, Option<Id>)> {
+        let doc_id = match self.view {
+            View::Research => self.selected_research.clone()?,
+            View::Write => self.selected.clone()?,
+            _ => return None,
+        };
+        let doc = self.ws.project.document(&doc_id)?;
+        if doc.medium.is_script() || doc.kind.is_folder() {
+            return None;
+        }
+        let ids = [
+            Id::unique(("prose_body", doc_id.as_str())),
+            Id::unique(("research_body", doc_id.as_str())),
+        ];
+        let focused = ctx.memory(|memory| memory.focused());
+        let field = ids.into_iter().find(|id| focused == Some(*id));
+        let probe = field.or_else(|| ids.into_iter().find(|id| egui::text_edit::TextEditState::load(ctx, *id).is_some()));
+        let end = doc.content.char_count();
+        let caret = probe
+            .and_then(|id| egui::text_edit::TextEditState::load(ctx, id))
+            .and_then(|state| state.cursor.char_range())
+            .map_or(end, |range| range.primary.index.0.min(end));
+        Some((RichTextTarget::DocumentBody(doc_id), caret..caret, field))
+    }
+
+    /// Ctrl/Cmd+V with a picture on the clipboard puts it in the text at the
+    /// caret, as its own paragraph. (egui only passes text through a paste, so
+    /// the key itself is watched; a paste that carries text is left to the
+    /// field.) The picture is kept in the project's `assets/images`.
+    fn paste_image_shortcut(&mut self, ctx: &egui::Context) {
+        let pressed = ctx.input(|i| {
+            i.modifiers.command
+                && !i.modifiers.shift
+                && i.key_pressed(Key::V)
+                && !i.events.iter().any(|e| matches!(e, egui::Event::Paste(_)))
+        });
+        if !pressed {
+            return;
+        }
+        let Some((target, range, Some(_focused))) = self.image_target(ctx) else { return };
+        let Ok(image) = arboard::Clipboard::new().and_then(|mut clipboard| clipboard.get_image()) else {
+            return; // no picture there: nothing to do
+        };
+        let stored = self.store_image_pixels(image.width as u32, image.height as u32, image.bytes.into_owned(), true);
+        match stored.and_then(|object| self.insert_image_object(&target, range, object, true)) {
+            Ok(()) => ctx.request_repaint(),
+            Err(error) => self.toast("Could not paste the picture", error, ToastKind::Error),
+        }
+    }
+
+    /// Picture files dropped on the writing surface are inserted at the caret.
+    /// (In Research, dropped files are attached to the note instead.)
+    fn insert_dropped_images(&mut self, ctx: &egui::Context) {
+        if self.view != View::Write {
+            return;
+        }
+        let dropped: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .filter(|p| {
+                    p.is_file()
+                        && p.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                            ["png", "jpg", "jpeg", "gif", "webp"].contains(&e.to_ascii_lowercase().as_str())
+                        })
+                })
+                .collect()
+        });
+        for path in dropped {
+            let Some((target, range, _)) = self.image_target(ctx) else { return };
+            let result = self
+                .store_image_file(&path, true, "", "")
+                .and_then(|object| self.insert_image_object(&target, range, object, true));
+            if let Err(error) = result {
+                self.toast("Could not insert the picture", error, ToastKind::Error);
+            }
         }
     }
 
@@ -3003,5 +3161,59 @@ mod shell_probe {
         ] {
             assert_eq!(safe_external_url(hostile), None, "{hostile:?}");
         }
+    }
+
+    /// A picture from the clipboard (or a dropped file) is stored in the project's
+    /// assets and put into the text where the caret is, on its own paragraph.
+    #[test]
+    fn pasted_pixels_are_stored_in_the_project_and_inserted_at_the_caret() {
+        let mut app = PortmanteauApp::new(None);
+        let doc_id = app.selected.clone().unwrap();
+        let target = RichTextTarget::DocumentBody(doc_id.clone());
+        let rgba = vec![200u8; 4 * 6 * 4];
+
+        // An unsaved project has nowhere to keep it: say so, change nothing.
+        let before = app.ws.project.document(&doc_id).unwrap().content.clone();
+        let err = app.store_image_pixels(6, 4, rgba.clone(), true).unwrap_err();
+        assert!(err.contains("Save the project"), "{err}");
+        assert_eq!(app.ws.project.document(&doc_id).unwrap().content, before);
+
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("paste"));
+        app.ws.save(Some(dir.clone())).unwrap();
+        let caret = 12;
+        let object = app.store_image_pixels(6, 4, rgba, true).unwrap();
+        assert!(dir.join("assets").join(&object.asset_id).is_file(), "the PNG is in the project");
+        assert_eq!(object.width.map(|w| w.round()), Some(240.0), "shown at most 240 points wide as a figure");
+        app.insert_image_object(&target, caret..caret, object.clone(), true).unwrap();
+        let content = &app.ws.project.document(&doc_id).unwrap().content;
+        let images: Vec<_> = content
+            .paragraphs
+            .iter()
+            .flat_map(|p| p.content.iter())
+            .filter(|item| matches!(item, portmanteau_core::InlineContent::Image(_)))
+            .collect();
+        assert_eq!(images.len(), 1);
+        assert!(content.paragraphs.iter().any(|p| p.style_id == "image"), "on its own paragraph");
+        assert!(app.ws.dirty);
+        // The text either side of the caret is untouched.
+        assert!(content.plain_text().starts_with(&before.plain_text()[..caret]));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Where a paste lands: the focused note body or document body, never a script.
+    #[test]
+    fn pictures_target_the_document_or_note_being_written_in_but_not_scripts() {
+        let ctx = egui::Context::default();
+        let mut app = PortmanteauApp::new(None);
+        app.view = View::Research;
+        let note = app.selected_research.clone().unwrap();
+        let target = app.image_target(&ctx).expect("a research note takes pictures");
+        assert!(matches!(&target.0, RichTextTarget::DocumentBody(id) if *id == note));
+        app.view = View::Write;
+        assert!(app.image_target(&ctx).is_some());
+        app.selected = app.ws.project.documents.iter().find(|d| d.medium.is_script()).map(|d| d.id.clone());
+        assert!(app.image_target(&ctx).is_none(), "scripts take no pictures");
+        app.view = View::Compile;
+        assert!(app.image_target(&ctx).is_none());
     }
 }
