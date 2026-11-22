@@ -2430,7 +2430,7 @@ fn reveal_caret(ui: &egui::Ui, output: &egui::text_edit::TextEditOutput, caret: 
     ui.scroll_to_rect(rect.expand2(Vec2::new(0.0, 60.0)), Some(Align::Center));
 }
 
-fn rich_paragraph_start(content: &portmanteau_core::RichDocument, index: usize) -> usize {
+pub(crate) fn rich_paragraph_start(content: &portmanteau_core::RichDocument, index: usize) -> usize {
     content
         .paragraphs
         .iter()
@@ -2586,23 +2586,6 @@ fn link_menu(ctx: &egui::Context, field: Id) {
 /// The link the writer Ctrl/Cmd-clicked this frame, if any.
 pub(crate) fn take_clicked_link(ctx: &egui::Context) -> Option<String> {
     ctx.data_mut(|data| data.remove_temp::<String>(Id::unique("clicked-link")))
-}
-
-/// The documents a link can point at: (id, title, is a research note).
-pub(crate) fn publish_link_targets(ctx: &egui::Context, project: &portmanteau_core::Project) {
-    let mut targets: Vec<(String, String, bool)> = project
-        .research_docs()
-        .into_iter()
-        .map(|d| (d.id.clone(), d.title.clone(), true))
-        .collect();
-    targets.extend(
-        project
-            .ordered_documents()
-            .into_iter()
-            .filter(|d| !d.kind.is_folder() && !project.in_research(d))
-            .map(|d| (d.id.clone(), d.title.clone(), false)),
-    );
-    ctx.data_mut(|data| data.insert_temp(Id::unique("link-targets"), std::sync::Arc::new(targets)));
 }
 
 /// Remember where the current text selection sits on screen so the floating
@@ -2831,7 +2814,7 @@ pub(crate) fn normalise_link(typed: &str) -> Option<String> {
     if lower.starts_with("http://") || lower.starts_with("https://") {
         return Some(typed.to_string());
     }
-    if lower.starts_with(portmanteau_core::rich_text::NOTE_LINK) {
+    if lower.starts_with(portmanteau_core::rich_text::NOTE_LINK) || lower.starts_with(crate::ui::mention::ITEM_LINK) {
         return Some(typed.to_string());
     }
     if typed.contains("://") || typed.contains(':') && !typed.contains('.') {
@@ -2849,9 +2832,7 @@ fn link_editor_window(
     mut edit: LinkEdit,
     content: &mut portmanteau_core::RichDocument,
 ) -> LinkOutcome {
-    let targets: std::sync::Arc<Vec<(String, String, bool)>> = ctx
-        .data(|data| data.get_temp(Id::unique("link-targets")))
-        .unwrap_or_default();
+    let targets = crate::ui::mention::published_targets(ctx);
     let mut outcome = None;
     let mut open = true;
     egui::Window::new("Link")
@@ -2862,46 +2843,42 @@ fn link_editor_window(
         .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
         .min_width(420.0)
         .show(ctx, |ui| {
-            ui.label(RichText::new("Address").font(ui_small()).color(FAINT));
-            let field = ui.add(
-                TextEdit::singleline(&mut edit.url)
-                    .hint_text("https://… or choose a document below")
-                    .font(mono(10.5))
-                    .desired_width(f32::INFINITY),
-            );
-            if edit.first_frame {
-                field.request_focus();
-                edit.first_frame = false;
+            // A link to something in the project (made with @) shows what it
+            // points at; the writer can swap it for a web address.
+            let internal = edit.url.starts_with(portmanteau_core::rich_text::NOTE_LINK)
+                || edit.url.starts_with(crate::ui::mention::ITEM_LINK);
+            let mut field = None;
+            if internal {
+                let what = targets
+                    .iter()
+                    .find(|t| t.link == edit.url)
+                    .map_or("something that no longer exists".to_string(), |t| format!("{} ({})", t.title, t.group));
+                ui.label(RichText::new(format!("Links to {what}")).font(ui_body()).color(TEXT));
+                ui.label(RichText::new("Type @ in the text to link to anything in the project.").font(ui_small()).color(FAINT));
+                if ui.button("Use a web address instead").clicked() {
+                    edit.url.clear();
+                    edit.first_frame = true;
+                }
+            } else {
+                ui.label(RichText::new("Address").font(ui_small()).color(FAINT));
+                let response = ui.add(
+                    TextEdit::singleline(&mut edit.url)
+                        .hint_text("https://…  (type @ in the text to link to something in the project)")
+                        .font(mono(10.5))
+                        .desired_width(f32::INFINITY),
+                );
+                if edit.first_frame {
+                    response.request_focus();
+                    edit.first_frame = false;
+                }
+                field = Some(response);
             }
             ui.add_space(6.0);
-            let current = edit
-                .url
-                .strip_prefix(portmanteau_core::rich_text::NOTE_LINK)
-                .and_then(|doc_id| targets.iter().find(|(id, _, _)| id == doc_id))
-                .map_or("Or link to a document in this project…".to_string(), |(_, title, _)| title.clone());
-            egui::ComboBox::from_id_salt("link_target")
-                .selected_text(current)
-                .width(380.0)
-                .show_ui(ui, |ui| {
-                    for (research, heading) in [(true, "Research"), (false, "Manuscript")] {
-                        let group: Vec<_> = targets.iter().filter(|(_, _, r)| *r == research).collect();
-                        if group.is_empty() {
-                            continue;
-                        }
-                        ui.label(RichText::new(heading).font(ui_small()).color(FAINT));
-                        for (doc_id, title, _) in group {
-                            let value = format!("{}{doc_id}", portmanteau_core::rich_text::NOTE_LINK);
-                            if ui.selectable_label(edit.url == value, title).clicked() {
-                                edit.url = value;
-                            }
-                        }
-                    }
-                });
-            let normalised = normalise_link(&edit.url);
-            if !edit.url.trim().is_empty() && normalised.is_none() {
+            let normalised = if internal { None } else { normalise_link(&edit.url) };
+            if !internal && !edit.url.trim().is_empty() && normalised.is_none() {
                 ui.add_space(4.0);
                 ui.label(
-                    RichText::new("Use a web address (https://…) or pick a document.")
+                    RichText::new("Use a web address (https://…).")
                         .font(ui_small())
                         .color(RED_INK),
                 );
@@ -2909,7 +2886,7 @@ fn link_editor_window(
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 let apply = ui.add_enabled(normalised.is_some(), egui::Button::new("Apply link"));
-                let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                let enter = field.as_ref().is_some_and(|f| f.lost_focus()) && ui.input(|i| i.key_pressed(Key::Enter));
                 if (apply.clicked() || (enter && normalised.is_some())) && normalised.is_some() {
                     let changed = content.set_link(edit.range.clone(), normalised.as_deref());
                     outcome = Some(if changed { LinkOutcome::Changed } else { LinkOutcome::Closed });

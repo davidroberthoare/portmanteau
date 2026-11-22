@@ -8,12 +8,9 @@ use eframe::egui::{
 
 use portmanteau_core::{DatabaseItem, ItemKind, StyleSheet};
 
-use crate::app::{ImageInsertState, PortmanteauApp, RichTextTarget};
+use crate::app::PortmanteauApp;
 use crate::theme::*;
-use crate::ui::editor::{
-    inline_format_toolbar, load_rich_image_textures, paint_rich_images,
-    script_flow_layout_job,
-};
+use crate::ui::editor::{load_rich_image_textures, paint_rich_images, script_flow_layout_job};
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button, section_label};
 
 const FACE_COLORS: [Color32; 6] = [
@@ -391,22 +388,17 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     section_label(ui, "Notes");
                     ui.add_space(2.0);
                     let notes_id = egui::Id::unique(("database_notes", id));
-                    let ctx = ui.ctx().clone();
-                    let toolbar = inline_format_toolbar(ui, &ctx, notes_id, &mut rich_notes);
-                    if toolbar.changed {
+                    // The fixed formatting bar, as on research notes (see ui/rich_toolbar.rs).
+                    let bar = crate::ui::rich_toolbar::show(
+                        ui,
+                        notes_id,
+                        &mut rich_notes,
+                        &crate::ui::rich_toolbar::Options { styles: Some(&sheet) },
+                    );
+                    if bar.changed {
                         apply = true;
                     }
-                    if let Some(range) = toolbar.insert_image {
-                        app.image_insert = Some(ImageInsertState {
-                            target: RichTextTarget::DatabaseNotes(id.to_owned()),
-                            range,
-                            path: String::new(),
-                            alt_text: String::new(),
-                            caption: String::new(),
-                            standalone: false,
-                            error: String::new(),
-                        });
-                    }
+                    ui.add_space(6.0);
                     let checker = &app.spell;
                     let spell_on = app.settings.spellcheck;
                     let notes_spans =
@@ -428,6 +420,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         );
                         ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                     };
+                    let mention_pick = crate::ui::mention::pre_edit(ui.ctx(), notes_id);
                     let notes_output = TextEdit::multiline(&mut draft.notes)
                         .id(notes_id)
                         .layouter(&mut layouter)
@@ -438,7 +431,13 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         .show(ui);
                     if notes_output.response.changed() {
                         rich_notes.sync_editor_text(&draft.notes, &sheet);
-                        crate::ui::editor::autolink_pasted(ui.ctx(), &mut rich_notes, notes_output.cursor_range.map(|r| r.primary.index.0));
+                        let caret = notes_output.cursor_range.map(|r| r.primary.index.0);
+                        crate::ui::editor::autolink_pasted(ui.ctx(), &mut rich_notes, caret);
+                        crate::ui::rich_toolbar::after_edit(ui.ctx(), notes_id, &mut rich_notes, caret);
+                        apply = true;
+                    }
+                    if crate::ui::mention::post_edit(ui.ctx(), notes_id, &notes_output, &mut rich_notes, mention_pick) {
+                        draft.notes = rich_notes.editor_text();
                         apply = true;
                     }
                     crate::ui::editor::remember_selection_anchor(ui.ctx(), notes_output.response.id, &notes_output.galley, notes_output.galley_pos);

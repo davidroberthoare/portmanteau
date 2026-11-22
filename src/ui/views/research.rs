@@ -584,6 +584,8 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                         );
                         ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
                     };
+                    // `@` mentions: the list's keys are taken before the field sees them.
+                    let mention_pick = crate::ui::mention::pre_edit(ui.ctx(), body_id);
                     let body_output = TextEdit::multiline(&mut body)
                         .id(body_id)
                         .layouter(&mut layouter)
@@ -598,6 +600,10 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                         let caret = body_output.cursor_range.map(|r| r.primary.index.0);
                         crate::ui::editor::autolink_pasted(ui.ctx(), &mut rich_body, caret);
                         crate::ui::rich_toolbar::after_edit(ui.ctx(), body_id, &mut rich_body, caret);
+                        changed = true;
+                    }
+                    if crate::ui::mention::post_edit(ui.ctx(), body_id, &body_output, &mut rich_body, mention_pick) {
+                        body = rich_body.editor_text();
                         changed = true;
                     }
                     crate::ui::editor::remember_selection_anchor(ui.ctx(), body_output.response.id, &body_output.galley, body_output.galley_pos);
@@ -1032,6 +1038,8 @@ mod tests {
                     themed = true;
                     return;
                 }
+                // The full app publishes the mentionable things every frame.
+                crate::ui::mention::publish_targets(ui.ctx(), &ui_app.borrow().ws.project);
                 show(&mut ui_app.borrow_mut(), ui);
             });
         (harness, app)
@@ -1164,5 +1172,37 @@ mod tests {
         let marks = app.borrow().ws.project.document(&id).unwrap().content.marks_in(0..4);
         assert_eq!(marks, [portmanteau_core::InlineMark::Italic]);
         assert!(app.borrow().ws.dirty);
+    }
+
+    /// Type @, pick a name from the list that appears, and the text becomes a
+    /// link to that database item.
+    #[test]
+    fn an_at_mention_in_a_research_note_becomes_a_link_to_the_item() {
+        use egui_kittest::kittest::Queryable;
+        let (mut harness, app) = research_harness(PortmanteauApp::new(None));
+        harness.run_steps(4);
+        let id = app.borrow().selected_research.clone().unwrap();
+        let mara = app.borrow().ws.project.items.iter().find(|i| i.title == "Mara Venn").unwrap().id.clone();
+        let body_id = egui::Id::unique(("research_body", id.as_str()));
+        // Put the caret at the very end of the note and type "@Ma".
+        let end = app.borrow().ws.project.document(&id).unwrap().content.char_count();
+        let newlines_before = app.borrow().ws.project.document(&id).unwrap().content.plain_text().matches('\n').count();
+        harness.ctx.memory_mut(|m| m.request_focus(body_id));
+        let mut state = egui::text_edit::TextEditState::load(&harness.ctx, body_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(end))));
+        state.store(&harness.ctx, body_id);
+        harness.run_steps(2);
+        harness.event(egui::Event::Text(" @Ma".into()));
+        harness.run_steps(4);
+        assert!(harness.query_by_label_contains("Mara Venn · Character").is_some(), "the list is showing");
+        harness.key_press(egui::Key::Enter);
+        harness.run_steps(4);
+        let app_ref = app.borrow();
+        let content = &app_ref.ws.project.document(&id).unwrap().content;
+        assert!(content.plain_text().ends_with(" Mara Venn"), "{:?}", content.plain_text());
+        let links = content.links();
+        assert_eq!(links.last().map(|(_, l)| l.as_str()), Some(format!("item:{mara}").as_str()));
+        assert_eq!(content.plain_text().matches('\n').count(), newlines_before, "Enter chose the name; it did not start a new line");
+        assert!(harness.query_by_label_contains("Mara Venn · Character").is_none(), "the list closed");
     }
 }

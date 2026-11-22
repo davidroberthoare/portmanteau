@@ -332,7 +332,6 @@ pub enum RichTextTarget {
     DocumentBody(String),
     DocumentSynopsis(String),
     DocumentNotes(String),
-    DatabaseNotes(String),
 }
 
 #[derive(Clone, Debug)]
@@ -1542,9 +1541,6 @@ impl PortmanteauApp {
                 .unwrap_or_else(|| {
                     portmanteau_core::StyleSheet::novel_prose(&self.ws.project.styles)
                 }),
-            RichTextTarget::DatabaseNotes(_) => {
-                portmanteau_core::StyleSheet::novel_prose(&self.ws.project.styles)
-            }
         };
         let content = match &state.target {
             RichTextTarget::DocumentBody(doc_id) => self
@@ -1588,21 +1584,6 @@ impl PortmanteauApp {
                     );
                     doc.touch();
                     &mut doc.notes
-                }),
-            RichTextTarget::DatabaseNotes(item_id) => self
-                .ws
-                .project
-                .items
-                .iter_mut()
-                .find(|item| item.id == *item_id)
-                .map(|item| {
-                    item.notes.insert_image(
-                        state.range.clone(),
-                        image,
-                        state.standalone,
-                        &sheet,
-                    );
-                    &mut item.notes
                 }),
         };
         if content.is_none() {
@@ -2021,7 +2002,7 @@ impl PortmanteauApp {
         self.undo_redo_shortcuts(&ctx);
         self.paste_image_shortcut(&ctx);
         self.insert_dropped_images(&ctx);
-        crate::ui::editor::publish_link_targets(&ctx, &self.ws.project);
+        crate::ui::mention::publish_targets(&ctx, &self.ws.project);
         ctx.data_mut(|data| data.insert_temp(Id::unique("spell-on"), self.settings.spellcheck));
         if let Some(link) = crate::ui::editor::take_clicked_link(&ctx) {
             self.open_link(&link);
@@ -2226,7 +2207,14 @@ impl PortmanteauApp {
     /// Follow a link the writer Ctrl/Cmd-clicked: another document in the
     /// project (a research note opens in Research), or a web address.
     pub fn open_link(&mut self, link: &str) {
-        if let Some(id) = link.strip_prefix(portmanteau_core::rich_text::NOTE_LINK) {
+        if let Some(id) = link.strip_prefix(crate::ui::mention::ITEM_LINK) {
+            if self.ws.project.items.iter().any(|item| item.id == id) {
+                self.selected_item = Some(id.to_string());
+                self.view = View::Database;
+            } else {
+                self.toast("That item no longer exists", "The link points at something that was deleted.", ToastKind::Info);
+            }
+        } else if let Some(id) = link.strip_prefix(portmanteau_core::rich_text::NOTE_LINK) {
             match self.ws.project.document(id) {
                 Some(doc) if self.ws.project.in_research(doc) && !doc.kind.is_folder() => {
                     self.selected_research = Some(id.to_string());
