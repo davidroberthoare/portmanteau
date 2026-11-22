@@ -1,10 +1,10 @@
 //! An offline spell-checker backed by a bundled Hunspell dictionary.
 //!
-//! Detection uses [`zspell`], a pure-Rust Hunspell implementation, so inflected
-//! words (`running`, `bananas`, `cat's`) are accepted the way a real word
-//! processor accepts them. Suggestions stay on the simpler bundled word list:
-//! zspell's suggestion API lives behind an unstable feature flag, so the
-//! existing Levenshtein suggester is kept here instead.
+//! Detection and suggestions both come from [`spellbook`], a pure-Rust engine
+//! for the standard Hunspell dictionary format (the one LibreOffice, Firefox
+//! and Helix use), so inflected words (`running`, `bananas`, `cat's`) are
+//! accepted the way a real word processor accepts them, and suggestions use the
+//! same dictionary and affix rules.
 //!
 //! The desktop shell loads one [`SpellChecker`] at start-up and asks it for
 //! misspellings and suggestions while drawing an editor.
@@ -12,33 +12,20 @@
 use std::collections::HashSet;
 use std::ops::Range;
 
-/// A Hunspell dictionary plus a word list for edit-distance suggestions, the
-/// writer's personal dictionary and words ignored for this session.
+/// A Hunspell dictionary, the writer's personal dictionary and words ignored for this session.
 pub struct SpellChecker {
-    dict: zspell::Dictionary,
-    words: HashSet<String>,
+    dict: spellbook::Dictionary,
     custom: HashSet<String>,
     ignored: HashSet<String>,
 }
 
 impl SpellChecker {
-    /// Build a checker from the Hunspell `.aff`/`.dic` contents and a
-    /// newline-separated word list used for suggestions. Blank word-list lines
-    /// are ignored and every entry is trimmed and lowercased.
-    pub fn new(aff: &str, dic: &str, wordlist: &str) -> Self {
-        let dict = zspell::builder()
-            .config_str(aff)
-            .dict_str(dic)
-            .build()
+    /// Build a checker from the Hunspell `.aff` and `.dic` contents.
+    pub fn new(aff: &str, dic: &str) -> Self {
+        let dict = spellbook::Dictionary::new(aff, dic)
             .expect("bundled Hunspell dictionary should be valid");
-        let words = wordlist
-            .lines()
-            .map(|line| line.trim().to_lowercase())
-            .filter(|word| !word.is_empty())
-            .collect();
         Self {
             dict,
-            words,
             custom: HashSet::new(),
             ignored: HashSet::new(),
         }
@@ -86,7 +73,7 @@ impl SpellChecker {
         if self.custom.contains(word) || self.ignored.contains(word) {
             return true;
         }
-        if self.dict.check_word(word) {
+        if self.dict.check(word) {
             return true;
         }
         // Hunspell's splitter used to verify hyphenated compounds part by part;
@@ -97,7 +84,7 @@ impl SpellChecker {
                 parts += 1;
                 if !self.custom.contains(part)
                     && !self.ignored.contains(part)
-                    && !self.dict.check_word(part)
+                    && !self.dict.check(part)
                 {
                     return false;
                 }
@@ -154,30 +141,16 @@ impl SpellChecker {
         out
     }
 
-    /// Words within edit distance two, sorted by distance then alphabetically.
+    /// Up to `limit` suggested replacements, best first, from the dictionary.
     pub fn suggest(&self, word: &str, limit: usize) -> Vec<String> {
         let target = normalise(word);
         if target.is_empty() {
             return Vec::new();
         }
-        let target_len = target.chars().count();
-        let mut scored: Vec<(usize, String)> = Vec::new();
-        for candidate in &self.words {
-            let candidate_len = candidate.chars().count();
-            if candidate_len.abs_diff(target_len) > 2 {
-                continue;
-            }
-            let distance = levenshtein(&target, candidate);
-            if distance <= 2 {
-                scored.push((distance, candidate.clone()));
-            }
-        }
-        scored.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-        scored
-            .into_iter()
-            .take(limit)
-            .map(|(_, word)| word)
-            .collect()
+        let mut out = Vec::new();
+        self.dict.suggest(&target, &mut out);
+        out.truncate(limit);
+        out
     }
 }
 
@@ -264,31 +237,6 @@ fn word_tokens(text: &str) -> Vec<(usize, usize)> {
     tokens
 }
 
-/// Levenshtein edit distance, two rolling rows so memory stays linear.
-fn levenshtein(a: &str, b: &str) -> usize {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
-    if a.is_empty() {
-        return b.len();
-    }
-    if b.is_empty() {
-        return a.len();
-    }
-    let mut previous: Vec<usize> = (0..=b.len()).collect();
-    let mut current = vec![0usize; b.len() + 1];
-    for i in 1..=a.len() {
-        current[0] = i;
-        for j in 1..=b.len() {
-            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
-            current[j] = (previous[j] + 1)
-                .min(current[j - 1] + 1)
-                .min(previous[j - 1] + cost);
-        }
-        std::mem::swap(&mut previous, &mut current);
-    }
-    previous[b.len()]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,7 +245,6 @@ mod tests {
         SpellChecker::new(
             include_str!("../../../assets/dict/en_US.aff"),
             include_str!("../../../assets/dict/en_US.dic"),
-            include_str!("../../../assets/words.txt"),
         )
     }
 

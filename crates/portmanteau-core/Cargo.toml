@@ -1,12 +1,18 @@
 [package]
 name = "portmanteau-core"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 serde_json = "1"
-zspell = "0.5"
+spellbook = "0.4"
 regex = "1"
+
+# In a browser (WebAssembly) there is no operating system to ask for random
+# numbers or the local time; these features use the browser's own.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { version = "1", features = ["js"] }
+chrono = { version = "0.4", features = ["wasmbind"] }
