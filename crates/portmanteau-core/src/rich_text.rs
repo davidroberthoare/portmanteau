@@ -1579,3 +1579,88 @@ mod tests {
             }));
     }
 }
+
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+
+    fn doc(text: &str) -> RichDocument {
+        RichDocument::from_plain_text(text, "body")
+    }
+
+    fn links(doc: &RichDocument) -> Vec<(String, Option<String>)> {
+        doc.paragraphs
+            .iter()
+            .flat_map(|p| &p.content)
+            .filter_map(|item| match item {
+                InlineContent::Text(run) => Some((run.text.clone(), run.link.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_range_can_be_linked_and_unlinked_without_touching_the_text() {
+        let mut d = doc("See the harbour chart here.");
+        assert!(d.set_link(8..21, Some("https://example.org/chart")));
+        assert_eq!(d.plain_text(), "See the harbour chart here.");
+        assert_eq!(
+            links(&d),
+            [
+                ("See the ".into(), None),
+                ("harbour chart".into(), Some("https://example.org/chart".into())),
+                (" here.".into(), None)
+            ]
+        );
+        assert_eq!(d.link_at(10, false).map(|(l, r)| (l, r)), Some(("https://example.org/chart".into(), 8..21)));
+        assert!(d.link_at(8 + 13, false).is_none(), "the end edge is outside");
+        assert!(d.link_at(8 + 13, true).is_some(), "but a caret just after it is inside");
+        assert!(d.set_link(8..21, None));
+        assert_eq!(links(&d).len(), 1, "runs merge again once unlinked");
+        assert!(!d.set_link(8..21, None), "nothing to change");
+    }
+
+    #[test]
+    fn typing_inside_a_link_extends_it_and_typing_at_its_edge_does_not() {
+        let sheet = StyleSheet::novel_prose(&ElementStyles::default());
+        let mut d = doc("abc def ghi");
+        d.set_link(4..7, Some("https://x.test"));
+        d.replace_range(5..5, "ZZ", &sheet);
+        assert_eq!(d.plain_text(), "abc dZZef ghi");
+        assert_eq!(d.link_at(5, false).unwrap().1, 4..9, "the link grew with the text typed inside it");
+        let mut edge = doc("abc def ghi");
+        edge.set_link(4..7, Some("https://x.test"));
+        edge.replace_range(7..7, "!", &sheet);
+        assert_eq!(edge.link_at(4, false).unwrap().1, 4..7, "text typed after the link is not part of it");
+    }
+
+    #[test]
+    fn links_survive_a_save_and_old_runs_without_one_still_read() {
+        let mut d = doc("one two");
+        d.set_link(0..3, Some("note:doc-1"));
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(json.contains("note:doc-1"));
+        let back: RichDocument = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, d);
+        // A run with no link writes no link key, so files from before links existed read as before.
+        let plain = doc("plain");
+        let plain_json = serde_json::to_string(&plain).unwrap();
+        assert!(!plain_json.contains("link"), "{plain_json}");
+        assert_eq!(serde_json::from_str::<RichDocument>(&plain_json).unwrap(), plain);
+    }
+
+    #[test]
+    fn web_addresses_are_linked_without_their_trailing_punctuation() {
+        let mut d = doc("Read https://example.org/a-b?c=1, then (see http://example.com/x).\nNo link here.");
+        assert_eq!(d.autolink_urls(), 2);
+        let linked: Vec<_> = links(&d).into_iter().filter_map(|(t, l)| l.map(|l| (t, l))).collect();
+        assert_eq!(
+            linked,
+            [
+                ("https://example.org/a-b?c=1".into(), "https://example.org/a-b?c=1".into()),
+                ("http://example.com/x".into(), "http://example.com/x".into())
+            ]
+        );
+        assert_eq!(d.autolink_urls(), 0, "already linked text is left alone");
+    }
+}

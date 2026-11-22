@@ -16,6 +16,18 @@ pub(crate) fn starts_new_page(doc: &Document) -> bool {
     !doc.medium.is_script() || doc.kind == DocKind::Chapter
 }
 
+/// A link as a writer's format may carry it: web and mail addresses only.
+/// A `note:` link points inside the project and means nothing outside it, so
+/// the text prints plain; anything else (a `javascript:` address in a file
+/// from elsewhere, say) is never written out as a link.
+pub(crate) fn export_href(link: &str) -> Option<&str> {
+    let lower = link.trim().to_ascii_lowercase();
+    ["http://", "https://", "mailto:"]
+        .iter()
+        .any(|scheme| lower.starts_with(scheme))
+        .then_some(link.trim())
+}
+
 /// `FADE IN:` opens a script flush left; every other transition is a
 /// right-hand cue. The text is the writer's own; only its alignment is
 /// chosen, and every writer asks here so none of them right-aligns the opening.

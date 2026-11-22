@@ -977,19 +977,32 @@ impl Workspace {
         Some(root.join("assets").join("research").join(safe_dir_name(id)))
     }
 
-    /// The note's attachment folder, with the guarantee that it really lies
-    /// inside the project: a project from elsewhere could make `assets` or
-    /// the note's folder a symlink pointing anywhere. `create` makes it first.
+    /// The note's attachment folder, with the guarantee that it is exactly
+    /// `<project>/assets/research/<id>` as a real directory. A project from
+    /// elsewhere could make `assets`, `research` or the note's folder a symlink
+    /// pointing anywhere (even somewhere else inside the project), so every
+    /// step is checked and a link in any of those places is refused. `create`
+    /// makes the folder first, never through a link.
     fn checked_research_dir(&self, id: &str, create: bool) -> Result<PathBuf, String> {
         let root = self.path.as_ref().ok_or("Save the project first: attachments are copied into the project folder")?;
-        let dir = self.research_assets_dir(id).ok_or("The project has no folder yet")?;
-        if create {
-            std::fs::create_dir_all(&dir).map_err(|e| format!("Could not prepare the attachments folder: {e}"))?;
-        }
-        let real = dir.canonicalize().map_err(|_| "The attachments folder does not exist".to_string())?;
         let real_root = root.canonicalize().map_err(|e| format!("Could not read the project folder: {e}"))?;
-        if !real.starts_with(&real_root) {
-            return Err("The attachments folder points outside the project, so it was not used".into());
+        let refuse = || "The attachments folder is not where the project keeps it (a link points elsewhere), so it was not used".to_string();
+        let mut step = root.clone();
+        for part in ["assets", "research", &safe_dir_name(id)] {
+            step = step.join(part);
+            match std::fs::symlink_metadata(&step) {
+                Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => return Err(refuse()),
+                Ok(_) => {}
+                Err(_) if create => {
+                    std::fs::create_dir(&step).map_err(|e| format!("Could not prepare the attachments folder: {e}"))?;
+                }
+                Err(_) => return Err("The attachments folder does not exist".into()),
+            }
+        }
+        let real = step.canonicalize().map_err(|_| refuse())?;
+        let expected = real_root.join("assets").join("research").join(safe_dir_name(id));
+        if real != expected {
+            return Err(refuse());
         }
         Ok(real)
     }
@@ -1067,15 +1080,26 @@ impl Workspace {
         Ok(())
     }
 
-    /// Delete a research note and its stored files.
+    /// Delete a research note and its stored files. Only the note's own
+    /// folder is ever removed; a link standing in its place is removed as a
+    /// link and nothing behind it is touched.
     fn delete_research(&mut self, id: &str) -> Result<(), String> {
         if self.project.document(id).is_none_or(|d| !self.project.in_research(d)) {
             return Err("That is not a research note".into());
         }
-        let dir = self.checked_research_dir(id, false).ok();
+        let intended = self.research_assets_dir(id);
+        let verified = self.checked_research_dir(id, false).ok();
         self.project.delete_document(id);
-        if let Some(dir) = dir {
-            let _ = std::fs::remove_dir_all(dir);
+        match (verified, intended) {
+            (Some(dir), _) => {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+            (None, Some(path)) => {
+                if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+            (None, None) => {}
         }
         Ok(())
     }
@@ -1926,11 +1950,25 @@ mod tests {
             std::fs::create_dir_all(assets.parent().unwrap()).unwrap();
             std::os::unix::fs::symlink(&outside, &assets).unwrap();
             let attached = ws.execute("research.attach", json!({"id": id, "path": source.display().to_string()}));
-            assert!(!attached.ok && attached.message.contains("outside the project"), "{}", attached.message);
+            assert!(!attached.ok && attached.message.contains("a link points elsewhere"), "{}", attached.message);
             assert!(ws.research_file_path(&id, "precious.txt").is_none(), "no reading through the link");
             let deleted = ws.execute("research.delete", json!({"id": id}));
             assert!(deleted.ok);
             assert!(outside.join("precious.txt").is_file(), "deleting a note never deletes outside the project");
+            std::fs::remove_file(&assets).ok();
+
+            // A link to somewhere else *inside* the project (the root itself) is no better:
+            // deleting the note removes the link, never the project behind it.
+            std::os::unix::fs::symlink(&root, &assets).unwrap();
+            assert!(ws.research_file_path(&id, "project.json").is_none());
+            let victim = ws.project.add_document(ws.project.folder_id("Research"), "Victim", portmanteau_core::DocKind::Research, portmanteau_core::Medium::Note);
+            let victim_assets = ws.research_assets_dir(&victim).unwrap();
+            std::fs::create_dir_all(victim_assets.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(&root, &victim_assets).unwrap();
+            let deleted = ws.execute("research.delete", json!({"id": victim}));
+            assert!(deleted.ok);
+            assert!(root.join("assets").is_dir() && root.join("project.json").is_file(), "the project behind the link is untouched");
+            assert!(!victim_assets.exists(), "the link itself is gone");
             std::fs::remove_file(&assets).ok();
 
             // A file link inside a proper folder is not copied over either.

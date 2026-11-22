@@ -994,3 +994,32 @@ fn page_counts_come_from_the_real_layout_for_every_manuscript_type() {
     assert!(!counts.by_doc.contains_key(&chapter));
     assert_eq!(counts.label(&chapter), "–");
 }
+
+#[test]
+fn links_become_anchors_in_web_formats_and_never_unsafe_ones() {
+    let mut p = Project::new("Links", ProjectKind::Novel);
+    let id = p.add_document(None, "Chapter", DocKind::Chapter, Medium::Prose);
+    {
+        let doc = p.document_mut(&id).unwrap();
+        doc.content = RichDocument::from_plain_text("See the chart, the log and the trap.", "body");
+        doc.content.set_link(4..13, Some("https://example.org/a?b=1&c=2"));
+        doc.content.set_link(18..25, Some("note:doc-123"));
+        doc.content.set_link(30..35, Some("javascript:alert(1)"));
+    }
+    let mut s = p.settings_for(ExportKind::Html);
+    s.compile_type = Some(CompileType::Prose);
+    s.include_title_page = false;
+    let html = html_manuscript(&p, &s);
+    assert!(html.contains(r#"<a href="https://example.org/a?b=1&amp;c=2">the chart</a>"#), "{html}");
+    assert!(!html.contains("note:doc-123") && !html.contains("javascript:"), "internal and unsafe links are not written out");
+    assert!(html.contains("the log") && html.contains("trap"), "their text still prints");
+
+    let mut m = p.settings_for(ExportKind::Markdown);
+    m.compile_type = Some(CompileType::Prose);
+    m.include_title_page = false;
+    let md = markdown_manuscript(&p, &m);
+    assert!(md.contains("[the chart](https://example.org/a?b=1&c=2)"), "{md}");
+    assert!(!md.contains("javascript:"));
+    assert_eq!(export_href(" HTTPS://X.test "), Some("HTTPS://X.test"));
+    assert_eq!(export_href("ftp://x"), None);
+}

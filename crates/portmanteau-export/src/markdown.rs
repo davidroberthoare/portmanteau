@@ -21,6 +21,9 @@ pub(crate) fn markdown_runs(paragraph: &ProseParagraph) -> String {
                 if run.marks.contains(&InlineMark::Strikethrough) {
                     text = format!("~~{text}~~");
                 }
+                if let Some(href) = run.link.as_deref().and_then(export_href) {
+                    text = format!("[{text}]({})", href.replace(')', "%29").replace(' ', "%20"));
+                }
                 out.push_str(&text);
             }
             InlineContent::HardBreak => out.push_str("<br>"),

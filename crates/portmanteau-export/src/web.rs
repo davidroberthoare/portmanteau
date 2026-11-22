@@ -292,6 +292,9 @@ pub(crate) fn html_runs(paragraph: &ProseParagraph) -> String {
                 if run.marks.contains(&InlineMark::Strikethrough) {
                     text = format!("<s>{text}</s>");
                 }
+                if let Some(href) = run.link.as_deref().and_then(export_href) {
+                    text = format!("<a href=\"{}\">{text}</a>", html_escape(href));
+                }
                 out.push_str(&text);
             }
             InlineContent::HardBreak => out.push_str("<br/>"),
