@@ -196,7 +196,7 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         }
         let mut synopsis = doc.synopsis.editor_text();
         let synopsis_content = doc.synopsis.clone();
-        let synopsis_spans = crate::ui::editor::field_spans(checker, spell_on, &synopsis);
+        let synopsis_spans = crate::ui::editor::without_word_being_typed(ui.ctx(), synopsis_id, &synopsis, crate::ui::editor::field_spans(checker, spell_on, &synopsis));
         let mut synopsis_layouter =
             |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
                 let job = script_flow_layout_job(
@@ -355,7 +355,7 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         }
         let mut notes = doc.notes.editor_text();
         let notes_content = doc.notes.clone();
-        let notes_spans = crate::ui::editor::field_spans(checker, spell_on, &notes);
+        let notes_spans = crate::ui::editor::without_word_being_typed(ui.ctx(), notes_id, &notes, crate::ui::editor::field_spans(checker, spell_on, &notes));
         let mut notes_layouter = |ui: &egui::Ui,
                                   text: &dyn egui::TextBuffer,
                                   wrap_width: f32| {

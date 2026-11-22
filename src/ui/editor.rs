@@ -938,6 +938,24 @@ fn spell_menu_byte(
     byte_offset(text, cursor.index.0)
 }
 
+/// Leave out the word being typed: while a field has the keyboard and its caret
+/// sits at the end of a flagged word, that word is not underlined yet (it would
+/// flash red on every half-typed word). It is flagged once the caret moves on.
+pub(crate) fn without_word_being_typed(ctx: &egui::Context, id: Id, text: &str, mut spans: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
+    if spans.is_empty() || !ctx.memory(|m| m.has_focus(id)) {
+        return spans;
+    }
+    let Some(range) = egui::text_edit::TextEditState::load(ctx, id).and_then(|state| state.cursor.char_range()) else {
+        return spans;
+    };
+    if range.primary != range.secondary {
+        return spans;
+    }
+    let caret = text.char_indices().nth(range.primary.index.0).map_or(text.len(), |(byte, _)| byte);
+    spans.retain(|&(start, end)| !(start < caret && caret == end));
+    spans
+}
+
 /// Apply the menu's choices after the document borrow has ended, so the
 /// document is never borrowed while a widget runs (AGENTS.md §8).
 /// Misspelled byte ranges of a field's text, for its layouter (empty when
@@ -1022,7 +1040,7 @@ pub(crate) fn spelled_text_edit(
     color: Color32,
     configure: impl for<'l> FnOnce(TextEdit<'l>) -> TextEdit<'l>,
 ) -> (egui::text_edit::TextEditOutput, FieldSpell) {
-    let spans = field_spans(checker, enabled, text);
+    let spans = without_word_being_typed(ui.ctx(), id, text, field_spans(checker, enabled, text));
     let base = egui::TextFormat {
         font_id: font,
         color,
@@ -1240,7 +1258,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         let rows = ((edit_text.chars().count() as f32) / 72.0).ceil().max(18.0) as usize;
         // One dictionary pass per frame, reused by every layouter call.
         let spans = if spell_on {
-            checker.misspelled_spans(&edit_text)
+            without_word_being_typed(ui.ctx(), prose_id, &edit_text, checker.misspelled_spans(&edit_text))
         } else {
             Vec::new()
         };
@@ -1533,7 +1551,7 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         let before = doc.content.editor_text();
         let mut edit_text = before.clone();
         let spans = if spell_on {
-            checker.misspelled_spans(&edit_text)
+            without_word_being_typed(ui.ctx(), flow_id, &edit_text, checker.misspelled_spans(&edit_text))
         } else {
             Vec::new()
         };
@@ -6195,5 +6213,35 @@ mod ui_tests {
         let underlined: bool = harness.ctx.data(|d| d.get_temp(Id::unique("underlined"))).unwrap_or(false);
         assert!(underlined, "the misspelled word should carry an underline section");
         assert_eq!(&*text.borrow(), "Fine words and a wrrod.", "drawing does not alter the text");
+    }
+
+    #[test]
+    fn the_word_being_typed_is_not_underlined_until_the_caret_moves_on() {
+        let id = Id::unique("typing-test");
+        let spans = vec![(10usize, 13usize)];
+        let result = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let out = std::rc::Rc::clone(&result);
+        let mut harness = egui_kittest::Harness::new_ui(move |ui| {
+            let ctx = ui.ctx().clone();
+            ctx.memory_mut(|m| m.request_focus(id));
+            let at = |caret: usize| {
+                let mut state = egui::text_edit::TextEditState::default();
+                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(caret))));
+                state.store(&ctx, id);
+            };
+            let mut out = out.borrow_mut();
+            out.clear();
+            at(13);
+            out.push(without_word_being_typed(&ctx, id, "One day I sta", spans.clone()));
+            at(11);
+            out.push(without_word_being_typed(&ctx, id, "One day I sta", spans.clone()));
+            at(14);
+            out.push(without_word_being_typed(&ctx, id, "One day I sta ", spans.clone()));
+        });
+        harness.run_steps(3);
+        let result = result.borrow();
+        assert!(result[0].is_empty(), "caret at the end of the word: not flagged yet");
+        assert_eq!(result[1], vec![(10, 13)], "caret elsewhere in the word is still flagged");
+        assert_eq!(result[2], vec![(10, 13)], "once the caret moves on, the word is flagged");
     }
 }

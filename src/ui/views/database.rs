@@ -500,8 +500,12 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     ui.add_space(6.0);
                     let checker = &app.spell;
                     let spell_on = app.settings.spellcheck;
-                    let notes_spans =
-                        crate::ui::editor::field_spans(checker, spell_on, &draft.notes);
+                    let notes_spans = crate::ui::editor::without_word_being_typed(
+                        ui.ctx(),
+                        notes_id,
+                        &draft.notes,
+                        crate::ui::editor::field_spans(checker, spell_on, &draft.notes),
+                    );
                     let rich_notes_layout = rich_notes.clone();
                     let styles_layout = note_styles.clone();
                     let sheet_layout = sheet.clone();
