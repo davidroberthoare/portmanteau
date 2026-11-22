@@ -179,15 +179,30 @@ fn browse_for(mode: PathDialog, current: &str) -> Option<String> {
     picked.map(|path| path.display().to_string())
 }
 
-/// A link the desktop may be asked to open: web and mail addresses only, no
-/// whitespace or control characters. A project from elsewhere could carry any
-/// link it likes (`file:`, a custom scheme, a command-looking string), so
-/// nothing else ever reaches the system's opener.
+/// A link the desktop may be asked to open: web addresses with a host, and
+/// mail addresses without attachment parameters. A project from elsewhere could
+/// carry any link it likes (`file:`, a custom scheme, a command-looking string,
+/// `mailto:x?attach=/etc/passwd`), so nothing else ever reaches the system's
+/// opener. Whitespace, control characters, backslashes, quotes, angle brackets
+/// and the characters shells and URL handlers treat specially are refused too.
 pub(crate) fn safe_external_url(link: &str) -> Option<&str> {
     let link = link.trim();
+    if link.chars().any(|c| c.is_whitespace() || c.is_control() || "\\\"<>|^`".contains(c)) {
+        return None;
+    }
     let lower = link.to_ascii_lowercase();
-    let scheme_ok = ["http://", "https://", "mailto:"].iter().any(|s| lower.starts_with(s));
-    (scheme_ok && !link.chars().any(|c| c.is_whitespace() || c.is_control())).then_some(link)
+    if let Some(rest) = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://")) {
+        let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+        let host = authority.rsplit('@').next().unwrap_or("");
+        let host = host.rsplit_once(':').map_or(host, |(h, port)| if port.chars().all(|c| c.is_ascii_digit()) { h } else { host });
+        return (!host.is_empty() && host != "." && !host.starts_with('-')).then_some(link);
+    }
+    if let Some(rest) = lower.strip_prefix("mailto:") {
+        let (address, query) = rest.split_once('?').unwrap_or((rest, ""));
+        let attaches = query.split('&').any(|pair| pair.split('=').next().is_some_and(|k| k.contains("attach")));
+        return (!address.is_empty() && !attaches).then_some(link);
+    }
+    None
 }
 
 /// Ask the desktop to open a web or mail address (already vetted by
@@ -196,8 +211,14 @@ pub(crate) fn safe_external_url(link: &str) -> Option<&str> {
 fn open_url(url: &str) {
     #[cfg(target_os = "macos")]
     let mut command = std::process::Command::new("open");
+    // Not `explorer`: it treats its argument as a path or command, while the
+    // protocol handler takes a URL and nothing else.
     #[cfg(target_os = "windows")]
-    let mut command = std::process::Command::new("explorer");
+    let mut command = {
+        let mut command = std::process::Command::new("rundll32");
+        command.arg("url.dll,FileProtocolHandler");
+        command
+    };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let mut command = std::process::Command::new("xdg-open");
     let _ = command.arg(url).spawn();
@@ -2951,6 +2972,8 @@ mod shell_probe {
 
         assert_eq!(safe_external_url("https://example.org/a?b=1"), Some("https://example.org/a?b=1"));
         assert_eq!(safe_external_url("  MAILTO:a@b.test "), Some("MAILTO:a@b.test"));
+        assert_eq!(safe_external_url("https://user@host.test:8080/p?q=1,2#f"), Some("https://user@host.test:8080/p?q=1,2#f"));
+        assert_eq!(safe_external_url("mailto:a@b.test?subject=Hello%20there"), Some("mailto:a@b.test?subject=Hello%20there"));
         for hostile in [
             "file:///etc/passwd",
             "javascript:alert(1)",
@@ -2958,6 +2981,14 @@ mod shell_probe {
             "https://x.test/a b",
             "https://x.test/\nrm -rf",
             "-oProxyCommand=evil",
+            "https://",
+            "https:///path-without-host",
+            "https://-evil.test",
+            "https://x.test\\evil",
+            "https://x.test/\"q",
+            "mailto:",
+            "mailto:a@b.test?attach=/etc/passwd",
+            "mailto:a@b.test?subject=hi&Attachment=/x",
             "",
         ] {
             assert_eq!(safe_external_url(hostile), None, "{hostile:?}");
