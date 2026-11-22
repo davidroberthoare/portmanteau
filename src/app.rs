@@ -198,7 +198,21 @@ pub(crate) fn safe_external_url(link: &str) -> Option<&str> {
         return (!host.is_empty() && host != "." && !host.starts_with('-')).then_some(link);
     }
     if let Some(rest) = lower.strip_prefix("mailto:") {
+        // A mail client may decode the whole link before splitting it, so a
+        // delimiter written as an escape (`%3F`, `%26`, `%3D`, `%23`, `%25`)
+        // could turn a harmless-looking value into a new field. Refuse them
+        // anywhere in the link rather than guess how a particular client reads it.
+        let encoded_delimiter = rest
+            .match_indices('%')
+            .any(|(at, _)| rest.get(at + 1..at + 3).is_some_and(|hex| ["3f", "26", "3d", "23", "25"].contains(&hex)));
+        if encoded_delimiter {
+            return None;
+        }
         let (address, query) = rest.split_once('?').unwrap_or((rest, ""));
+        // The address is a plain list of mailboxes, nothing cleverer.
+        if address.is_empty() || !address.chars().all(|c| c.is_ascii_alphanumeric() || ".@_+-,".contains(c)) {
+            return None;
+        }
         // Only the header fields a message is composed from; anything else
         // (`attach`, however it is spelled or percent-encoded) is refused, as
         // is a key that does not decode.
@@ -207,7 +221,7 @@ pub(crate) fn safe_external_url(link: &str) -> Option<&str> {
             percent_decode(key)
                 .is_some_and(|key| ["to", "cc", "bcc", "subject", "body"].contains(&key.to_ascii_lowercase().as_str()))
         });
-        return (!address.is_empty() && known).then_some(link);
+        return known.then_some(link);
     }
     None
 }
@@ -2999,6 +3013,7 @@ mod shell_probe {
         assert_eq!(safe_external_url("  MAILTO:a@b.test "), Some("MAILTO:a@b.test"));
         assert_eq!(safe_external_url("https://user@host.test:8080/p?q=1,2#f"), Some("https://user@host.test:8080/p?q=1,2#f"));
         assert_eq!(safe_external_url("mailto:a@b.test?subject=Hello%20there"), Some("mailto:a@b.test?subject=Hello%20there"));
+        assert_eq!(safe_external_url("mailto:a@b.test,c@d.test"), Some("mailto:a@b.test,c@d.test"));
         assert_eq!(
             safe_external_url("mailto:a@b.test?cc=c@d.test&BODY=Hi%0AThere"),
             Some("mailto:a@b.test?cc=c@d.test&BODY=Hi%0AThere"),
@@ -3022,6 +3037,14 @@ mod shell_probe {
             "mailto:a@b.test?%41TTACH=/etc/passwd",
             "mailto:a@b.test?att%61ch=/x",
             "mailto:a@b.test?x-custom=1",
+            "mailto:a@b.test%3Fattach=/etc/passwd",
+            "mailto:a@b.test%3fattach%3d/x",
+            "mailto:a@b.test?subject=hi%26attach%3D/etc/passwd",
+            "mailto:a@b.test?body=100%25",
+            "mailto:a@b.test?subject=x%23y",
+            "mailto:a b@c.test",
+            "mailto:a@b.test;c@d.test",
+            "mailto:<a>@b.test",
             "mailto:a@b.test?subject=ok&%zz=1",
             "",
         ] {
