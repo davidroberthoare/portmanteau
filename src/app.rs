@@ -186,6 +186,14 @@ pub enum InspectorTab {
     History,
 }
 
+/// A place in a document's text to put the caret.
+pub struct CaretRequest {
+    pub doc_id: String,
+    pub paragraph: usize,
+    /// Characters into the paragraph.
+    pub offset: usize,
+}
+
 pub struct Toast {
     pub message: String,
     pub detail: String,
@@ -274,6 +282,9 @@ pub struct PortmanteauApp {
     pub selected: Option<String>,
     pub selected_block: usize,
     pub block_focus: Option<usize>,
+    /// Set by the Paged view when a paragraph is clicked: the editor opens that
+    /// document in Continuous with the caret there, then clears it.
+    pub caret_request: Option<CaretRequest>,
     pub inspector_tab: InspectorTab,
     /// Undo and redo for the selected document's text (see `history.rs`).
     pub history: crate::history::History,
@@ -370,6 +381,7 @@ impl PortmanteauApp {
             selected,
             selected_block: 0,
             block_focus: None,
+            caret_request: None,
             inspector_tab: InspectorTab::Document,
             history: crate::history::History::default(),
             history_pending: false,

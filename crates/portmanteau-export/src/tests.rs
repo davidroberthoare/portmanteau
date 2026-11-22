@@ -1039,3 +1039,22 @@ fn page_starts_point_back_at_the_paragraph_and_line_that_opens_each_page() {
     let first = &counts.starts[&scene][0];
     assert_eq!(first.paragraph, 0);
 }
+
+#[test]
+fn a_script_page_start_carries_the_number_printed_on_that_page() {
+    let p = demo();
+    let mut s = p.settings_for(ExportKind::Pdf);
+    s.compile_type = Some(CompileType::TvScript);
+    s.include_title_page = true;
+    let pilot = p.documents.iter().find(|d| d.medium == Medium::TvScript).unwrap();
+    let counts = {
+        let mut project = p.clone();
+        project.export = s.clone();
+        project.set_settings(s.clone());
+        page_counts(&project)
+    };
+    let first = &counts.starts[&pilot.id][0];
+    // Physical page 2 (the cover is page 1) prints as "1".
+    assert_eq!(first.page, 1);
+    assert_eq!(first.label.as_deref(), Some("1"));
+}

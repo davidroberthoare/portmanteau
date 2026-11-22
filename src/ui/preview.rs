@@ -11,7 +11,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Pos2, RichText, Sense, Stroke, Vec2};
 use portmanteau_core::{CompileScope, CompileType, ExportKind, ExportSettings, Project};
 use portmanteau_export::{pdf_layout, text_width, Face, Family, PageCounts, PdfLayout};
 
@@ -103,11 +103,11 @@ pub fn page_counts(ui: &egui::Ui, project: &Project) -> Arc<PageCounts> {
 
 /// Draw one page of `layout` at `scale` screen points per page point.
 /// A page past the end (an empty manuscript) draws as blank paper.
-pub fn paint_page(ui: &mut egui::Ui, layout: &PdfLayout, index: usize, scale: f32) -> Rect {
+pub fn paint_page(ui: &mut egui::Ui, layout: &PdfLayout, index: usize, scale: f32) -> egui::Response {
     let size = Vec2::new(layout.width, layout.height) * scale;
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     if !ui.is_rect_visible(rect) {
-        return rect;
+        return response;
     }
     let painter = ui.painter_at(rect.expand(40.0));
     painter.add(
@@ -127,7 +127,7 @@ pub fn paint_page(ui: &mut egui::Ui, layout: &PdfLayout, index: usize, scale: f3
         egui::StrokeKind::Inside,
     );
     let Some(page) = layout.pages.get(index) else {
-        return rect;
+        return response;
     };
     for item in &page.items {
         let mut x = rect.left() + item.x * scale;
@@ -153,7 +153,7 @@ pub fn paint_page(ui: &mut egui::Ui, layout: &PdfLayout, index: usize, scale: f3
             x += text_width(&segment.text, segment.face, item.size) * scale;
         }
     }
-    rect
+    response
 }
 
 /// The pages of one document in the compiled manuscript, as the editor's
@@ -200,6 +200,42 @@ pub fn paged_document(
     })
 }
 
+/// The paragraph and character of `doc_id`'s text nearest a point on a page
+/// (page points from its top-left). The nearest line wins, so a click in a
+/// margin or between lines still lands somewhere sensible; within a line the
+/// character is found by walking the real glyph advances.
+pub fn hit_source(layout: &PdfLayout, page: usize, x: f32, y: f32, doc_id: &str) -> Option<(usize, usize)> {
+    let page = layout.pages.get(page)?;
+    let mut best: Option<(f32, &portmanteau_export::PdfText, &portmanteau_export::PdfSource)> = None;
+    for item in &page.items {
+        let Some(source) = item.source.as_ref().filter(|s| &*s.doc_id == doc_id) else { continue };
+        // The middle of the line's body, between baseline and cap height.
+        let centre = item.baseline - item.size * 0.3;
+        let width: f32 = item.segments.iter().map(|s| text_width(&s.text, s.face, item.size)).sum();
+        let dx = if x < item.x { item.x - x } else if x > item.x + width { x - item.x - width } else { 0.0 };
+        // Vertical distance dominates; horizontal only separates the pieces
+        // of one justified line.
+        let distance = (y - centre).abs() * 4.0 + dx;
+        if best.is_none_or(|(d, _, _)| distance < d) {
+            best = Some((distance, item, source));
+        }
+    }
+    let (_, item, source) = best?;
+    let mut cursor = item.x;
+    let mut chars = 0usize;
+    'walk: for segment in &item.segments {
+        for c in segment.text.chars() {
+            let advance = text_width(&c.to_string(), segment.face, item.size);
+            if x < cursor + advance * 0.5 {
+                break 'walk;
+            }
+            cursor += advance;
+            chars += 1;
+        }
+    }
+    Some((source.paragraph, source.offset + chars))
+}
+
 /// The Paged view: the document's pages stacked on a desk, read-only. The
 /// page under the top of the viewport is written to `app.paged_page` (1-based
 /// within the document) for the toolbar.
@@ -207,6 +243,7 @@ pub fn paged_view(
     app: &mut crate::app::PortmanteauApp,
     ui: &mut egui::Ui,
     paged: &Result<PagedDocument, String>,
+    doc_id: &str,
 ) {
     let paged = match paged {
         Ok(paged) => paged,
@@ -232,6 +269,7 @@ pub fn paged_view(
     let scale = (fit * app.editor_zoom.clamp(0.7, 1.6) / crate::theme::DEFAULT_EDITOR_ZOOM).clamp(0.3, 2.4);
     let mut page_tops = Vec::with_capacity(paged.count);
     let mut viewport_top = f32::NEG_INFINITY;
+    let mut clicked: Option<crate::app::CaretRequest> = None;
     egui::ScrollArea::both()
         .id_salt("editor_paged_scroll")
         .auto_shrink([false, false])
@@ -240,19 +278,41 @@ pub fn paged_view(
             ui.add_space(22.0);
             ui.vertical_centered(|ui| {
                 ui.label(
-                    RichText::new("Read-only page preview — switch to Continuous to edit")
+                    RichText::new("Read-only page preview — click a paragraph to edit it")
                         .font(ui_small())
                         .color(FAINT),
                 );
                 ui.add_space(10.0);
                 for page in paged.first..paged.first + paged.count {
-                    let rect = paint_page(ui, layout, page, scale);
-                    page_tops.push(rect.top());
+                    let response = paint_page(ui, layout, page, scale);
+                    page_tops.push(response.rect.top());
+                    if response.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                    }
+                    if response.clicked() {
+                        if let Some(pos) = response.interact_pointer_pos() {
+                            let local = (pos - response.rect.min) / scale;
+                            if let Some((paragraph, offset)) =
+                                hit_source(layout, page, local.x, local.y, doc_id)
+                            {
+                                clicked = Some(crate::app::CaretRequest {
+                                    doc_id: doc_id.to_string(),
+                                    paragraph,
+                                    offset,
+                                });
+                            }
+                        }
+                    }
                     ui.add_space(26.0);
                 }
             });
             ui.add_space(36.0);
         });
+    if let Some(request) = clicked {
+        // Back to the writing surface, caret where the writer clicked.
+        app.caret_request = Some(request);
+        app.write_mode = crate::app::WriteMode::Continuous;
+    }
     app.paged_page = page_tops
         .iter()
         .enumerate()
@@ -340,5 +400,28 @@ mod tests {
         project.document_mut(&id).unwrap().include_in_export = false;
         let reason = run(|ui| paged_document(ui, &project, &id)).err().expect("no pages");
         assert!(reason.contains("Excluded from compile"), "{reason}");
+    }
+
+    #[test]
+    fn a_click_finds_the_paragraph_and_character_under_it() {
+        let project = portmanteau_core::sample::demo();
+        let chapter = project
+            .documents
+            .iter()
+            .find(|d| d.kind == portmanteau_core::DocKind::Chapter)
+            .unwrap();
+        let paged = run(|ui| paged_document(ui, &project, &chapter.id)).unwrap();
+        let page = &paged.layout.pages[paged.first];
+        // Aim at the third character of the first line of document text.
+        let item = page.items.iter().find(|item| item.source.is_some()).unwrap();
+        let source = item.source.as_ref().unwrap();
+        let first = &item.segments[0];
+        let x = item.x + text_width(&first.text.chars().take(3).collect::<String>(), first.face, item.size) + 0.5;
+        let hit = hit_source(&paged.layout, paged.first, x, item.baseline - item.size * 0.3, &chapter.id).unwrap();
+        assert_eq!(hit, (source.paragraph, source.offset + 3));
+        // A click far below the text lands on the last line, not nowhere.
+        assert!(hit_source(&paged.layout, paged.first, 10.0, paged.layout.height - 5.0, &chapter.id).is_some());
+        // Another document's id finds nothing.
+        assert!(hit_source(&paged.layout, paged.first, x, item.baseline, "someone-else").is_none());
     }
 }

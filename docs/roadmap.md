@@ -307,16 +307,20 @@ Next session candidates:
 - FDX style/object mapping review dialog; optional dark theme on the same tokens; further reduction of persistent control rows in Compile.
 - Remove dead `legacy_script_page` in `src/ui/editor.rs` and the unused `insert_image` field on `InlineToolbarResult`.
 
-## Editing on pages (decision pending with the owner)
+## Editing on pages (decided: one editor)
 
 The continuous editor is one egui `TextEdit` over the whole document; the page
-layout comes from the exporter's own text engine (font advances via skrifa, its
-own line breaking). Editing directly on the exported pages would need a second
-editing engine (caret hit-testing, selection, IME, clipboard, undo, spell
-underlines, inline marks), so every editing feature would be written twice.
-Recommended instead, keeping one editor:
+layout comes from the exporter's own text engine. Editing directly on the
+exported pages would need a second editing engine, so every editing feature
+would be written twice. Instead the single editor learns about pages:
 
-1. Page-break markers in the continuous view, from `pdf_layout` (needs a
-   paragraph index on each layout item).
-2. Click a paragraph in Paged to open Continuous with the caret there.
-3. Keep Paged read-only.
+- Done: page markers in the continuous view ("PAGE 7", the number printed on
+  the page) from `page_counts().starts`; click a paragraph in Paged to open
+  Continuous with the caret there (`CaretRequest`, `hit_source`); Paged stays
+  read-only.
+- Layout lines carry `PdfSource` (document, paragraph, offset, line) so they can
+  point back at the text. Offsets are approximate by a few characters because
+  wrapping drops the spaces it breaks on.
+- The editor wraps with egui and the PDF with its own engine, so a marker can
+  sit a line or two from the printed break. If that proves too loose, match the
+  editor's wrap width to the page's text width.

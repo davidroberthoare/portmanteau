@@ -68,7 +68,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     }
 
     if let Some(paged) = &paged {
-        crate::ui::preview::paged_view(app, ui, paged);
+        crate::ui::preview::paged_view(app, ui, paged, &doc_id);
         return;
     }
 
@@ -1154,7 +1154,8 @@ fn apply_spell_actions(app: &mut PortmanteauApp, actions: Vec<SpellAction>) {
 fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_snapshot: &mut bool) {
     // The page count the exporter will produce; recomputed a moment after typing
     // pauses, never on every keystroke.
-    let pages = crate::ui::preview::page_counts(ui, &app.ws.project).label(doc_id);
+    let page_map = crate::ui::preview::page_counts(ui, &app.ws.project);
+    let pages = page_map.label(doc_id);
     let mut dirty = false;
     let zoom = app.editor_zoom.clamp(0.7, 1.6) * PROSE_ZOOM_BASE;
     // The prose surface takes its type from the project's body element style,
@@ -1252,6 +1253,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                 &spans,
             )
         };
+        let reveal = take_caret_request(&mut app.caret_request, ui, doc_id, &doc.content, prose_id);
         let edit = TextEdit::multiline(&mut edit_text)
             .id(prose_id)
             .font(FontId::new(text_size, family.clone()))
@@ -1267,6 +1269,8 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                     .color(PAPER_MUTED),
             );
         let output = edit.show(ui);
+        reveal_caret(ui, &output, reveal);
+        paint_page_markers(ui, &output, &doc.content, page_map.starts.get(doc_id));
         if output.response.changed() {
             let caret = output.cursor_range.map(|range| range.primary.index.0);
             doc.content
@@ -1353,7 +1357,8 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
 fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     // The page count the exporter will produce; recomputed a moment after typing
     // pauses, never on every keystroke.
-    let pages = crate::ui::preview::page_counts(ui, &app.ws.project).label(doc_id);
+    let page_map = crate::ui::preview::page_counts(ui, &app.ws.project);
+    let pages = page_map.label(doc_id);
     let margins = script_margins(app, doc_id);
     let zoom = (app.editor_zoom.clamp(0.7, 1.6) * SCRIPT_ZOOM_BASE)
         .min(ui.available_width() / (612.0 - margins.left - margins.right).max(144.0))
@@ -1607,7 +1612,10 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 options.input_options.surrender_focus_on = egui::SurrenderFocusOn::Never;
             });
         }
+        let reveal = take_caret_request(&mut app.caret_request, ui, doc_id, &doc.content, flow_id);
         let output = edit.show(ui);
+        reveal_caret(ui, &output, reveal);
+        paint_page_markers(ui, &output, &doc.content, page_map.starts.get(doc_id));
         ui.ctx()
             .options_mut(|options| options.input_options.surrender_focus_on = surrender);
         let caret = output
@@ -2289,6 +2297,81 @@ pub(crate) fn paint_rich_images(
     }
 }
 
+/// A request from the Paged view for this document: put the caret where the
+/// writer clicked and let the text box take focus. Returns the character to
+/// bring into view once the text is laid out.
+fn take_caret_request(
+    request: &mut Option<crate::app::CaretRequest>,
+    ui: &egui::Ui,
+    doc_id: &str,
+    content: &portmanteau_core::RichDocument,
+    text_id: Id,
+) -> Option<usize> {
+    let request = request.take_if(|request| request.doc_id == doc_id)?;
+    let length = content
+        .paragraphs
+        .get(request.paragraph)
+        .map(|paragraph| paragraph.editor_text().chars().count())
+        .unwrap_or(0);
+    let caret = rich_paragraph_start(content, request.paragraph) + request.offset.min(length);
+    ui.memory_mut(|memory| memory.request_focus(text_id));
+    let mut state = egui::text_edit::TextEditState::load(ui.ctx(), text_id).unwrap_or_default();
+    state
+        .cursor
+        .set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(caret))));
+    state.store(ui.ctx(), text_id);
+    Some(caret)
+}
+
+/// Scroll the character a caret request chose into the middle of the view.
+fn reveal_caret(ui: &egui::Ui, output: &egui::text_edit::TextEditOutput, caret: Option<usize>) {
+    let Some(caret) = caret else { return };
+    let rect = output
+        .galley
+        .pos_from_cursor(egui::text::CCursor::new(caret))
+        .translate(output.galley_pos.to_vec2());
+    ui.scroll_to_rect(rect.expand2(Vec2::new(0.0, 60.0)), Some(Align::Center));
+}
+
+/// "Page N" markers in the writing surface, where the exported pages begin.
+/// The positions come from the PDF layout; the lines break by egui's own
+/// wrapping here, so a marker can sit a line or two from the printed break
+/// (never in a different paragraph).
+fn paint_page_markers(
+    ui: &egui::Ui,
+    output: &egui::text_edit::TextEditOutput,
+    content: &portmanteau_core::RichDocument,
+    starts: Option<&Vec<portmanteau_export::PageStart>>,
+) {
+    let Some(starts) = starts else { return };
+    let rect = output.response.rect;
+    for start in starts {
+        let Some(paragraph) = content.paragraphs.get(start.paragraph) else { continue };
+        let length = paragraph.editor_text().chars().count();
+        // A page can open partway through a paragraph; the layout's offset says how far.
+        let index = rich_paragraph_start(content, start.paragraph) + start.offset.min(length);
+        let row = output
+            .galley
+            .pos_from_cursor(egui::text::CCursor::new(index))
+            .translate(output.galley_pos.to_vec2());
+        let y = row.top() - 1.0;
+        let color = PAPER_MUTED.gamma_multiply(0.7);
+        ui.painter().add(egui::Shape::dashed_line(
+            &[egui::pos2(rect.left() - 10.0, y), egui::pos2(rect.right() + 10.0, y)],
+            Stroke::new(1.0, color),
+            4.0,
+            4.0,
+        ));
+        ui.painter().text(
+            egui::pos2(rect.right() + 14.0, y),
+            egui::Align2::LEFT_CENTER,
+            format!("PAGE {}", start.label.clone().unwrap_or_else(|| (start.page + 1).to_string())),
+            sans(8.5),
+            color,
+        );
+    }
+}
+
 fn rich_paragraph_start(content: &portmanteau_core::RichDocument, index: usize) -> usize {
     content
         .paragraphs
@@ -2428,7 +2511,8 @@ pub(crate) fn inline_format_toolbar(
 fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     // The page count the exporter will produce; recomputed a moment after typing
     // pauses, never on every keystroke.
-    let pages = crate::ui::preview::page_counts(ui, &app.ws.project).label(doc_id);
+    let page_map = crate::ui::preview::page_counts(ui, &app.ws.project);
+    let pages = page_map.label(doc_id);
     let mut dirty = false;
     let zoom = app.editor_zoom.clamp(0.7, 1.6) * SCRIPT_ZOOM_BASE;
     let mut add_at: Option<usize> = None;
@@ -3245,6 +3329,37 @@ fn empty_state(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 /// window, GPU or display is involved: `cargo test` runs them like any other
 /// unit test. Frames are fed by hand with synthetic [`egui::RawInput`], which
 /// is exactly what an eframe integration would deliver.
+#[cfg(test)]
+mod caret_request_tests {
+    use super::*;
+
+    #[test]
+    fn a_caret_request_for_this_document_places_the_caret_in_its_paragraph() {
+        let ctx = egui::Context::default();
+        let content = portmanteau_core::RichDocument::from_plain_text("First paragraph.\n\nSecond paragraph here.", "body");
+        // Paragraph indices count the blank one between the two lines of text.
+        let target = content.paragraphs.iter().position(|p| p.plain_text().starts_with("Second")).unwrap();
+        let mut request = Some(crate::app::CaretRequest { doc_id: "doc".into(), paragraph: target, offset: 7 });
+        let id = Id::unique("caret-test");
+        let mut other = None;
+        let mut placed = None;
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            // Someone else's request is left alone.
+            let mut theirs = Some(crate::app::CaretRequest { doc_id: "other".into(), paragraph: 0, offset: 0 });
+            other = take_caret_request(&mut theirs, ui, "doc", &content, id);
+            assert!(theirs.is_some());
+            placed = take_caret_request(&mut request, ui, "doc", &content, id);
+        })
+        .drop_without_applying_deltas();
+        assert_eq!(other, None);
+        let expected = rich_paragraph_start(&content, target) + 7;
+        assert_eq!(placed, Some(expected));
+        assert!(request.is_none(), "the request is consumed");
+        let state = egui::text_edit::TextEditState::load(&ctx, id).expect("state stored");
+        assert_eq!(state.cursor.char_range().unwrap().primary.index.0, expected);
+    }
+}
+
 #[cfg(test)]
 mod ui_tests {
     use super::*;
