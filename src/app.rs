@@ -199,10 +199,35 @@ pub(crate) fn safe_external_url(link: &str) -> Option<&str> {
     }
     if let Some(rest) = lower.strip_prefix("mailto:") {
         let (address, query) = rest.split_once('?').unwrap_or((rest, ""));
-        let attaches = query.split('&').any(|pair| pair.split('=').next().is_some_and(|k| k.contains("attach")));
-        return (!address.is_empty() && !attaches).then_some(link);
+        // Only the header fields a message is composed from; anything else
+        // (`attach`, however it is spelled or percent-encoded) is refused, as
+        // is a key that does not decode.
+        let known = query.split('&').filter(|pair| !pair.is_empty()).all(|pair| {
+            let key = pair.split('=').next().unwrap_or("");
+            percent_decode(key)
+                .is_some_and(|key| ["to", "cc", "bcc", "subject", "body"].contains(&key.to_ascii_lowercase().as_str()))
+        });
+        return (!address.is_empty() && known).then_some(link);
     }
     None
+}
+
+/// `%XX` escapes undone; `None` for a malformed escape or bytes that are not UTF-8.
+fn percent_decode(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = text.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
 }
 
 /// Ask the desktop to open a web or mail address (already vetted by
@@ -2974,6 +2999,10 @@ mod shell_probe {
         assert_eq!(safe_external_url("  MAILTO:a@b.test "), Some("MAILTO:a@b.test"));
         assert_eq!(safe_external_url("https://user@host.test:8080/p?q=1,2#f"), Some("https://user@host.test:8080/p?q=1,2#f"));
         assert_eq!(safe_external_url("mailto:a@b.test?subject=Hello%20there"), Some("mailto:a@b.test?subject=Hello%20there"));
+        assert_eq!(
+            safe_external_url("mailto:a@b.test?cc=c@d.test&BODY=Hi%0AThere"),
+            Some("mailto:a@b.test?cc=c@d.test&BODY=Hi%0AThere"),
+        );
         for hostile in [
             "file:///etc/passwd",
             "javascript:alert(1)",
@@ -2989,6 +3018,11 @@ mod shell_probe {
             "mailto:",
             "mailto:a@b.test?attach=/etc/passwd",
             "mailto:a@b.test?subject=hi&Attachment=/x",
+            "mailto:a@b.test?%61ttach=/etc/passwd",
+            "mailto:a@b.test?%41TTACH=/etc/passwd",
+            "mailto:a@b.test?att%61ch=/x",
+            "mailto:a@b.test?x-custom=1",
+            "mailto:a@b.test?subject=ok&%zz=1",
             "",
         ] {
             assert_eq!(safe_external_url(hostile), None, "{hostile:?}");
