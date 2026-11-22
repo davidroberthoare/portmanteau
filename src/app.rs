@@ -1947,6 +1947,7 @@ impl PortmanteauApp {
         self.handle_shortcuts(&ctx);
         self.undo_redo_shortcuts(&ctx);
         crate::ui::editor::publish_link_targets(&ctx, &self.ws.project);
+        ctx.data_mut(|data| data.insert_temp(Id::unique("spell-on"), self.settings.spellcheck));
         if let Some(link) = crate::ui::editor::take_clicked_link(&ctx) {
             self.open_link(&link);
         }

@@ -848,6 +848,11 @@ fn spell_menu_ui(
     text: &str,
     byte: usize,
 ) -> Option<SpellChoice> {
+    // A link is an address, not prose: offer its own actions, never spelling.
+    if let Some((range, link)) = link_in_text(text, byte) {
+        link_actions_ui(ui, range, &link);
+        return None;
+    }
     let Some((range, word)) = word_at(text, byte) else {
         ui.label(RichText::new("No word here").font(ui_small()).color(FAINT));
         return None;
@@ -2487,27 +2492,66 @@ struct LinkMenu {
     link: String,
 }
 
+/// The link a right-click landed on in `text` (the field's editor text), as a
+/// character range and its target, found from what the layout registered.
+fn link_in_text(text: &str, byte: usize) -> Option<(std::ops::Range<usize>, String)> {
+    let index = text.get(..byte.min(text.len()))?.chars().count();
+    LINK_SPANS.with(|map| {
+        map.borrow()
+            .get(&text_key(text))?
+            .iter()
+            .find(|(range, _)| range.contains(&index))
+            .cloned()
+    })
+}
+
+/// Ask whichever field holds this link to open its edit dialog. The field is
+/// found by the link itself (`link_support` checks its own content), so the
+/// menu does not need to know which field it was opened from.
+fn request_link_edit(ctx: &egui::Context, range: std::ops::Range<usize>, url: String) {
+    let edit = LinkEdit { range, url, existing: true, first_frame: true };
+    ctx.data_mut(|data| data.insert_temp(Id::unique("link-edit-request"), edit));
+}
+
+/// What a right-click on a link offers, shared by the spelling menu and the
+/// plain link menu. Returns whether the writer chose something (close the menu).
+fn link_actions_ui(ui: &mut egui::Ui, range: std::ops::Range<usize>, link: &str) -> bool {
+    ui.set_min_width(150.0);
+    let shown: String = link.chars().take(38).collect();
+    ui.label(RichText::new(if shown.len() < link.len() { format!("{shown}…") } else { shown }).font(ui_small()).color(FAINT));
+    let mut chosen = false;
+    if ui.button("Edit link…").clicked() {
+        request_link_edit(ui.ctx(), range, link.to_string());
+        chosen = true;
+    }
+    if ui.button("Open link").clicked() {
+        ui.ctx().data_mut(|data| data.insert_temp(Id::unique("clicked-link"), link.to_string()));
+        chosen = true;
+    }
+    if chosen {
+        ui.close();
+    }
+    chosen
+}
+
 /// Show the right-click menu for this field's link, if one is open. "Edit
 /// link…" opens the same dialog as making a link (see `inline_format_toolbar`).
 fn link_menu(ctx: &egui::Context, field: Id) {
     let key = Id::unique(("link_menu", field));
     let Some(menu) = ctx.data(|data| data.get_temp::<LinkMenu>(key)) else { return };
+    // With spell-checking on, the field's own right-click menu already carries
+    // the link actions (see `spell_menu_ui`); two menus would fight.
+    if ctx.data(|data| data.get_temp::<bool>(Id::unique("spell-on"))).unwrap_or(false) {
+        ctx.data_mut(|data| data.remove::<LinkMenu>(key));
+        return;
+    }
     let mut close = false;
     let area = egui::Area::new(Id::unique(("link_menu_area", field)))
         .order(egui::Order::Foreground)
         .fixed_pos(menu.pos)
         .show(ctx, |ui| {
             Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_min_width(130.0);
-                if ui.button("Edit link…").clicked() {
-                    let edit = LinkEdit { range: menu.range.clone(), url: menu.link.clone(), existing: true, first_frame: true };
-                    ctx.data_mut(|data| data.insert_temp(Id::unique(("link_edit", field)), edit));
-                    close = true;
-                }
-                if ui.button("Open link").clicked() {
-                    ctx.data_mut(|data| data.insert_temp(Id::unique("clicked-link"), menu.link.clone()));
-                    close = true;
-                }
+                close = link_actions_ui(ui, menu.range.clone(), &menu.link);
             });
         });
     let clicked_elsewhere = ctx.input(|i| i.pointer.any_pressed())
@@ -2590,32 +2634,8 @@ pub(crate) fn inline_format_toolbar(
         })
         .filter(|range| range.start < range.end);
 
-    // ---- Links: Ctrl/Cmd+K, or the Link button in the popup below ------
+    changed |= link_support(ctx, id, content);
     let link_key = Id::unique(("link_edit", id));
-    let mut link_edit: Option<LinkEdit> = ctx.data(|data| data.get_temp(link_key));
-    if ctx.memory(|memory| memory.has_focus(id))
-        && ctx.input_mut(|input| input.consume_key(Modifiers::COMMAND, Key::K))
-    {
-        let caret = caret_range.map_or(0, |range| range.primary.index.0);
-        link_edit = match &selection {
-            Some(range) => Some(LinkEdit::for_range(content, range.clone())),
-            // No selection: edit the link the caret is in, if it is in one.
-            None => content.link_at(caret, true).map(|(_, range)| LinkEdit::for_range(content, range)),
-        };
-    }
-    if let Some(edit) = link_edit.take() {
-        match link_editor_window(ctx, id, edit, content) {
-            LinkOutcome::Open(edit) => link_edit = Some(edit),
-            LinkOutcome::Changed => changed = true,
-            LinkOutcome::Closed => {}
-        }
-    }
-    ctx.data_mut(|data| match &link_edit {
-        Some(edit) => {
-            data.insert_temp(link_key, edit.clone());
-        }
-        None => data.remove::<LinkEdit>(link_key),
-    });
     let mut start_link: Option<std::ops::Range<usize>> = None;
     let visible = selection.is_some() && (anchor.focused || anchor.popup_hovered);
     let (Some(rect), true) = (anchor.rect, visible) else {
@@ -2692,6 +2712,55 @@ pub(crate) fn inline_format_toolbar(
         ctx.data_mut(|data| data.insert_temp(link_key, LinkEdit::for_range(content, range)));
     }
     InlineToolbarResult { changed, insert_image: None }
+}
+
+/// Everything about links that belongs to a field rather than to one kind of
+/// toolbar: Ctrl/Cmd+K, an edit requested from a right-click menu, and the
+/// dialog itself. Both toolbars call this once per frame for their field.
+/// Returns whether the dialog changed the text.
+pub(crate) fn link_support(ctx: &egui::Context, id: Id, content: &mut portmanteau_core::RichDocument) -> bool {
+    let mut changed = false;
+    let caret_range = egui::text_edit::TextEditState::load(ctx, id).and_then(|state| state.cursor.char_range());
+    let selection = caret_range
+        .map(|range| {
+            range.primary.index.0.min(range.secondary.index.0)..range.primary.index.0.max(range.secondary.index.0)
+        })
+        .filter(|range| range.start < range.end);
+    let link_key = Id::unique(("link_edit", id));
+    let mut link_edit: Option<LinkEdit> = ctx.data(|data| data.get_temp(link_key));
+    if ctx.memory(|memory| memory.has_focus(id))
+        && ctx.input_mut(|input| input.consume_key(Modifiers::COMMAND, Key::K))
+    {
+        let caret = caret_range.map_or(0, |range| range.primary.index.0);
+        link_edit = match &selection {
+            Some(range) => Some(LinkEdit::for_range(content, range.clone())),
+            // No selection: edit the link the caret is in, if it is in one.
+            None => content.link_at(caret, true).map(|(_, range)| LinkEdit::for_range(content, range)),
+        };
+    }
+    // An edit asked for by a right-click menu belongs to the field that holds
+    // that very link.
+    let requested = ctx.data(|data| data.get_temp::<LinkEdit>(Id::unique("link-edit-request")));
+    if let Some(request) = requested {
+        if content.link_at(request.range.start, false).is_some_and(|(url, range)| url == request.url && range == request.range) {
+            ctx.data_mut(|data| data.remove::<LinkEdit>(Id::unique("link-edit-request")));
+            link_edit = Some(request);
+        }
+    }
+    if let Some(edit) = link_edit.take() {
+        match link_editor_window(ctx, id, edit, content) {
+            LinkOutcome::Open(edit) => link_edit = Some(edit),
+            LinkOutcome::Changed => changed = true,
+            LinkOutcome::Closed => {}
+        }
+    }
+    ctx.data_mut(|data| match &link_edit {
+        Some(edit) => {
+            data.insert_temp(link_key, edit.clone());
+        }
+        None => data.remove::<LinkEdit>(link_key),
+    });
+    changed
 }
 
 /// A link being made or changed: the characters it covers and its address.
@@ -3692,7 +3761,20 @@ mod link_tests {
         let mut harness = egui_kittest::Harness::builder()
             .with_size(Vec2::new(400.0, 300.0))
             .with_accessibility_check(false)
-            .build_ui(move |ui| link_menu(ui.ctx(), field));
+            .build_ui({
+                let mut themed = false;
+                move |ui| {
+                    if !themed {
+                        crate::theme::install(ui.ctx());
+                        themed = true;
+                        return;
+                    }
+                    link_menu(ui.ctx(), field)
+                }
+            });
+        // With spell-checking off this plain menu is the only one.
+        harness.run_steps(1);
+        harness.ctx.data_mut(|data| data.insert_temp(Id::unique("spell-on"), false));
         harness.ctx.data_mut(|data| {
             data.insert_temp(
                 Id::unique(("link_menu", field)),
@@ -3704,10 +3786,65 @@ mod link_tests {
         harness.run_steps(2);
         let edit: LinkEdit = harness
             .ctx
-            .data(|data| data.get_temp(Id::unique(("link_edit", field))))
+            .data(|data| data.get_temp(Id::unique("link-edit-request")))
             .expect("the edit dialog was requested");
         assert_eq!((edit.range, edit.url.as_str(), edit.existing), (4..13, "https://example.org", true));
         assert!(harness.query_by_label("Edit link…").is_none(), "the menu closed");
+    }
+
+    /// The spelling menu is the field's one right-click menu when spell-checking
+    /// is on: on a link it offers the link actions and never a spelling suggestion.
+    #[test]
+    fn the_spelling_menu_on_a_link_offers_link_actions_not_corrections() {
+        use egui_kittest::kittest::Queryable;
+        let ctx_content = {
+            let mut c = portmanteau_core::RichDocument::from_plain_text("go to https://pitpal.example.net/ now", "body");
+            c.set_link(6..33, Some("https://pitpal.example.net/"));
+            c
+        };
+        let styles = portmanteau_core::ElementStyles::default();
+        let sheet = portmanteau_core::StyleSheet::novel_prose(&styles);
+        let text = ctx_content.editor_text();
+        let _ = script_flow_layout_job(&text, &ctx_content, &sheet, &styles, 1.0, 400.0, &[]);
+        let checker = crate::spellcheck::load("en_US");
+        let (t, c) = (text.clone(), std::rc::Rc::new(checker));
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(400.0, 300.0))
+            .with_accessibility_check(false)
+            .build_ui({
+                let mut themed = false;
+                move |ui| {
+                    if !themed {
+                        crate::theme::install(ui.ctx());
+                        themed = true;
+                        return;
+                    }
+                    // The click landed inside "pitpal".
+                    let _ = spell_menu_ui(ui, &c, &t, 12);
+                }
+            });
+        harness.run_steps(2);
+        assert!(harness.query_by_label("Edit link…").is_some());
+        assert!(harness.query_by_label("Open link").is_some());
+        assert!(harness.query_by_label_contains("Correct").is_none(), "no spelling help for an address");
+        // Off the link, ordinary words still get the spelling menu.
+        let (t2, c2) = (text.clone(), std::rc::Rc::new(crate::spellcheck::load("en_US")));
+        let mut other = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(400.0, 300.0))
+            .with_accessibility_check(false)
+            .build_ui({
+                let mut themed = false;
+                move |ui| {
+                    if !themed {
+                        crate::theme::install(ui.ctx());
+                        themed = true;
+                        return;
+                    }
+                    let _ = spell_menu_ui(ui, &c2, &t2, 1);
+                }
+            });
+        other.run_steps(2);
+        assert!(other.query_by_label("Edit link…").is_none());
     }
 
     #[test]
