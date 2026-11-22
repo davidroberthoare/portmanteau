@@ -6,7 +6,7 @@
 //! overrides it is given. Fountain and plain text have no named styles, so
 //! they report none.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// What a source style becomes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -66,40 +66,76 @@ pub struct SourceStyle {
     pub target: Target,
 }
 
+/// Most distinct style names tracked. A file with more (a hostile one, or a
+/// document pasted together from hundreds of sources) keeps importing: the
+/// extra styles simply follow their defaults and are not listed for mapping.
+const MAX_TRACKED_STYLES: usize = 500;
+
 /// Collects the styles seen while importing and applies overrides.
-pub(crate) struct StyleLog<'a> {
-    overrides: &'a BTreeMap<String, String>,
+pub(crate) struct StyleLog {
+    /// Overrides, keyed by lower-cased source name, parsed once.
+    overrides: HashMap<String, Target>,
+    /// Lower-cased name to its place in `seen`.
+    index: HashMap<String, usize>,
     seen: Vec<SourceStyle>,
 }
 
-impl<'a> StyleLog<'a> {
-    pub(crate) fn new(overrides: &'a BTreeMap<String, String>) -> Self {
-        Self { overrides, seen: Vec::new() }
+impl StyleLog {
+    pub(crate) fn new(overrides: &BTreeMap<String, String>) -> Self {
+        let overrides = overrides
+            .iter()
+            .filter_map(|(source, token)| Some((source.trim().to_lowercase(), Target::parse(token)?)))
+            .collect();
+        Self { overrides, index: HashMap::new(), seen: Vec::new() }
     }
 
     /// Record a paragraph in style `name` and say what it becomes. Names are
-    /// matched without regard to case.
+    /// matched without regard to case. Constant time per paragraph.
     pub(crate) fn resolve(&mut self, name: &str, default: Target) -> Target {
         let key = name.trim().to_lowercase();
-        let overridden = self
-            .overrides
-            .iter()
-            .find(|(source, _)| source.trim().to_lowercase() == key)
-            .and_then(|(_, token)| Target::parse(token));
-        let target = overridden.unwrap_or_else(|| default.clone());
-        match self.seen.iter_mut().find(|s| s.name.to_lowercase() == key) {
-            Some(style) => style.count += 1,
-            None => self.seen.push(SourceStyle {
-                name: name.trim().to_string(),
-                count: 1,
-                default,
-                target: target.clone(),
-            }),
+        let target = self.overrides.get(&key).cloned().unwrap_or_else(|| default.clone());
+        match self.index.get(&key) {
+            Some(&at) => self.seen[at].count += 1,
+            None if self.seen.len() < MAX_TRACKED_STYLES => {
+                self.index.insert(key, self.seen.len());
+                self.seen.push(SourceStyle {
+                    name: name.trim().to_string(),
+                    count: 1,
+                    default,
+                    target: target.clone(),
+                });
+            }
+            None => {}
         }
         target
     }
 
     pub(crate) fn finish(self) -> Vec<SourceStyle> {
         self.seen
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_flood_of_distinct_style_names_is_capped_and_still_resolves() {
+        let mut log = StyleLog::new(&BTreeMap::new());
+        for n in 0..(MAX_TRACKED_STYLES + 200) {
+            let target = log.resolve(&format!("Style {n}"), Target::Style("body".into()));
+            assert_eq!(target, Target::Style("body".into()));
+        }
+        assert_eq!(log.finish().len(), MAX_TRACKED_STYLES);
+    }
+
+    #[test]
+    fn overrides_match_without_regard_to_case_and_repeat_counts_add_up() {
+        let overrides: BTreeMap<String, String> = [("  QUOTE ".to_string(), "skip".to_string())].into();
+        let mut log = StyleLog::new(&overrides);
+        assert_eq!(log.resolve("Quote", Target::Auto), Target::Skip);
+        assert_eq!(log.resolve("quote", Target::Auto), Target::Skip);
+        let seen = log.finish();
+        assert_eq!((seen.len(), seen[0].count), (1, 2));
     }
 }

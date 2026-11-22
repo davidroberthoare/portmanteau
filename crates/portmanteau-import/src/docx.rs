@@ -250,7 +250,7 @@ enum Part {
 }
 
 struct Reader<'a> {
-    log: StyleLog<'a>,
+    log: StyleLog,
     styles: &'a Styles,
     medium: Medium,
     title_paragraph: Option<String>,

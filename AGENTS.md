@@ -253,6 +253,7 @@ When you add a command, update **all** of these:
 | --- | --- | --- |
 | `project.info` | Summary of the open project | `{}` |
 | `project.update` | Change title, subtitle, author, genre, logline, contact, draft_label, draft_date, daily_target | `{"contact":"Ada\nada@example.com","draft_date":"14 March 2027"}` |
+| `document.import_preview` | Read an import file without changing anything: documents, paragraph styles and targets, details, warnings | `{"path":"/tmp/a.docx","style_map":{"Quote":"style:body"}}` |
 | `project.new` | Create a project | `{"title":"…","kind":"Novel"}` |
 | `project.open` | Open a project file | `{"path":"…"}` |
 | `project.save` | Save (optionally as) | `{"path":"…"}` |

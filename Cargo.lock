@@ -3034,6 +3034,7 @@ dependencies = [
  "portmanteau-import",
  "serde",
  "serde_json",
+ "zip",
 ]
 
 [[package]]

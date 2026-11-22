@@ -270,100 +270,106 @@ impl Workspace {
                 self.dirty = true;
                 ApiResponse::ok(command, "Document created", json!({"id": id}))
             }
-            "document.import" => {
-                let inline_text = str_arg(&payload, "text");
-                let path = str_arg(&payload, "path");
-                let bytes = match (&inline_text, &path) {
-                    (Some(text), _) => text.clone().into_bytes(),
-                    (None, Some(path)) => match std::fs::read(path) {
-                        Ok(bytes) => bytes,
-                        Err(error) => {
-                            return ApiResponse::err(
-                                command,
-                                format!("Could not read {path}: {error}"),
-                            )
-                        }
-                    },
-                    (None, None) => {
-                        return ApiResponse::err(
-                            command,
-                            "A path or inline text is required to import",
-                        )
-                    }
-                };
-                let format = match str_arg(&payload, "format") {
-                    Some(name) => match ImportFormat::from_name(&name) {
-                        Some(format) => format,
-                        None => {
-                            return ApiResponse::err(
-                                command,
-                                format!("Unsupported import format {name:?}; use Fountain, FDX, DOCX or plain text"),
-                            )
-                        }
-                    },
-                    None => match import_detect(path.as_deref().map(Path::new), &bytes) {
-                        Some(format) => format,
-                        None => {
-                            return ApiResponse::err(
-                                command,
-                                "Could not tell the file format; name it with \"format\" (fountain, fdx, docx or text)",
-                            )
-                        }
-                    },
-                };
-                let options = ImportOptions {
-                    medium: payload.get("medium").and_then(|v| v.as_str()).and_then(parse_medium),
-                    split: match payload.get("split") {
-                        Some(v) if v.as_bool() == Some(false) || v.as_str() == Some("never") => {
-                            Split::Never
-                        }
-                        _ => Split::Auto,
-                    },
-                };
-                let imported = match portmanteau_import::import(format, &bytes, &options) {
-                    Ok(imported) => imported,
+            "document.import_preview" => {
+                let prepared = match prepare_import(&payload) {
+                    Ok(prepared) => prepared,
                     Err(error) => return ApiResponse::err(command, error),
                 };
-
-                // The title a document falls back on: what the caller said,
-                // then what the file says, then the file's name.
-                let base = str_arg(&payload, "title")
-                    .or_else(|| imported.title.clone())
-                    .or_else(|| {
-                        path.as_deref()
-                            .and_then(|path| Path::new(path).file_stem())
-                            .and_then(|stem| stem.to_str())
-                            .map(|stem| stem.to_owned())
+                let imported = &prepared.imported;
+                let titles = self.import_titles(&prepared, &payload);
+                let documents: Vec<Value> = imported
+                    .documents
+                    .iter()
+                    .zip(&titles)
+                    .enumerate()
+                    .map(|(index, (part, title))| {
+                        json!({
+                            "index": index,
+                            "title": title,
+                            "kind": part.kind,
+                            "words": count_words_in(&part.content),
+                            "paragraphs": part.content.paragraphs.len(),
+                            "excerpt": part.content.plain_text().chars().take(90).collect::<String>(),
+                        })
                     })
-                    .unwrap_or_else(|| {
-                        if imported.medium.is_script() {
-                            "Imported screenplay".into()
-                        } else {
-                            "Imported manuscript".into()
-                        }
-                    });
-                let parent = str_arg(&payload, "parent")
+                    .collect();
+                let styles: Vec<Value> = imported
+                    .styles
+                    .iter()
+                    .map(|style| {
+                        json!({
+                            "name": style.name,
+                            "count": style.count,
+                            "default": style.default.token(),
+                            "target": style.target.token(),
+                        })
+                    })
+                    .collect();
+                ApiResponse::ok(
+                    command,
+                    format!(
+                        "{} · {} document{}, {} paragraphs",
+                        imported.format.label(),
+                        imported.documents.len(),
+                        if imported.documents.len() == 1 { "" } else { "s" },
+                        imported.paragraph_count()
+                    ),
+                    json!({
+                        "format": imported.format.label(),
+                        "format_key": format_key(imported.format),
+                        "medium": imported.medium,
+                        "title": imported.title,
+                        "author": imported.author,
+                        "contact": imported.contact,
+                        "draft_date": imported.draft_date,
+                        "documents": documents,
+                        "styles": styles,
+                        "warnings": imported.warnings,
+                    }),
+                )
+            }
+            "document.import" => {
+                let prepared = match prepare_import(&payload) {
+                    Ok(prepared) => prepared,
+                    Err(error) => return ApiResponse::err(command, error),
+                };
+                let imported = &prepared.imported;
+                let format = imported.format;
+                let titles = self.import_titles(&prepared, &payload);
+                let default_parent = str_arg(&payload, "parent")
                     .or_else(|| self.project.folder_id("Draft"));
                 let kind_override = payload
                     .get("kind")
                     .and_then(|v| v.as_str())
                     .and_then(parse_doc_kind);
-                let many = imported.documents.len() > 1;
+                // The writer's per-document choices from the review: which to
+                // keep, what to call them, what kind they are, where they go.
+                let edits = payload.get("documents").and_then(|v| v.as_array());
                 let mut created = Vec::new();
                 for (index, part) in imported.documents.iter().enumerate() {
-                    let title = if !part.title.is_empty() {
-                        part.title.clone()
-                    } else if many {
-                        format!("{base} · {}", index + 1)
-                    } else {
-                        base.clone()
-                    };
-                    let id = self.project.add_document(
-                        parent.clone(),
-                        &title,
-                        kind_override.unwrap_or(part.kind),
-                        part.medium,
-                    );
+                    let edit = edits.and_then(|list| list.get(index));
+                    if edit.and_then(|e| e.get("include")).and_then(|v| v.as_bool()) == Some(false) {
+                        continue;
+                    }
+                    let title = edit
+                        .and_then(|e| e.get("title"))
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|t| !t.is_empty())
+                        .map(str::to_string)
+                        .unwrap_or_else(|| titles[index].clone());
+                    let kind = edit
+                        .and_then(|e| e.get("kind"))
+                        .and_then(|v| v.as_str())
+                        .and_then(parse_doc_kind)
+                        .or(kind_override)
+                        .unwrap_or(part.kind);
+                    let parent = edit
+                        .and_then(|e| e.get("parent"))
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                        .or_else(|| default_parent.clone());
+                    let id = self.project.add_document(parent, &title, kind, part.medium);
                     if let Some(doc) = self.project.document_mut(&id) {
                         doc.content = part.content.clone();
                         if !part.synopsis.is_empty() {
@@ -377,10 +383,17 @@ impl Workspace {
                         "paragraphs": part.content.paragraphs.len(),
                     }));
                 }
-                let applied = self.apply_import_details(
-                    &imported,
-                    payload.get("replace_details").and_then(|v| v.as_bool()).unwrap_or(false),
-                );
+                if created.is_empty() {
+                    return ApiResponse::err(command, "Every document was left out, so nothing was imported");
+                }
+                let applied = match payload.get("details").and_then(|v| v.as_object()) {
+                    // The review's choices: exactly these details, as edited.
+                    Some(details) => self.set_import_details(details),
+                    None => self.apply_import_details(
+                        imported,
+                        payload.get("replace_details").and_then(|v| v.as_bool()).unwrap_or(false),
+                    ),
+                };
                 self.dirty = true;
 
                 let paragraphs = imported.paragraph_count();
@@ -879,6 +892,67 @@ impl Workspace {
         }
     }
 
+    /// The title each imported document will get: its own heading, else the
+    /// work's title (or the file's name), numbered when the file splits.
+    fn import_titles(&self, prepared: &PreparedImport, payload: &Value) -> Vec<String> {
+        let imported = &prepared.imported;
+        let base = str_arg(payload, "title")
+            .or_else(|| imported.title.clone())
+            .or_else(|| {
+                prepared
+                    .path
+                    .as_deref()
+                    .and_then(|path| Path::new(path).file_stem())
+                    .and_then(|stem| stem.to_str())
+                    .map(|stem| stem.to_owned())
+            })
+            .unwrap_or_else(|| {
+                if imported.medium.is_script() {
+                    "Imported screenplay".into()
+                } else {
+                    "Imported manuscript".into()
+                }
+            });
+        let many = imported.documents.len() > 1;
+        imported
+            .documents
+            .iter()
+            .enumerate()
+            .map(|(index, part)| {
+                if !part.title.is_empty() {
+                    part.title.clone()
+                } else if many {
+                    format!("{base} · {}", index + 1)
+                } else {
+                    base.clone()
+                }
+            })
+            .collect()
+    }
+
+    /// Set exactly the details the review chose (title, author, contact,
+    /// draft_date), replacing what the project had. Returns what changed.
+    fn set_import_details(&mut self, details: &serde_json::Map<String, Value>) -> Vec<&'static str> {
+        let project = &mut self.project;
+        let mut applied = Vec::new();
+        let mut set = |name: &'static str, field: &mut String, key: &str| {
+            if let Some(value) = details.get(key).and_then(|v| v.as_str()).map(str::trim) {
+                if !value.is_empty() && field.as_str() != value {
+                    *field = value.to_string();
+                    applied.push(name);
+                }
+            }
+        };
+        set("title", &mut project.title, "title");
+        set("author", &mut project.author, "author");
+        set("contact", &mut project.contact, "contact");
+        set("draft date", &mut project.draft_date, "draft_date");
+        if !applied.is_empty() {
+            project.touch();
+        }
+        applied
+    }
+
     /// Carry the file's title page into the project's own details. By default
     /// only details the project has not set yet are filled (a blank field, the
     /// placeholder title "Untitled" or author "Your name"), so importing a
@@ -1234,6 +1308,66 @@ fn parse_medium(s: &str) -> Option<Medium> {
         .find(|k| format!("{k:?}").eq_ignore_ascii_case(s) || k.label().eq_ignore_ascii_case(s))
 }
 
+/// Everything an import needs, read from a command's payload.
+struct PreparedImport {
+    imported: portmanteau_import::Imported,
+    path: Option<String>,
+}
+
+fn format_key(format: ImportFormat) -> &'static str {
+    match format {
+        ImportFormat::Fountain => "fountain",
+        ImportFormat::Fdx => "fdx",
+        ImportFormat::Docx => "docx",
+        ImportFormat::PlainText => "text",
+    }
+}
+
+fn count_words_in(content: &portmanteau_core::RichDocument) -> usize {
+    content.text_only().split_whitespace().count()
+}
+
+/// Read the file (or inline text), settle the format and options, and run the
+/// importer. Touches nothing in the project, so a preview and the real import
+/// share it and agree.
+fn prepare_import(payload: &Value) -> Result<PreparedImport, String> {
+    let inline_text = str_arg(payload, "text");
+    let path = str_arg(payload, "path");
+    let bytes = match (&inline_text, &path) {
+        (Some(text), _) => text.clone().into_bytes(),
+        (None, Some(path)) => {
+            std::fs::read(path).map_err(|error| format!("Could not read {path}: {error}"))?
+        }
+        (None, None) => return Err("A path or inline text is required to import".into()),
+    };
+    let format = match str_arg(payload, "format") {
+        Some(name) => ImportFormat::from_name(&name).ok_or_else(|| {
+            format!("Unsupported import format {name:?}; use Fountain, FDX, DOCX or plain text")
+        })?,
+        None => import_detect(path.as_deref().map(Path::new), &bytes).ok_or(
+            "Could not tell the file format; name it with \"format\" (fountain, fdx, docx or text)",
+        )?,
+    };
+    let options = ImportOptions {
+        medium: payload.get("medium").and_then(|v| v.as_str()).and_then(parse_medium),
+        split: match payload.get("split") {
+            Some(v) if v.as_bool() == Some(false) || v.as_str() == Some("never") => Split::Never,
+            _ => Split::Auto,
+        },
+        style_map: payload
+            .get("style_map")
+            .and_then(|v| v.as_object())
+            .map(|map| {
+                map.iter()
+                    .filter_map(|(source, target)| Some((source.clone(), target.as_str()?.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    };
+    let imported = portmanteau_import::import(format, &bytes, &options)?;
+    Ok(PreparedImport { imported, path })
+}
+
 fn parse_export_kind(s: &str) -> Option<ExportKind> {
     ExportKind::all().into_iter().find(|k| {
         format!("{k:?}").eq_ignore_ascii_case(s)
@@ -1266,6 +1400,7 @@ pub fn command_catalogue() -> Vec<Value> {
     let entries = [
         ("project.info", "Summarise the open project", "{}"),
         ("project.update", "Change the project's details: title, subtitle, author, genre, logline, contact (one line each), draft_label, draft_date (blank = today) and daily_target", r#"{"author":"Ada Marlowe","contact":"Ada Marlowe\nada@example.com","draft_date":"14 March 2027"}"#),
+        ("document.import_preview", "Read an import file without changing the project: the documents it would create, the paragraph styles it uses and their targets, the title-page details, warnings", r#"{"path":"/tmp/script.docx","split":true,"style_map":{"Quote":"style:body"}}"#),
         ("project.new", "Create a project", r#"{"title":"...","kind":"Novel"}"#),
         ("project.open", "Open a project folder package", r#"{"path":"..."}"#),
         ("project.save", "Save the project to a folder package", r#"{"path":"..."}"#),
@@ -1420,6 +1555,80 @@ mod tests {
         assert!(res.ok, "{}", res.message);
         assert_eq!(ws.project.title, "Tidewrack");
         assert_eq!(ws.project.author, "Ada Marlowe");
+    }
+
+    #[test]
+    fn import_preview_changes_nothing_and_the_import_follows_the_reviews_choices() {
+        let mut ws = Workspace::demo();
+        let documents_before = ws.project.documents.len();
+        let author_before = ws.project.author.clone();
+        let script = "Title: Tidewrack\nAuthor: Someone Else\n\n# ACT ONE\n\nINT. HARBOR - DAWN\n\nMARA\nWe missed the tide.\n\n# ACT TWO\n\nEXT. PIER - DAY\n\nShe waits.\n";
+
+        let preview = ws.execute("document.import_preview", json!({"format":"fountain","text":script}));
+        assert!(preview.ok, "{}", preview.message);
+        assert_eq!(ws.project.documents.len(), documents_before, "a preview adds nothing");
+        assert_eq!(ws.project.author, author_before);
+        assert_eq!(preview.data["title"], "Tidewrack");
+        let listed = preview.data["documents"].as_array().unwrap();
+        assert_eq!(listed.len(), 2, "split at the two sections");
+        assert!(listed[0]["words"].as_u64().unwrap() > 0);
+
+        // The review: leave the second document out, rename the first, and set
+        // the author exactly as edited (replacing the demo's).
+        let res = ws.execute(
+            "document.import",
+            json!({
+                "format":"fountain","text":script,
+                "documents":[{"include":true,"title":"Cold open","kind":"chapter"},{"include":false}],
+                "details":{"author":"Ada, Edited","title":""},
+            }),
+        );
+        assert!(res.ok, "{}", res.message);
+        let created = res.data["documents"].as_array().unwrap();
+        assert_eq!(created.len(), 1, "the left-out document is not created");
+        assert_eq!(created[0]["title"], "Cold open");
+        let doc = ws.project.document(created[0]["id"].as_str().unwrap()).unwrap();
+        assert_eq!(doc.kind, DocKind::Chapter);
+        assert_eq!(ws.project.author, "Ada, Edited");
+        assert_ne!(ws.project.title, "", "an empty detail is not applied");
+
+        let none = ws.execute(
+            "document.import",
+            json!({"format":"fountain","text":script,"documents":[{"include":false},{"include":false}]}),
+        );
+        assert!(!none.ok && none.message.contains("left out"), "{}", none.message);
+    }
+
+    #[test]
+    fn import_preview_lists_word_styles_and_the_style_map_changes_the_result() {
+        let mut ws = Workspace::demo();
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("api-map"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.docx");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            zip.start_file("word/document.xml", options).unwrap();
+            std::io::Write::write_all(
+                &mut zip,
+                br#"<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Plain.</w:t></w:r></w:p></w:body></w:document>"#,
+            )
+            .unwrap();
+            zip.finish().unwrap();
+        }
+        let preview = ws.execute("document.import_preview", json!({"path": path.display().to_string()}));
+        assert!(preview.ok, "{}", preview.message);
+        let styles = preview.data["styles"].as_array().unwrap();
+        assert_eq!(styles[0]["name"], "Normal");
+        assert_eq!(styles[0]["default"], "style:body");
+        let res = ws.execute(
+            "document.import",
+            json!({"path": path.display().to_string(), "style_map": {"Normal": "style:dialogue"}}),
+        );
+        assert!(res.ok, "{}", res.message);
+        let id = res.data["id"].as_str().unwrap();
+        assert_eq!(ws.project.document(id).unwrap().content.paragraphs[0].style_id, "dialogue");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
