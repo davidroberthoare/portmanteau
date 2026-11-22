@@ -5,6 +5,9 @@
 //! the `portmanteau-*` crates: a domain core, a command API, an MCP server and the
 //! export engine.
 
+// A Windows release build is a window app, so no black terminal opens behind it.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod app;
 mod history;
 mod icons;
@@ -12,6 +15,7 @@ mod settings;
 mod spellcheck;
 mod theme;
 mod ui;
+mod update;
 
 use std::path::PathBuf;
 
@@ -33,6 +37,12 @@ fn screenshot_path() -> Option<PathBuf> {
     None
 }
 
+/// The window and dock icon, compiled in from `assets/icon/icon.png`.
+fn app_icon() -> eframe::egui::IconData {
+    eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon/icon.png"))
+        .expect("assets/icon/icon.png is a valid PNG")
+}
+
 fn main() -> eframe::Result<()> {
     let screenshot = screenshot_path();
     // Open at the size the window had when it was last closed.
@@ -44,7 +54,8 @@ fn main() -> eframe::Result<()> {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([width, height])
             .with_min_inner_size([1080.0, 700.0])
-            .with_title("Portmanteau"),
+            .with_title("Portmanteau")
+            .with_icon(app_icon()),
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };

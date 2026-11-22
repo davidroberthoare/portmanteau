@@ -6,15 +6,26 @@ members = [
     "crates/portmanteau-import",
     "crates/portmanteau-mcp",
     "crates/portmanteau-cli",
+    "crates/portmanteau-update",
 ]
 resolver = "2"
 
-[package]
-name = "portmanteau"
+# The one place the version lives. Every crate uses `version.workspace = true`,
+# and a release tag `vX.Y.Z` must match it (the release workflow checks).
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
-description = "Portmanteau — a native writing studio for novels, film, TV and theatre"
 license = "GPL-3.0-or-later"
+repository = "https://github.com/davidroberthoare/portmanteau"
+
+[package]
+name = "portmanteau"
+version.workspace = true
+edition.workspace = true
+description = "Portmanteau — a native writing studio for novels, film, TV and theatre"
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
 default-run = "portmanteau"
 
 [[bin]]
@@ -33,7 +44,11 @@ chrono = { version = "0.4", features = ["serde"] }
 portmanteau-core = { path = "crates/portmanteau-core" }
 portmanteau-export = { path = "crates/portmanteau-export" }
 portmanteau-api = { path = "crates/portmanteau-api" }
+portmanteau-update = { path = "crates/portmanteau-update" }
 rfd = "0.14"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
 
 [dev-dependencies]
 egui_kittest = "0.37"

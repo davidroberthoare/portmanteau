@@ -246,6 +246,13 @@ fn open_url(url: &str) {
     let _ = command.arg(url).spawn();
 }
 
+/// Open a release page. Only GitHub addresses are ever opened from the update panel.
+pub(crate) fn open_release_page(url: &str) {
+    if url.starts_with("https://github.com/") {
+        open_url(url);
+    }
+}
+
 /// Ask the desktop to open a folder itself (not the one above it).
 pub(crate) fn open_folder(folder: &Path) {
     #[cfg(target_os = "macos")]
@@ -405,6 +412,7 @@ pub struct PortmanteauApp {
     pub database_tags_text: String,
     pub toast: Option<Toast>,
     pub show_about: bool,
+    pub updater: crate::update::Updater,
     pub show_new_project: bool,
     pub new_project_title: String,
     pub new_project_kind: ProjectKind,
@@ -440,25 +448,45 @@ pub struct PortmanteauApp {
     pub show_spelling: bool,
 }
 
+/// The project to open at launch. `wanted` is the project the writer left open
+/// (if any); when there is none, or it can no longer be opened, the app opens
+/// the welcome project, or the Salt Road demonstration when `repeatable`
+/// (screenshots and tests).
+fn startup_workspace(wanted: Option<&str>, repeatable: bool) -> Workspace {
+    match wanted {
+        Some(path) => Workspace::open(Path::new(path)).unwrap_or_else(|_| {
+            let mut ws = Workspace::welcome();
+            ws.last_message = format!("Could not reopen {path}; opened the welcome project instead");
+            ws
+        }),
+        None if repeatable => Workspace::demo(),
+        None => Workspace::welcome(),
+    }
+}
+
 impl PortmanteauApp {
     pub fn new(screenshot: Option<PathBuf>) -> Self {
         let settings = crate::settings::load_settings();
-        // Reopen the project the writer left open. Screenshots and the test
-        // suite always start from the demonstration project, so they stay
-        // repeatable whatever is on this machine.
+        // Reopen the project the writer left open. A first launch, or a last
+        // project that can no longer be found, opens the welcome project
+        // (instructions and a small sample of everything, held in memory).
+        // Screenshots and the test suite start from the Salt Road demonstration
+        // project instead, so they stay repeatable whatever is on this machine.
         // PORTMANTEAU_PROJECT opens a given project even for a screenshot (a
-        // development aid, like PORTMANTEAU_VIEW).
+        // development aid, like PORTMANTEAU_VIEW); "welcome" shows the welcome project.
         let dev_project = std::env::var("PORTMANTEAU_PROJECT").ok();
-        let reopened = (!cfg!(test) && (screenshot.is_none() || dev_project.is_some()))
+        let repeatable = cfg!(test) || (screenshot.is_some() && dev_project.is_none());
+        let wanted = (!cfg!(test) && (screenshot.is_none() || dev_project.is_some()))
             .then(|| dev_project.as_deref().or(settings.last_project.as_deref()))
             .flatten()
-            .and_then(|path| Workspace::open(Path::new(path)).ok());
-        let ws = reopened.unwrap_or_else(Workspace::demo);
+            .filter(|path| *path != "welcome")
+            .map(str::to_string);
+        let ws = startup_workspace(wanted.as_deref(), repeatable);
         let selected = ws
             .project
             .documents
             .iter()
-            .find(|d| d.title.starts_with("Chapter One"))
+            .find(|d| d.title.starts_with("Chapter One") || d.title.starts_with("Start here"))
             .map(|d| d.id.clone())
             .or_else(|| ws.project.documents.iter().find(|d| d.kind == DocKind::Chapter).map(|d| d.id.clone()));
         let selected = std::env::var("PORTMANTEAU_DOC")
@@ -545,6 +573,7 @@ impl PortmanteauApp {
             database_tags_text: String::new(),
             toast: None,
             show_about: false,
+            updater: crate::update::Updater::default(),
             show_new_project: false,
             new_project_title: String::new(),
             new_project_kind: ProjectKind::Novel,
@@ -770,6 +799,8 @@ impl PortmanteauApp {
                     self.search_field(ui);
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        self.updater.badge(ui, &self.settings.updates);
+                        ui.add_space(8.0);
                         // Removed: a "Compile ▸" button that only switched to the
                         // Compile screen. Navigation is the rail and the View
                         // menu; a one-click "compile with the last settings"
@@ -845,6 +876,66 @@ impl PortmanteauApp {
             });
     }
 
+    /// File › Export project as zip…: the project as it is now, with its
+    /// attachments, in one file (a backup, or to send to someone).
+    fn export_project_zip(&mut self) {
+        let name = format!("{}.portmanteau.zip", portmanteau_api::storage::slugify(&self.ws.project.title));
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Export project as zip")
+            .set_file_name(name)
+            .add_filter("Zip file", &["zip"])
+            .save_file()
+        else {
+            return;
+        };
+        let res = self.ws.execute("project.pack", serde_json::json!({"path": path.display().to_string()}));
+        if res.ok {
+            self.toast("Project exported", path.display().to_string(), ToastKind::Ok);
+        } else {
+            self.toast("Could not export the project", res.message, ToastKind::Error);
+        }
+    }
+
+    /// File › Open project zip…: unpack a project zip into a new folder and open it.
+    fn open_project_zip(&mut self) {
+        let Some(zip) = rfd::FileDialog::new()
+            .set_title("Open project zip")
+            .add_filter("Zip file", &["zip"])
+            .pick_file()
+        else {
+            return;
+        };
+        let stem = zip
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default()
+            .trim_end_matches(".zip")
+            .trim_end_matches(".portmanteau")
+            .to_string();
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Unpack into a new project folder")
+            .set_file_name(format!("{stem}.portmanteau"));
+        if let Some(dir) = zip.parent() {
+            dialog = dialog.set_directory(dir);
+        }
+        let Some(folder) = dialog.save_file() else { return };
+        self.adopt_workspace(Workspace::open_zip(&zip, &folder), &folder);
+    }
+
+    /// An update was installed: save the open project and start the new
+    /// version in this one's place. If the project can't be saved, stay open
+    /// and say so rather than risk the writer's work.
+    fn restart_after_update(&mut self, ctx: &egui::Context) {
+        let Some(program) = self.updater.restart.take() else { return };
+        let saved = !self.ws.dirty || self.ws.path.is_none() || self.ws.save(None).is_ok();
+        let _ = crate::settings::save_settings(&self.settings);
+        if saved && std::process::Command::new(&program).spawn().is_ok() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else {
+            self.updater.install = crate::update::InstallState::Installed { restart_blocked: true };
+        }
+    }
+
     fn menus(&mut self, ui: &mut egui::Ui) {
         let menu_text = |s: &str| RichText::new(s).font(ui_body()).color(MUTED);
         ui.menu_button(menu_text("File"), |ui| {
@@ -879,6 +970,14 @@ impl PortmanteauApp {
                     .map(|p| p.display().to_string())
                     .unwrap_or_default();
                 ui.close();
+            }
+            if ui.button("Open project zip…").clicked() {
+                ui.close();
+                self.open_project_zip();
+            }
+            if ui.button("Export project as zip…").clicked() {
+                ui.close();
+                self.export_project_zip();
             }
             let recent = self.settings.recent_projects.clone();
             ui.add_enabled_ui(!recent.is_empty(), |ui| {
@@ -1014,6 +1113,21 @@ impl PortmanteauApp {
                 ui.close();
             }
         });
+        ui.menu_button(menu_text("Help"), |ui| {
+            if ui.button("About Portmanteau").clicked() {
+                self.show_about = true;
+                ui.close();
+            }
+            if ui.button("Check for Updates…").clicked() {
+                self.updater.panel_open = true;
+                self.updater.start(ui.ctx(), true);
+                ui.close();
+            }
+            if ui.button("Releases and source code").clicked() {
+                open_url(concat!(env!("CARGO_PKG_REPOSITORY"), "/releases"));
+                ui.close();
+            }
+        });
     }
 
     fn search_field(&mut self, ui: &mut egui::Ui) {
@@ -1135,7 +1249,13 @@ impl PortmanteauApp {
                         .path
                         .as_ref()
                         .map(|p| p.display().to_string())
-                        .unwrap_or_else(|| "Demonstration project · in memory".into());
+                        .unwrap_or_else(|| {
+                    if self.ws.project.title == "Welcome to Portmanteau" {
+                        "Welcome project · in memory, not saved yet".into()
+                    } else {
+                        "Demonstration project · in memory".into()
+                    }
+                });
                     ui.label(RichText::new(path).font(mono(10.0)).color(FAINT));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         // Words only. This bar used to add a page estimate and the
@@ -1286,10 +1406,13 @@ impl PortmanteauApp {
                     }
                     ui.add_space(10.0);
                     ui.label(
-                        RichText::new("Version 0.1 · modular Rust workspace")
+                        RichText::new(format!("Version {} · GPL-3.0-or-later", env!("CARGO_PKG_VERSION")))
                             .font(mono(10.0))
                             .color(FAINT),
                     );
+                    if ui.link(env!("CARGO_PKG_REPOSITORY")).clicked() {
+                        open_url(env!("CARGO_PKG_REPOSITORY"));
+                    }
                 });
             if !open {
                 self.show_about = false;
@@ -2045,6 +2168,16 @@ impl PortmanteauApp {
             self.open_link(&link);
         }
 
+        // Update notice: the daily check (never for screenshots or tests) and the panel.
+        let may_check = !cfg!(test) && self.screenshot.is_none();
+        let mut prefs_changed = self.updater.tick(&ctx, &mut self.settings.updates, may_check);
+        let unsaved = self.ws.path.is_none() && self.ws.dirty;
+        prefs_changed |= self.updater.panel(&ctx, &mut self.settings.updates, unsaved);
+        self.restart_after_update(&ctx);
+        if prefs_changed {
+            let _ = crate::settings::save_settings(&self.settings);
+        }
+
         let focus = self.focus_mode && self.view == View::Write;
         if focus {
             self.focus_bar(ui);
@@ -2324,7 +2457,13 @@ impl PortmanteauApp {
 
     /// Open a project folder, make it the one on screen and remember it.
     pub fn open_project_path(&mut self, path: &Path) -> bool {
-        match Workspace::open(path) {
+        self.adopt_workspace(Workspace::open(path), path)
+    }
+
+    /// Make an opened project the current one: select something to show, clear
+    /// per-project state, and say what happened.
+    fn adopt_workspace(&mut self, opened: Result<Workspace, String>, path: &Path) -> bool {
+        match opened {
             Ok(ws) => {
                 self.ws = ws;
                 self.selected = self
@@ -2717,6 +2856,11 @@ mod shell_probe {
                 app.status_bar(ui);
                 app.rail(ui);
                 app.toast_ui(&ctx);
+                {
+                    let app = &mut *app;
+                    let unsaved = app.ws.path.is_none() && app.ws.dirty;
+                    app.updater.panel(&ctx, &mut app.settings.updates, unsaved);
+                }
                 if app.view == View::Write {
                     if !app.focus_mode {
                         app.binder(ui);
@@ -2989,6 +3133,132 @@ mod shell_probe {
             harness.query_by_label("Take snapshot").is_some(),
             "the Versions tab is where a snapshot is taken"
         );
+    }
+
+    #[test]
+    fn startup_opens_the_last_project_else_the_welcome_project() {
+        // First launch: nothing remembered.
+        assert_eq!(startup_workspace(None, false).project.title, "Welcome to Portmanteau");
+        // Screenshots and tests stay on the repeatable demonstration project.
+        assert_eq!(startup_workspace(None, true).project.title, "The Salt Road");
+        // The remembered project is gone: say so and fall back to the welcome project.
+        let missing = std::env::temp_dir().join(portmanteau_core::new_id("no-such-project"));
+        let ws = startup_workspace(Some(&missing.display().to_string()), false);
+        assert_eq!(ws.project.title, "Welcome to Portmanteau");
+        assert!(ws.last_message.contains("Could not reopen"), "{}", ws.last_message);
+        // A project that is there is reopened, not replaced.
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("startup-project"));
+        let mut saved = Workspace::new_project("My Novel", ProjectKind::Novel);
+        saved.save(Some(dir.clone())).expect("save");
+        assert_eq!(startup_workspace(Some(&dir.display().to_string()), false).project.title, "My Novel");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn update_icon_shows_only_for_a_newer_unskipped_version_and_opens_the_panel() {
+        let (mut harness, app) = shell_harness(PortmanteauApp::new(None));
+        assert!(harness.query_by_label("Update available").is_none(), "nothing announced at first");
+
+        app.borrow_mut().updater.state = crate::update::UpdateState::Available(portmanteau_update_release("0.9.0"));
+        harness.run_steps(3);
+        harness.get_by_label("Update available").click();
+        harness.run_steps(3);
+        assert!(app.borrow().updater.panel_open);
+
+        // Skipping hides the icon.
+        {
+            let mut app = app.borrow_mut();
+            app.settings.updates.skipped_version = Some("0.9.0".into());
+            app.updater.panel_open = false;
+        }
+        harness.run_steps(3);
+        assert!(harness.query_by_label("Update available").is_none());
+    }
+
+    #[test]
+    fn help_menu_check_for_updates_opens_the_panel() {
+        let (mut harness, app) = shell_harness(PortmanteauApp::new(None));
+        harness.get_by_label("Help").click();
+        harness.run_steps(3);
+        harness.get_by_label("Check for Updates…").click();
+        harness.run_steps(3);
+        assert!(app.borrow().updater.panel_open);
+        assert_eq!(app.borrow().updater.state, crate::update::UpdateState::Checking);
+    }
+
+    /// A release carrying everything an install needs for this system.
+    fn installable_release(version: &str) -> portmanteau_update::Release {
+        let mut release = portmanteau_update_release(version);
+        let base = portmanteau_update::install::DOWNLOAD_PREFIX;
+        for name in [portmanteau_update::install::platform_archive_name().unwrap_or("none.zip"), "SHA256SUMS", "SHA256SUMS.minisig"] {
+            release.assets.push(portmanteau_update::Asset { name: name.into(), url: format!("{base}v{version}/{name}"), size: 1 });
+        }
+        release
+    }
+
+    #[test]
+    fn the_panel_offers_install_only_for_a_signed_build_and_blocks_unsaved_work() {
+        if portmanteau_update::install::platform_archive_name().is_none() {
+            return; // no packaged build for this kind of computer
+        }
+        // A release without the signed files can only be downloaded by hand.
+        let (mut harness, app) = shell_harness(PortmanteauApp::new(None));
+        {
+            let mut app = app.borrow_mut();
+            app.updater.state = crate::update::UpdateState::Available(portmanteau_update_release("0.9.0"));
+            app.updater.panel_open = true;
+        }
+        harness.run_steps(3);
+        assert!(harness.query_by_label("Download").is_some());
+        assert!(harness.query_by_label("Install and restart").is_none());
+
+        // A signed release offers the install; unsaved work blocks it.
+        app.borrow_mut().updater.state = crate::update::UpdateState::Available(installable_release("0.9.0"));
+        {
+            let mut app = app.borrow_mut();
+            app.ws.dirty = true; // in-memory project with changes
+        }
+        harness.run_steps(3);
+        assert!(harness.query_by_label("Download").is_none());
+        harness.get_by_label("Install and restart").click();
+        harness.run_steps(3);
+        assert_eq!(app.borrow().updater.install, crate::update::InstallState::Idle, "blocked while unsaved");
+        assert!(harness.query_by_label("Save your project first (File › Save project as…), then install.").is_some());
+
+        // Saved (or nothing changed): the install starts.
+        app.borrow_mut().ws.dirty = false;
+        harness.run_steps(3);
+        harness.get_by_label("Install and restart").click();
+        harness.run_steps(3);
+        assert_eq!(app.borrow().updater.install, crate::update::InstallState::Running);
+    }
+
+    fn portmanteau_update_release(version: &str) -> portmanteau_update::Release {
+        portmanteau_update::Release {
+            version: portmanteau_update::parse_version(version).unwrap(),
+            tag: format!("v{version}"),
+            page_url: "https://github.com/davidroberthoare/portmanteau/releases".into(),
+            notes: "- Something new".into(),
+            assets: Vec::new(),
+        }
+    }
+
+    /// Help is the last menu, and About opens from it.
+    #[test]
+    fn help_menu_opens_about_with_the_real_version() {
+        let (mut harness, app) = shell_harness(PortmanteauApp::new(None));
+        harness.get_by_label("File").click();
+        harness.run_steps(3);
+        assert!(harness.query_by_label("Export project as zip…").is_some());
+        assert!(harness.query_by_label("Open project zip…").is_some());
+        harness.get_by_label("File").click();
+        harness.run_steps(3);
+        harness.get_by_label("Help").click();
+        harness.run_steps(3);
+        assert!(harness.query_by_label("Releases and source code").is_some());
+        harness.get_by_label("About Portmanteau").click();
+        harness.run_steps(3);
+        assert!(app.borrow().show_about);
     }
 
     /// A harness that draws the app through `draw`, exactly as a frame of the

@@ -1,11 +1,12 @@
 [package]
 name = "portmanteau-cli"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 portmanteau-core = { path = "../portmanteau-core" }
 portmanteau-api = { path = "../portmanteau-api" }
 portmanteau-export = { path = "../portmanteau-export" }
+portmanteau-update = { path = "../portmanteau-update" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

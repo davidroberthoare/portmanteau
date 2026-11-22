@@ -13,8 +13,28 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         println!(
-            "Portmanteau command line\n\nUsage:\n  portmanteau-cli <command> [json-payload] [--project path] [--save]\n\nCommands: project.info, document.list, stats, export.run, commands …\n\n--project opens a project file instead of the demonstration project.\n--save writes the project back after a successful command (mutations are\notherwise discarded when the process exits)."
+            "Portmanteau command line\n\nUsage:\n  portmanteau-cli <command> [json-payload] [--project path] [--save]\n\nCommands: project.info, document.list, stats, export.run, commands …\n          check-updates (asks GitHub for a newer release; touches no project)\n\n--project opens a project file instead of the demonstration project.\n--save writes the project back after a successful command (mutations are\notherwise discarded when the process exits)."
         );
+        return;
+    }
+    if args[0] == "check-updates" {
+        // Asks GitHub whether a newer release exists. Not a project command:
+        // it is about the program, so it never touches a project.
+        match portmanteau_update::check(portmanteau_update::CURRENT_VERSION) {
+            Ok(portmanteau_update::Outcome::UpToDate { latest }) => {
+                println!("Portmanteau {} is up to date (latest release: {latest}).", portmanteau_update::CURRENT_VERSION);
+            }
+            Ok(portmanteau_update::Outcome::Available(release)) => {
+                println!("Portmanteau {} is available (you have {}).\n{}", release.version, portmanteau_update::CURRENT_VERSION, release.page_url);
+            }
+            Ok(portmanteau_update::Outcome::NoReleasesYet) => {
+                println!("Portmanteau {} is up to date (no releases have been published yet).", portmanteau_update::CURRENT_VERSION);
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
         return;
     }
     let mut ws = if let Some(pos) = args.iter().position(|a| a == "--project") {

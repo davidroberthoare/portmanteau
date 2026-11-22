@@ -1048,6 +1048,9 @@ pub struct AppSettings {
     /// Interface text scale (1.0 = default). Affects chrome, not manuscripts.
     #[serde(default = "default_ui_scale")]
     pub ui_scale: f32,
+    /// Update notices (the one use the program makes of the network).
+    #[serde(default)]
+    pub updates: UpdatePrefs,
     /// The project that was open when the app last closed, reopened at launch.
     #[serde(default)]
     pub last_project: Option<String>,
@@ -1111,6 +1114,7 @@ impl Default for AppSettings {
             show_binder: true,
             show_inspector: true,
             ui_scale: default_ui_scale(),
+            updates: UpdatePrefs::default(),
             last_project: None,
             recent_projects: Vec::new(),
             editor_zoom: default_ui_scale(),
@@ -1120,6 +1124,26 @@ impl Default for AppSettings {
             window_size: None,
             import: ImportPrefs::default(),
         }
+    }
+}
+
+/// How the app checks for new versions of itself.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct UpdatePrefs {
+    /// Check once a day at startup. The Help menu check always works.
+    #[serde(default = "default_true")]
+    pub auto_check: bool,
+    /// When the last check ran, in Unix seconds.
+    #[serde(default)]
+    pub last_checked: Option<i64>,
+    /// A version the writer chose not to be told about again.
+    #[serde(default)]
+    pub skipped_version: Option<String>,
+}
+
+impl Default for UpdatePrefs {
+    fn default() -> Self {
+        Self { auto_check: true, last_checked: None, skipped_version: None }
     }
 }
 

@@ -1,0 +1,22 @@
+[package]
+name = "portmanteau-update"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Checks GitHub for a newer Portmanteau release. Desktop only."
+
+[dependencies]
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = "3"
+minisign-verify = "0.2"
+sha2 = "0.10"
+flate2 = "1"
+tar = { version = "0.4", default-features = false }
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
+self-replace = "1"
+
+[dev-dependencies]
+minisign = "0.7"

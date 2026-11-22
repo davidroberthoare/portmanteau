@@ -119,6 +119,39 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.add_space(10.0);
             hairline(ui);
             ui.add_space(8.0);
+            section_label(ui, "Software updates");
+            ui.add_space(4.0);
+            changed |= ui
+                .checkbox(
+                    &mut app.settings.updates.auto_check,
+                    RichText::new("Check for updates automatically")
+                        .font(ui_body())
+                        .color(MUTED),
+                )
+                .changed();
+            ui.add_space(2.0);
+            let last = app
+                .settings
+                .updates
+                .last_checked
+                .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
+                .map(|t| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_else(|| "never".into());
+            ui.label(
+                RichText::new(format!(
+                    "At most once a day, at startup. It only asks GitHub for the newest release number; nothing about you or your projects is sent. Last checked: {last}."
+                ))
+                .font(ui_small())
+                .color(FAINT),
+            );
+            ui.add_space(4.0);
+            if ui.button("Check now").clicked() {
+                app.updater.panel_open = true;
+                app.updater.start(ui.ctx(), true);
+            }
+            ui.add_space(10.0);
+            hairline(ui);
+            ui.add_space(8.0);
             section_label(ui, "Interface text size");
             ui.add_space(4.0);
             ui.horizontal(|ui| {

@@ -22,7 +22,7 @@ Repo root is `app/` (own `.git`, branch `master`). The parent folder `myScript/`
 
 ## Rules that still hold
 
-- Rust + eframe/egui, native only. No network, accounts, telemetry, background daemons or long-running processes (never start dev servers/watchers).
+- Rust + eframe/egui, native desktop first; a WebAssembly build of the same app is planned (`docs/release-and-updates-plan.md`) and must not make desktop worse. No network, accounts, telemetry, background daemons or long-running processes (never start dev servers/watchers). **One exception** (owner, 2026-11-22): the update check and update download, which talk only to GitHub, send nothing about the writer or projects, and can be switched off.
 - Command layer is authoritative: new behaviour is a command (API arm + catalogue entry + MCP tool + README row + test) before or alongside UI. No domain logic in widgets.
 - `--screenshot` must keep working; a blank PNG is a failure.
 - **No backwards compatibility, ever, until the owner says otherwise.** The project has no users; any change may be breaking. Don't add migrations, aliases or compatibility shims.
@@ -145,6 +145,17 @@ How to check output visually (all on this machine):
   contact yet (a copyright page would).
 
 ## Next work (priority order)
+
+0. **Releases, updates and web build** — the current major item. Follow
+   `docs/release-and-updates-plan.md` phase by phase. Done (2026-11-22, not yet
+   pushed or run on GitHub): 0 groundwork + CI, 1 release workflow, 2 update
+   notice (`crates/portmanteau-update`, `src/update.rs`), 3 in-app install
+   (minisign-signed `SHA256SUMS`; `install.rs`; key in `update-public-key.pub`,
+   private key is the GitHub secret `UPDATE_SIGNING_KEY`), and the welcome project
+   (first launch and fallback). Phase 4 (web) started: libraries build for wasm (CI
+   job), storage split into pure `package_files`/`project_from_files`, project zip
+   commands. Next: W4 shell split, then the real two-release update test in
+   `docs/releasing.md`.
 
 1. ~~Preview pagination~~ Done: Compile, Settings and the editor's Paged view all
    draw `pdf_layout` pages (`src/ui/preview.rs`); the old estimator is deleted.

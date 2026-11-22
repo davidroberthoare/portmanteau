@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod archive;
 pub mod storage;
 
 use portmanteau_core::*;
@@ -67,6 +68,18 @@ impl Workspace {
         }
     }
 
+    /// The first-launch project: instructions plus a small sample of everything.
+    pub fn welcome() -> Self {
+        Self {
+            project: sample::welcome(),
+            path: None,
+            dirty: false,
+            log: vec!["Opened the welcome project".into()],
+            last_export: None,
+            last_message: "Ready".into(),
+        }
+    }
+
     pub fn new_project(title: &str, kind: ProjectKind) -> Self {
         let mut project = Project::new(title, kind);
         project.author = "Your name".into();
@@ -94,6 +107,52 @@ impl Workspace {
             last_export: None,
             last_message: "Project opened".into(),
         })
+    }
+
+    /// Write the project, as it is now in memory, to one `.zip`: the folder
+    /// package plus the files under `assets/`. Good for a backup or for sending
+    /// the project to someone. The file is written whole or not at all.
+    pub fn pack_zip(&self, zip_path: &Path) -> Result<String, String> {
+        let assets = match &self.path {
+            Some(dir) => read_assets(&dir.join("assets"), "assets")?,
+            None => Vec::new(),
+        };
+        let bytes = archive::pack_zip(&self.project, assets)?;
+        if let Some(parent) = zip_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+        }
+        let mut temp = zip_path.as_os_str().to_os_string();
+        temp.push(".part");
+        let temp = PathBuf::from(temp);
+        std::fs::write(&temp, bytes).map_err(|e| format!("Could not write {}: {e}", zip_path.display()))?;
+        std::fs::rename(&temp, zip_path).map_err(|e| {
+            let _ = std::fs::remove_file(&temp);
+            format!("Could not write {}: {e}", zip_path.display())
+        })?;
+        Ok(format!("Wrote {}", zip_path.display()))
+    }
+
+    /// Unpack a project zip into the new folder `folder` and open it. The
+    /// folder must not exist yet (or be empty): an existing project is never
+    /// overwritten.
+    pub fn open_zip(zip_path: &Path, folder: &Path) -> Result<Self, String> {
+        if folder.exists() && std::fs::read_dir(folder).map_or(true, |mut d| d.next().is_some()) {
+            return Err(format!("{} already exists; choose a new folder", folder.display()));
+        }
+        let bytes = std::fs::read(zip_path).map_err(|e| format!("Could not read {}: {e}", zip_path.display()))?;
+        let unpacked = archive::unpack_zip(&bytes)?;
+        std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+        storage::save_folder(&unpacked.project, folder)?;
+        for (path, data) in unpacked.assets {
+            let target = folder.join(&path);
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            std::fs::write(&target, data).map_err(|e| format!("Could not write {}: {e}", target.display()))?;
+        }
+        Workspace::open(folder)
     }
 
     pub fn save(&mut self, path: Option<PathBuf>) -> Result<String, String> {
@@ -145,6 +204,27 @@ impl Workspace {
                 let path = str_arg(&payload, "path").map(PathBuf::from);
                 match self.save(path) {
                     Ok(msg) => ApiResponse::ok(command, msg.clone(), json!({"message": msg})),
+                    Err(e) => ApiResponse::err(command, e),
+                }
+            }
+            "project.pack" => {
+                let Some(path) = str_arg(&payload, "path") else {
+                    return ApiResponse::err(command, "A path for the .zip file is required");
+                };
+                match self.pack_zip(Path::new(&path)) {
+                    Ok(msg) => ApiResponse::ok(command, msg.clone(), json!({"message": msg})),
+                    Err(e) => ApiResponse::err(command, e),
+                }
+            }
+            "project.open_zip" => {
+                let (Some(path), Some(folder)) = (str_arg(&payload, "path"), str_arg(&payload, "folder")) else {
+                    return ApiResponse::err(command, "A zip path and a new folder are required");
+                };
+                match Workspace::open_zip(Path::new(&path), Path::new(&folder)) {
+                    Ok(ws) => {
+                        *self = ws;
+                        ApiResponse::ok(command, "Project opened from the zip", self.project_summary())
+                    }
                     Err(e) => ApiResponse::err(command, e),
                 }
             }
@@ -1718,6 +1798,8 @@ pub fn command_catalogue() -> Vec<Value> {
         ("project.new", "Create a project", r#"{"title":"...","kind":"Novel"}"#),
         ("project.open", "Open a project folder package", r#"{"path":"..."}"#),
         ("project.save", "Save the project to a folder package", r#"{"path":"..."}"#),
+        ("project.pack", "Write the project (and its attachments) to one .zip file, for a backup or to send to someone", r#"{"path":"My Novel.portmanteau.zip"}"#),
+        ("project.open_zip", "Unpack a project .zip into a new folder and open it", r#"{"path":"My Novel.portmanteau.zip","folder":"My Novel.portmanteau"}"#),
         ("project.checkpoint", "Save a full version checkpoint", r#"{"label":"..."}"#),
         ("project.restore_checkpoint", "Restore a checkpoint", r#"{"id":"cp-..."}"#),
         ("project.snapshots", "List document snapshots", "{}"),
@@ -1758,6 +1840,31 @@ pub fn command_catalogue() -> Vec<Value> {
             json!({"name": name, "description": description, "example": example})
         })
         .collect()
+}
+
+/// The files under `dir` as package-relative entries (`prefix/…`), for a zip.
+/// Links are skipped: a project never needs them and a zip must not follow one
+/// out of the folder.
+fn read_assets(dir: &Path, prefix: &str) -> Result<storage::PackageFiles, String> {
+    let mut out = Vec::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(out),
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let path = entry.path();
+        let Ok(meta) = std::fs::symlink_metadata(&path) else { continue };
+        let relative = format!("{prefix}/{name}");
+        if meta.is_dir() {
+            out.extend(read_assets(&path, &relative)?);
+        } else if meta.is_file() {
+            let bytes = std::fs::read(&path).map_err(|e| format!("Could not read {}: {e}", path.display()))?;
+            out.push((relative, bytes));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
 }
 
 #[cfg(test)]

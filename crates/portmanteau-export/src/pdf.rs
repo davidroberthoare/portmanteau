@@ -1908,8 +1908,8 @@ mod tests {
     }
 
     fn temp_pdf(name: &str, bytes: &[u8]) -> std::path::PathBuf {
-        let dir = std::path::Path::new("/tmp/opencode/pdf-tests");
-        std::fs::create_dir_all(dir).expect("temp directory");
+        let dir = std::env::temp_dir().join("portmanteau-pdf-tests");
+        std::fs::create_dir_all(&dir).expect("temp directory");
         let path = dir.join(format!("{}-{name}.pdf", std::process::id()));
         std::fs::write(&path, bytes).expect("write pdf");
         path

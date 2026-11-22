@@ -1210,3 +1210,39 @@ editor. A4, A5 and trade paperback remain available per format in Page & type,
 and a project's saved paper choice is still honoured. The narrower-paper tests
 stay because they check how a script behaves when the writer deliberately picks
 A5, not what the default is.
+
+## Plan: releases, updates and a web build (2026-11-22)
+
+Planning only, no code. After an interview the owner chose: notify about
+updates first and install them from inside the app later; check automatically
+once a day (switchable) plus Help › Check for Updates…; plain archives per
+platform like easyCue3; and a full web version with projects in browser storage
+and `.zip` in/out. The phases, rule changes (a network exception for the update
+check, "native plus web") and risks are in `docs/release-and-updates-plan.md`.
+
+## Releases, update notice and welcome project (2026-11-22, phases 0-2)
+
+Built from `docs/release-and-updates-plan.md`: one workspace version; app icon
+and Windows resources; Help menu (About, Check for Updates…, releases link);
+`ci.yml` (build and test on three systems, plus a Linux screenshot check) and
+`release.yml` (tag-triggered archives with checksums); `portmanteau-update`
+crate and the top-bar update icon, panel, daily check and Settings switch;
+`portmanteau-cli check-updates`; the welcome project and startup fallback.
+The workflows are unproven until the first push. See `docs/releasing.md`.
+
+## Web groundwork, zip projects and doc trim (2026-11-22)
+
+Storage split into pure `package_files` / `project_from_files`; project zip
+(`archive.rs`, `project.pack`, `project.open_zip`, File menu); libraries verified
+for `wasm32-unknown-unknown` and a CI job added; README rewritten around the
+goal and current status with credits (icon: Streamline Freehand, CC BY 4.0);
+old plans removed (`docs/compile-and-pdf-plan.md`, `.team/`) and the roadmap cut
+to open work. Details: `docs/release-and-updates-plan.md`, progress log.
+
+## 2026-11-22 — spell-check on one standard stack
+
+Replaced `zspell` plus the unlicensed `assets/words.txt` suggestion list and
+home-made Levenshtein code with `spellbook` (MPL-2.0, the Hunspell-compatible
+engine behind Helix), which checks and suggests from the same bundled
+LibreOffice Hunspell dictionaries (en_US from SCOWL, en_GB LGPL). Licence
+notices now ship in `assets/dict/README_en_*.txt`; `THIRD_PARTY.md` updated.

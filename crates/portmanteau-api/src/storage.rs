@@ -122,22 +122,16 @@ fn reset_dir(path: &Path) -> Result<(), String> {
         .map_err(|e| format!("Could not create {}: {e}", path.display()))
 }
 
-/// Write the full package into `dir`, replacing its managed directories.
-/// `dir` is expected to be a fresh temporary directory when called from
-/// `save_folder`.
-fn write_package(project: &Project, dir: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
+/// A project as the files of its folder package: package-relative paths with
+/// forward slashes (`project.json`, `documents/…`, …) and their bytes. Pure: no
+/// disk, so the same list feeds a folder on disk, a zip, or browser storage.
+/// Attachment binaries under `assets/` are not included; they are not part of
+/// the manifest.
+pub type PackageFiles = Vec<(String, Vec<u8>)>;
 
-    let documents = dir.join("documents");
-    let items = dir.join("items");
-    let snapshots = dir.join("snapshots");
-    let checkpoints = dir.join("checkpoints");
-    let assets = dir.join("assets");
-    reset_dir(&documents)?;
-    reset_dir(&items)?;
-    reset_dir(&snapshots)?;
-    reset_dir(&checkpoints)?;
-    std::fs::create_dir_all(&assets).map_err(|e| format!("Could not create assets: {e}"))?;
+/// The files that make up `project`. See [`PackageFiles`].
+pub fn package_files(project: &Project) -> Result<PackageFiles, String> {
+    let mut files: PackageFiles = Vec::new();
 
     let mut manifest = project.clone();
     for doc in &mut manifest.documents {
@@ -156,7 +150,7 @@ fn write_package(project: &Project, dir: &Path) -> Result<(), String> {
     }
     let manifest_text =
         serde_json::to_string_pretty(&manifest).map_err(|e| format!("Could not serialise: {e}"))?;
-    write_file(&dir.join("project.json"), manifest_text)?;
+    files.push(("project.json".into(), manifest_text.into_bytes()));
 
     for doc in &project.documents {
         let body = serde_json::to_string_pretty(&DocumentBodies {
@@ -164,40 +158,53 @@ fn write_package(project: &Project, dir: &Path) -> Result<(), String> {
             synopsis: doc.synopsis.clone(),
             notes: doc.notes.clone(),
         })
-            .map_err(|e| format!("Could not serialise {}: {e}", doc.title))?;
-        write_file(&documents.join(document_name(doc)), body)?;
+        .map_err(|e| format!("Could not serialise {}: {e}", doc.title))?;
+        files.push((format!("documents/{}", document_name(doc)), body.into_bytes()));
     }
 
     for (index, item) in project.items.iter().enumerate() {
         let body = serde_json::to_string_pretty(&item.notes)
             .map_err(|e| format!("Could not serialise item {}: {e}", item.title))?;
-        write_file(&items.join(item_name(index, item)), body)?;
+        files.push((format!("items/{}", item_name(index, item)), body.into_bytes()));
     }
 
     for doc in &project.documents {
-        if doc.snapshots.is_empty() {
-            continue;
-        }
-        let doc_dir = snapshots.join(id8(&doc.id));
-        std::fs::create_dir_all(&doc_dir)
-            .map_err(|e| format!("Could not create {}: {e}", doc_dir.display()))?;
         for snap in &doc.snapshots {
             let body = serde_json::to_string_pretty(&snap.content)
                 .map_err(|e| format!("Could not serialise snapshot {}: {e}", snap.name))?;
-            let name = format!("{}.rich.json", snapshot_stem(snap));
-            write_file(&doc_dir.join(name), body)?;
+            files.push((
+                format!("snapshots/{}/{}.rich.json", id8(&doc.id), snapshot_stem(snap)),
+                body.into_bytes(),
+            ));
         }
     }
 
     for cp in &project.checkpoints {
         let text =
             serde_json::to_string_pretty(cp).map_err(|e| format!("Could not serialise: {e}"))?;
-        write_file(
-            &checkpoints.join(format!("{}.json", safe_component(&cp.id))),
-            text,
-        )?;
+        files.push((format!("checkpoints/{}.json", safe_component(&cp.id)), text.into_bytes()));
     }
+    Ok(files)
+}
 
+/// Write the full package into `dir`, replacing its managed directories.
+/// `dir` is expected to be a fresh temporary directory when called from
+/// `save_folder`.
+fn write_package(project: &Project, dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
+    for managed in ["documents", "items", "snapshots", "checkpoints"] {
+        reset_dir(&dir.join(managed))?;
+    }
+    std::fs::create_dir_all(dir.join("assets"))
+        .map_err(|e| format!("Could not create assets: {e}"))?;
+    for (path, bytes) in package_files(project)? {
+        let target = dir.join(&path);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Could not create {}: {e}", parent.display()))?;
+        }
+        write_file(&target, bytes)?;
+    }
     Ok(())
 }
 
@@ -281,20 +288,21 @@ pub fn save_folder(project: &Project, dir: &Path) -> Result<(), String> {
 /// Read a folder package, re-attaching bodies from their derived filenames.
 /// A missing body file is left empty; a missing manifest is an error.
 pub fn load_folder(dir: &Path) -> Result<Project, String> {
-    let manifest_path = dir.join("project.json");
-    let text = std::fs::read_to_string(&manifest_path).map_err(|e| {
-        format!(
-            "Not a Portmanteau project: could not read {}: {e}",
-            manifest_path.display()
-        )
-    })?;
+    project_from_files(&|path| std::fs::read(dir.join(path)).ok())
+}
+
+/// Rebuild a project from package files. `read` returns the bytes of a
+/// package-relative path (as in [`package_files`]), or `None` if absent.
+pub fn project_from_files(read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Project, String> {
+    let text = read("project.json")
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .ok_or_else(|| "Not a Portmanteau project: could not read project.json".to_string())?;
     let mut project: Project =
         serde_json::from_str(&text).map_err(|e| format!("Not a Portmanteau project: {e}"))?;
+    let read_text = |path: &str| read(path).and_then(|bytes| String::from_utf8(bytes).ok());
 
-    let documents = dir.join("documents");
     for doc in &mut project.documents {
-        let path = documents.join(document_name(doc));
-        if let Ok(body) = std::fs::read_to_string(&path) {
+        if let Some(body) = read_text(&format!("documents/{}", document_name(doc))) {
             let bodies: DocumentBodies = serde_json::from_str(&body)
                 .map_err(|e| format!("Could not read rich text for {}: {e}", doc.title))?;
             doc.content = bodies.content;
@@ -311,35 +319,27 @@ pub fn load_folder(dir: &Path) -> Result<Project, String> {
         }
     }
 
-    let items = dir.join("items");
     for (index, item) in project.items.iter_mut().enumerate() {
-        let path = items.join(item_name(index, item));
-        if let Ok(body) = std::fs::read_to_string(&path) {
+        if let Some(body) = read_text(&format!("items/{}", item_name(index, item))) {
             item.notes = serde_json::from_str(&body)
                 .map_err(|e| format!("Could not read rich text for item {}: {e}", item.title))?;
         }
     }
 
-    let snapshots = dir.join("snapshots");
     for doc in &mut project.documents {
-        if doc.snapshots.is_empty() {
-            continue;
-        }
-        let doc_dir = snapshots.join(id8(&doc.id));
+        let stem_dir = id8(&doc.id);
         for snap in &mut doc.snapshots {
-            let path = doc_dir.join(format!("{}.rich.json", snapshot_stem(snap)));
-            if let Ok(body) = std::fs::read_to_string(&path) {
-                snap.content = serde_json::from_str(&body).map_err(|e| {
-                    format!("Could not read snapshot {}: {e}", snap.name)
-                })?;
+            let path = format!("snapshots/{stem_dir}/{}.rich.json", snapshot_stem(snap));
+            if let Some(body) = read_text(&path) {
+                snap.content = serde_json::from_str(&body)
+                    .map_err(|e| format!("Could not read snapshot {}: {e}", snap.name))?;
             }
         }
     }
 
-    let checkpoints = dir.join("checkpoints");
     for cp in &mut project.checkpoints {
-        let path = checkpoints.join(format!("{}.json", safe_component(&cp.id)));
-        if let Ok(body) = std::fs::read_to_string(&path) {
+        let path = format!("checkpoints/{}.json", safe_component(&cp.id));
+        if let Some(body) = read_text(&path) {
             if let Ok(full) = serde_json::from_str::<Checkpoint>(&body) {
                 cp.payload = full.payload;
             }

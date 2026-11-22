@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Portmanteau
+Comment=A writing studio for novels, film, television and theatre
+Exec=portmanteau
+Icon=portmanteau
+Categories=Office;Literature;
+StartupWMClass=portmanteau
+Terminal=false

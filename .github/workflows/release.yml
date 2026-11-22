@@ -1,0 +1,209 @@
+name: Release
+
+# Make a release: bump `version` in Cargo.toml, add a "## vX.Y.Z" section at the
+# top of docs/RELEASE_NOTES.md, commit, then `git tag vX.Y.Z && git push --tags`.
+# See docs/releasing.md.
+#
+# Every third-party action is pinned to a full commit SHA (the comment names the
+# version), and release builds use no cache, because this workflow signs what it
+# builds. To update a pin: `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release (e.g. v0.2.0)'
+        required: true
+        type: string
+
+# Read-only by default; only the job that publishes the release can write.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  check:
+    name: Check the tag matches Cargo.toml
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.TAG }}
+      - id: v
+        run: |
+          version=$(scripts/workspace-version.sh)
+          echo "Cargo.toml says $version, tag is $TAG"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match version $version in Cargo.toml"
+            exit 1
+          fi
+          if ! grep -q "^## v$version\b" docs/RELEASE_NOTES.md; then
+            echo "::error::docs/RELEASE_NOTES.md has no '## v$version' section"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build-linux:
+    name: Build Linux (x86_64)
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev poppler-utils
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - name: Build and test
+        run: |
+          cargo build --release --workspace
+          cargo test --release --workspace
+      - name: Package
+        run: |
+          PKG=portmanteau-linux-x86_64
+          mkdir -p $PKG
+          cp target/release/portmanteau target/release/portmanteau-cli target/release/portmanteau-mcp $PKG/
+          cp LICENSE README.md THIRD_PARTY.md $PKG/
+          cp packaging/linux/portmanteau.desktop $PKG/
+          cp assets/icon/icon.png $PKG/portmanteau.png
+          tar czf $PKG.tar.gz $PKG
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux
+          path: portmanteau-linux-x86_64.tar.gz
+
+  build-windows:
+    name: Build Windows (x86_64)
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - name: Build and test
+        run: |
+          cargo build --release --workspace
+          cargo test --release --workspace
+      - name: Package
+        shell: pwsh
+        run: |
+          $PKG = "portmanteau-windows-x86_64"
+          New-Item -ItemType Directory -Path $PKG
+          Copy-Item target\release\portmanteau.exe, target\release\portmanteau-cli.exe, target\release\portmanteau-mcp.exe $PKG\
+          Copy-Item LICENSE, README.md, THIRD_PARTY.md $PKG\
+          Compress-Archive -Path $PKG -DestinationPath "$PKG.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows
+          path: portmanteau-windows-x86_64.zip
+
+  build-macos:
+    name: Build macOS (universal)
+    needs: check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - name: Install poppler
+        run: brew install poppler
+      - name: Test
+        run: cargo test --release --workspace
+      - name: Build both architectures
+        run: |
+          cargo build --release --workspace --target x86_64-apple-darwin
+          cargo build --release --workspace --target aarch64-apple-darwin
+      - name: Package
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          PKG=portmanteau-macos-universal
+          APP=$PKG/Portmanteau.app
+          mkdir -p $APP/Contents/MacOS $APP/Contents/Resources
+          for bin in portmanteau portmanteau-cli portmanteau-mcp; do
+            lipo -create -output $PKG/$bin \
+              target/x86_64-apple-darwin/release/$bin \
+              target/aarch64-apple-darwin/release/$bin
+          done
+          mv $PKG/portmanteau $APP/Contents/MacOS/portmanteau
+          sed "s/@VERSION@/$VERSION/g" packaging/macos/Info.plist.in > $APP/Contents/Info.plist
+          # Icon: a PNG at every size macOS wants, folded into an .icns.
+          ICONSET=Portmanteau.iconset
+          mkdir $ICONSET
+          for size in 16 32 128 256 512; do
+            sips -z $size $size assets/icon/icon-1024.png --out $ICONSET/icon_${size}x${size}.png
+            sips -z $((size*2)) $((size*2)) assets/icon/icon-1024.png --out $ICONSET/icon_${size}x${size}@2x.png
+          done
+          iconutil -c icns $ICONSET -o $APP/Contents/Resources/Portmanteau.icns
+          # Ad hoc signature: not "identified", but Apple Silicon refuses to run
+          # unsigned code, so this is the minimum.
+          codesign --force --deep -s - $APP
+          cp LICENSE README.md THIRD_PARTY.md $PKG/
+          ditto -c -k --keepParent $PKG $PKG.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos
+          path: portmanteau-macos-universal.zip
+
+  release:
+    name: Publish the GitHub release
+    needs: [check, build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - name: Checksums and notes
+        run: |
+          mkdir out
+          cp linux/*.tar.gz windows/*.zip macos/*.zip out/
+          (cd out && sha256sum * > SHA256SUMS)
+          cat out/SHA256SUMS
+          scripts/release-notes.sh > RELEASE_BODY.md
+      - name: Sign the checksums
+        # The app installs an update only if SHA256SUMS carries a valid
+        # signature from this key and the archive matches it. The private key
+        # is the repository secret UPDATE_SIGNING_KEY (docs/releasing.md).
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then
+            echo "::error::The UPDATE_SIGNING_KEY secret is not set"
+            exit 1
+          fi
+          sudo apt-get update && sudo apt-get install -y minisign
+          printf '%s\n' "$UPDATE_SIGNING_KEY" > "$RUNNER_TEMP/update.key"
+          minisign -S -s "$RUNNER_TEMP/update.key" -m out/SHA256SUMS \
+            -x out/SHA256SUMS.minisig -t "Portmanteau $TAG"
+          rm -f "$RUNNER_TEMP/update.key"
+          # The public key in the repository must verify what was just signed.
+          minisign -V -p crates/portmanteau-update/update-public-key.pub \
+            -m out/SHA256SUMS -x out/SHA256SUMS.minisig
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Portmanteau ${{ env.TAG }}
+          body_path: RELEASE_BODY.md
+          files: out/*
+          # Published straight away. The build jobs gate it: if any platform
+          # fails, no release is made. Roll back by deleting release and tag.
+          draft: false
+          prerelease: false
