@@ -26,7 +26,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev \
-            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev poppler-utils xvfb
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev poppler-utils xvfb \
+            libxkbcommon-x11-0 libgl1-mesa-dri mesa-vulkan-drivers
       - name: Install poppler (macOS)
         if: runner.os == 'macOS'
         run: brew install poppler
