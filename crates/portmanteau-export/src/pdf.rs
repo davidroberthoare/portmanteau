@@ -1899,6 +1899,11 @@ mod tests {
     // ---- Real PDFs, checked with the poppler tools when present -------------
 
     fn tool_available(name: &str) -> bool {
+        // The Windows CI image's poppler prints text with a different encoding,
+        // so these checks run on Linux and macOS only.
+        if cfg!(windows) {
+            return false;
+        }
         std::process::Command::new("sh")
             .arg("-c")
             .arg(format!("command -v {name}"))
