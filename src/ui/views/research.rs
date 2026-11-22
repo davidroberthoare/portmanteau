@@ -374,7 +374,7 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
                         // The row is painted by hand, so say what it is for screen readers and tests.
                         resp.widget_info(|| {
                             egui::WidgetInfo::selected(
-                                egui::WidgetType::Button,
+                                egui::Role::Button,
                                 true,
                                 selected,
                                 format!("{title} · {kind}"),
@@ -472,7 +472,13 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
     let mut styles = app.ws.project.styles.clone();
     styles.body.size = 13.5;
     let sheet = StyleSheet::novel_prose(&styles);
-    let assets_dir = app.ws.research_assets_dir(id);
+    // Each file's real path, checked to be inside the project (see
+    // `Workspace::research_file_path`); `None` for a missing or unsafe one.
+    let files: Vec<(String, Option<std::path::PathBuf>)> = meta
+        .attachments
+        .iter()
+        .map(|name| (name.clone(), app.ws.research_file_path(id, name)))
+        .collect();
     let saved = app.ws.path.is_some();
     let hovering_files = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
 
@@ -652,8 +658,8 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                     if !meta.attachments.is_empty() {
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing = Vec2::splat(8.0);
-                            for name in &meta.attachments {
-                                file_card(ui, id, name, assets_dir.as_deref(), &mut actions);
+                            for (name, path) in &files {
+                                file_card(ui, id, name, path.as_deref(), &mut actions);
                             }
                         });
                     }
@@ -737,9 +743,9 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
             }
             Action::OpenDoc(doc) => app.open_doc(doc),
             Action::Delete => {
-                app.ws.execute("document.delete", json!({"id": id}));
-                if let Some(dir) = app.ws.research_assets_dir(id) {
-                    let _ = std::fs::remove_dir_all(dir);
+                let res = app.ws.execute("research.delete", json!({"id": id}));
+                if !res.ok {
+                    app.toast("Could not delete the note", res.message, ToastKind::Error);
                 }
                 state.confirm_delete = None;
                 app.selected_research = app.ws.project.research_docs().first().map(|d| d.id.clone());
@@ -756,9 +762,9 @@ const CARD_W: f32 = 168.0;
 
 /// One attached file: a thumbnail for pictures, an icon otherwise, its name
 /// and what you can do with it.
-fn file_card(ui: &mut egui::Ui, id: &str, name: &str, dir: Option<&std::path::Path>, actions: &mut Vec<Action>) {
+fn file_card(ui: &mut egui::Ui, id: &str, name: &str, path: Option<&std::path::Path>, actions: &mut Vec<Action>) {
     let kind = attachment_kind(name);
-    let path = dir.map(|d| d.join(name));
+    let path = path.map(std::path::Path::to_path_buf);
     let size = path.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len());
     Frame::new()
         .fill(PANEL_2)

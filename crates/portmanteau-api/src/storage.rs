@@ -303,6 +303,14 @@ pub fn load_folder(dir: &Path) -> Result<Project, String> {
         }
     }
 
+    // A project file from elsewhere is untrusted: an attachment name that is
+    // not a bare file name could point outside the note's folder.
+    for doc in &mut project.documents {
+        if let Some(meta) = &mut doc.research {
+            meta.attachments.retain(|name| crate::is_safe_attachment_name(name));
+        }
+    }
+
     let items = dir.join("items");
     for (index, item) in project.items.iter_mut().enumerate() {
         let path = items.join(item_name(index, item));

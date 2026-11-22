@@ -469,6 +469,10 @@ pub struct TextRun {
     pub text: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub marks: Vec<InlineMark>,
+    /// Where the text links to: a web address, or `note:<document id>` for
+    /// another document in the project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
 }
 
 impl TextRun {
@@ -476,6 +480,7 @@ impl TextRun {
         Self {
             text: text.into(),
             marks: Vec::new(),
+            link: None,
         }
     }
 
@@ -483,9 +488,13 @@ impl TextRun {
         Self {
             text: text.into(),
             marks,
+            link: None,
         }
     }
 }
+
+/// The prefix that makes a link point at another document in the project.
+pub const NOTE_LINK: &str = "note:";
 
 /// Inline character formatting. Paragraph-level appearance belongs to the
 /// paragraph's stylesheet entry.
@@ -713,6 +722,9 @@ impl RichDocument {
         let (left, _) = split_content(&start_paragraph.content, start_pos.offset);
         let (_, right) = split_content(&end_paragraph.content, end_pos.offset);
         let first_style = start_paragraph.style_id.clone();
+        // Typing inside a link extends it; typing at its edge does not.
+        let link = inherited_link(&left, &right);
+        let link = link.as_deref();
 
         let parts: Vec<&str> = inserted.split('\n').collect();
         let mut output = Vec::with_capacity(
@@ -722,7 +734,7 @@ impl RichDocument {
 
         let mut current_style = first_style.clone();
         let mut first_content = left;
-        append_text(&mut first_content, parts[0], marks);
+        append_text(&mut first_content, parts[0], marks, link);
         if parts.len() == 1 {
             append_content(&mut first_content, right);
             output.push(RichParagraph {
@@ -737,7 +749,7 @@ impl RichDocument {
             for part in parts.iter().skip(1).take(parts.len() - 2) {
                 current_style = next_style_id(sheet, &current_style);
                 let mut content = Vec::new();
-                append_text(&mut content, part, marks);
+                append_text(&mut content, part, marks, link);
                 output.push(RichParagraph {
                     style_id: current_style.clone(),
                     content,
@@ -745,7 +757,7 @@ impl RichDocument {
             }
             current_style = next_style_id(sheet, &current_style);
             let mut final_content = Vec::new();
-            append_text(&mut final_content, parts[parts.len() - 1], marks);
+            append_text(&mut final_content, parts[parts.len() - 1], marks, link);
             append_content(&mut final_content, right);
             output.push(RichParagraph {
                 style_id: current_style,
@@ -764,6 +776,124 @@ impl RichDocument {
         }
         self.paragraphs = output;
         start + inserted.chars().count()
+    }
+
+    /// Link (or, with `None`, unlink) the text in a document-wide character
+    /// range. Paragraph styles and images are left alone. Returns whether
+    /// anything changed.
+    pub fn set_link(&mut self, range: Range<usize>, link: Option<&str>) -> bool {
+        let start = range.start.min(range.end).min(self.char_count());
+        let end = range.start.max(range.end).min(self.char_count());
+        if start == end {
+            return false;
+        }
+        let mut changed = false;
+        let mut document_offset = 0usize;
+        for paragraph in &mut self.paragraphs {
+            let paragraph_len = content_char_count(&paragraph.content);
+            let local_start = start.saturating_sub(document_offset).min(paragraph_len);
+            let local_end = end.saturating_sub(document_offset).min(paragraph_len);
+            if local_start < local_end {
+                let (left_and_middle, right) = split_content(&paragraph.content, local_end);
+                let (left, mut middle) = split_content(&left_and_middle, local_start);
+                let mut did_change = false;
+                for item in &mut middle {
+                    if let InlineContent::Text(run) = item {
+                        let wanted = link.map(str::to_string);
+                        if run.link != wanted {
+                            run.link = wanted;
+                            did_change = true;
+                        }
+                    }
+                }
+                if did_change {
+                    let mut content = left;
+                    append_content(&mut content, middle);
+                    append_content(&mut content, right);
+                    paragraph.content = content;
+                    changed = true;
+                }
+            }
+            document_offset += paragraph_len + 1;
+        }
+        changed
+    }
+
+    /// The link at a character offset, with the document-wide range of the
+    /// whole linked stretch around it. An offset on the edge of a link counts
+    /// as inside it only when `inclusive_end` is set (a caret just after it).
+    pub fn link_at(&self, offset: usize, inclusive_end: bool) -> Option<(String, Range<usize>)> {
+        let mut document_offset = 0usize;
+        for paragraph in &self.paragraphs {
+            let mut run_start = document_offset;
+            for item in &paragraph.content {
+                let length = match item {
+                    InlineContent::Text(run) => run.text.chars().count(),
+                    _ => 1,
+                };
+                let run_end = run_start + length;
+                if let InlineContent::Text(run) = item {
+                    if let Some(link) = &run.link {
+                        let inside = offset >= run_start && (offset < run_end || (inclusive_end && offset == run_end));
+                        if inside {
+                            return Some((link.clone(), run_start..run_end));
+                        }
+                    }
+                }
+                run_start = run_end;
+            }
+            document_offset += content_char_count(&paragraph.content) + 1;
+        }
+        None
+    }
+
+    /// Turn every web address in the text (`http://…`, `https://…`) into a
+    /// link to itself. Text that is already linked is left alone. Returns how
+    /// many addresses were linked.
+    pub fn autolink_urls(&mut self) -> usize {
+        let plain: Vec<(usize, String)> = {
+            let mut offset = 0usize;
+            self.paragraphs
+                .iter()
+                .map(|p| {
+                    let text = p.editor_text();
+                    let item = (offset, text.clone());
+                    offset += text.chars().count() + 1;
+                    item
+                })
+                .collect()
+        };
+        let mut found: Vec<(Range<usize>, String)> = Vec::new();
+        for (base, text) in plain {
+            let chars: Vec<char> = text.chars().collect();
+            let mut i = 0usize;
+            while i < chars.len() {
+                let rest: String = chars[i..].iter().take(8).collect();
+                if rest.starts_with("http://") || rest.starts_with("https://") {
+                    let mut end = i;
+                    while end < chars.len() && !chars[end].is_whitespace() && !"<>\"".contains(chars[end]) {
+                        end += 1;
+                    }
+                    // A sentence's own punctuation is not part of the address.
+                    while end > i && ".,;:!?)]}'".contains(chars[end - 1]) {
+                        end -= 1;
+                    }
+                    if end > i + 8 {
+                        found.push((base + i..base + end, chars[i..end].iter().collect()));
+                    }
+                    i = end.max(i + 1);
+                } else {
+                    i += 1;
+                }
+            }
+        }
+        let mut linked = 0;
+        for (range, url) in found {
+            if self.link_at(range.start, false).is_none() && self.set_link(range, Some(&url)) {
+                linked += 1;
+            }
+        }
+        linked
     }
 
     /// Toggle an inline formatting mark over a document-wide character range.
@@ -1007,12 +1137,14 @@ fn split_content(
                     left.push(InlineContent::Text(TextRun {
                         text: run.text[..split_byte].to_owned(),
                         marks: run.marks.clone(),
+                        link: run.link.clone(),
                     }));
                 }
                 if split_byte < run.text.len() {
                     right.push(InlineContent::Text(TextRun {
                         text: run.text[split_byte..].to_owned(),
                         marks: run.marks.clone(),
+                        link: run.link.clone(),
                     }));
                 }
             }
@@ -1026,26 +1158,40 @@ fn split_content(
     (left, right)
 }
 
-fn append_text(content: &mut Vec<InlineContent>, text: &str, marks: &[InlineMark]) {
+fn append_text(content: &mut Vec<InlineContent>, text: &str, marks: &[InlineMark], link: Option<&str>) {
     if text.is_empty() {
         return;
     }
     if let Some(InlineContent::Text(previous)) = content.last_mut() {
-        if previous.marks == marks {
+        if previous.marks == marks && previous.link.as_deref() == link {
             previous.text.push_str(text);
             return;
         }
     }
-    content.push(InlineContent::Text(TextRun::with_marks(
-        text,
-        marks.to_vec(),
-    )));
+    content.push(InlineContent::Text(TextRun {
+        text: text.to_string(),
+        marks: marks.to_vec(),
+        link: link.map(str::to_string),
+    }));
+}
+
+/// The link that text inserted between `left` and `right` belongs to: one
+/// only when the text on both sides is in the same link.
+fn inherited_link(left: &[InlineContent], right: &[InlineContent]) -> Option<String> {
+    let before = match left.last() {
+        Some(InlineContent::Text(run)) => run.link.as_ref()?,
+        _ => return None,
+    };
+    match right.first() {
+        Some(InlineContent::Text(run)) if run.link.as_ref() == Some(before) => Some(before.clone()),
+        _ => None,
+    }
 }
 
 fn append_content(target: &mut Vec<InlineContent>, mut additional: Vec<InlineContent>) {
     for item in additional.drain(..) {
         match item {
-            InlineContent::Text(run) => append_text(target, &run.text, &run.marks),
+            InlineContent::Text(run) => append_text(target, &run.text, &run.marks, run.link.as_deref()),
             other => target.push(other),
         }
     }

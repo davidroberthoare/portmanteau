@@ -717,6 +717,18 @@ impl Workspace {
                     Err(error) => ApiResponse::err(command, error),
                 }
             }
+            "research.delete" => {
+                let Some(id) = str_arg(&payload, "id") else {
+                    return ApiResponse::err(command, "A research note id is required");
+                };
+                match self.delete_research(&id) {
+                    Ok(()) => {
+                        self.dirty = true;
+                        ApiResponse::ok(command, "Research note deleted", json!({"id": id}))
+                    }
+                    Err(error) => ApiResponse::err(command, error),
+                }
+            }
             "research.detach" => {
                 let (Some(id), Some(name)) = (str_arg(&payload, "id"), str_arg(&payload, "name")) else {
                     return ApiResponse::err(command, "A research note id and an attachment name are required");
@@ -959,34 +971,74 @@ impl Workspace {
     }
 
     /// Where a research note's attachments live, once the project has a folder.
+    /// Only the *intended* location: nothing has been checked or created.
     pub fn research_assets_dir(&self, id: &str) -> Option<PathBuf> {
         let root = self.path.as_ref()?;
         Some(root.join("assets").join("research").join(safe_dir_name(id)))
     }
 
+    /// The note's attachment folder, with the guarantee that it really lies
+    /// inside the project: a project from elsewhere could make `assets` or
+    /// the note's folder a symlink pointing anywhere. `create` makes it first.
+    fn checked_research_dir(&self, id: &str, create: bool) -> Result<PathBuf, String> {
+        let root = self.path.as_ref().ok_or("Save the project first: attachments are copied into the project folder")?;
+        let dir = self.research_assets_dir(id).ok_or("The project has no folder yet")?;
+        if create {
+            std::fs::create_dir_all(&dir).map_err(|e| format!("Could not prepare the attachments folder: {e}"))?;
+        }
+        let real = dir.canonicalize().map_err(|_| "The attachments folder does not exist".to_string())?;
+        let real_root = root.canonicalize().map_err(|e| format!("Could not read the project folder: {e}"))?;
+        if !real.starts_with(&real_root) {
+            return Err("The attachments folder points outside the project, so it was not used".into());
+        }
+        Ok(real)
+    }
+
+    /// The real path of one attached file, for opening or previewing, or `None`
+    /// when the name is unsafe, the file is missing, or it is not an ordinary
+    /// file inside the note's folder (a symlink out of the project, say).
+    pub fn research_file_path(&self, id: &str, name: &str) -> Option<PathBuf> {
+        if !is_safe_attachment_name(name) {
+            return None;
+        }
+        let dir = self.checked_research_dir(id, false).ok()?;
+        let candidate = dir.join(name);
+        let meta = std::fs::symlink_metadata(&candidate).ok()?;
+        if !meta.file_type().is_file() {
+            return None;
+        }
+        let real = candidate.canonicalize().ok()?;
+        real.starts_with(&dir).then_some(real)
+    }
+
     /// Copy `source` into the note's assets and record its name. Names are kept
     /// as they are; a second file with the same name replaces the first.
     fn attach_to_research(&mut self, id: &str, source: &Path) -> Result<String, String> {
-        let Some(dir) = self.research_assets_dir(id) else {
+        if self.path.is_none() {
             return Err("Save the project first: attachments are copied into the project folder".into());
-        };
+        }
         if !source.is_file() {
             return Err(format!("{} is not a file", source.display()));
         }
         let name = source
             .file_name()
             .and_then(|n| n.to_str())
-            .filter(|n| safe_attachment(n))
+            .filter(|n| is_safe_attachment_name(n))
             .ok_or("That file name is not allowed")?
             .to_string();
-        let Some(doc) = self.project.document_mut(id) else {
+        if self.project.document(id).is_none() {
             return Err("Research note not found".into());
-        };
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Could not attach the file: {e}"))?;
+        }
+        let dir = self.checked_research_dir(id, true)?;
         let dest = dir.join(&name);
-        if source != dest {
+        // Never write through a link that was put where the copy goes.
+        if std::fs::symlink_metadata(&dest).is_ok_and(|m| !m.file_type().is_file()) {
+            return Err("A link of that name is already in the note's folder, so the file was not copied".into());
+        }
+        if source.canonicalize().ok().as_deref() != Some(dest.as_path()) {
             std::fs::copy(source, &dest).map_err(|e| format!("Could not attach the file: {e}"))?;
         }
+        let doc = self.project.document_mut(id).ok_or("Research note not found")?;
         let meta = doc.research_meta();
         if !meta.attachments.contains(&name) {
             meta.attachments.push(name.clone());
@@ -996,10 +1048,9 @@ impl Workspace {
     }
 
     fn detach_from_research(&mut self, id: &str, name: &str) -> Result<(), String> {
-        if !safe_attachment(name) {
+        if !is_safe_attachment_name(name) {
             return Err("That attachment name is not allowed".into());
         }
-        let dir = self.research_assets_dir(id);
         let Some(doc) = self.project.document_mut(id) else {
             return Err("Research note not found".into());
         };
@@ -1009,8 +1060,22 @@ impl Workspace {
         }
         meta.attachments.retain(|a| a != name);
         doc.touch();
+        // Remove the stored file only when it is where it should be.
+        if let Some(file) = self.research_file_path(id, name) {
+            let _ = std::fs::remove_file(file);
+        }
+        Ok(())
+    }
+
+    /// Delete a research note and its stored files.
+    fn delete_research(&mut self, id: &str) -> Result<(), String> {
+        if self.project.document(id).is_none_or(|d| !self.project.in_research(d)) {
+            return Err("That is not a research note".into());
+        }
+        let dir = self.checked_research_dir(id, false).ok();
+        self.project.delete_document(id);
         if let Some(dir) = dir {
-            let _ = std::fs::remove_file(dir.join(name));
+            let _ = std::fs::remove_dir_all(dir);
         }
         Ok(())
     }
@@ -1444,8 +1509,13 @@ fn safe_dir_name(id: &str) -> String {
 }
 
 /// A bare file name: nothing that could reach outside the note's folder.
-fn safe_attachment(name: &str) -> bool {
-    !(name.is_empty() || name.contains('/') || name.contains('\\') || name == "." || name == "..")
+pub fn is_safe_attachment_name(name: &str) -> bool {
+    !(name.is_empty()
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains('\0')
+        || name == "."
+        || name == "..")
 }
 
 fn canonical_research_kind(name: &str) -> Option<&'static str> {
@@ -1562,6 +1632,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("research.update", "Change a research note's title, body, kind or source", r#"{"id":"doc-...","kind":"Data","source":"..."}"#),
         ("research.attach", "Copy a file into a research note's attachments (the project must be saved)", r#"{"id":"doc-...","path":"/path/to/file.pdf"}"#),
         ("research.detach", "Remove an attachment from a research note", r#"{"id":"doc-...","name":"file.pdf"}"#),
+        ("research.delete", "Delete a research note and its attached files", r#"{"id":"doc-..."}"#),
         ("search", "Search the whole manuscript", r#"{"query":"..."}"#),
         ("stats", "Word, page and session statistics", "{}"),
         ("script.parse", "Parse plain text into script blocks", r#"{"text":"INT. ..."}"#),
@@ -1818,6 +1889,61 @@ mod tests {
         assert!(!dir.join("assets").join("research").join(&id).join("map.png").exists());
         let _ = std::fs::remove_dir_all(dir);
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    /// A project from elsewhere is untrusted: its attachment names and folders
+    /// must not let a copy, a delete or an "open" reach outside the project.
+    #[test]
+    fn research_attachments_cannot_escape_the_project() {
+        let root = std::env::temp_dir().join(portmanteau_core::new_id("api-escape"));
+        let outside = std::env::temp_dir().join(portmanteau_core::new_id("api-outside"));
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("precious.txt"), b"keep me").unwrap();
+        let source = outside.join("new.txt");
+        std::fs::write(&source, b"new").unwrap();
+
+        let mut ws = Workspace::demo();
+        ws.save(Some(root.clone())).unwrap();
+        let id = ws.project.research_docs()[0].id.clone();
+
+        // A hostile name in the project file is neither opened nor deleted.
+        ws.project.document_mut(&id).unwrap().research_meta().attachments.push("../../../precious.txt".into());
+        assert!(ws.research_file_path(&id, "../../../precious.txt").is_none());
+        let removed = ws.execute("research.detach", json!({"id": id, "name": "../../../precious.txt"}));
+        assert!(!removed.ok);
+        assert!(outside.join("precious.txt").is_file());
+
+        // Loading drops such names outright.
+        let dir = root.join("copy");
+        ws.save(Some(dir.clone())).unwrap();
+        let reloaded = Workspace::open(&dir).unwrap();
+        assert!(reloaded.project.document(&id).unwrap().research.as_ref().unwrap().attachments.is_empty());
+
+        #[cfg(unix)]
+        {
+            // The note's folder replaced by a link out of the project: nothing is written or read through it.
+            let assets = ws.research_assets_dir(&id).unwrap();
+            std::fs::create_dir_all(assets.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(&outside, &assets).unwrap();
+            let attached = ws.execute("research.attach", json!({"id": id, "path": source.display().to_string()}));
+            assert!(!attached.ok && attached.message.contains("outside the project"), "{}", attached.message);
+            assert!(ws.research_file_path(&id, "precious.txt").is_none(), "no reading through the link");
+            let deleted = ws.execute("research.delete", json!({"id": id}));
+            assert!(deleted.ok);
+            assert!(outside.join("precious.txt").is_file(), "deleting a note never deletes outside the project");
+            std::fs::remove_file(&assets).ok();
+
+            // A file link inside a proper folder is not copied over either.
+            let id2 = ws.project.research_docs()[0].id.clone();
+            let dir2 = ws.research_assets_dir(&id2).unwrap();
+            std::fs::create_dir_all(&dir2).unwrap();
+            std::os::unix::fs::symlink(outside.join("precious.txt"), dir2.join("new.txt")).unwrap();
+            let blocked = ws.execute("research.attach", json!({"id": id2, "path": source.display().to_string()}));
+            assert!(!blocked.ok, "{}", blocked.message);
+            assert_eq!(std::fs::read(outside.join("precious.txt")).unwrap(), b"keep me");
+        }
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
     }
 
     #[test]
