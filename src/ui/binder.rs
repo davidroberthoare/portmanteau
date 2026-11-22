@@ -39,6 +39,11 @@ fn collect_rows(
     out: &mut Vec<Row>,
 ) {
     for doc in app.ws.project.children(parent) {
+        // Research lives on its own page (the Research notes entry under
+        // Collections), so its folder is not listed in the binder.
+        if parent.is_none() && doc.kind.is_folder() && doc.title == "Research" {
+            continue;
+        }
         let children = !app.ws.project.children(Some(&doc.id)).is_empty();
         out.push(Row {
             id: doc.id.clone(),
@@ -356,13 +361,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 .iter()
                 .filter(|d| d.kind == DocKind::Scene)
                 .count();
-            let research = app
-                .ws
-                .project
-                .documents
-                .iter()
-                .filter(|d| d.kind == DocKind::Research)
-                .count();
+            let research = app.ws.project.research_docs().len();
             for (label, count, target_view) in [
                 ("Corkboard", scenes, View::Corkboard),
                 ("Research notes", research, View::Research),

@@ -122,6 +122,8 @@ How to check output visually (all on this machine):
   found by first name), and clicking one opens it at the first place
   (`App::open_appearance`, via `CaretRequest`). Tags: search, tag chips and tags
   shown in the list, "used elsewhere" suggestions on the item, and `@` matches tags.
+- **Binder** no longer lists the Research folder; research is reached from the
+  "Research notes" entry under Collections (and the Research page).
 - **Project page** (`src/ui/views/project.rs`, rail icon between Versions and
   Compile): title, subtitle, author, genre, logline, contact, draft label and
   date, daily goal. Edits go through `project.update`. A script cover prints
