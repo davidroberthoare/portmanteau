@@ -2033,14 +2033,16 @@ fn append_script_paragraph(
             .get(char_index + 1)
             .copied()
             .unwrap_or(line.len());
-        let misspelled_char = !uppercase
-            && misspelled
-                .iter()
-                .any(|span| span.0 < byte_start + char_end && span.1 > global_byte);
         let marks = paragraph
             .map(|paragraph| inline_marks_at(&paragraph.content, char_index))
             .unwrap_or_default();
         let linked = paragraph.is_some_and(|paragraph| inline_linked_at(&paragraph.content, char_index));
+        // An address is not prose: linked text is never flagged as misspelled.
+        let misspelled_char = !uppercase
+            && !linked
+            && misspelled
+                .iter()
+                .any(|span| span.0 < byte_start + char_end && span.1 > global_byte);
         keys.push((marks, misspelled_char, linked));
     }
     if keys.is_empty() {
@@ -2455,7 +2457,7 @@ fn remember_link_spans(text: &str, content: &portmanteau_core::RichDocument) {
 /// Ctrl/Cmd+click on a link opens it: the target is left for `app::draw` to
 /// act on (see `take_clicked_link`). While the modifier is held the pointer
 /// shows it is a link.
-fn handle_link_click(ctx: &egui::Context, galley: &egui::Galley, galley_pos: egui::Pos2) {
+fn handle_link_click(ctx: &egui::Context, field: Id, galley: &egui::Galley, galley_pos: egui::Pos2) {
     let Some(pointer) = ctx.pointer_hover_pos() else { return };
     let spans = LINK_SPANS.with(|map| map.borrow().get(&text_key(&galley.job.text)).cloned());
     let Some(spans) = spans else { return };
@@ -2464,12 +2466,54 @@ fn handle_link_click(ctx: &egui::Context, galley: &egui::Galley, galley_pos: egu
         return;
     }
     let index = galley.cursor_from_pos(local.to_vec2()).index.0;
-    let Some((_, link)) = spans.iter().find(|(range, _)| range.contains(&index)) else { return };
+    let Some((range, link)) = spans.iter().find(|(range, _)| range.contains(&index)) else { return };
+    // Right-click on a link: a small menu with Edit link… and Open link.
+    if ctx.input(|i| i.pointer.secondary_clicked()) {
+        ctx.data_mut(|data| data.insert_temp(Id::unique(("link_menu", field)), LinkMenu { pos: pointer, range: range.clone(), link: link.clone() }));
+    }
     if ctx.input(|i| i.modifiers.command) {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         if ctx.input(|i| i.pointer.primary_clicked()) {
             ctx.data_mut(|data| data.insert_temp(Id::unique("clicked-link"), link.clone()));
         }
+    }
+}
+
+/// The little menu a right-click on a link opens.
+#[derive(Clone)]
+struct LinkMenu {
+    pos: egui::Pos2,
+    range: std::ops::Range<usize>,
+    link: String,
+}
+
+/// Show the right-click menu for this field's link, if one is open. "Edit
+/// link…" opens the same dialog as making a link (see `inline_format_toolbar`).
+fn link_menu(ctx: &egui::Context, field: Id) {
+    let key = Id::unique(("link_menu", field));
+    let Some(menu) = ctx.data(|data| data.get_temp::<LinkMenu>(key)) else { return };
+    let mut close = false;
+    let area = egui::Area::new(Id::unique(("link_menu_area", field)))
+        .order(egui::Order::Foreground)
+        .fixed_pos(menu.pos)
+        .show(ctx, |ui| {
+            Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_min_width(130.0);
+                if ui.button("Edit link…").clicked() {
+                    let edit = LinkEdit { range: menu.range.clone(), url: menu.link.clone(), existing: true, first_frame: true };
+                    ctx.data_mut(|data| data.insert_temp(Id::unique(("link_edit", field)), edit));
+                    close = true;
+                }
+                if ui.button("Open link").clicked() {
+                    ctx.data_mut(|data| data.insert_temp(Id::unique("clicked-link"), menu.link.clone()));
+                    close = true;
+                }
+            });
+        });
+    let clicked_elsewhere = ctx.input(|i| i.pointer.any_pressed())
+        && ctx.pointer_interact_pos().is_some_and(|p| !area.response.rect.contains(p));
+    if close || clicked_elsewhere || ctx.input(|i| i.key_pressed(Key::Escape)) {
+        ctx.data_mut(|data| data.remove::<LinkMenu>(key));
     }
 }
 
@@ -2504,7 +2548,8 @@ pub(crate) fn remember_selection_anchor(
     galley: &egui::Galley,
     galley_pos: egui::Pos2,
 ) {
-    handle_link_click(ctx, galley, galley_pos);
+    handle_link_click(ctx, id, galley, galley_pos);
+    link_menu(ctx, id);
     // Every rich-text field reports its selection here, which is also how the
     // app knows Cmd+Z is its own to handle while such a field has the focus.
     mark_rich(ctx, id);
@@ -3618,6 +3663,51 @@ mod link_tests {
         for refused in ["", "ada@example.org", "mailto:ada@example.org", "javascript:alert(1)", "file:///etc/passwd", "two words.org", "ftp://x.test", "localhost"] {
             assert_eq!(normalise_link(refused), None, "{refused:?}");
         }
+    }
+
+    #[test]
+    fn linked_text_is_not_spell_checked() {
+        let mut content = portmanteau_core::RichDocument::from_plain_text("see wrrodd and wrrodd", "body");
+        content.set_link(4..10, Some("https://example.org"));
+        let styles = portmanteau_core::ElementStyles::default();
+        let sheet = portmanteau_core::StyleSheet::novel_prose(&styles);
+        let text = content.editor_text();
+        // Both words are "misspelled"; only the unlinked one may be underlined.
+        let misspelled = [(4, 10), (15, 21)];
+        let job = script_flow_layout_job(&text, &content, &sheet, &styles, 1.0, 400.0, &misspelled);
+        let underlined: Vec<&str> = job
+            .sections
+            .iter()
+            .filter(|s| s.format.underline.color == Color32::from_rgb(196, 64, 64))
+            .map(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0])
+            .collect();
+        assert_eq!(underlined, ["wrrodd"]);
+        assert_eq!(job.text[15..21].to_string(), "wrrodd");
+    }
+
+    #[test]
+    fn right_clicking_a_link_offers_edit_link_which_opens_the_same_dialog() {
+        use egui_kittest::kittest::Queryable;
+        let field = Id::unique("some-field");
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(400.0, 300.0))
+            .with_accessibility_check(false)
+            .build_ui(move |ui| link_menu(ui.ctx(), field));
+        harness.ctx.data_mut(|data| {
+            data.insert_temp(
+                Id::unique(("link_menu", field)),
+                LinkMenu { pos: egui::pos2(40.0, 40.0), range: 4..13, link: "https://example.org".into() },
+            )
+        });
+        harness.run_steps(2);
+        harness.get_by_label("Edit link…").click();
+        harness.run_steps(2);
+        let edit: LinkEdit = harness
+            .ctx
+            .data(|data| data.get_temp(Id::unique(("link_edit", field))))
+            .expect("the edit dialog was requested");
+        assert_eq!((edit.range, edit.url.as_str(), edit.existing), (4..13, "https://example.org", true));
+        assert!(harness.query_by_label("Edit link…").is_none(), "the menu closed");
     }
 
     #[test]

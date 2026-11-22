@@ -221,6 +221,17 @@ fn open_url(url: &str) {
     let _ = command.arg(url).spawn();
 }
 
+/// Ask the desktop to open a folder itself (not the one above it).
+pub(crate) fn open_folder(folder: &Path) {
+    #[cfg(target_os = "macos")]
+    let mut command = std::process::Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut command = std::process::Command::new("explorer");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut command = std::process::Command::new("xdg-open");
+    let _ = command.arg(folder).spawn();
+}
+
 /// Ask the desktop to open a file. When the file has been moved or deleted,
 /// open its folder instead so the click still leads somewhere useful.
 pub(crate) fn open_path(path: &Path) {
@@ -405,8 +416,11 @@ impl PortmanteauApp {
         // Reopen the project the writer left open. Screenshots and the test
         // suite always start from the demonstration project, so they stay
         // repeatable whatever is on this machine.
-        let reopened = (!cfg!(test) && screenshot.is_none())
-            .then(|| settings.last_project.as_deref())
+        // PORTMANTEAU_PROJECT opens a given project even for a screenshot (a
+        // development aid, like PORTMANTEAU_VIEW).
+        let dev_project = std::env::var("PORTMANTEAU_PROJECT").ok();
+        let reopened = (!cfg!(test) && (screenshot.is_none() || dev_project.is_some()))
+            .then(|| dev_project.as_deref().or(settings.last_project.as_deref()))
             .flatten()
             .and_then(|path| Workspace::open(Path::new(path)).ok());
         let ws = reopened.unwrap_or_else(Workspace::demo);

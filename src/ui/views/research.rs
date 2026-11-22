@@ -736,8 +736,9 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
             }
             Action::Open(path) => crate::app::open_path(&path),
             Action::Reveal(path) => {
+                // The folder the file is in, opened as a folder.
                 if let Some(parent) = path.parent() {
-                    crate::app::open_path(parent);
+                    crate::app::open_folder(parent);
                 }
             }
             Action::Remove(name) => {
@@ -765,8 +766,9 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
 
 const CARD_W: f32 = 168.0;
 
-/// One attached file: a thumbnail for pictures, an icon otherwise, its name
-/// and what you can do with it.
+/// One attached file: a preview (the picture itself, or a frame of a video or
+/// the first page of a PDF when the tools to make one are installed, else the
+/// file type), its name, size and what you can do with it.
 fn file_card(ui: &mut egui::Ui, id: &str, name: &str, path: Option<&std::path::Path>, actions: &mut Vec<Action>) {
     let kind = attachment_kind(name);
     let path = path.map(std::path::Path::to_path_buf);
@@ -776,55 +778,139 @@ fn file_card(ui: &mut egui::Ui, id: &str, name: &str, path: Option<&std::path::P
         .stroke(Stroke::new(1.0, BORDER_SOFT))
         .corner_radius(CornerRadius::same(6))
         .inner_margin(Margin::same(6))
+        // The cards sit in a wrapping row, so each one lays itself out top-down.
         .show(ui, |ui| {
-            ui.set_width(CARD_W);
-            ui.set_max_width(CARD_W);
-            let (area, _) = ui.allocate_exact_size(Vec2::new(CARD_W, 96.0), Sense::hover());
-            let bytes = (kind == "Image").then(|| path.as_ref().and_then(|p| cached_bytes(ui.ctx(), p))).flatten();
-            match (&path, bytes) {
-                (Some(path), Some(bytes)) => {
-                    let uri = format!("bytes://research/{id}/{name}?v={}", stamp(path));
-                    egui::Image::from_bytes(uri, egui::load::Bytes::from(bytes.to_vec()))
-                        .fit_to_exact_size(area.size())
-                        .maintain_aspect_ratio(true)
-                        .corner_radius(4)
-                        .paint_at(ui, area);
+            ui.vertical(|ui| {
+                ui.set_width(CARD_W);
+                let (area, _) = ui.allocate_exact_size(Vec2::new(CARD_W, 96.0), Sense::hover());
+                let preview = path.as_ref().and_then(|p| match kind {
+                    "Image" => cached_bytes(ui.ctx(), p),
+                    "Video" | "PDF" => thumbnail(ui.ctx(), p, kind),
+                    _ => None,
+                });
+                match (&path, preview) {
+                    (Some(path), Some(bytes)) => {
+                        let uri = format!("bytes://research/{id}/{name}?v={}", stamp(path));
+                        egui::Image::from_bytes(uri, egui::load::Bytes::from(bytes.to_vec()))
+                            .fit_to_exact_size(area.size())
+                            .maintain_aspect_ratio(true)
+                            .corner_radius(4)
+                            .paint_at(ui, area);
+                    }
+                    _ => {
+                        ui.painter().rect_filled(area, CornerRadius::same(4), BG);
+                        let ext = std::path::Path::new(name)
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("file")
+                            .to_uppercase();
+                        ui.painter().text(area.center(), egui::Align2::CENTER_CENTER, ext, serif(22.0), MUTED);
+                    }
                 }
-                _ => {
-                    ui.painter().rect_filled(area, CornerRadius::same(4), BG);
-                    let ext = std::path::Path::new(name)
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("file")
-                        .to_uppercase();
-                    ui.painter().text(area.center(), egui::Align2::CENTER_CENTER, ext, serif(22.0), MUTED);
-                }
-            }
-            ui.add_space(2.0);
-            ui.add(egui::Label::new(RichText::new(name).font(ui_small()).color(TEXT)).truncate());
-            let detail = match size {
-                Some(bytes) => format!("{kind} · {}", human_size(bytes)),
-                None => format!("{kind} · missing from the project folder"),
-            };
-            ui.label(RichText::new(detail).font(mono(8.5)).color(FAINT));
-            ui.horizontal(|ui| {
-                if let Some(path) = &path {
-                    if size.is_some() {
-                        if ui.add(egui::Button::new(RichText::new("Open").font(ui_small()).color(BLUE)).frame(false)).clicked() {
+                ui.add_space(3.0);
+                ui.add(egui::Label::new(RichText::new(name).font(ui_small()).color(TEXT)).truncate());
+                let detail = match size {
+                    Some(bytes) => format!("{kind} · {}", human_size(bytes)),
+                    None => format!("{kind} · missing from the project folder"),
+                };
+                ui.add(egui::Label::new(RichText::new(detail).font(mono(8.5)).color(FAINT)).truncate());
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    let link = |text: &str, color: Color32| {
+                        egui::Button::new(RichText::new(text).font(ui_small()).color(color)).frame(false)
+                    };
+                    if let (Some(path), Some(_)) = (&path, size) {
+                        if ui.add(link("Open", BLUE)).clicked() {
                             actions.push(Action::Open(path.clone()));
                         }
-                        if ui.add(egui::Button::new(RichText::new("Show").font(ui_small()).color(BLUE)).frame(false)).on_hover_text("Show in the file manager").clicked() {
+                        if ui.add(link("Show", BLUE)).on_hover_text("Show in the file manager").clicked() {
                             actions.push(Action::Reveal(path.clone()));
                         }
                     }
-                }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.add(egui::Button::new(RichText::new("Remove").font(ui_small()).color(MUTED)).frame(false)).clicked() {
+                    if ui.add(link("Remove", MUTED)).clicked() {
                         actions.push(Action::Remove(name.to_string()));
                     }
                 });
             });
         });
+}
+
+/// A preview picture for a video or a PDF, made once by a small command-line
+/// tool (`ffmpeg`, `pdftoppm`) when one is installed, in the background so the
+/// page never waits. `None` while it is being made, and for good when the tool
+/// is missing or fails: the card then shows the file type instead.
+///
+/// The files are the project's own and have already been checked to lie inside
+/// it (`Workspace::research_file_path`), the tools run for at most a few
+/// seconds, and their output goes to a private temporary folder that is
+/// removed afterwards.
+fn thumbnail(ctx: &egui::Context, path: &std::path::Path, kind: &str) -> Option<Arc<Vec<u8>>> {
+    use std::sync::Mutex;
+    type Slot = Arc<Mutex<Option<Option<Arc<Vec<u8>>>>>>;
+    let key = egui::Id::unique(("research-thumb", path.display().to_string(), stamp(path)));
+    let slot: Slot = ctx.data_mut(|d| d.get_temp_mut_or_insert_with(key, || Slot::default()).clone());
+    let state = slot.lock().ok()?.clone();
+    match state {
+        Some(done) => done,
+        None => {
+            let started = ctx.data_mut(|d| {
+                let flag = egui::Id::unique(("research-thumb-started", key));
+                let first = d.get_temp::<bool>(flag).is_none();
+                d.insert_temp(flag, true);
+                first
+            });
+            if started {
+                let (path, kind, ctx, slot) = (path.to_path_buf(), kind.to_string(), ctx.clone(), slot.clone());
+                std::thread::spawn(move || {
+                    let made = make_thumbnail(&path, &kind).map(Arc::new);
+                    if let Ok(mut guard) = slot.lock() {
+                        *guard = Some(made);
+                    }
+                    ctx.request_repaint();
+                });
+            }
+            None
+        }
+    }
+}
+
+fn make_thumbnail(path: &std::path::Path, kind: &str) -> Option<Vec<u8>> {
+    use std::process::{Command, Stdio};
+    let dir = std::env::temp_dir().join(portmanteau_core::new_id("thumb"));
+    std::fs::create_dir_all(&dir).ok()?;
+    let out = dir.join("t.jpg");
+    let mut command = if kind == "Video" {
+        let mut c = Command::new("ffmpeg");
+        c.args(["-nostdin", "-v", "error", "-y", "-i"])
+            .arg(path)
+            .args(["-vf", "thumbnail,scale=320:-2", "-frames:v", "1"])
+            .arg(&out);
+        c
+    } else {
+        let mut c = Command::new("pdftoppm");
+        c.args(["-jpeg", "-singlefile", "-scale-to", "320", "-f", "1", "-l", "1"])
+            .arg(path)
+            .arg(dir.join("t"));
+        c
+    };
+    let child = command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    let result = child.ok().and_then(|mut child| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return status.success().then_some(()),
+                Ok(None) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(40)),
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+            }
+        }
+    });
+    let bytes = result.and_then(|_| std::fs::read(&out).ok()).filter(|b| !b.is_empty() && b.len() < 4_000_000);
+    let _ = std::fs::remove_dir_all(&dir);
+    bytes
 }
 
 fn stamp(path: &std::path::Path) -> u128 {
@@ -1016,5 +1102,48 @@ mod tests {
         let links = app.ws.project.document(&id).unwrap().content.links();
         assert_eq!(links, [(0..14, "https://example.org/tides".to_string())]);
         assert!(app.ws.dirty);
+    }
+
+    fn have(tool: &str) -> bool {
+        std::process::Command::new(tool)
+            .arg("-version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok()
+    }
+
+    #[test]
+    fn previews_are_made_when_the_tools_exist_and_never_fail_loudly_when_they_do_not() {
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("thumbs"));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Garbage that merely has a media name: no preview, no panic, nothing left behind.
+        let junk = dir.join("junk.mp4");
+        std::fs::write(&junk, b"not a video").unwrap();
+        assert!(make_thumbnail(&junk, "Video").is_none());
+        let junk_pdf = dir.join("junk.pdf");
+        std::fs::write(&junk_pdf, b"not a pdf").unwrap();
+        assert!(make_thumbnail(&junk_pdf, "PDF").is_none());
+
+        if have("ffmpeg") {
+            let video = dir.join("clip.mp4");
+            let made = std::process::Command::new("ffmpeg")
+                .args(["-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=160x90:rate=5:duration=1", "-pix_fmt", "yuv420p"])
+                .arg(&video)
+                .status();
+            if made.is_ok_and(|s| s.success()) {
+                let jpeg = make_thumbnail(&video, "Video").expect("a frame of the video");
+                assert!(jpeg.starts_with(&[0xFF, 0xD8]), "a JPEG");
+            }
+        }
+        if have("pdftoppm") {
+            let project = portmanteau_core::sample::demo();
+            let settings = project.settings_for(portmanteau_core::ExportKind::Pdf);
+            let pdf = dir.join("note.pdf");
+            std::fs::write(&pdf, portmanteau_export::pdf_manuscript(&project, &settings)).unwrap();
+            let jpeg = make_thumbnail(&pdf, "PDF").expect("the first page");
+            assert!(jpeg.starts_with(&[0xFF, 0xD8]), "a JPEG");
+        }
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
