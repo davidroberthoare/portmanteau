@@ -633,3 +633,98 @@ mod round_trip {
         assert!(all.contains("The tide went out that morning"));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Style mapping
+// ---------------------------------------------------------------------------
+
+fn with_map(pairs: &[(&str, &str)]) -> ImportOptions {
+    ImportOptions {
+        style_map: pairs.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect(),
+        ..ImportOptions::default()
+    }
+}
+
+#[test]
+fn target_tokens_round_trip() {
+    for target in [
+        Target::Heading(2),
+        Target::Title,
+        Target::Style("dialogue".into()),
+        Target::Auto,
+        Target::Skip,
+    ] {
+        assert_eq!(Target::parse(&target.token()), Some(target));
+    }
+    assert_eq!(Target::parse("nonsense"), None);
+    assert_eq!(Target::parse("style:"), None);
+    assert_eq!(Target::parse("heading:x"), None);
+}
+
+#[test]
+fn word_reports_its_styles_and_the_writer_can_remap_them() {
+    let body = [
+        p(Some("Titulo1"), &r("Chapter One")),
+        p(None, &r("First.")),
+        p(Some("Quote"), &r("A quoted line.")),
+        p(Some("Quote"), &r("Another.")),
+        p(Some("Titulo1"), &r("Chapter Two")),
+        p(None, &r("Second.")),
+    ]
+    .concat();
+    let styles = format!(
+        "{STYLES}{}",
+        r#"<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Quote"/></w:style>"#
+    );
+    let bytes = docx(Some(&styles), None, &body);
+
+    // Defaults: headings split, everything else is body text.
+    let plain = import(ImportFormat::Docx, &bytes, &opts()).unwrap();
+    let find = |imported: &Imported, name: &str| imported.styles.iter().find(|s| s.name == name).cloned();
+    let heading = find(&plain, "heading 1").expect("heading style listed");
+    assert_eq!((heading.count, heading.target.clone()), (2, Target::Heading(1)));
+    let quote = find(&plain, "Quote").expect("quote style listed");
+    assert_eq!((quote.count, quote.default.clone(), quote.target.clone()), (2, Target::Style("body".into()), Target::Style("body".into())));
+    assert_eq!(plain.documents.len(), 2);
+
+    // Remap Quote to its own style and skip nothing else.
+    let mapped = import(ImportFormat::Docx, &bytes, &with_map(&[("quote", "style:block-quote")])).unwrap();
+    let all: Vec<_> = mapped.documents[0].content.paragraphs.iter().map(|p| p.style_id.as_str()).collect();
+    assert_eq!(all, ["body", "block-quote", "block-quote"]);
+    assert_eq!(find(&mapped, "Quote").unwrap().target, Target::Style("block-quote".into()));
+    assert_eq!(find(&mapped, "Quote").unwrap().default, Target::Style("body".into()), "the default is still reported");
+
+    // Skip drops the paragraphs; turning "Normal" into a heading changes the split.
+    let skipped = import(ImportFormat::Docx, &bytes, &with_map(&[("Quote", "skip")])).unwrap();
+    assert_eq!(skipped.documents[0].content.paragraphs.len(), 1);
+    let resplit = import(ImportFormat::Docx, &bytes, &with_map(&[("heading 1", "style:body")])).unwrap();
+    assert_eq!(resplit.documents.len(), 1, "no headings left to cut at");
+}
+
+#[test]
+fn final_draft_paragraph_types_can_be_remapped_or_skipped() {
+    let imported = import(ImportFormat::Fdx, FDX.as_bytes(), &opts()).unwrap();
+    let names: Vec<_> = imported.styles.iter().map(|s| s.name.as_str()).collect();
+    assert!(names.contains(&"Scene Heading") && names.contains(&"Dialogue"), "{names:?}");
+
+    let mapped = import(
+        ImportFormat::Fdx,
+        FDX.as_bytes(),
+        &with_map(&[("Dialogue", "style:action"), ("Character", "skip")]),
+    )
+    .unwrap();
+    let doc = &mapped.documents[0].content.paragraphs;
+    assert!(!doc.iter().any(|p| p.style_id == "character"), "character cues skipped");
+    assert!(!doc.iter().any(|p| p.style_id == "dialogue"), "dialogue remapped");
+    assert_eq!(doc.len(), 6);
+    // A heading target means nothing inside a screenplay: the type keeps its own style.
+    let kept = import(ImportFormat::Fdx, FDX.as_bytes(), &with_map(&[("Dialogue", "heading:1")])).unwrap();
+    assert!(kept.documents[0].content.paragraphs.iter().any(|p| p.style_id == "dialogue"));
+}
+
+#[test]
+fn fountain_and_plain_text_report_no_styles() {
+    assert!(fountain("INT. ROOM - DAY\n\nSomeone speaks.\n").styles.is_empty());
+    let text = import(ImportFormat::PlainText, b"One.\n\nTwo.", &opts()).unwrap();
+    assert!(text.styles.is_empty());
+}

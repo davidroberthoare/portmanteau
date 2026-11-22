@@ -16,7 +16,8 @@ use portmanteau_core::{
 use roxmltree::Node;
 
 use crate::fdx::element_kind;
-use crate::{ImportedDocument, Notes, Parsed, Split};
+use crate::mapping::{StyleLog, Target};
+use crate::{ImportOptions, ImportedDocument, Notes, Parsed, Split};
 
 const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
@@ -31,9 +32,10 @@ const MAX_XML_NODES: u32 = 4_000_000;
 pub(crate) fn import(
     bytes: &[u8],
     medium: Medium,
-    split: Split,
+    options: &ImportOptions,
     notes: &mut Notes,
 ) -> Result<Parsed, String> {
+    let split = options.split;
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|error| format!("Could not open the DOCX file: {error}"))?;
     let body_xml = match read_part(&mut archive, "word/document.xml") {
@@ -62,6 +64,7 @@ pub(crate) fn import(
     notes.dropped("table", count(&document, "tbl"));
 
     let mut reader = Reader {
+        log: StyleLog::new(&options.style_map),
         styles: &styles,
         medium,
         title_paragraph: None,
@@ -75,7 +78,7 @@ pub(crate) fn import(
             parts.push(part);
         }
     }
-    let Reader { title_paragraph, footnotes, images, list_items, .. } = reader;
+    let Reader { title_paragraph, footnotes, images, list_items, log, .. } = reader;
     notes.dropped("footnote or endnote", footnotes);
     notes.dropped("image", images);
     if list_items > 0 {
@@ -89,6 +92,7 @@ pub(crate) fn import(
         contact: None,
         draft_date: None,
         documents,
+        styles: log.finish(),
     })
 }
 
@@ -246,6 +250,7 @@ enum Part {
 }
 
 struct Reader<'a> {
+    log: StyleLog<'a>,
     styles: &'a Styles,
     medium: Medium,
     title_paragraph: Option<String>,
@@ -277,19 +282,30 @@ impl Reader<'_> {
             return None;
         }
 
-        match self.styles.role(style_id) {
-            Role::Title => {
+        // What the file's style says this paragraph is, then what the writer
+        // (or the importer's default) makes of it.
+        let name = if style_id.is_empty() { "Normal".to_string() } else { self.styles.name(style_id) };
+        let default = match self.styles.role(style_id) {
+            Role::Title => Target::Title,
+            Role::Heading(level) => Target::Heading(level),
+            Role::Body if self.medium.is_script() => Target::Auto,
+            Role::Body => Target::Style("body".into()),
+        };
+        let trimmed = text.trim().to_string();
+        match self.log.resolve(&name, default) {
+            Target::Skip => None,
+            Target::Title => {
                 if self.title_paragraph.is_none() {
-                    self.title_paragraph = Some(text.trim().to_string());
+                    self.title_paragraph = Some(trimmed);
                     return None; // exports add their own title page
                 }
-                Some(Part::Heading { level: 1, text: text.trim().to_string() })
+                Some(Part::Heading { level: 1, text: trimmed })
             }
-            Role::Heading(level) => Some(Part::Heading { level, text: text.trim().to_string() }),
-            Role::Body => {
+            Target::Heading(level) => Some(Part::Heading { level, text: trimmed }),
+            Target::Style(id) => Some(Part::Paragraph(RichParagraph { style_id: id, content })),
+            Target::Auto => {
                 let style = if self.medium.is_script() {
-                    let kind = element_kind(&self.styles.name(style_id))
-                        .unwrap_or_else(|| script::classify(&text));
+                    let kind = element_kind(&name).unwrap_or_else(|| script::classify(&text));
                     script_style_id(kind)
                 } else {
                     "body"

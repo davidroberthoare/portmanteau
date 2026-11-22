@@ -32,6 +32,7 @@ pub(crate) fn import(text: &str, medium: Medium, split: Split, notes: &mut Notes
         contact: page.contact,
         draft_date: page.draft_date,
         documents,
+        styles: Vec::new(),
     }
 }
 

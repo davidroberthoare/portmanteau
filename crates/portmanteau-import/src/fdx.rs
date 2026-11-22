@@ -11,9 +11,15 @@ use portmanteau_core::{
 };
 use roxmltree::Node;
 
-use crate::{ImportedDocument, Notes, Parsed};
+use crate::mapping::{StyleLog, Target};
+use crate::{ImportOptions, ImportedDocument, Notes, Parsed};
 
-pub(crate) fn import(xml: &str, medium: Medium, notes: &mut Notes) -> Result<Parsed, String> {
+pub(crate) fn import(
+    xml: &str,
+    medium: Medium,
+    options: &ImportOptions,
+    notes: &mut Notes,
+) -> Result<Parsed, String> {
     let document = roxmltree::Document::parse_with_options(
         xml,
         roxmltree::ParsingOptions {
@@ -30,6 +36,7 @@ pub(crate) fn import(xml: &str, medium: Medium, notes: &mut Notes) -> Result<Par
     let (title, author) = title_page(&document);
     let mut paragraphs = Vec::new();
     let mut unknown: Vec<String> = Vec::new();
+    let mut log = StyleLog::new(&options.style_map);
 
     let content = document
         .root_element()
@@ -64,10 +71,16 @@ pub(crate) fn import(xml: &str, medium: Medium, notes: &mut Notes) -> Result<Par
             if runs.is_empty() {
                 continue; // blank spacing paragraphs carry no writing
             }
-            paragraphs.push(RichParagraph {
-                style_id: script_style_id(kind).into(),
-                content: runs,
-            });
+            // The writer may have remapped this paragraph type. Headings and
+            // titles make no sense inside a screenplay, so they fall back on
+            // the type's own style.
+            let own = script_style_id(kind);
+            let style_id = match log.resolve(fdx_type, Target::Style(own.into())) {
+                Target::Skip => continue,
+                Target::Style(id) => id,
+                _ => own.to_string(),
+            };
+            paragraphs.push(RichParagraph { style_id, content: runs });
         }
     }
     if !unknown.is_empty() {
@@ -89,6 +102,7 @@ pub(crate) fn import(xml: &str, medium: Medium, notes: &mut Notes) -> Result<Par
             content: RichDocument { paragraphs },
             synopsis: String::new(),
         }],
+        styles: log.finish(),
     })
 }
 

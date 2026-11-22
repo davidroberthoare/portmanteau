@@ -14,10 +14,14 @@ mod docx;
 mod encoding;
 mod fdx;
 mod fountain;
+mod mapping;
 mod marks;
 mod plain_text;
 
+use std::collections::BTreeMap;
 use std::path::Path;
+
+pub use mapping::{SourceStyle, Target};
 
 use portmanteau_core::{DocKind, Medium, RichDocument};
 
@@ -95,6 +99,10 @@ pub struct ImportOptions {
     /// Force the writing medium; `None` follows the format.
     pub medium: Option<Medium>,
     pub split: Split,
+    /// Overrides for what a source paragraph style becomes: source style name
+    /// to a `Target` token (`heading:2`, `style:dialogue`, `skip`, …). Styles
+    /// not listed follow the importer's defaults.
+    pub style_map: BTreeMap<String, String>,
 }
 
 /// One document's worth of imported text.
@@ -121,6 +129,9 @@ pub struct Imported {
     /// The draft date as the file writes it.
     pub draft_date: Option<String>,
     pub documents: Vec<ImportedDocument>,
+    /// The paragraph styles the file uses and what each became (Word and Final
+    /// Draft only; the other formats have no named styles).
+    pub styles: Vec<SourceStyle>,
     /// Human-readable notes on anything not carried across.
     pub warnings: Vec<String>,
 }
@@ -140,11 +151,11 @@ pub fn import(
     let medium = options.medium.unwrap_or_else(|| format.default_medium());
     let mut notes = Notes::default();
     let parsed = match format {
-        ImportFormat::Docx => docx::import(bytes, medium, options.split, &mut notes)?,
+        ImportFormat::Docx => docx::import(bytes, medium, options, &mut notes)?,
         ImportFormat::Fdx => {
             let (text, how) = encoding::decode(bytes);
             notes.encoding(how);
-            fdx::import(&text, medium, &mut notes)?
+            fdx::import(&text, medium, options, &mut notes)?
         }
         ImportFormat::Fountain => {
             let (text, how) = encoding::decode(bytes);
@@ -174,6 +185,7 @@ pub fn import(
         contact: parsed.contact,
         draft_date: parsed.draft_date,
         documents: parsed.documents,
+        styles: parsed.styles,
         warnings: notes.finish(),
     })
 }
@@ -186,6 +198,7 @@ pub(crate) struct Parsed {
     pub contact: Option<String>,
     pub draft_date: Option<String>,
     pub documents: Vec<ImportedDocument>,
+    pub styles: Vec<SourceStyle>,
 }
 
 /// Collects warnings, counting repeats so a 40-footnote file yields one line.

@@ -45,6 +45,7 @@ pub(crate) fn import(text: &str, split: Split) -> Parsed {
         contact: None,
         draft_date: None,
         documents,
+        styles: Vec::new(),
     }
 }
 
