@@ -54,7 +54,9 @@ jobs:
   build-linux:
     name: Build Linux (x86_64)
     needs: check
-    runs-on: ubuntu-latest
+    # Built on an older Ubuntu on purpose: a binary needs at least the glibc it
+    # was built with, so building on the newest image excludes most Linux systems.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
