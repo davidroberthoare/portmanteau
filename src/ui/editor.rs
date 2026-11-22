@@ -1152,6 +1152,9 @@ fn apply_spell_actions(app: &mut PortmanteauApp, actions: Vec<SpellAction>) {
 }
 
 fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_snapshot: &mut bool) {
+    // The page count the exporter will produce; recomputed a moment after typing
+    // pauses, never on every keystroke.
+    let pages = crate::ui::preview::page_counts(ui, &app.ws.project).label(doc_id);
     let mut dirty = false;
     let zoom = app.editor_zoom.clamp(0.7, 1.6) * PROSE_ZOOM_BASE;
     // The prose surface takes its type from the project's body element style,
@@ -1188,7 +1191,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
     let mut spell_actions: Vec<SpellAction> = Vec::new();
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
-        paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), doc.pages());
+        paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), &pages);
 
         ui.add_space(16.0);
         if ui
@@ -1313,7 +1316,6 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         }
         ui.add_space(26.0);
         let words = doc.words();
-        let pages = doc.pages();
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(format!("{} words  ·  {} min read", words, portmanteau_core::reading_minutes(words)))
@@ -1321,7 +1323,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                     .color(PAPER_MUTED),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new(format!("{pages}")).font(serif(9.0)).color(PAPER_MUTED));
+                ui.label(RichText::new(pages.as_str()).font(serif(9.0)).color(PAPER_MUTED));
             });
         });
         let _ = take_snapshot;
@@ -1349,6 +1351,9 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
 /// prose. Paragraph style ids carry screenplay semantics; the one TextEdit
 /// owns the caret and selection for the complete document.
 fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
+    // The page count the exporter will produce; recomputed a moment after typing
+    // pauses, never on every keystroke.
+    let pages = crate::ui::preview::page_counts(ui, &app.ws.project).label(doc_id);
     let margins = script_margins(app, doc_id);
     let zoom = (app.editor_zoom.clamp(0.7, 1.6) * SCRIPT_ZOOM_BASE)
         .min(ui.available_width() / (612.0 - margins.left - margins.right).max(144.0))
@@ -1397,7 +1402,7 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         let Some(doc) = app.ws.project.document_mut(doc_id) else {
             return;
         };
-        paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), doc.pages());
+        paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), &pages);
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.label(
@@ -2421,6 +2426,9 @@ pub(crate) fn inline_format_toolbar(
 /// screenplay document.
 #[allow(dead_code)]
 fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
+    // The page count the exporter will produce; recomputed a moment after typing
+    // pauses, never on every keystroke.
+    let pages = crate::ui::preview::page_counts(ui, &app.ws.project).label(doc_id);
     let mut dirty = false;
     let zoom = app.editor_zoom.clamp(0.7, 1.6) * SCRIPT_ZOOM_BASE;
     let mut add_at: Option<usize> = None;
@@ -2469,7 +2477,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
     {
         let Some(doc) = app.ws.project.document_mut(doc_id) else { return };
         let mut blocks = doc.content.to_script_blocks(&style_sheet);
-        paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), doc.pages());
+        paper_header(ui, &project_title, doc.medium, &doc.status, doc.words(), &pages);
         ui.add_space(14.0);
 
         ui.horizontal(|ui| {
@@ -2880,7 +2888,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(
-                    RichText::new(format!("{} pages", doc.pages()))
+                    RichText::new(format!("{pages} pages"))
                         .font(ui_small())
                         .color(PAPER_MUTED),
                 );
@@ -3173,7 +3181,7 @@ fn paper_header(
     medium: Medium,
     status: &str,
     words: u32,
-    pages: u32,
+    pages: &str,
 ) {
     ui.horizontal(|ui| {
         ui.label(

@@ -83,6 +83,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 }
 
 fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
+    let pages = crate::ui::preview::page_counts(ui, &app.ws.project).label(doc_id);
     let styles = app.ws.project.styles.clone();
     let prose_sheet =
         portmanteau_core::StyleSheet::novel_prose(&app.ws.project.styles);
@@ -277,10 +278,9 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         section_label(ui, "Statistics");
         ui.add_space(5.0);
         let words = doc.words();
-        let pages = doc.pages();
         ui.horizontal(|ui| {
             stat_cell(ui, &words.to_string(), "words");
-            stat_cell(ui, &pages.to_string(), "pages");
+            stat_cell(ui, &pages, "pages");
             stat_cell(ui, &format!("{}m", portmanteau_core::reading_minutes(words)), "read");
         });
         ui.add_space(8.0);

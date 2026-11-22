@@ -965,3 +965,32 @@ fn the_cover_prints_the_projects_contact_and_the_writers_draft_date() {
     let fountain = fountain_manuscript(&p, &p.settings_for(ExportKind::Fountain));
     assert!(fountain.contains("Draft date: 14 March 2027"));
 }
+
+#[test]
+fn page_counts_come_from_the_real_layout_for_every_manuscript_type() {
+    let mut p = demo();
+    let counts = page_counts(&p);
+    let chapter = p.documents.iter().find(|d| d.kind == DocKind::Chapter).unwrap().id.clone();
+    let pilot = p.documents.iter().find(|d| d.medium == Medium::TvScript).unwrap().id.clone();
+    assert!(counts.by_doc[&chapter] >= 1, "a book chapter has pages");
+    assert!(counts.by_doc[&pilot] >= 1, "the pilot has pages from its own script layout");
+
+    // The total is the pages of each manuscript type the project contains: the
+    // book, the TV pilot and the stage play are three separate manuscripts.
+    let mut total = 0;
+    for kind in [CompileType::Prose, CompileType::TvScript, CompileType::StagePlay, CompileType::Screenplay] {
+        let mut settings = p.settings_for(ExportKind::Pdf);
+        settings.compile_type = Some(kind);
+        let layout = pdf_layout(&p, &settings);
+        if layout.sections.iter().any(|s| s.doc_id.is_some()) {
+            total += layout.page_count();
+        }
+    }
+    assert_eq!(counts.total, total);
+
+    // A document no compile includes has no count, not a guess.
+    p.document_mut(&chapter).unwrap().include_in_export = false;
+    let counts = page_counts(&p);
+    assert!(!counts.by_doc.contains_key(&chapter));
+    assert_eq!(counts.label(&chapter), "–");
+}

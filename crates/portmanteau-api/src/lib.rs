@@ -215,6 +215,7 @@ impl Workspace {
                 ApiResponse::ok(command, "Snapshots", Value::Array(list))
             }
             "document.list" => {
+                let counts = portmanteau_export::page_counts(&self.project);
                 let list: Vec<Value> = self
                     .project
                     .ordered_documents()
@@ -227,7 +228,7 @@ impl Workspace {
                             "kind": d.kind,
                             "medium": d.medium,
                             "words": d.words(),
-                            "pages": d.pages(),
+                            "pages": counts.by_doc.get(&d.id),
                             "status": d.status,
                             "label": d.label,
                             "include_in_export": d.include_in_export,
@@ -697,6 +698,7 @@ impl Workspace {
                     return ApiResponse::err(command, e);
                 }
                 let plan = self.project.compile_plan(&settings);
+                let counts = portmanteau_export::page_counts(&self.project);
                 let sections: Vec<Value> = plan
                     .included
                     .iter()
@@ -707,7 +709,7 @@ impl Workspace {
                             "title": d.title,
                             "medium": d.medium,
                             "words": d.words(),
-                            "pages": d.pages(),
+                            "pages": counts.by_doc.get(&d.id),
                         })
                     })
                     .collect();
@@ -945,7 +947,7 @@ impl Workspace {
             "words": self.project.words(),
             "prose_words": prose_words,
             "script_words": script_words,
-            "pages": docs.iter().map(|d| d.pages()).sum::<u32>(),
+            "pages": portmanteau_export::page_counts(&self.project).total,
             "documents": self.project.documents.len(),
             "scenes": self.project.documents.iter().filter(|d| d.kind == DocKind::Scene).count(),
             "chapters": self.project.documents.iter().filter(|d| d.kind == DocKind::Chapter).count(),

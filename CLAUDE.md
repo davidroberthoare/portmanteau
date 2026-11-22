@@ -90,10 +90,9 @@ How to check output visually (all on this machine):
 1. ~~Preview pagination~~ Done: Compile, Settings and the editor's Paged view all
    draw `pdf_layout` pages (`src/ui/preview.rs`); the old estimator is deleted.
    Paged shows a document's pages of the real compile with real page numbers.
-   Still estimates: `Document::pages()` (a words/280 heuristic) feeds the
-   inspector's "pages" stat, the editor paper header and the Compile document
-   list; replace it with the layout's section page counts. The paged view is
-   read-only; editing on the page is the next step for it.
+   Page counts everywhere (inspector, paper header, Compile list, API) come from
+   `portmanteau_export::page_counts`, refreshed a moment after typing pauses.
+   The paged view is read-only by design (see the notes in docs/roadmap.md).
 2. ~~PDF page per script document~~ Done: scenes run on; only a chapter-level
    document (episode/act) starts a page (`content::starts_new_page`, all writers).
 3. **Import review step**: show the split (titles, word counts) before the

@@ -551,6 +551,57 @@ pub fn pdf_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
     }
 }
 
+/// Real page counts for every document, from the PDF layout.
+#[derive(Clone, Debug, Default)]
+pub struct PageCounts {
+    /// Pages each included document touches, by document id. Documents left out
+    /// of every compile (excluded, in Research) have no entry.
+    pub by_doc: std::collections::HashMap<String, usize>,
+    /// Pages in the manuscripts, one per manuscript type present (a project
+    /// with a novel and a pilot has a book and a script).
+    pub total: usize,
+}
+
+impl PageCounts {
+    /// "3", or "–" for a document no compile includes.
+    pub fn label(&self, doc_id: &str) -> String {
+        self.by_doc
+            .get(doc_id)
+            .map_or_else(|| "–".to_string(), |pages| pages.to_string())
+    }
+}
+
+/// Lay out each manuscript type the project contains (with the project's PDF
+/// settings) and report how many pages every document takes. Scenes that run
+/// on from one another can share a page, so counts are pages *touched* and may
+/// sum to more than the manuscript's pages.
+pub fn page_counts(project: &Project) -> PageCounts {
+    let mut kinds: Vec<portmanteau_core::CompileType> = Vec::new();
+    for doc in project.documents.iter().filter(|doc| !doc.kind.is_folder()) {
+        let kind = portmanteau_core::CompileType::from_medium(doc.medium);
+        if !kinds.contains(&kind) {
+            kinds.push(kind);
+        }
+    }
+    let mut counts = PageCounts::default();
+    for kind in kinds {
+        let mut settings = project.settings_for(portmanteau_core::ExportKind::Pdf);
+        settings.compile_type = Some(kind);
+        settings.scope = portmanteau_core::CompileScope::Draft;
+        let layout = pdf_layout(project, &settings);
+        if layout.sections.iter().all(|section| section.doc_id.is_none()) {
+            continue;
+        }
+        counts.total += layout.page_count();
+        for section in &layout.sections {
+            if let Some(id) = &section.doc_id {
+                counts.by_doc.insert(id.clone(), section.page_count);
+            }
+        }
+    }
+    counts
+}
+
 /// The number of pages the PDF writer will produce.
 pub fn pdf_page_count(project: &Project, settings: &ExportSettings) -> usize {
     pdf_layout(project, settings).page_count()

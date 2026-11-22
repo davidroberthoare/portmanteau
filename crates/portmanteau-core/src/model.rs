@@ -299,18 +299,6 @@ impl Document {
         count_words(&self.content.text_only())
     }
 
-    pub fn pages(&self) -> u32 {
-        if self.medium.is_script() {
-            // One screenplay page is roughly 55 lines.
-            let lines: usize = self.content.paragraphs.iter().map(|p| {
-                1 + (p.text_only().chars().count() / 60)
-            }).sum();
-            ((lines.max(1) as f32) / 55.0).ceil() as u32
-        } else {
-            ((self.words() as f32) / 280.0).ceil().max(1.0) as u32
-        }
-    }
-
     pub fn touch(&mut self) {
         self.updated = now_stamp();
     }

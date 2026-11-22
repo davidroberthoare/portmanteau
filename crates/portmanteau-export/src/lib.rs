@@ -15,7 +15,7 @@ use zip::{CompressionMethod, ZipWriter};
 
 mod pdf;
 pub use pdf::{
-    pdf_layout, pdf_manuscript, pdf_page_count, text_width, Face, Family, PdfLayout,
+    page_counts, pdf_layout, pdf_manuscript, pdf_page_count, PageCounts, text_width, Face, Family, PdfLayout,
     PdfLayoutSection, PdfPageLayout, PdfSegment, PdfText,
 };
 
@@ -180,13 +180,10 @@ fn export_single(
             || (settings.include_synopsis && rich_document_has_images(&doc.synopsis))
             || (settings.include_notes && rich_document_has_images(&doc.notes))
     });
-    // The PDF's own layout is the authority for its page count; the other
-    // writers still use the quick per-document estimate.
-    let pages: u32 = if settings.kind == ExportKind::Pdf {
-        pdf_page_count(project, settings) as u32
-    } else {
-        plan.included.iter().map(|d| d.pages()).sum()
-    };
+    // The PDF's own layout is the authority for the page count; the other
+    // writers paginate in the reader or the word processor, so for them it is
+    // an estimate from the same layout.
+    let pages: u32 = pdf_page_count(project, settings) as u32;
     let page_word = if pages == 1 { "page" } else { "pages" };
     let message = if has_images {
         format!(

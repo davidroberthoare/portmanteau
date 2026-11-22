@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use portmanteau_core::{CompileScope, CompileType, ExportKind, ExportSettings, Project};
-use portmanteau_export::{pdf_layout, text_width, Face, Family, PdfLayout};
+use portmanteau_export::{pdf_layout, text_width, Face, Family, PageCounts, PdfLayout};
 
 use crate::theme::{serif, ui_body, ui_small, FAINT, MUTED, PAPER, PAPER_EDGE, PAPER_TEXT};
 
@@ -74,6 +74,31 @@ pub fn manuscript_layout(
     let layout = Arc::new(pdf_layout(project, settings));
     ui.data_mut(|d| d.insert_temp(id, (key, layout.clone())));
     layout
+}
+
+/// How long a stale page count is kept while the writer is typing. Laying out
+/// a whole book on every keystroke would stutter the editor; the count catches
+/// up a moment after typing pauses.
+const COUNT_REFRESH: std::time::Duration = std::time::Duration::from_millis(900);
+
+/// Real page counts for every document, recomputed when the project changes
+/// but no more often than `COUNT_REFRESH`.
+pub fn page_counts(ui: &egui::Ui, project: &Project) -> Arc<PageCounts> {
+    let key = fingerprint(project, &project.settings_for(ExportKind::Pdf));
+    let id = ui.make_persistent_id("page-counts");
+    let cached = ui.data(|d| d.get_temp::<(u64, std::time::Instant, Arc<PageCounts>)>(id));
+    if let Some((cached_key, at, counts)) = cached {
+        if cached_key == key {
+            return counts;
+        }
+        if at.elapsed() < COUNT_REFRESH {
+            ui.ctx().request_repaint_after(COUNT_REFRESH);
+            return counts;
+        }
+    }
+    let counts = Arc::new(portmanteau_export::page_counts(project));
+    ui.data_mut(|d| d.insert_temp(id, (key, std::time::Instant::now(), counts.clone())));
+    counts
 }
 
 /// Draw one page of `layout` at `scale` screen points per page point.

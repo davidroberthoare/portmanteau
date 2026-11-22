@@ -538,11 +538,7 @@ fn action_panel(
                                 .compile_plan_for(settings, app.selected.as_deref());
                             let mut effective = settings.clone();
                             effective.compile_type = Some(plan.kind);
-                            let pages = if settings.kind == ExportKind::Pdf {
-                                page_estimate(ui.ctx(), &app.ws.project, &effective)
-                            } else {
-                                plan.included.iter().map(|d| d.pages()).sum()
-                            };
+                            let pages = page_estimate(ui.ctx(), &app.ws.project, &effective);
                             format!(
                                 "{} words · {} pages estimated",
                                 plan.included.iter().map(|d| d.words()).sum::<u32>(),
@@ -1209,6 +1205,7 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &ExportSetti
             });
             ui.add_space(4.0);
             let docs = &plan.included;
+            let counts = crate::ui::preview::page_counts(ui, &app.ws.project);
             for d in docs.iter().take(14) {
                 ui.horizontal(|ui| {
                     let glyph = if d.medium.is_script() { "▶" } else { "¶" };
@@ -1220,7 +1217,7 @@ fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &ExportSetti
                     ui.label(RichText::new(&d.title).font(ui_small()).color(TEXT));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(
-                            RichText::new(format!("{} w · {} pp", d.words(), d.pages()))
+                            RichText::new(format!("{} w · {} pp", d.words(), counts.label(&d.id)))
                                 .font(mono(8.5))
                                 .color(FAINT),
                         );
