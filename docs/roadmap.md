@@ -314,13 +314,11 @@ layout comes from the exporter's own text engine. Editing directly on the
 exported pages would need a second editing engine, so every editing feature
 would be written twice. Instead the single editor learns about pages:
 
-- Done: page markers in the continuous view ("PAGE 7", the number printed on
-  the page) from `page_counts().starts`; click a paragraph in Paged to open
-  Continuous with the caret there (`CaretRequest`, `hit_source`); Paged stays
-  read-only.
+- Done: click a paragraph in Paged to open Continuous with the caret there
+  (`CaretRequest`, `hit_source`); Paged stays read-only.
+- Tried and removed: "PAGE N" markers in the continuous view. The editor wraps
+  with egui and the PDF with its own engine, so markers sat a line or two off the
+  printed breaks and were distracting. Revisit only if the editor's wrap width is
+  made to match the page's text width.
 - Layout lines carry `PdfSource` (document, paragraph, offset, line) so they can
-  point back at the text. Offsets are approximate by a few characters because
-  wrapping drops the spaces it breaks on.
-- The editor wraps with egui and the PDF with its own engine, so a marker can
-  sit a line or two from the printed break. If that proves too loose, match the
-  editor's wrap width to the page's text width.
+  point back at the text. Offsets are approximate by a few characters.

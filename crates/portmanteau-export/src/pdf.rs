@@ -282,9 +282,6 @@ pub struct PdfLayout {
     pub height: f32,
     pub pages: Vec<PdfPageLayout>,
     pub sections: Vec<PdfLayoutSection>,
-    /// The page number printed on each page, parallel to `pages`; `None` where
-    /// the page carries no number (a title page).
-    pub page_labels: Vec<Option<String>>,
 }
 
 impl PdfLayout {
@@ -610,24 +607,6 @@ pub struct PageCounts {
     /// Pages in the manuscripts, one per manuscript type present (a project
     /// with a novel and a pilot has a book and a script).
     pub total: usize,
-    /// Where each page of a document begins in its text, by document id, in
-    /// page order. The editor draws "Page N" markers from these.
-    pub starts: std::collections::HashMap<String, Vec<PageStart>>,
-}
-
-/// A page boundary inside a document's text.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PageStart {
-    /// 0-based page in the manuscript.
-    pub page: usize,
-    /// The number printed on that page (a script's first page after its cover
-    /// is "1"), when it prints one.
-    pub label: Option<String>,
-    pub paragraph: usize,
-    /// Characters into the paragraph, and which of its lines starts the page.
-    pub offset: usize,
-    pub line: usize,
-    pub lines: usize,
 }
 
 impl PageCounts {
@@ -664,29 +643,6 @@ pub fn page_counts(project: &Project) -> PageCounts {
         for section in &layout.sections {
             let Some(id) = &section.doc_id else { continue };
             counts.by_doc.insert(id.clone(), section.page_count);
-            // The first line of this document's own text on each page it
-            // touches (a run-on page may begin with a neighbour's text).
-            let mut starts = Vec::new();
-            for page in section.start_page..section.start_page + section.page_count {
-                let first = layout.pages.get(page).and_then(|layout_page| {
-                    layout_page
-                        .items
-                        .iter()
-                        .filter_map(|item| item.source.as_ref())
-                        .find(|source| &*source.doc_id == id.as_str())
-                });
-                if let Some(source) = first {
-                    starts.push(PageStart {
-                        page,
-                        label: layout.page_labels.get(page).cloned().flatten(),
-                        paragraph: source.paragraph,
-                        offset: source.offset,
-                        line: source.line,
-                        lines: source.lines,
-                    });
-                }
-            }
-            counts.starts.insert(id.clone(), starts);
         }
     }
     counts
@@ -881,7 +837,6 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
     let mut pages = flow.finish();
 
     let first_number = settings.header_footer.start_number;
-    let mut page_labels: Vec<Option<String>> = vec![None; pages.len()];
     if settings.header_footer.page_numbers {
         let face = title_face;
         // The title page is unnumbered, and the first page of the script is
@@ -894,7 +849,6 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
                 .header_footer
                 .number_format
                 .format(first_number + index as u32);
-            page_labels[title_pages + index] = Some(number.clone());
             let text = format!("{}.", number);
             let width = text_width(&text, face, number_size);
             page.items.push(PdfText {
@@ -912,7 +866,6 @@ fn script_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         height,
         pages,
         sections,
-        page_labels,
     }
 }
 
@@ -1152,15 +1105,13 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         }
     }
 
-    let page_labels =
-        apply_prose_furniture(project, settings, &frame, &mut pages, body_size, body_face);
+    apply_prose_furniture(project, settings, &frame, &mut pages, body_size, body_face);
 
     PdfLayout {
         width: frame.width,
         height: frame.height,
         pages,
         sections,
-        page_labels,
     }
 }
 
@@ -1470,9 +1421,8 @@ fn apply_prose_furniture(
     pages: &mut [PdfPageLayout],
     size: f32,
     face: Face,
-) -> Vec<Option<String>> {
+) {
     let hf = &settings.header_footer;
-    let mut labels = vec![None; pages.len()];
     let running = if hf.header_text.trim().is_empty() {
         project.title.clone()
     } else {
@@ -1496,7 +1446,6 @@ fn apply_prose_furniture(
         }
         if hf.page_numbers && (index > 0 || hf.number_on_first_page) {
             let number = hf.number_format.format(hf.start_number + index as u32);
-            labels[index] = Some(number.clone());
             let width = text_width(&number, face, 9.0);
             let x = aligned_x(hf.number_align, width, frame.left, frame.width - frame.right);
             let baseline = match hf.number_location {
@@ -1518,7 +1467,6 @@ fn apply_prose_furniture(
         }
     }
     let _ = size;
-    labels
 }
 
 fn aligned_x(align: Alignment, width: f32, left: f32, right: f32) -> f32 {

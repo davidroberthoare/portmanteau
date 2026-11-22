@@ -15,7 +15,7 @@ use zip::{CompressionMethod, ZipWriter};
 
 mod pdf;
 pub use pdf::{
-    page_counts, pdf_layout, pdf_manuscript, pdf_page_count, PageCounts, PageStart, PdfSource, text_width, Face, Family, PdfLayout,
+    page_counts, pdf_layout, pdf_manuscript, pdf_page_count, PageCounts, PdfSource, text_width, Face, Family, PdfLayout,
     PdfLayoutSection, PdfPageLayout, PdfSegment, PdfText,
 };
 

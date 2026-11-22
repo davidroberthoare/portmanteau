@@ -1154,8 +1154,7 @@ fn apply_spell_actions(app: &mut PortmanteauApp, actions: Vec<SpellAction>) {
 fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_snapshot: &mut bool) {
     // The page count the exporter will produce; recomputed a moment after typing
     // pauses, never on every keystroke.
-    let page_map = crate::ui::preview::page_counts(ui, &app.ws.project);
-    let pages = page_map.label(doc_id);
+    let pages = crate::ui::preview::page_counts(ui, &app.ws.project).label(doc_id);
     let mut dirty = false;
     let zoom = app.editor_zoom.clamp(0.7, 1.6) * PROSE_ZOOM_BASE;
     // The prose surface takes its type from the project's body element style,
@@ -1270,7 +1269,6 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             );
         let output = edit.show(ui);
         reveal_caret(ui, &output, reveal);
-        paint_page_markers(ui, &output, &doc.content, page_map.starts.get(doc_id));
         if output.response.changed() {
             let caret = output.cursor_range.map(|range| range.primary.index.0);
             doc.content
@@ -1357,8 +1355,7 @@ fn script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
 fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     // The page count the exporter will produce; recomputed a moment after typing
     // pauses, never on every keystroke.
-    let page_map = crate::ui::preview::page_counts(ui, &app.ws.project);
-    let pages = page_map.label(doc_id);
+    let pages = crate::ui::preview::page_counts(ui, &app.ws.project).label(doc_id);
     let margins = script_margins(app, doc_id);
     let zoom = (app.editor_zoom.clamp(0.7, 1.6) * SCRIPT_ZOOM_BASE)
         .min(ui.available_width() / (612.0 - margins.left - margins.right).max(144.0))
@@ -1615,7 +1612,6 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         let reveal = take_caret_request(&mut app.caret_request, ui, doc_id, &doc.content, flow_id);
         let output = edit.show(ui);
         reveal_caret(ui, &output, reveal);
-        paint_page_markers(ui, &output, &doc.content, page_map.starts.get(doc_id));
         ui.ctx()
             .options_mut(|options| options.input_options.surrender_focus_on = surrender);
         let caret = output
@@ -2333,45 +2329,6 @@ fn reveal_caret(ui: &egui::Ui, output: &egui::text_edit::TextEditOutput, caret: 
     ui.scroll_to_rect(rect.expand2(Vec2::new(0.0, 60.0)), Some(Align::Center));
 }
 
-/// "Page N" markers in the writing surface, where the exported pages begin.
-/// The positions come from the PDF layout; the lines break by egui's own
-/// wrapping here, so a marker can sit a line or two from the printed break
-/// (never in a different paragraph).
-fn paint_page_markers(
-    ui: &egui::Ui,
-    output: &egui::text_edit::TextEditOutput,
-    content: &portmanteau_core::RichDocument,
-    starts: Option<&Vec<portmanteau_export::PageStart>>,
-) {
-    let Some(starts) = starts else { return };
-    let rect = output.response.rect;
-    for start in starts {
-        let Some(paragraph) = content.paragraphs.get(start.paragraph) else { continue };
-        let length = paragraph.editor_text().chars().count();
-        // A page can open partway through a paragraph; the layout's offset says how far.
-        let index = rich_paragraph_start(content, start.paragraph) + start.offset.min(length);
-        let row = output
-            .galley
-            .pos_from_cursor(egui::text::CCursor::new(index))
-            .translate(output.galley_pos.to_vec2());
-        let y = row.top() - 1.0;
-        let color = PAPER_MUTED.gamma_multiply(0.7);
-        ui.painter().add(egui::Shape::dashed_line(
-            &[egui::pos2(rect.left() - 10.0, y), egui::pos2(rect.right() + 10.0, y)],
-            Stroke::new(1.0, color),
-            4.0,
-            4.0,
-        ));
-        ui.painter().text(
-            egui::pos2(rect.right() + 14.0, y),
-            egui::Align2::LEFT_CENTER,
-            format!("PAGE {}", start.label.clone().unwrap_or_else(|| (start.page + 1).to_string())),
-            sans(8.5),
-            color,
-        );
-    }
-}
-
 fn rich_paragraph_start(content: &portmanteau_core::RichDocument, index: usize) -> usize {
     content
         .paragraphs
@@ -2511,8 +2468,7 @@ pub(crate) fn inline_format_toolbar(
 fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     // The page count the exporter will produce; recomputed a moment after typing
     // pauses, never on every keystroke.
-    let page_map = crate::ui::preview::page_counts(ui, &app.ws.project);
-    let pages = page_map.label(doc_id);
+    let pages = crate::ui::preview::page_counts(ui, &app.ws.project).label(doc_id);
     let mut dirty = false;
     let zoom = app.editor_zoom.clamp(0.7, 1.6) * SCRIPT_ZOOM_BASE;
     let mut add_at: Option<usize> = None;
