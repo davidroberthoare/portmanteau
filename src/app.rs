@@ -175,10 +175,6 @@ fn browse_for(mode: PathDialog, current: &str) -> Option<String> {
             .set_title("Save project as")
             .set_file_name("My Project.portmanteau")
             .save_file(),
-        PathDialog::Import => dialog
-            .set_title("Import manuscript")
-            .add_filter("Manuscripts", &["fountain", "spmd", "fdx", "docx", "txt", "text", "md", "markdown"])
-            .pick_file(),
     };
     picked.map(|path| path.display().to_string())
 }
@@ -244,7 +240,6 @@ pub struct DiffState {
 pub enum PathDialog {
     Open,
     SaveAs,
-    Import,
 }
 
 /// A character being created from the screenplay editor's "New character…"
@@ -336,6 +331,8 @@ pub struct PortmanteauApp {
     pub cmd_output: String,
     pub cmd_selected: usize,
     pub path_dialog: Option<PathDialog>,
+    /// The import review window, while it is open.
+    pub import_review: Option<crate::ui::import_review::ImportReview>,
     pub path_draft: String,
     pub new_character: Option<NewCharacterState>,
     pub image_insert: Option<ImageInsertState>,
@@ -406,6 +403,7 @@ impl PortmanteauApp {
         let editor_zoom = settings.editor_zoom.clamp(0.7, 1.6);
         let corkboard_zoom = settings.corkboard_zoom.clamp(0.6, 1.6);
         let settings_saved = settings.clone();
+        let import_prefs = settings.import.clone();
         let mut app = Self {
             ws,
             settings,
@@ -451,6 +449,10 @@ impl PortmanteauApp {
             cmd_output: String::new(),
             cmd_selected: 0,
             path_dialog: None,
+            // Development aid, like PORTMANTEAU_VIEW: open the import review on a file.
+            import_review: std::env::var("PORTMANTEAU_IMPORT")
+                .ok()
+                .map(|path| crate::ui::import_review::ImportReview::for_path(&import_prefs, &path)),
             path_draft: String::new(),
             new_character: None,
             image_insert: None,
@@ -797,8 +799,7 @@ impl PortmanteauApp {
                 });
             });
             if ui.button("Import Fountain, FDX, DOCX or Text…").clicked() {
-                self.path_dialog = Some(PathDialog::Import);
-                self.path_draft.clear();
+                self.import_review = Some(crate::ui::import_review::ImportReview::new(&self.settings.import));
                 ui.close();
             }
             if ui.button("Save checkpoint").clicked() {
@@ -1708,11 +1709,6 @@ impl PortmanteauApp {
                 "Save",
                 "Where the project folder should live (or a legacy .json file)",
             ),
-            PathDialog::Import => (
-                "Import manuscript",
-                "Import",
-                "Path to a .fountain, .fdx, .docx or .txt file",
-            ),
         };
         egui::Window::new(title)
             .open(&mut open)
@@ -1748,9 +1744,6 @@ impl PortmanteauApp {
                     RichText::new(match mode {
                         PathDialog::Open => "Unsaved changes in the current project are left untouched.",
                         PathDialog::SaveAs => "A new copy is written; the open project switches to it.",
-                        PathDialog::Import => {
-                            "Fountain and FDX become screenplays; DOCX and text become prose. Long files split into chapters at their headings. Everything lands in the Draft folder."
-                        }
                     })
                     .font(ui_small())
                     .color(FAINT),
@@ -1800,26 +1793,6 @@ impl PortmanteauApp {
                         Err(e) => {
                             self.toast("Could not save project", e, ToastKind::Error);
                         }
-                    }
-                }
-                PathDialog::Import => {
-                    let path = self.path_draft.trim().to_owned();
-                    let res = self.ws.execute("document.import", serde_json::json!({
-                        "path": path,
-                    }));
-                    if res.ok {
-                        let id = res.data["id"].as_str().map(|id| id.to_owned());
-                        self.selected = id;
-                        self.view = View::Write;
-                        self.path_dialog = None;
-                        let kind = if res.data["warnings"].as_array().is_some_and(|w| !w.is_empty()) {
-                            ToastKind::Info
-                        } else {
-                            ToastKind::Ok
-                        };
-                        self.toast("Manuscript imported", res.message, kind);
-                    } else {
-                        self.toast("Could not import manuscript", res.message, ToastKind::Error);
                     }
                 }
             }
@@ -1972,6 +1945,7 @@ impl PortmanteauApp {
         }
 
         self.modals(&ctx);
+        crate::ui::import_review::show(self, &ctx);
         self.track_history(&ctx);
         self.persist_session(&ctx);
         self.autosave(&ctx);

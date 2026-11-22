@@ -981,6 +981,34 @@ pub struct AppSettings {
     /// The window's inner size in points, restored at launch.
     #[serde(default)]
     pub window_size: Option<[f32; 2]>,
+    /// What the writer chose last time in the import review.
+    #[serde(default)]
+    pub import: ImportPrefs,
+}
+
+/// Import choices remembered for next time.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct ImportPrefs {
+    /// Cut a long file into several documents at its headings.
+    #[serde(default = "default_true")]
+    pub split: bool,
+    /// Offer to put the file's title page details into the project.
+    #[serde(default = "default_true")]
+    pub apply_details: bool,
+    /// Paragraph-style mappings, by import format ("docx", "fdx"): the source
+    /// style name to a target token (`heading:1`, `style:body`, `skip`, …).
+    /// Applied automatically the next time a file of that format is reviewed.
+    #[serde(default)]
+    pub style_maps: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    /// The folder the file browser last used.
+    #[serde(default)]
+    pub folder: Option<String>,
+}
+
+impl Default for ImportPrefs {
+    fn default() -> Self {
+        Self { split: true, apply_details: true, style_maps: Default::default(), folder: None }
+    }
 }
 
 impl Default for AppSettings {
@@ -1002,6 +1030,7 @@ impl Default for AppSettings {
             paged_view: false,
             compile_format: String::new(),
             window_size: None,
+            import: ImportPrefs::default(),
         }
     }
 }

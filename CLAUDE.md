@@ -100,8 +100,11 @@ How to check output visually (all on this machine):
    in Continuous. Page markers in the editor were tried and removed (docs/roadmap.md).
 2. ~~PDF page per script document~~ Done: scenes run on; only a chapter-level
    document (episode/act) starts a page (`content::starts_new_page`, all writers).
-3. **Import review step**: show the split (titles, word counts) before the
-   documents are created. See `docs/roadmap.md` for the rest of the import gaps.
+3. ~~Import review~~ Done (`src/ui/import_review.rs`, `document.import_preview`):
+   documents, title-page details and Word/Final Draft style mappings are shown and
+   editable before anything is added; the split, details choice and style maps are
+   remembered in the config (`AppSettings.import`). See `docs/roadmap.md` for
+   the remaining import gaps.
 4. Per-document compile overrides and a "compile with last settings" action.
 5. Undo for binder operations, research and database text.
 6. Drag-and-drop binder, native file pickers (`rfd`), word-level diff, FDX
