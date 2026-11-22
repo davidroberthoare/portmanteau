@@ -193,16 +193,9 @@ pub fn demo() -> Project {
         doc.set_plain_text(body);
         doc.set_synopsis_text(body.chars().take(120).collect::<String>());
         doc.include_in_export = false;
-        p.research.push(ResearchItem {
-            id: new_id("res"),
-            title: title.into(),
-            body: RichDocument::from_plain_text(body, "body"),
-            kind: kind.into(),
-            source: source.into(),
-            created: now_stamp(),
-            attachments: Vec::new(),
-            html: String::new(),
-        });
+        let meta = doc.research_meta();
+        meta.kind = kind.into();
+        meta.source = source.into();
     };
     add_research(
         &mut p,
@@ -228,7 +221,7 @@ pub fn demo() -> Project {
     add_research(
         &mut p,
         "Coastal survey notes",
-        "Notes",
+        "Note",
         "Mara's field notebook",
         "Surveyors do not believe in ghosts. They believe in benchmarks: fixed points that tell you where you are when everything else moves.\n\nPlate 14 is a benchmark. If plate 14 is in the wrong place, either the plate moved or the map did. Both are possible. Neither is comfortable.\n\nCheck theodolite calibration before chapter three.",
     );

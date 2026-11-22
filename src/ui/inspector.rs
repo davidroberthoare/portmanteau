@@ -303,13 +303,19 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
 }
 
 fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
-    let research: Vec<(String, String)> = app
+    // Research notes this document actually names, not just the first few.
+    let research: Vec<(String, String, String)> = app
         .ws
         .project
-        .research
-        .iter()
-        .map(|r| (r.title.clone(), r.kind.clone()))
+        .document(doc_id)
+        .map(|doc| crate::ui::views::research::notes_mentioned_by(&app.ws.project, doc))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|note| {
+            (note.id.clone(), note.title.clone(), crate::ui::views::research::kind_of(note).to_string())
+        })
         .collect();
+    let mut open_note: Option<String> = None;
     let project_notes = app.ws.project.logline.clone();
     let styles = app.ws.project.styles.clone();
     let prose_sheet =
@@ -410,22 +416,37 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     ui.add_space(4.0);
     ui.label(RichText::new(&project_notes).font(serif(12.0)).color(MUTED));
     ui.add_space(12.0);
-    section_label(ui, "Linked research");
+    section_label(ui, "Research mentioned here");
     ui.add_space(3.0);
     if research.is_empty() {
-        ui.label(RichText::new("No research notes yet.").font(ui_body()).color(FAINT));
+        ui.label(
+            RichText::new("No research note is named in this document.")
+                .font(ui_small())
+                .color(FAINT),
+        );
     }
-    for (title, kind) in research.iter().take(5) {
+    for (id, title, kind) in research.iter().take(6) {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(Vec2::new(5.0, 5.0), egui::Sense::hover());
-            ui.painter().circle_filled(r.center(), 2.5, BLUE);
-            ui.label(RichText::new(title).font(ui_body()).color(MUTED));
+            ui.painter()
+                .circle_filled(r.center(), 2.5, crate::ui::views::research::kind_color(kind));
+            if ui
+                .add(egui::Button::new(RichText::new(title).font(ui_body()).color(BLUE)).frame(false))
+                .on_hover_text("Open in Research")
+                .clicked()
+            {
+                open_note = Some(id.clone());
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(RichText::new(kind).font(ui_small()).color(FAINT));
             });
         });
     }
     ui.add_space(12.0);
+    if let Some(id) = open_note {
+        app.selected_research = Some(id);
+        app.view = crate::app::View::Research;
+    }
 }
 
 fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {

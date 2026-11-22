@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use portmanteau_api::{storage, Workspace};
 use serde_json::json;
 use portmanteau_core::{
-    script, Block, DocKind, Document, ElementKind, Medium, Project, ProjectKind, ResearchItem,
+    script, Block, DocKind, Document, ElementKind, Medium, Project, ProjectKind,
     Snapshot,
 };
 
@@ -225,13 +225,6 @@ fn manifest_carries_no_long_bodies() {
             );
         }
     }
-    for item in value["research"].as_array().expect("research array") {
-        assert_eq!(
-            item["body"]["paragraphs"].as_array().expect("paragraphs").len(),
-            0,
-            "research body not emptied in manifest"
-        );
-    }
     for item in value["items"].as_array().expect("items array") {
         assert_eq!(
             item["notes"]["paragraphs"].as_array().expect("paragraphs").len(),
@@ -381,21 +374,16 @@ fn storage_fountain_roundtrips_every_kind() {
 }
 
 #[test]
-fn research_body_is_externalised_and_restored() {
+fn a_research_note_is_a_document_whose_details_and_body_round_trip() {
     let mut project = Project::new("Probe", ProjectKind::Novel);
-    project.research.push(ResearchItem {
-        id: "res-probe".into(),
-        title: "Probe Note".into(),
-        body: portmanteau_core::RichDocument::from_plain_text(
-            "A distinctive research body sentence.",
-            "body",
-        ),
-        kind: "Note".into(),
-        source: String::new(),
-        created: portmanteau_core::now_stamp(),
-        attachments: Vec::new(),
-        html: String::new(),
-    });
+    let folder = project.folder_id("Research").expect("research folder");
+    let id = project.add_document(Some(folder), "Probe Note", portmanteau_core::DocKind::Research, Medium::Note);
+    let doc = project.document_mut(&id).unwrap();
+    doc.set_plain_text("A distinctive research body sentence.");
+    let meta = doc.research_meta();
+    meta.kind = "Interview".into();
+    meta.source = "Recorded Tuesday".into();
+    meta.attachments.push("tape.mp3".into());
     let dir = scratch("rt1-research");
     storage::save_folder(&project, &dir).expect("save");
     let manifest = std::fs::read_to_string(dir.join("project.json")).expect("manifest");
@@ -403,11 +391,14 @@ fn research_body_is_externalised_and_restored() {
         !manifest.contains("A distinctive research body sentence."),
         "research body leaked into the manifest"
     );
+    assert!(manifest.contains("Recorded Tuesday"), "the research details are in the manifest");
     let back = storage::load_folder(&dir).expect("load");
-    assert_eq!(
-        back.research[0].body.plain_text(),
-        "A distinctive research body sentence."
-    );
+    let note = back.document(&id).expect("note");
+    assert_eq!(note.content.plain_text(), "A distinctive research body sentence.");
+    let meta = note.research.clone().expect("details");
+    assert_eq!((meta.kind.as_str(), meta.source.as_str()), ("Interview", "Recorded Tuesday"));
+    assert_eq!(meta.attachments, ["tape.mp3"]);
+    assert_eq!(back.research_docs().len(), 1);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -569,15 +560,6 @@ fn folder_package_contains_every_expected_file_type() {
         item_notes += 1;
     }
     assert!(item_notes > 0, "no database item rich notes written");
-
-    let mut research = 0;
-    for entry in std::fs::read_dir(dir.join("research")).expect("research dir") {
-        let path = entry.expect("entry").path();
-        assert_eq!(path.extension().and_then(|e| e.to_str()), Some("json"));
-        assert!(path.file_name().unwrap().to_string_lossy().ends_with(".rich.json"));
-        research += 1;
-    }
-    assert!(research > 0, "no research notes written");
 
     let mut snapshots = 0;
     for entry in std::fs::read_dir(dir.join("snapshots")).expect("snapshots dir") {

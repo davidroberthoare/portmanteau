@@ -637,31 +637,97 @@ impl Workspace {
             "research.add" => {
                 let title = str_arg(&payload, "title").unwrap_or_else(|| "New note".into());
                 let body = str_arg(&payload, "body").unwrap_or_default();
-                let kind = str_arg(&payload, "kind").unwrap_or_else(|| "Note".into());
-                let source = str_arg(&payload, "source").unwrap_or_default();
-                let item = ResearchItem {
-                    id: new_id("res"),
-                    title: title.clone(),
-                    body: RichDocument::from_plain_text(&body, "body"),
-                    kind,
-                    source,
-                    created: now_stamp(),
-                    attachments: Vec::new(),
-                    html: String::new(),
+                let Some(folder) = str_arg(&payload, "parent").or_else(|| self.project.folder_id("Research"))
+                else {
+                    return ApiResponse::err(command, "The project has no Research folder");
                 };
-                let id = item.id.clone();
-                self.project.research.push(item);
-                if let Some(folder) = self.project.folder_id("Research") {
-                    let doc_id =
-                        self.project
-                            .add_document(Some(folder), &title, DocKind::Research, Medium::Note);
-                    if let Some(doc) = self.project.document_mut(&doc_id) {
-                        doc.set_plain_text(body);
-                        doc.include_in_export = false;
-                    }
+                let id = self.project.add_document(Some(folder), &title, DocKind::Research, Medium::Note);
+                if let Some(doc) = self.project.document_mut(&id) {
+                    doc.set_plain_text(body);
+                    doc.include_in_export = false;
+                    let meta = doc.research_meta();
+                    meta.kind = str_arg(&payload, "kind")
+                        .and_then(|k| canonical_research_kind(&k))
+                        .unwrap_or("Note")
+                        .to_string();
+                    meta.source = str_arg(&payload, "source").unwrap_or_default();
                 }
                 self.dirty = true;
                 ApiResponse::ok(command, "Research note added", json!({"id": id}))
+            }
+            "research.list" => {
+                let notes: Vec<Value> = self
+                    .project
+                    .research_docs()
+                    .into_iter()
+                    .map(|doc| {
+                        let meta = doc.research.clone().unwrap_or_default();
+                        json!({
+                            "id": doc.id,
+                            "title": doc.title,
+                            "kind": meta.kind,
+                            "source": meta.source,
+                            "words": doc.words(),
+                            "attachments": meta.attachments,
+                        })
+                    })
+                    .collect();
+                ApiResponse::ok(command, format!("{} research notes", notes.len()), Value::Array(notes))
+            }
+            "research.update" => {
+                let Some(id) = str_arg(&payload, "id") else {
+                    return ApiResponse::err(command, "A research note id is required");
+                };
+                let Some(doc) = self.project.document_mut(&id) else {
+                    return ApiResponse::err(command, "Research note not found");
+                };
+                if let Some(v) = str_arg(&payload, "title") {
+                    doc.title = v;
+                }
+                if let Some(v) = str_arg(&payload, "body") {
+                    doc.set_plain_text(v);
+                }
+                if let Some(v) = str_arg(&payload, "kind") {
+                    match canonical_research_kind(&v) {
+                        Some(kind) => doc.research_meta().kind = kind.to_string(),
+                        None => {
+                            return ApiResponse::err(
+                                command,
+                                format!("Unknown research kind {v:?}; use {}", RESEARCH_KINDS.join(", ")),
+                            )
+                        }
+                    }
+                }
+                if let Some(v) = str_arg(&payload, "source") {
+                    doc.research_meta().source = v;
+                }
+                doc.touch();
+                self.dirty = true;
+                ApiResponse::ok(command, "Research note updated", json!({"id": id}))
+            }
+            "research.attach" => {
+                let (Some(id), Some(path)) = (str_arg(&payload, "id"), str_arg(&payload, "path")) else {
+                    return ApiResponse::err(command, "A research note id and a file path are required");
+                };
+                match self.attach_to_research(&id, Path::new(&path)) {
+                    Ok(name) => {
+                        self.dirty = true;
+                        ApiResponse::ok(command, format!("Attached {name}"), json!({"id": id, "name": name}))
+                    }
+                    Err(error) => ApiResponse::err(command, error),
+                }
+            }
+            "research.detach" => {
+                let (Some(id), Some(name)) = (str_arg(&payload, "id"), str_arg(&payload, "name")) else {
+                    return ApiResponse::err(command, "A research note id and an attachment name are required");
+                };
+                match self.detach_from_research(&id, &name) {
+                    Ok(()) => {
+                        self.dirty = true;
+                        ApiResponse::ok(command, format!("Removed {name}"), json!({"id": id, "name": name}))
+                    }
+                    Err(error) => ApiResponse::err(command, error),
+                }
             }
             "search" => {
                 let q = str_arg(&payload, "query").unwrap_or_default();
@@ -892,6 +958,63 @@ impl Workspace {
         }
     }
 
+    /// Where a research note's attachments live, once the project has a folder.
+    pub fn research_assets_dir(&self, id: &str) -> Option<PathBuf> {
+        let root = self.path.as_ref()?;
+        Some(root.join("assets").join("research").join(safe_dir_name(id)))
+    }
+
+    /// Copy `source` into the note's assets and record its name. Names are kept
+    /// as they are; a second file with the same name replaces the first.
+    fn attach_to_research(&mut self, id: &str, source: &Path) -> Result<String, String> {
+        let Some(dir) = self.research_assets_dir(id) else {
+            return Err("Save the project first: attachments are copied into the project folder".into());
+        };
+        if !source.is_file() {
+            return Err(format!("{} is not a file", source.display()));
+        }
+        let name = source
+            .file_name()
+            .and_then(|n| n.to_str())
+            .filter(|n| safe_attachment(n))
+            .ok_or("That file name is not allowed")?
+            .to_string();
+        let Some(doc) = self.project.document_mut(id) else {
+            return Err("Research note not found".into());
+        };
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Could not attach the file: {e}"))?;
+        let dest = dir.join(&name);
+        if source != dest {
+            std::fs::copy(source, &dest).map_err(|e| format!("Could not attach the file: {e}"))?;
+        }
+        let meta = doc.research_meta();
+        if !meta.attachments.contains(&name) {
+            meta.attachments.push(name.clone());
+        }
+        doc.touch();
+        Ok(name)
+    }
+
+    fn detach_from_research(&mut self, id: &str, name: &str) -> Result<(), String> {
+        if !safe_attachment(name) {
+            return Err("That attachment name is not allowed".into());
+        }
+        let dir = self.research_assets_dir(id);
+        let Some(doc) = self.project.document_mut(id) else {
+            return Err("Research note not found".into());
+        };
+        let meta = doc.research_meta();
+        if !meta.attachments.iter().any(|a| a == name) {
+            return Err(format!("{name} is not attached to this note"));
+        }
+        meta.attachments.retain(|a| a != name);
+        doc.touch();
+        if let Some(dir) = dir {
+            let _ = std::fs::remove_file(dir.join(name));
+        }
+        Ok(())
+    }
+
     /// The title each imported document will get: its own heading, else the
     /// work's title (or the file's name), numbered when the file splits.
     fn import_titles(&self, prepared: &PreparedImport, payload: &Value) -> Vec<String> {
@@ -996,7 +1119,7 @@ impl Workspace {
             "words": self.project.words(),
             "documents": self.project.documents.len(),
             "items": self.project.items.len(),
-            "research": self.project.research.len(),
+            "research": self.project.research_docs().len(),
             "checkpoints": self.project.checkpoints.len(),
             "today_words": self.project.today_words(),
             "daily_target": self.project.daily_target,
@@ -1031,7 +1154,7 @@ impl Workspace {
             "events": self.count_items(ItemKind::Event),
             "props": self.count_items(ItemKind::Prop),
             "custom": self.count_items(ItemKind::Custom),
-            "research": self.project.research.len(),
+            "research": self.project.research_docs().len(),
             "locations": self.project.locations().len(),
             "today": self.project.today_words(),
             "target": self.project.daily_target,
@@ -1314,6 +1437,21 @@ struct PreparedImport {
     path: Option<String>,
 }
 
+/// A document id as a directory name inside the package.
+fn safe_dir_name(id: &str) -> String {
+    let out: String = id.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
+    if out.is_empty() { "item".into() } else { out }
+}
+
+/// A bare file name: nothing that could reach outside the note's folder.
+fn safe_attachment(name: &str) -> bool {
+    !(name.is_empty() || name.contains('/') || name.contains('\\') || name == "." || name == "..")
+}
+
+fn canonical_research_kind(name: &str) -> Option<&'static str> {
+    RESEARCH_KINDS.into_iter().find(|kind| kind.eq_ignore_ascii_case(name.trim()))
+}
+
 fn format_key(format: ImportFormat) -> &'static str {
     match format {
         ImportFormat::Fountain => "fountain",
@@ -1419,7 +1557,11 @@ pub fn command_catalogue() -> Vec<Value> {
         ("snapshot.diff", "Compare a snapshot with the current document", r#"{"document_id":"...","id":"snap-..."}"#),
         ("item.add", "Add a story-database item", r#"{"kind":"Character","title":"...","notes":"...","tags":["..."]}"#),
         ("item.update", "Change a story-database item", r#"{"id":"item-...","title":"...","tags":["..."]}"#),
-        ("research.add", "Add a research note", r#"{"title":"...","body":"..."}"#),
+        ("research.add", "Add a research note", r#"{"title":"...","body":"...","kind":"Interview","source":"..."}"#),
+        ("research.list", "List research notes with their kind, source and attachments", "{}"),
+        ("research.update", "Change a research note's title, body, kind or source", r#"{"id":"doc-...","kind":"Data","source":"..."}"#),
+        ("research.attach", "Copy a file into a research note's attachments (the project must be saved)", r#"{"id":"doc-...","path":"/path/to/file.pdf"}"#),
+        ("research.detach", "Remove an attachment from a research note", r#"{"id":"doc-...","name":"file.pdf"}"#),
         ("search", "Search the whole manuscript", r#"{"query":"..."}"#),
         ("stats", "Word, page and session statistics", "{}"),
         ("script.parse", "Parse plain text into script blocks", r#"{"text":"INT. ..."}"#),
@@ -1629,6 +1771,53 @@ mod tests {
         let id = res.data["id"].as_str().unwrap();
         assert_eq!(ws.project.document(id).unwrap().content.paragraphs[0].style_id, "dialogue");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn research_notes_are_documents_managed_by_commands() {
+        let mut ws = Workspace::demo();
+        let before = ws.project.research_docs().len();
+        assert!(before >= 4, "the demo has research notes");
+
+        let added = ws.execute(
+            "research.add",
+            json!({"title":"Lighthouse log","body":"Lamp lit at dusk.","kind":"archive","source":"Trinity House"}),
+        );
+        assert!(added.ok, "{}", added.message);
+        let id = added.data["id"].as_str().unwrap().to_string();
+        let doc = ws.project.document(&id).unwrap();
+        assert_eq!(doc.kind, DocKind::Research);
+        assert!(!doc.include_in_export, "research is never compiled");
+        assert_eq!(doc.research.as_ref().unwrap().kind, "Archive", "kinds are matched without regard to case");
+        assert_eq!(ws.project.research_docs().len(), before + 1);
+
+        let updated = ws.execute("research.update", json!({"id":id,"kind":"Interview","source":"Keeper, 3 May"}));
+        assert!(updated.ok);
+        let listed = ws.execute("research.list", json!({}));
+        let row = listed.data.as_array().unwrap().iter().find(|r| r["id"] == id.as_str()).unwrap();
+        assert_eq!((row["kind"].as_str(), row["source"].as_str()), (Some("Interview"), Some("Keeper, 3 May")));
+        let bad = ws.execute("research.update", json!({"id":id,"kind":"Gossip"}));
+        assert!(!bad.ok && bad.message.contains("Interview"), "{}", bad.message);
+
+        // Attachments need a saved project, then live under the note's own folder.
+        let file = std::env::temp_dir().join(portmanteau_core::new_id("attach")).join("map.png");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, b"PNG").unwrap();
+        let early = ws.execute("research.attach", json!({"id":id,"path":file.display().to_string()}));
+        assert!(!early.ok && early.message.contains("Save the project"), "{}", early.message);
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("api-research"));
+        ws.save(Some(dir.clone())).unwrap();
+        let attached = ws.execute("research.attach", json!({"id":id,"path":file.display().to_string()}));
+        assert!(attached.ok, "{}", attached.message);
+        assert!(dir.join("assets").join("research").join(&id).join("map.png").is_file());
+        assert_eq!(ws.project.document(&id).unwrap().research.as_ref().unwrap().attachments, ["map.png"]);
+        let escape = ws.execute("research.detach", json!({"id":id,"name":"../project.json"}));
+        assert!(!escape.ok, "a path cannot leave the note's folder");
+        let gone = ws.execute("research.detach", json!({"id":id,"name":"map.png"}));
+        assert!(gone.ok, "{}", gone.message);
+        assert!(!dir.join("assets").join("research").join(&id).join("map.png").exists());
+        let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
     #[test]

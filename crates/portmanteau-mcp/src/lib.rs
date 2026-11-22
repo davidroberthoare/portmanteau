@@ -42,6 +42,9 @@ pub fn tool_definitions() -> Value {
         t("update_project_style", "Change per-element styles, which seed new output formats. Send nested objects, one per element: {\"body\":{\"size\":12,\"font\":\"Georgia\",\"align\":\"Justify\",\"first_line_indent\":18},\"dialogue\":{\"indent\":80}}. align is Left, Center, Right or Justify; indents and spacing are points.", json!({"type":"object","additionalProperties":{"type":"object","properties":{"font":{"type":"string"},"size":{"type":"number"},"leading":{"type":"number"},"indent":{"type":"number"},"first_line_indent":{"type":"number"},"right_indent":{"type":"number"},"before":{"type":"number"},"after":{"type":"number"},"align":{"type":"string","enum":["Left","Center","Right","Justify"]}}}})),
         t("add_item", "Add a story-database item: a character, place, event, prop or custom record.", json!({"type":"object","properties":{"kind":{"type":"string","enum":["Character","Place","Event","Prop","Custom"]},"title":{"type":"string"},"notes":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}}},"required":["title"]})),
         t("add_research_note", "Add a research note and its binder entry.", json!({"type":"object","properties":{"title":{"type":"string"},"body":{"type":"string"},"kind":{"type":"string"},"source":{"type":"string"}},"required":["title"]})),
+        t("list_research", "List research notes with their kind, source, word count and attachments.", json!({"type":"object","properties":{}})),
+        t("update_research_note", "Change a research note: title, body, kind (Note, Interview, Data, Archive, Image, Place) or source.", json!({"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"kind":{"type":"string"},"source":{"type":"string"}},"required":["id"]})),
+        t("attach_research_file", "Copy a file into a research note's attachments. The project must have been saved.", json!({"type":"object","properties":{"id":{"type":"string"},"path":{"type":"string"}},"required":["id","path"]})),
         t("list_commands", "List every raw API command (for building new clients).", json!({"type":"object","properties":{}}))
     ])
 }
@@ -78,6 +81,9 @@ pub fn call_tool(ws: &mut Workspace, name: &str, args: &Value) -> ApiResponse {
         "update_project_style" => ("style.update", args.clone()),
         "add_item" => ("item.add", args.clone()),
         "add_research_note" => ("research.add", args.clone()),
+        "list_research" => ("research.list", json!({})),
+        "update_research_note" => ("research.update", args.clone()),
+        "attach_research_file" => ("research.attach", args.clone()),
         "list_commands" => ("commands", json!({})),
         other => {
             return ApiResponse {

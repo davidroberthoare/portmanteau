@@ -258,7 +258,6 @@ pub enum RichTextTarget {
     DocumentBody(String),
     DocumentSynopsis(String),
     DocumentNotes(String),
-    ResearchBody(String),
     DatabaseNotes(String),
 }
 
@@ -388,7 +387,7 @@ impl PortmanteauApp {
             })
             .or(selected);
         let selected_item = ws.project.items.first().map(|c| c.id.clone());
-        let selected_research = ws.project.research.first().map(|r| r.id.clone());
+        let selected_research = ws.project.research_docs().first().map(|d| d.id.clone());
         let mut collapsed = HashSet::new();
         if let Some(draft) = ws.project.folder_id("Draft") {
             collapsed.remove(&draft);
@@ -1414,7 +1413,7 @@ impl PortmanteauApp {
                 .unwrap_or_else(|| {
                     portmanteau_core::StyleSheet::novel_prose(&self.ws.project.styles)
                 }),
-            RichTextTarget::ResearchBody(_) | RichTextTarget::DatabaseNotes(_) => {
+            RichTextTarget::DatabaseNotes(_) => {
                 portmanteau_core::StyleSheet::novel_prose(&self.ws.project.styles)
             }
         };
@@ -1460,21 +1459,6 @@ impl PortmanteauApp {
                     );
                     doc.touch();
                     &mut doc.notes
-                }),
-            RichTextTarget::ResearchBody(item_id) => self
-                .ws
-                .project
-                .research
-                .iter_mut()
-                .find(|item| item.id == *item_id)
-                .map(|item| {
-                    item.body.insert_image(
-                        state.range.clone(),
-                        image,
-                        state.standalone,
-                        &sheet,
-                    );
-                    &mut item.body
                 }),
             RichTextTarget::DatabaseNotes(item_id) => self
                 .ws
@@ -2033,7 +2017,7 @@ impl PortmanteauApp {
                     .find(|d| d.kind == DocKind::Chapter)
                     .or_else(|| self.ws.project.documents.iter().find(|d| !d.kind.is_folder()))
                     .map(|d| d.id.clone());
-                self.selected_research = self.ws.project.research.first().map(|r| r.id.clone());
+                self.selected_research = self.ws.project.research_docs().first().map(|d| d.id.clone());
                 self.selected_item = self.ws.project.items.first().map(|c| c.id.clone());
                 self.collapsed.clear();
                 self.history = crate::history::History::default();
@@ -2084,7 +2068,7 @@ impl PortmanteauApp {
     /// those workspaces, otherwise the selected document.
     fn history_target(&self) -> Option<HistoryTarget> {
         match self.view {
-            View::Research => self.selected_research.clone().map(HistoryTarget::Research),
+            View::Research => self.selected_research.clone().map(HistoryTarget::Doc),
             View::Database => self.selected_item.clone().map(HistoryTarget::Item),
             View::Settings | View::Compile | View::Agent | View::Project | View::History => None,
             _ => self.selected.clone().map(HistoryTarget::Doc),
@@ -2111,11 +2095,6 @@ impl PortmanteauApp {
                     }
                     applied
                 }),
-                HistoryTarget::Research(id) => project
-                    .research
-                    .iter_mut()
-                    .find(|item| &item.id == id)
-                    .map(|item| step(item)),
                 HistoryTarget::Item(id) => project
                     .items
                     .iter_mut()
@@ -2152,7 +2131,6 @@ impl PortmanteauApp {
     fn history_key(&self) -> Option<String> {
         Some(match self.history_target()? {
             HistoryTarget::Doc(id) => format!("doc:{id}"),
-            HistoryTarget::Research(id) => format!("research:{id}"),
             HistoryTarget::Item(id) => format!("item:{id}"),
         })
     }
@@ -2171,11 +2149,6 @@ impl PortmanteauApp {
         let project = &self.ws.project;
         let tracked: Option<&dyn crate::history::Tracked> = match &target {
             HistoryTarget::Doc(id) => project.document(id).map(|d| d as &dyn crate::history::Tracked),
-            HistoryTarget::Research(id) => project
-                .research
-                .iter()
-                .find(|item| &item.id == id)
-                .map(|item| item as &dyn crate::history::Tracked),
             HistoryTarget::Item(id) => project
                 .items
                 .iter()
@@ -2194,7 +2167,6 @@ impl PortmanteauApp {
             let (kind, id) = key.split_once(':').unwrap_or(("", key));
             match kind {
                 "doc" => project.document(id).is_some(),
-                "research" => project.research.iter().any(|item| item.id == id),
                 "item" => project.items.iter().any(|item| item.id == id),
                 _ => false,
             }
@@ -2205,7 +2177,6 @@ impl PortmanteauApp {
 /// What the history is currently watching.
 enum HistoryTarget {
     Doc(String),
-    Research(String),
     Item(String),
 }
 
@@ -2868,18 +2839,18 @@ mod shell_probe {
 
         app.view = View::Research;
         let id = app.selected_research.clone().expect("the demo has research");
-        let original = app.ws.project.research.iter().find(|r| r.id == id).unwrap().body.clone();
+        let original = app.ws.project.document(&id).unwrap().content.clone();
         app.observe_history(&ctx);
-        app.ws.project.research.iter_mut().find(|r| r.id == id).unwrap().body =
+        app.ws.project.document_mut(&id).unwrap().content =
             portmanteau_core::RichDocument::from_plain_text("Rewritten research note.", "body");
         app.observe_history(&ctx);
         assert!(app.can_undo());
         app.step_history(&ctx, true);
-        assert_eq!(app.ws.project.research.iter().find(|r| r.id == id).unwrap().body, original);
+        assert_eq!(app.ws.project.document(&id).unwrap().content, original);
         assert!(app.can_redo());
         app.step_history(&ctx, false);
         assert_eq!(
-            app.ws.project.research.iter().find(|r| r.id == id).unwrap().body.plain_text(),
+            app.ws.project.document(&id).unwrap().content.plain_text(),
             "Rewritten research note."
         );
 

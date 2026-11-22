@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use portmanteau_core::{DatabaseItem, Document, ResearchItem, RichParagraph};
+use portmanteau_core::{DatabaseItem, Document, RichParagraph};
 
 /// How long the writer must pause before a burst of typing closes as one step.
 pub const PAUSE: Duration = Duration::from_millis(700);
@@ -28,8 +28,8 @@ const LONGEST_STEP: Duration = Duration::from_secs(4);
 const MAX_STEPS: usize = 200;
 
 /// Which rich-text field of the thing being edited a step belongs to. A
-/// document has three (`BODY`, `SYNOPSIS`, `NOTES`); a research item or a
-/// database item has one.
+/// document (research notes included) has three (`BODY`, `SYNOPSIS`,
+/// `NOTES`); a database item has one.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Field(pub usize);
 
@@ -44,7 +44,7 @@ impl Field {
 /// Anything with rich-text fields the history can watch. Adding another kind of
 /// editable text means implementing this, nothing else.
 pub trait Tracked {
-    /// A key unique across kinds ("doc:…", "research:…").
+    /// A key unique across kinds ("doc:…", "item:…").
     fn history_key(&self) -> String;
     fn field_count(&self) -> usize;
     fn field(&self, index: usize) -> &Vec<RichParagraph>;
@@ -71,21 +71,6 @@ impl Tracked for Document {
             1 => &mut self.synopsis.paragraphs,
             _ => &mut self.notes.paragraphs,
         }
-    }
-}
-
-impl Tracked for ResearchItem {
-    fn history_key(&self) -> String {
-        format!("research:{}", self.id)
-    }
-    fn field_count(&self) -> usize {
-        1
-    }
-    fn field(&self, _index: usize) -> &Vec<RichParagraph> {
-        &self.body.paragraphs
-    }
-    fn field_mut(&mut self, _index: usize) -> &mut Vec<RichParagraph> {
-        &mut self.body.paragraphs
     }
 }
 

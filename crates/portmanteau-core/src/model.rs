@@ -204,6 +204,9 @@ pub struct Document {
     pub updated: String,
     pub snapshots: Vec<Snapshot>,
     pub pinned: bool,
+    /// Present on research notes (documents in the Research folder).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research: Option<ResearchMeta>,
 }
 
 impl Document {
@@ -238,6 +241,7 @@ impl Document {
             updated: stamp,
             snapshots: Vec::new(),
             pinned: false,
+            research: None,
         }
     }
 
@@ -301,6 +305,11 @@ impl Document {
 
     pub fn touch(&mut self) {
         self.updated = now_stamp();
+    }
+
+    /// This note's research details, created on first use.
+    pub fn research_meta(&mut self) -> &mut ResearchMeta {
+        self.research.get_or_insert_with(ResearchMeta::default)
     }
 
     pub fn snapshot(&mut self, name: impl Into<String>, note: impl Into<String>) {
@@ -422,22 +431,30 @@ impl DatabaseItem {
     }
 }
 
+/// What makes a binder document a research note: a category, where it came
+/// from, and the files kept with it. The note's text is the document's own.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct ResearchItem {
-    pub id: String,
-    pub title: String,
-    pub body: RichDocument,
+pub struct ResearchMeta {
+    /// "Note", "Interview", "Data", "Archive", "Image" or "Place" (see
+    /// `RESEARCH_KINDS`): used to filter, colour and label notes.
     pub kind: String,
+    /// Where it came from: a reference, a person and date, a place.
+    #[serde(default)]
     pub source: String,
-    pub created: String,
     /// Attachment basenames. The bytes live beside the project in
-    /// `assets/research/<item-id>/<basename>`; the model only remembers names.
+    /// `assets/research/<document-id>/<basename>`; the model only remembers names.
     #[serde(default)]
     pub attachments: Vec<String>,
-    /// A pasted HTML snippet, kept verbatim. May be empty.
-    #[serde(default)]
-    pub html: String,
 }
+
+impl Default for ResearchMeta {
+    fn default() -> Self {
+        Self { kind: "Note".into(), source: String::new(), attachments: Vec::new() }
+    }
+}
+
+/// The categories a research note can have, in the order they are offered.
+pub const RESEARCH_KINDS: [&str; 6] = ["Note", "Interview", "Data", "Archive", "Image", "Place"];
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct SessionEntry {
@@ -1330,7 +1347,6 @@ pub struct Project {
     pub documents: Vec<Document>,
     #[serde(default)]
     pub items: Vec<DatabaseItem>,
-    pub research: Vec<ResearchItem>,
     pub checkpoints: Vec<Checkpoint>,
     pub session_log: Vec<SessionEntry>,
     pub daily_target: u32,
@@ -1369,7 +1385,6 @@ impl Project {
             updated: stamp,
             documents: Vec::new(),
             items: Vec::new(),
-            research: Vec::new(),
             checkpoints: Vec::new(),
             session_log: Vec::new(),
             daily_target: 1200,
@@ -1498,6 +1513,15 @@ impl Project {
 
     pub fn document(&self, id: &str) -> Option<&Document> {
         self.documents.iter().find(|d| d.id == id)
+    }
+
+    /// Every research note, in binder order: a document inside the Research
+    /// folder that is not itself a folder.
+    pub fn research_docs(&self) -> Vec<&Document> {
+        self.ordered_documents()
+            .into_iter()
+            .filter(|doc| !doc.kind.is_folder() && self.in_research(doc))
+            .collect()
     }
 
     pub fn document_mut(&mut self, id: &str) -> Option<&mut Document> {

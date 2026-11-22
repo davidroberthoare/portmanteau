@@ -139,7 +139,8 @@ pub struct CompileGroup {
 }
 
 impl Project {
-    fn in_research(&self, doc: &Document) -> bool {
+    /// Whether `doc` sits anywhere inside the Research folder.
+    pub fn in_research(&self, doc: &Document) -> bool {
         let mut parent = doc.parent.clone();
         while let Some(id) = parent {
             match self.document(&id) {

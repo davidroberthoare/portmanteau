@@ -253,6 +253,10 @@ When you add a command, update **all** of these:
 | --- | --- | --- |
 | `project.info` | Summary of the open project | `{}` |
 | `project.update` | Change title, subtitle, author, genre, logline, contact, draft_label, draft_date, daily_target | `{"contact":"Ada\nada@example.com","draft_date":"14 March 2027"}` |
+| `research.list` | List research notes (kind, source, words, attachments) | `{}` |
+| `research.update` | Change a note's title, body, kind or source | `{"id":"doc-…","kind":"Interview"}` |
+| `research.attach` | Copy a file into a note's attachments (project must be saved) | `{"id":"doc-…","path":"/tmp/x.pdf"}` |
+| `research.detach` | Remove an attachment | `{"id":"doc-…","name":"x.pdf"}` |
 | `document.import_preview` | Read an import file without changing anything: documents, paragraph styles and targets, details, warnings | `{"path":"/tmp/a.docx","style_map":{"Quote":"style:body"}}` |
 | `project.new` | Create a project | `{"title":"…","kind":"Novel"}` |
 | `project.open` | Open a project file | `{"path":"…"}` |
