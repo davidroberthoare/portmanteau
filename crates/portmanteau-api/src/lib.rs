@@ -1322,7 +1322,16 @@ fn find_query(payload: &Value) -> Result<FindQuery, String> {
     let flag = |key: &str| payload.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
     let mut query = FindQuery::new(text);
     query.options = FindOptions { case_sensitive: flag("case_sensitive"), whole_word: flag("whole_word"), regex: flag("regex") };
-    query.asides = payload.get("asides").and_then(|v| v.as_bool()).unwrap_or(true);
+    if let Some(fields) = payload.get("fields").and_then(|v| v.as_array()) {
+        for name in fields.iter().filter_map(|v| v.as_str()) {
+            query.fields.push(match name {
+                "Text" => HitField::Body,
+                "Synopsis" => HitField::Synopsis,
+                "Notes" => HitField::Notes,
+                other => return Err(format!("Unknown field {other} (Text, Synopsis, Notes)")),
+            });
+        }
+    }
     if let Some(groups) = payload.get("groups").and_then(|v| v.as_array()) {
         for name in groups.iter().filter_map(|v| v.as_str()) {
             let group = SearchGroup::all()
@@ -1730,7 +1739,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("research.attach", "Copy a file into a research note's attachments (the project must be saved)", r#"{"id":"doc-...","path":"/path/to/file.pdf"}"#),
         ("research.detach", "Remove an attachment from a research note", r#"{"id":"doc-...","name":"file.pdf"}"#),
         ("research.delete", "Delete a research note and its attached files", r#"{"id":"doc-..."}"#),
-        ("search.find", "Find text across documents, research and database notes (plain, whole-word or regex; filter by group)", r#"{"query":"...","case_sensitive":false,"whole_word":false,"regex":false,"groups":["Manuscript","Research"],"asides":true,"limit":200}"#),
+        ("search.find", "Find text across documents, research and database notes (plain, whole-word or regex; filter by group and by field)", r#"{"query":"...","case_sensitive":false,"whole_word":false,"regex":false,"groups":["Manuscript","Research"],"fields":["Text","Synopsis","Notes"],"limit":200}"#),
         ("search.replace", "Replace every match, or just those in one document/item (id), one field of it (field) or one match (start); each changed document gets a snapshot first", r#"{"query":"...","replacement":"...","id":"doc-...","field":"Text","start":12}"#),
         ("stats", "Word, page and session statistics", "{}"),
         ("script.parse", "Parse plain text into script blocks", r#"{"text":"INT. ..."}"#),

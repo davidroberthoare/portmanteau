@@ -32,15 +32,15 @@ fn find_reports_places_and_honours_options_and_groups() {
 #[test]
 fn replace_changes_the_text_marks_the_project_dirty_and_snapshots() {
     let mut ws = workspace();
-    let before = ws.execute("search.find", json!({"query": "Mara Venn", "groups": ["Manuscript"], "asides": false}));
+    let before = ws.execute("search.find", json!({"query": "Mara Venn", "groups": ["Manuscript"], "fields": ["Text"]}));
     let n = before.data["total"].as_u64().unwrap();
     assert!(n > 0);
     ws.dirty = false;
-    let done = ws.execute("search.replace", json!({"query": "Mara Venn", "replacement": "Mara Vane", "groups": ["Manuscript"], "asides": false}));
+    let done = ws.execute("search.replace", json!({"query": "Mara Venn", "replacement": "Mara Vane", "groups": ["Manuscript"], "fields": ["Text"]}));
     assert!(done.ok, "{}", done.message);
     assert_eq!(done.data["replaced"].as_u64().unwrap(), n);
     assert!(ws.dirty);
-    let after = ws.execute("search.find", json!({"query": "Mara Venn", "groups": ["Manuscript"], "asides": false}));
+    let after = ws.execute("search.find", json!({"query": "Mara Venn", "groups": ["Manuscript"], "fields": ["Text"]}));
     assert_eq!(after.data["total"], 0);
     assert!(ws.project.documents.iter().any(|d| d.snapshots.iter().any(|s| s.name == "Before replace")));
     assert!(!ws.execute("search.replace", json!({"query": "a"})).ok, "a replacement is required");

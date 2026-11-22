@@ -11,7 +11,7 @@ use eframe::egui::{
     self, text::LayoutJob, Color32, CornerRadius, Frame, Margin, RichText, ScrollArea, Sense, Stroke, TextEdit,
     TextFormat, Vec2,
 };
-use portmanteau_core::{FindHit, FindOptions, FindQuery, FindSource, SearchGroup};
+use portmanteau_core::{FindHit, FindOptions, FindQuery, FindSource, HitField, SearchGroup};
 use serde_json::json;
 
 use crate::app::{PortmanteauApp, ToastKind};
@@ -25,7 +25,8 @@ pub struct SearchPage {
     pub options: FindOptions,
     /// Chosen groups; none chosen means everywhere.
     pub groups: Vec<SearchGroup>,
-    pub asides: bool,
+    /// Chosen parts (text, synopsis, notes); none chosen means all.
+    pub fields: Vec<HitField>,
     pub show_replace: bool,
     /// Ask for the query box to take focus on the next frame.
     pub focus: bool,
@@ -43,7 +44,7 @@ impl Default for SearchPage {
             replacement: String::new(),
             options: FindOptions::default(),
             groups: Vec::new(),
-            asides: true,
+            fields: Vec::new(),
             show_replace: false,
             focus: false,
             hits: Vec::new(),
@@ -56,7 +57,7 @@ impl Default for SearchPage {
 
 impl SearchPage {
     pub fn query(&self) -> FindQuery {
-        FindQuery { text: self.query.clone(), options: self.options, groups: self.groups.clone(), asides: self.asides }
+        FindQuery { text: self.query.clone(), options: self.options, groups: self.groups.clone(), fields: self.fields.clone() }
     }
     /// Forget the answer so it is worked out again (the project changed).
     pub fn stale(&mut self) {
@@ -159,9 +160,17 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             changed = true;
                         }
                     }
-                    if chip(ui, "Synopsis & notes", page.asides, "Also search each document's synopsis and notes") {
-                        page.asides = !page.asides;
-                        changed = true;
+                    ui.label(RichText::new("in").font(ui_small()).color(FAINT));
+                    for field in [HitField::Body, HitField::Synopsis, HitField::Notes] {
+                        let on = page.fields.contains(&field);
+                        if chip(ui, field.label(), on, "Search only this part (choose several, or none for all parts)") {
+                            if on {
+                                page.fields.retain(|f| *f != field);
+                            } else {
+                                page.fields.push(field);
+                            }
+                            changed = true;
+                        }
                     }
                 });
             });
@@ -283,7 +292,7 @@ fn replace(app: &mut PortmanteauApp, mut extra: serde_json::Value) {
     object.insert("case_sensitive".into(), json!(query.options.case_sensitive));
     object.insert("whole_word".into(), json!(query.options.whole_word));
     object.insert("regex".into(), json!(query.options.regex));
-    object.insert("asides".into(), json!(query.asides));
+    object.insert("fields".into(), json!(query.fields.iter().map(|f| f.label()).collect::<Vec<_>>()));
     object.insert("groups".into(), json!(query.groups.iter().map(|g| format!("{g:?}")).collect::<Vec<_>>()));
     let response = app.ws.execute("search.replace", extra);
     if response.ok {
@@ -308,7 +317,7 @@ fn chip(ui: &mut egui::Ui, text: &str, on: bool, hover: &str) -> bool {
 fn hit_line(hit: &FindHit) -> LayoutJob {
     let mut job = LayoutJob::default();
     let plain = TextFormat { font_id: ui_body(), color: MUTED, ..Default::default() };
-    if hit.field != portmanteau_core::HitField::Body {
+    if hit.field != HitField::Body {
         job.append(&format!("{} · ", hit.field.label()), 0.0, TextFormat { font_id: ui_small(), color: FAINT, ..Default::default() });
     }
     let chars: Vec<char> = hit.excerpt.chars().collect();
@@ -363,6 +372,18 @@ mod tests {
         assert_eq!(app.selected.as_deref(), Some(hit.source.id()));
         let request = app.caret_request.as_ref().expect("the caret is placed");
         assert_eq!((request.paragraph, request.offset, request.select), (hit.paragraph, hit.offset, "compass".len()));
+    }
+
+    #[test]
+    fn choosing_only_synopsis_shows_no_text_results() {
+        let mut app = PortmanteauApp::new(None);
+        app.search_page.query = "harbour".into();
+        app.search_page.fields = vec![HitField::Synopsis];
+        let (mut harness, app) = harness(app);
+        harness.run_steps(3);
+        let app = app.borrow();
+        assert!(!app.search_page.hits().is_empty());
+        assert!(app.search_page.hits().iter().all(|h| h.field == HitField::Synopsis));
     }
 
     #[test]

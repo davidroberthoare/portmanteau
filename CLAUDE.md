@@ -127,7 +127,7 @@ How to check output visually (all on this machine):
 - **Find and replace** (`portmanteau-core/src/find.rs`; commands `search.find` /
   `search.replace`; MCP `search_project`, `replace_text`): one engine with plain,
   case, whole-word and regex options, groups (Manuscript, Front & back matter,
-  Research, Database) and an option to include synopses/notes. Replacing snapshots
+  Research, Database) and a choice of parts (text, synopsis, notes). Replacing snapshots
   each changed document first (not for a single-match replace). Two UIs: the
   **Search page** (`views/search.rs`, rail icon, Ctrl/Cmd+Shift+F; results open the
   document with the match selected via `CaretRequest.select`) and the editor's

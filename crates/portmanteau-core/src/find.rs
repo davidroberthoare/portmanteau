@@ -55,16 +55,19 @@ pub struct FindQuery {
     pub options: FindOptions,
     /// Groups to search; empty means every group.
     pub groups: Vec<SearchGroup>,
-    /// Also search each document's synopsis and notes.
-    pub asides: bool,
+    /// Parts to search (text, synopsis, notes); empty means all of them.
+    pub fields: Vec<HitField>,
 }
 
 impl FindQuery {
     pub fn new(text: impl Into<String>) -> Self {
-        Self { text: text.into(), options: FindOptions::default(), groups: Vec::new(), asides: true }
+        Self { text: text.into(), options: FindOptions::default(), groups: Vec::new(), fields: Vec::new() }
     }
     fn wants(&self, group: SearchGroup) -> bool {
         self.groups.is_empty() || self.groups.contains(&group)
+    }
+    fn wants_field(&self, field: HitField) -> bool {
+        self.fields.is_empty() || self.fields.contains(&field)
     }
 }
 
@@ -274,13 +277,13 @@ impl Project {
                 continue;
             }
             let source = FindSource::Document(doc.id.clone());
-            fields.push((source.clone(), doc.title.clone(), group, HitField::Body, &doc.content));
-            if query.asides {
-                fields.push((source.clone(), doc.title.clone(), group, HitField::Synopsis, &doc.synopsis));
-                fields.push((source, doc.title.clone(), group, HitField::Notes, &doc.notes));
+            for (field, rich) in [(HitField::Body, &doc.content), (HitField::Synopsis, &doc.synopsis), (HitField::Notes, &doc.notes)] {
+                if query.wants_field(field) {
+                    fields.push((source.clone(), doc.title.clone(), group, field, rich));
+                }
             }
         }
-        if query.wants(SearchGroup::Database) {
+        if query.wants(SearchGroup::Database) && query.wants_field(HitField::Body) {
             for item in &self.items {
                 fields.push((
                     FindSource::Item(item.id.clone()),
@@ -509,9 +512,14 @@ mod tests {
         let hits = p.find_all(&q("harbour")).unwrap();
         assert!(hits.iter().any(|h| matches!(h.source, FindSource::Item(_))));
         assert!(hits.iter().any(|h| h.field == HitField::Synopsis));
-        let mut no_asides = q("harbour");
-        no_asides.asides = false;
-        assert!(p.find_all(&no_asides).unwrap().iter().all(|h| h.field == HitField::Body));
+        let mut text_only = q("harbour");
+        text_only.fields = vec![HitField::Body];
+        assert!(p.find_all(&text_only).unwrap().iter().all(|h| h.field == HitField::Body));
+        let mut synopsis_only = q("harbour");
+        synopsis_only.fields = vec![HitField::Synopsis];
+        let hits = p.find_all(&synopsis_only).unwrap();
+        assert_eq!(hits.len(), 1, "only the synopsis, not the text or the database");
+        assert_eq!(hits[0].field, HitField::Synopsis);
     }
 
     #[test]
