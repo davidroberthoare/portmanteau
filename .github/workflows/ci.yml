@@ -1,3 +1,47 @@
+name: CI
+
+# Builds and tests on every push and pull request. Every third-party action is
+# pinned to a full commit SHA (see release.yml for how to update a pin).
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install system packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev poppler-utils xvfb
+      - name: Install poppler (macOS)
+        if: runner.os == 'macOS'
+        run: brew install poppler
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: cargo build --workspace
+      - run: cargo test --workspace
+      - name: Screenshot smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a ./target/debug/portmanteau --screenshot shot.png
+          size=$(stat -c %s shot.png)
+          echo "screenshot is $size bytes"
+          test "$size" -gt 100000
+
 
 
   wasm:
