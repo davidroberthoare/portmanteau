@@ -35,9 +35,14 @@ fn screenshot_path() -> Option<PathBuf> {
 
 fn main() -> eframe::Result<()> {
     let screenshot = screenshot_path();
+    // Open at the size the window had when it was last closed.
+    let [width, height] = settings::load_settings()
+        .window_size
+        .map(|[w, h]| [w.clamp(1080.0, 7680.0), h.clamp(700.0, 4320.0)])
+        .unwrap_or([1440.0, 930.0]);
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_inner_size([1440.0, 930.0])
+            .with_inner_size([width, height])
             .with_min_inner_size([1080.0, 700.0])
             .with_title("Portmanteau"),
         renderer: eframe::Renderer::Glow,

@@ -960,6 +960,27 @@ pub struct AppSettings {
     /// Interface text scale (1.0 = default). Affects chrome, not manuscripts.
     #[serde(default = "default_ui_scale")]
     pub ui_scale: f32,
+    /// The project that was open when the app last closed, reopened at launch.
+    #[serde(default)]
+    pub last_project: Option<String>,
+    /// Recently opened projects, newest first.
+    #[serde(default)]
+    pub recent_projects: Vec<String>,
+    /// Text zoom of the writing surface.
+    #[serde(default = "default_ui_scale")]
+    pub editor_zoom: f32,
+    /// Corkboard card scale.
+    #[serde(default = "default_ui_scale")]
+    pub corkboard_zoom: f32,
+    /// Write opens in the read-only Paged view rather than Continuous.
+    #[serde(default)]
+    pub paged_view: bool,
+    /// The output format the Compile screen last showed ("PDF", "EPUB", …).
+    #[serde(default)]
+    pub compile_format: String,
+    /// The window's inner size in points, restored at launch.
+    #[serde(default)]
+    pub window_size: Option<[f32; 2]>,
 }
 
 impl Default for AppSettings {
@@ -974,11 +995,27 @@ impl Default for AppSettings {
             show_binder: true,
             show_inspector: true,
             ui_scale: default_ui_scale(),
+            last_project: None,
+            recent_projects: Vec::new(),
+            editor_zoom: default_ui_scale(),
+            corkboard_zoom: default_ui_scale(),
+            paged_view: false,
+            compile_format: String::new(),
+            window_size: None,
         }
     }
 }
 
 impl AppSettings {
+    /// Note that a project was opened or saved: it becomes the one to reopen
+    /// at launch and moves to the front of the recent list (at most eight).
+    pub fn remember_project(&mut self, path: &str) {
+        self.last_project = Some(path.to_string());
+        self.recent_projects.retain(|existing| existing != path);
+        self.recent_projects.insert(0, path.to_string());
+        self.recent_projects.truncate(8);
+    }
+
     /// Add any built-in stylesheet that a config saved by an older build lacks.
     pub fn ensure_style_sheets(&mut self) {
         StyleSheet::ensure_industry_defaults(&mut self.style_sheets, &self.styles);

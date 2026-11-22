@@ -160,6 +160,29 @@ pub(crate) fn short_path(path: &Path) -> String {
     full
 }
 
+/// The system file dialog for one of the path dialogs, starting near what is
+/// already typed. `None` when the writer cancels.
+fn browse_for(mode: PathDialog, current: &str) -> Option<String> {
+    let start = Path::new(current.trim());
+    let start_dir = if start.is_dir() { Some(start) } else { start.parent().filter(|p| p.is_dir()) };
+    let mut dialog = rfd::FileDialog::new();
+    if let Some(dir) = start_dir {
+        dialog = dialog.set_directory(dir);
+    }
+    let picked = match mode {
+        PathDialog::Open => dialog.set_title("Open project").pick_folder(),
+        PathDialog::SaveAs => dialog
+            .set_title("Save project as")
+            .set_file_name("My Project.portmanteau")
+            .save_file(),
+        PathDialog::Import => dialog
+            .set_title("Import manuscript")
+            .add_filter("Manuscripts", &["fountain", "spmd", "fdx", "docx", "txt", "text", "md", "markdown"])
+            .pick_file(),
+    };
+    picked.map(|path| path.display().to_string())
+}
+
 /// Ask the desktop to open a file. When the file has been moved or deleted,
 /// open its folder instead so the click still leads somewhere useful.
 pub(crate) fn open_path(path: &Path) {
@@ -329,13 +352,26 @@ pub struct PortmanteauApp {
 /// Corkboard card scale. 1.0 is the default card width; the `−` / `+`
     /// controls in the corkboard header change it within `0.6..=1.6`.
     pub corkboard_zoom: f32,
+    /// What the config file last held, so changes can be saved once they settle.
+    settings_saved: portmanteau_core::AppSettings,
+    settings_changed_at: Option<Instant>,
+    /// When the writer last touched the keyboard or mouse (for autosave).
+    last_input: Instant,
     pub spell: portmanteau_core::spell::SpellChecker,
     pub show_spelling: bool,
 }
 
 impl PortmanteauApp {
     pub fn new(screenshot: Option<PathBuf>) -> Self {
-        let ws = Workspace::demo();
+        let settings = crate::settings::load_settings();
+        // Reopen the project the writer left open. Screenshots and the test
+        // suite always start from the demonstration project, so they stay
+        // repeatable whatever is on this machine.
+        let reopened = (!cfg!(test) && screenshot.is_none())
+            .then(|| settings.last_project.as_deref())
+            .flatten()
+            .and_then(|path| Workspace::open(Path::new(path)).ok());
+        let ws = reopened.unwrap_or_else(Workspace::demo);
         let selected = ws
             .project
             .documents
@@ -360,17 +396,27 @@ impl PortmanteauApp {
         if let Some(draft) = ws.project.folder_id("Draft") {
             collapsed.remove(&draft);
         }
-        let settings = crate::settings::load_settings();
         let mut spell = crate::spellcheck::load(&settings.language);
         spell.set_custom(settings.custom_words.clone());
+        let compile_tab = ExportKind::all()
+            .into_iter()
+            .find(|kind| kind.short() == settings.compile_format)
+            .map_or_else(CompileTab::default, CompileTab::Format);
+        let start_paged = settings.paged_view;
+        let editor_zoom = settings.editor_zoom.clamp(0.7, 1.6);
+        let corkboard_zoom = settings.corkboard_zoom.clamp(0.6, 1.6);
+        let settings_saved = settings.clone();
         let mut app = Self {
             ws,
             settings,
+            settings_saved,
+            settings_changed_at: None,
+            last_input: Instant::now(),
             view: initial_view(),
-            compile_tab: CompileTab::default(),
+            compile_tab,
             settings_tab: 0,
             // Development aid, like PORTMANTEAU_VIEW: open Write in Paged mode.
-            write_mode: if std::env::var("PORTMANTEAU_PAGED").is_ok() {
+            write_mode: if std::env::var("PORTMANTEAU_PAGED").is_ok() || start_paged {
                 WriteMode::Paged
             } else {
                 WriteMode::Continuous
@@ -414,8 +460,8 @@ impl PortmanteauApp {
             screenshot,
             frame_no: 0,
             screenshot_requested: false,
-            editor_zoom: DEFAULT_EDITOR_ZOOM,
-            corkboard_zoom: 1.0,
+            editor_zoom,
+            corkboard_zoom,
             spell,
             show_spelling: false,
         };
@@ -739,6 +785,17 @@ impl PortmanteauApp {
                     .unwrap_or_default();
                 ui.close();
             }
+            let recent = self.settings.recent_projects.clone();
+            ui.add_enabled_ui(!recent.is_empty(), |ui| {
+                ui.menu_button("Open recent", |ui| {
+                    for path in &recent {
+                        if ui.button(short_path(Path::new(path))).clicked() {
+                            self.open_project_path(Path::new(path));
+                            ui.close();
+                        }
+                    }
+                });
+            });
             if ui.button("Import Fountain, FDX, DOCX or Text…").clicked() {
                 self.path_dialog = Some(PathDialog::Import);
                 self.path_draft.clear();
@@ -1676,6 +1733,16 @@ impl PortmanteauApp {
                 if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                     commit = true;
                 }
+                ui.add_space(4.0);
+                if ui
+                    .button("Browse…")
+                    .on_hover_text("Choose with the system file dialog")
+                    .clicked()
+                {
+                    if let Some(chosen) = browse_for(mode, &self.path_draft) {
+                        self.path_draft = chosen;
+                    }
+                }
                 ui.add_space(5.0);
                 ui.label(
                     RichText::new(match mode {
@@ -1714,24 +1781,8 @@ impl PortmanteauApp {
             match mode {
                 PathDialog::Open => {
                     let path = PathBuf::from(self.path_draft.trim());
-                    match Workspace::open(&path) {
-                        Ok(ws) => {
-                            self.ws = ws;
-                            self.selected = self
-                                .ws
-                                .project
-                                .documents
-                                .iter()
-                                .find(|d| d.kind == DocKind::Chapter)
-                                .map(|d| d.id.clone());
-                            self.collapsed.clear();
-                            self.view = View::Write;
-                            self.path_dialog = None;
-                            self.toast("Project opened", path.display().to_string(), ToastKind::Ok);
-                        }
-                        Err(e) => {
-                            self.toast("Could not open project", e, ToastKind::Error);
-                        }
+                    if self.open_project_path(&path) {
+                        self.path_dialog = None;
                     }
                 }
                 PathDialog::SaveAs => {
@@ -1864,6 +1915,15 @@ impl eframe::App for PortmanteauApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.draw(ui);
     }
+
+    /// Closing the window must not lose the last couple of seconds of work, or
+    /// the preferences that were still settling.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if self.ws.dirty && self.ws.path.is_some() {
+            let _ = self.ws.save(None);
+        }
+        let _ = crate::settings::save_settings(&self.settings);
+    }
 }
 
 impl PortmanteauApp {
@@ -1913,7 +1973,105 @@ impl PortmanteauApp {
 
         self.modals(&ctx);
         self.track_history(&ctx);
+        self.persist_session(&ctx);
+        self.autosave(&ctx);
         self.screenshot_tick(&ctx);
+    }
+}
+
+/// How long the writer must be idle before a saved project is saved again.
+const AUTOSAVE_IDLE: Duration = Duration::from_millis(2500);
+/// How long a preference must hold still before it is written to the config.
+const SETTINGS_SETTLE: Duration = Duration::from_millis(500);
+
+impl PortmanteauApp {
+    /// Keep what the writer chose (zoom, view mode, Compile format, window
+    /// size, the open project) in the config file, so the next session starts
+    /// where this one stopped. Written once a change has settled, not on every
+    /// frame of a window being dragged.
+    fn persist_session(&mut self, ctx: &egui::Context) {
+        let CompileTab::Format(kind) = self.compile_tab;
+        self.settings.editor_zoom = self.editor_zoom;
+        self.settings.corkboard_zoom = self.corkboard_zoom;
+        self.settings.paged_view = self.write_mode == WriteMode::Paged;
+        self.settings.compile_format = kind.short().to_string();
+        let (fullscreen, maximized) =
+            ctx.input(|i| (i.viewport().fullscreen, i.viewport().maximized));
+        if fullscreen != Some(true) && maximized != Some(true) {
+            if let Some(rect) = ctx.input(|i| i.viewport().inner_rect) {
+                self.settings.window_size = Some([rect.width().round(), rect.height().round()]);
+            }
+        }
+        if let Some(path) = self.ws.path.as_ref().map(|p| p.display().to_string()) {
+            if self.settings.last_project.as_deref() != Some(path.as_str()) {
+                self.settings.remember_project(&path);
+            }
+        }
+        if self.settings == self.settings_saved {
+            self.settings_changed_at = None;
+            return;
+        }
+        let since = *self.settings_changed_at.get_or_insert_with(Instant::now);
+        if since.elapsed() >= SETTINGS_SETTLE {
+            if crate::settings::save_settings(&self.settings).is_ok() {
+                self.settings_saved = self.settings.clone();
+            }
+            self.settings_changed_at = None;
+        } else {
+            ctx.request_repaint_after(SETTINGS_SETTLE);
+        }
+    }
+
+    /// Save a project that already has a home once the writer pauses, so
+    /// changes (text, Compile settings, details) survive without pressing
+    /// Save. A project that has never been saved is left alone: choosing where
+    /// it lives is the writer's decision.
+    fn autosave(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| !i.events.is_empty() || i.pointer.any_down()) {
+            self.last_input = Instant::now();
+        }
+        if !self.ws.dirty || self.ws.path.is_none() {
+            return;
+        }
+        let idle = self.last_input.elapsed();
+        if idle < AUTOSAVE_IDLE {
+            ctx.request_repaint_after(AUTOSAVE_IDLE - idle);
+            return;
+        }
+        if let Err(error) = self.ws.save(None) {
+            // Say so once, then wait for the next change rather than retry
+            // (and complain) every frame.
+            self.ws.dirty = false;
+            self.toast("Autosave failed", error, ToastKind::Error);
+        }
+    }
+
+    /// Open a project folder, make it the one on screen and remember it.
+    pub fn open_project_path(&mut self, path: &Path) -> bool {
+        match Workspace::open(path) {
+            Ok(ws) => {
+                self.ws = ws;
+                self.selected = self
+                    .ws
+                    .project
+                    .documents
+                    .iter()
+                    .find(|d| d.kind == DocKind::Chapter)
+                    .or_else(|| self.ws.project.documents.iter().find(|d| !d.kind.is_folder()))
+                    .map(|d| d.id.clone());
+                self.selected_research = self.ws.project.research.first().map(|r| r.id.clone());
+                self.selected_item = self.ws.project.items.first().map(|c| c.id.clone());
+                self.collapsed.clear();
+                self.history = crate::history::History::default();
+                self.view = View::Write;
+                self.toast("Project opened", path.display().to_string(), ToastKind::Ok);
+                true
+            }
+            Err(e) => {
+                self.toast("Could not open project", e, ToastKind::Error);
+                false
+            }
+        }
     }
 }
 
@@ -2577,5 +2735,76 @@ mod shell_probe {
         assert_eq!(body_of(&app, &doc_id), original);
         press(&mut harness, egui::Modifiers::COMMAND, Key::Y);
         assert_eq!(body_of(&app, &doc_id), typed, "Ctrl+Y also redoes");
+    }
+
+    /// What the writer chose (zoom, view mode, Compile format, open project) is
+    /// carried into the config so the next session starts there.
+    #[test]
+    fn the_session_is_mirrored_into_the_config_and_survives_a_restart() {
+        let mut app = PortmanteauApp::new(None);
+        app.editor_zoom = 1.3;
+        app.corkboard_zoom = 0.8;
+        app.write_mode = WriteMode::Paged;
+        app.compile_tab = CompileTab::Format(ExportKind::Epub);
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("session"));
+        app.ws.save(Some(dir.clone())).expect("save");
+        let ctx = egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(), |_ui| {}).drop_without_applying_deltas();
+        app.persist_session(&ctx);
+        let settings = app.settings.clone();
+        assert_eq!(settings.editor_zoom, 1.3);
+        assert_eq!(settings.corkboard_zoom, 0.8);
+        assert!(settings.paged_view);
+        assert_eq!(settings.compile_format, "EPUB");
+        assert_eq!(settings.last_project.as_deref(), Some(dir.display().to_string().as_str()));
+        // The config is plain JSON: it round-trips, and an older file without
+        // the new keys still loads.
+        let json = serde_json::to_string(&settings).unwrap();
+        assert_eq!(serde_json::from_str::<portmanteau_core::AppSettings>(&json).unwrap(), settings);
+        let older: portmanteau_core::AppSettings = serde_json::from_str("{\"spellcheck\":false}").unwrap();
+        assert!(older.last_project.is_none() && older.editor_zoom == 1.0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn recent_projects_keep_the_newest_first_without_repeats_and_cap_at_eight() {
+        let mut settings = portmanteau_core::AppSettings::default();
+        for n in 0..10 {
+            settings.remember_project(&format!("/p/{n}"));
+        }
+        settings.remember_project("/p/4");
+        assert_eq!(settings.recent_projects.len(), 8);
+        assert_eq!(settings.recent_projects[0], "/p/4");
+        assert_eq!(settings.recent_projects.iter().filter(|p| *p == "/p/4").count(), 1);
+        assert_eq!(settings.last_project.as_deref(), Some("/p/4"));
+    }
+
+    /// A saved project is saved again once the writer pauses; a project that
+    /// has never been saved is left alone.
+    #[test]
+    fn autosave_writes_a_saved_project_after_a_pause_and_leaves_an_unsaved_one_alone() {
+        let ctx = egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(), |_ui| {}).drop_without_applying_deltas();
+
+        let mut unsaved = PortmanteauApp::new(None);
+        unsaved.ws.dirty = true;
+        unsaved.last_input = Instant::now() - Duration::from_secs(30);
+        unsaved.autosave(&ctx);
+        assert!(unsaved.ws.dirty && unsaved.ws.path.is_none(), "no home yet, so no autosave");
+
+        let mut app = PortmanteauApp::new(None);
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("autosave"));
+        app.ws.save(Some(dir.clone())).expect("save");
+        app.ws.execute("project.update", serde_json::json!({"author": "Changed Author"}));
+        assert!(app.ws.dirty);
+        app.last_input = Instant::now();
+        app.autosave(&ctx);
+        assert!(app.ws.dirty, "still typing: not yet");
+        app.last_input = Instant::now() - Duration::from_secs(30);
+        app.autosave(&ctx);
+        assert!(!app.ws.dirty, "idle: saved");
+        let reopened = Workspace::open(&dir).expect("open");
+        assert_eq!(reopened.project.author, "Changed Author");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
