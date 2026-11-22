@@ -2080,8 +2080,17 @@ impl PortmanteauApp {
     /// here, before the editor draws, so egui's own per-widget undo (which
     /// would rewind a rebuilt text buffer and lose marks) never sees them.
     fn undo_redo_shortcuts(&mut self, ctx: &egui::Context) {
-        if self.view != View::Write || self.selected.is_none() {
+        if self.history_target().is_none() {
             return;
+        }
+        // Cmd+Z belongs to egui's own undo while a plain field (a title, a
+        // path) has the focus; it is ours only when a rich-text field, or
+        // nothing, is focused. Rich fields rebuild their buffer every frame, so
+        // egui's per-widget undo would rewind it and lose the formatting.
+        if let Some(focused) = ctx.memory(|memory| memory.focused()) {
+            if !crate::ui::editor::is_rich_field(ctx, focused) {
+                return;
+            }
         }
         use egui::Modifiers;
         let (redo, undo) = ctx.input_mut(|input| {
@@ -2097,22 +2106,53 @@ impl PortmanteauApp {
         }
     }
 
-    /// Undo (or redo) one step in the selected document and put the caret
-    /// where the change was.
+    /// What Undo and Redo act on: the research item or database item open in
+    /// those workspaces, otherwise the selected document.
+    fn history_target(&self) -> Option<HistoryTarget> {
+        match self.view {
+            View::Research => self.selected_research.clone().map(HistoryTarget::Research),
+            View::Database => self.selected_item.clone().map(HistoryTarget::Item),
+            View::Settings | View::Compile | View::Agent | View::Project | View::History => None,
+            _ => self.selected.clone().map(HistoryTarget::Doc),
+        }
+    }
+
+    /// Undo (or redo) one step in what is being edited and, for a document's
+    /// body, put the caret where the change was.
     pub fn step_history(&mut self, ctx: &egui::Context, undo: bool) {
-        let Some(id) = self.selected.clone() else { return };
+        let Some(target) = self.history_target() else { return };
         // Close any open burst first, so the very latest typing is undoable.
         self.observe_history(ctx);
-        let Some(doc) = self.ws.project.document_mut(&id) else { return };
-        let applied = if undo {
-            self.history.undo(doc)
-        } else {
-            self.history.redo(doc)
+        let applied = {
+            let history = &mut self.history;
+            let project = &mut self.ws.project;
+            let mut step = |item: &mut dyn crate::history::Tracked| {
+                if undo { history.undo(item) } else { history.redo(item) }
+            };
+            match &target {
+                HistoryTarget::Doc(id) => project.document_mut(id).map(|doc| {
+                    let applied = step(doc);
+                    if applied.is_some() {
+                        doc.touch();
+                    }
+                    applied
+                }),
+                HistoryTarget::Research(id) => project
+                    .research
+                    .iter_mut()
+                    .find(|item| &item.id == id)
+                    .map(|item| step(item)),
+                HistoryTarget::Item(id) => project
+                    .items
+                    .iter_mut()
+                    .find(|item| &item.id == id)
+                    .map(|item| step(item)),
+            }
+            .flatten()
         };
         let Some(applied) = applied else { return };
-        doc.touch();
         self.ws.dirty = true;
-        if applied.field == crate::history::Field::Body {
+        if let (HistoryTarget::Doc(id), true) = (&target, applied.field == crate::history::Field::BODY) {
             // The editor keeps its caret in egui's text state under these ids.
             for key in ["prose_body", "script_flow"] {
                 let edit_id = Id::unique((key, id.as_str()));
@@ -2128,14 +2168,22 @@ impl PortmanteauApp {
     }
 
     pub fn can_undo(&self) -> bool {
-        self.selected.as_deref().is_some_and(|id| self.history.can_undo(id))
+        self.history_key().is_some_and(|key| self.history.can_undo(&key))
     }
 
     pub fn can_redo(&self) -> bool {
-        self.selected.as_deref().is_some_and(|id| self.history.can_redo(id))
+        self.history_key().is_some_and(|key| self.history.can_redo(&key))
     }
 
-    /// Show the history the selected document, on frames where something was
+    fn history_key(&self) -> Option<String> {
+        Some(match self.history_target()? {
+            HistoryTarget::Doc(id) => format!("doc:{id}"),
+            HistoryTarget::Research(id) => format!("research:{id}"),
+            HistoryTarget::Item(id) => format!("item:{id}"),
+        })
+    }
+
+    /// Show the history what is being edited, on frames where something was
     /// typed or clicked and while a burst of typing waits to close.
     fn track_history(&mut self, ctx: &egui::Context) {
         let input = ctx.input(|i| !i.events.is_empty() || i.pointer.any_released());
@@ -2145,18 +2193,46 @@ impl PortmanteauApp {
     }
 
     fn observe_history(&mut self, ctx: &egui::Context) {
-        let Some(id) = self.selected.clone() else { return };
-        let Some(doc) = self.ws.project.document(&id) else { return };
-        match self.history.observe(doc, Instant::now()) {
+        let Some(target) = self.history_target() else { return };
+        let project = &self.ws.project;
+        let tracked: Option<&dyn crate::history::Tracked> = match &target {
+            HistoryTarget::Doc(id) => project.document(id).map(|d| d as &dyn crate::history::Tracked),
+            HistoryTarget::Research(id) => project
+                .research
+                .iter()
+                .find(|item| &item.id == id)
+                .map(|item| item as &dyn crate::history::Tracked),
+            HistoryTarget::Item(id) => project
+                .items
+                .iter()
+                .find(|item| &item.id == id)
+                .map(|item| item as &dyn crate::history::Tracked),
+        };
+        let Some(tracked) = tracked else { return };
+        match self.history.observe(tracked, Instant::now()) {
             Some(left) => {
                 self.history_pending = true;
                 ctx.request_repaint_after(left + Duration::from_millis(30));
             }
             None => self.history_pending = false,
         }
-        let project = &self.ws.project;
-        self.history.retain(|doc_id| project.document(doc_id).is_some());
+        self.history.retain(|key| {
+            let (kind, id) = key.split_once(':').unwrap_or(("", key));
+            match kind {
+                "doc" => project.document(id).is_some(),
+                "research" => project.research.iter().any(|item| item.id == id),
+                "item" => project.items.iter().any(|item| item.id == id),
+                _ => false,
+            }
+        });
     }
+}
+
+/// What the history is currently watching.
+enum HistoryTarget {
+    Doc(String),
+    Research(String),
+    Item(String),
 }
 
 impl PortmanteauApp {
@@ -2806,5 +2882,55 @@ mod shell_probe {
         let reopened = Workspace::open(&dir).expect("open");
         assert_eq!(reopened.project.author, "Changed Author");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Undo and Redo follow the workspace: in Research they act on the open
+    /// research item's text, in Database on the open item's notes.
+    #[test]
+    fn undo_redo_cover_research_and_database_text() {
+        let ctx = egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(), |_ui| {}).drop_without_applying_deltas();
+        let mut app = PortmanteauApp::new(None);
+
+        app.view = View::Research;
+        let id = app.selected_research.clone().expect("the demo has research");
+        let original = app.ws.project.research.iter().find(|r| r.id == id).unwrap().body.clone();
+        app.observe_history(&ctx);
+        app.ws.project.research.iter_mut().find(|r| r.id == id).unwrap().body =
+            portmanteau_core::RichDocument::from_plain_text("Rewritten research note.", "body");
+        app.observe_history(&ctx);
+        assert!(app.can_undo());
+        app.step_history(&ctx, true);
+        assert_eq!(app.ws.project.research.iter().find(|r| r.id == id).unwrap().body, original);
+        assert!(app.can_redo());
+        app.step_history(&ctx, false);
+        assert_eq!(
+            app.ws.project.research.iter().find(|r| r.id == id).unwrap().body.plain_text(),
+            "Rewritten research note."
+        );
+
+        app.view = View::Database;
+        let item = app.selected_item.clone().expect("the demo has database items");
+        let before = app.ws.project.items.iter().find(|i| i.id == item).unwrap().notes.clone();
+        app.observe_history(&ctx);
+        app.ws.project.items.iter_mut().find(|i| i.id == item).unwrap().notes =
+            portmanteau_core::RichDocument::from_plain_text("New notes about the character.", "body");
+        app.observe_history(&ctx);
+        app.step_history(&ctx, true);
+        assert_eq!(app.ws.project.items.iter().find(|i| i.id == item).unwrap().notes, before);
+        // The research item's history is separate and untouched.
+        app.view = View::Research;
+        assert!(app.can_undo() && !app.can_redo(), "research keeps its own, separate history");
+    }
+
+    /// Plain fields (a title) keep egui's own undo; rich fields are ours.
+    #[test]
+    fn only_rich_fields_hand_undo_to_the_app() {
+        let ctx = egui::Context::default();
+        let rich = Id::unique("a-rich-field");
+        let plain = Id::unique("a-plain-field");
+        crate::ui::editor::mark_rich(&ctx, rich);
+        assert!(crate::ui::editor::is_rich_field(&ctx, rich));
+        assert!(!crate::ui::editor::is_rich_field(&ctx, plain));
     }
 }

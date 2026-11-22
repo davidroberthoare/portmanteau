@@ -1028,6 +1028,7 @@ pub(crate) fn spelled_text_edit(
         ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
     };
     let output = configure(TextEdit::multiline(&mut *text).id(id).layouter(&mut layouter)).show(ui);
+    mark_rich(ui.ctx(), id);
     let mut outcome = FieldSpell::default();
     if enabled {
         let byte = spell_menu_byte(
@@ -2293,6 +2294,23 @@ pub(crate) fn paint_rich_images(
     }
 }
 
+/// Note that this widget is a rich-text field the app's own undo covers.
+/// Called by every such field each frame it is drawn.
+pub(crate) fn mark_rich(ctx: &egui::Context, id: Id) {
+    ctx.data_mut(|data| {
+        let known = data.get_temp_mut_or_default::<std::collections::HashSet<Id>>(Id::unique("rich-fields"));
+        known.insert(id);
+    });
+}
+
+/// Whether `id` is a rich-text field (see `mark_rich`).
+pub(crate) fn is_rich_field(ctx: &egui::Context, id: Id) -> bool {
+    ctx.data_mut(|data| {
+        data.get_temp_mut_or_default::<std::collections::HashSet<Id>>(Id::unique("rich-fields"))
+            .contains(&id)
+    })
+}
+
 /// A request from the Paged view for this document: put the caret where the
 /// writer clicked and let the text box take focus. Returns the character to
 /// bring into view once the text is laid out.
@@ -2359,6 +2377,9 @@ pub(crate) fn remember_selection_anchor(
     galley: &egui::Galley,
     galley_pos: egui::Pos2,
 ) {
+    // Every rich-text field reports its selection here, which is also how the
+    // app knows Cmd+Z is its own to handle while such a field has the focus.
+    mark_rich(ctx, id);
     let range = egui::text_edit::TextEditState::load(ctx, id)
         .and_then(|state| state.cursor.char_range());
     let key = Id::unique(("selection_anchor", id));

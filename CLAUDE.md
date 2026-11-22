@@ -56,8 +56,12 @@ Done this session:
 - **Importers** (`portmanteau-import`): Fountain, FDX, DOCX, plain text, with a
   shared `Imported` result and warnings, encoding detection, chapter splitting
   and a zip-bomb guard. Round-trip tests run through our own exporters.
-- **Undo/redo** (`src/history.rs`): observes the selected document, steps are
-  changed-paragraph windows, typing merges until a 0.7 s pause.
+- **Undo/redo** (`src/history.rs`): watches whatever rich text is being edited
+  (a document's body/synopsis/notes, a research note, a database item's notes) via
+  the `Tracked` trait; steps are changed-paragraph windows, typing merges until a
+  0.7 s pause. Plain fields (titles, paths) keep egui's own Cmd+Z: the app only
+  handles it when a rich field (registered through `remember_selection_anchor`)
+  or nothing has focus.
 - **Spell-check** now covers every prose field.
 - **UI cleanup**: dead or repeated controls removed, each with a comment on
   what it should become; a shell test keeps them out.

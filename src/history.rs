@@ -1,4 +1,4 @@
-//! Undo and redo for a document's text.
+//! Undo and redo for rich text: documents, research notes and database notes.
 //!
 //! The editor changes `doc.content` (and the synopsis and notes) in about
 //! thirty places: typing, paragraph styles, marks, images, spell fixes,
@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use portmanteau_core::{Document, RichParagraph};
+use portmanteau_core::{DatabaseItem, Document, ResearchItem, RichParagraph};
 
 /// How long the writer must pause before a burst of typing closes as one step.
 pub const PAUSE: Duration = Duration::from_millis(700);
@@ -27,39 +27,80 @@ const LONGEST_STEP: Duration = Duration::from_secs(4);
 /// Steps kept per document.
 const MAX_STEPS: usize = 200;
 
-/// Which rich-text field of the document a step belongs to.
+/// Which rich-text field of the thing being edited a step belongs to. A
+/// document has three (`BODY`, `SYNOPSIS`, `NOTES`); a research item or a
+/// database item has one.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Field {
-    Body,
-    Synopsis,
-    Notes,
-}
-
-const FIELDS: [Field; 3] = [Field::Body, Field::Synopsis, Field::Notes];
+pub struct Field(pub usize);
 
 impl Field {
-    fn index(self) -> usize {
-        match self {
-            Field::Body => 0,
-            Field::Synopsis => 1,
-            Field::Notes => 2,
+    pub const BODY: Field = Field(0);
+    #[cfg(test)]
+    pub const SYNOPSIS: Field = Field(1);
+    #[cfg(test)]
+    pub const NOTES: Field = Field(2);
+}
+
+/// Anything with rich-text fields the history can watch. Adding another kind of
+/// editable text means implementing this, nothing else.
+pub trait Tracked {
+    /// A key unique across kinds ("doc:…", "research:…").
+    fn history_key(&self) -> String;
+    fn field_count(&self) -> usize;
+    fn field(&self, index: usize) -> &Vec<RichParagraph>;
+    fn field_mut(&mut self, index: usize) -> &mut Vec<RichParagraph>;
+}
+
+impl Tracked for Document {
+    fn history_key(&self) -> String {
+        format!("doc:{}", self.id)
+    }
+    fn field_count(&self) -> usize {
+        3
+    }
+    fn field(&self, index: usize) -> &Vec<RichParagraph> {
+        match index {
+            0 => &self.content.paragraphs,
+            1 => &self.synopsis.paragraphs,
+            _ => &self.notes.paragraphs,
         }
     }
-
-    fn paragraphs(self, doc: &Document) -> &Vec<RichParagraph> {
-        match self {
-            Field::Body => &doc.content.paragraphs,
-            Field::Synopsis => &doc.synopsis.paragraphs,
-            Field::Notes => &doc.notes.paragraphs,
+    fn field_mut(&mut self, index: usize) -> &mut Vec<RichParagraph> {
+        match index {
+            0 => &mut self.content.paragraphs,
+            1 => &mut self.synopsis.paragraphs,
+            _ => &mut self.notes.paragraphs,
         }
     }
+}
 
-    fn paragraphs_mut(self, doc: &mut Document) -> &mut Vec<RichParagraph> {
-        match self {
-            Field::Body => &mut doc.content.paragraphs,
-            Field::Synopsis => &mut doc.synopsis.paragraphs,
-            Field::Notes => &mut doc.notes.paragraphs,
-        }
+impl Tracked for ResearchItem {
+    fn history_key(&self) -> String {
+        format!("research:{}", self.id)
+    }
+    fn field_count(&self) -> usize {
+        1
+    }
+    fn field(&self, _index: usize) -> &Vec<RichParagraph> {
+        &self.body.paragraphs
+    }
+    fn field_mut(&mut self, _index: usize) -> &mut Vec<RichParagraph> {
+        &mut self.body.paragraphs
+    }
+}
+
+impl Tracked for DatabaseItem {
+    fn history_key(&self) -> String {
+        format!("item:{}", self.id)
+    }
+    fn field_count(&self) -> usize {
+        1
+    }
+    fn field(&self, _index: usize) -> &Vec<RichParagraph> {
+        &self.notes.paragraphs
+    }
+    fn field_mut(&mut self, _index: usize) -> &mut Vec<RichParagraph> {
+        &mut self.notes.paragraphs
     }
 }
 
@@ -113,13 +154,13 @@ struct Tracker {
 struct DocHistory {
     undo: Vec<Step>,
     redo: Vec<Step>,
-    trackers: [Tracker; 3],
+    trackers: Vec<Tracker>,
 }
 
 impl DocHistory {
     /// Close one field's open burst into a step, comparing with what was last seen.
     fn close_burst(&mut self, field: Field) {
-        let tracker = &mut self.trackers[field.index()];
+        let tracker = &mut self.trackers[field.0];
         let (Some(burst), Some(seen)) = (tracker.burst.take(), tracker.seen.as_ref()) else {
             return;
         };
@@ -133,8 +174,8 @@ impl DocHistory {
     }
 
     fn close_bursts(&mut self) {
-        for field in FIELDS {
-            self.close_burst(field);
+        for index in 0..self.trackers.len() {
+            self.close_burst(Field(index));
         }
     }
 }
@@ -156,13 +197,15 @@ impl History {
     /// Show the history a document as it is now. Call once per frame in which
     /// input arrived (and while a burst is open). Returns how long until an
     /// open burst closes, so the caller can schedule a repaint.
-    pub fn observe(&mut self, doc: &Document, now: Instant) -> Option<Duration> {
-        let history = self.docs.entry(doc.id.clone()).or_default();
+    pub fn observe(&mut self, doc: &dyn Tracked, now: Instant) -> Option<Duration> {
+        let history = self.docs.entry(doc.history_key()).or_default();
+        history.trackers.resize_with(doc.field_count(), Tracker::default);
         let mut next_close: Option<Duration> = None;
         let mut edited = false;
-        for field in FIELDS {
-            let current = field.paragraphs(doc);
-            let tracker = &mut history.trackers[field.index()];
+        for index in 0..doc.field_count() {
+            let field = Field(index);
+            let current = doc.field(index);
+            let tracker = &mut history.trackers[index];
             let changed = tracker.seen.as_ref().is_some_and(|seen| seen != current);
 
             // A pause (or a very long burst) closes the step before the next
@@ -175,7 +218,7 @@ impl History {
                 history.close_burst(field);
             }
 
-            let tracker = &mut history.trackers[field.index()];
+            let tracker = &mut history.trackers[index];
             if changed {
                 edited = true;
                 match tracker.burst.as_mut() {
@@ -221,37 +264,39 @@ impl History {
     /// document no longer matches what the step expects (it was changed
     /// without being observed), in which case the history is discarded rather
     /// than applied to the wrong text.
-    pub fn undo(&mut self, doc: &mut Document) -> Option<Applied> {
-        let history = self.docs.get_mut(&doc.id)?;
+    pub fn undo(&mut self, doc: &mut dyn Tracked) -> Option<Applied> {
+        let key = doc.history_key();
+        let history = self.docs.get_mut(&key)?;
         history.close_bursts();
         let step = history.undo.pop()?;
         let applied = apply(doc, &step, Direction::Undo);
         match applied {
             Some(applied) => {
-                history.trackers[step.field.index()].seen = Some(step.field.paragraphs(doc).clone());
+                history.trackers[step.field.0].seen = Some(doc.field(step.field.0).clone());
                 history.redo.push(step);
                 Some(applied)
             }
             None => {
-                self.docs.remove(&doc.id);
+                self.docs.remove(&key);
                 None
             }
         }
     }
 
-    pub fn redo(&mut self, doc: &mut Document) -> Option<Applied> {
-        let history = self.docs.get_mut(&doc.id)?;
+    pub fn redo(&mut self, doc: &mut dyn Tracked) -> Option<Applied> {
+        let key = doc.history_key();
+        let history = self.docs.get_mut(&key)?;
         history.close_bursts();
         let step = history.redo.pop()?;
         let applied = apply(doc, &step, Direction::Redo);
         match applied {
             Some(applied) => {
-                history.trackers[step.field.index()].seen = Some(step.field.paragraphs(doc).clone());
+                history.trackers[step.field.0].seen = Some(doc.field(step.field.0).clone());
                 history.undo.push(step);
                 Some(applied)
             }
             None => {
-                self.docs.remove(&doc.id);
+                self.docs.remove(&key);
                 None
             }
         }
@@ -271,12 +316,12 @@ enum Direction {
 
 /// Swap the step's window in the document. The window currently in the
 /// document must be the one the step says it replaced.
-fn apply(doc: &mut Document, step: &Step, direction: Direction) -> Option<Applied> {
+fn apply(doc: &mut dyn Tracked, step: &Step, direction: Direction) -> Option<Applied> {
     let (from, to) = match direction {
         Direction::Undo => (&step.after, &step.before),
         Direction::Redo => (&step.before, &step.after),
     };
-    let paragraphs = step.field.paragraphs_mut(doc);
+    let paragraphs = doc.field_mut(step.field.0);
     let end = step.start.checked_add(from.len())?;
     if paragraphs.get(step.start..end)? != from.as_slice() {
         return None;
@@ -373,12 +418,12 @@ mod tests {
         for (i, text) in ["Once u", "Once up", "Once upo", "Once upon"].iter().enumerate() {
             edit(&mut history, &mut d, &[text], at(t0, 100 * (i as u64 + 1)));
         }
-        assert!(history.can_undo(&d.id));
+        assert!(history.can_undo(&d.history_key()));
         let applied = history.undo(&mut d).expect("undo");
         assert_eq!(texts(&d), ["Once"], "one undo reverts the whole burst");
         assert_eq!(applied.caret, 4, "caret returns to the end of the surviving text");
-        assert!(!history.can_undo(&d.id));
-        assert!(history.can_redo(&d.id));
+        assert!(!history.can_undo(&d.history_key()));
+        assert!(history.can_redo(&d.history_key()));
         history.redo(&mut d).expect("redo");
         assert_eq!(texts(&d), ["Once upon"]);
     }
@@ -422,9 +467,9 @@ mod tests {
         history.observe(&d, t0);
         edit(&mut history, &mut d, &["AB"], at(t0, 100));
         history.undo(&mut d).unwrap();
-        assert!(history.can_redo(&d.id));
+        assert!(history.can_redo(&d.history_key()));
         edit(&mut history, &mut d, &["AZ"], at(t0, 2000));
-        assert!(!history.can_redo(&d.id), "typing after an undo forks the history");
+        assert!(!history.can_redo(&d.history_key()), "typing after an undo forks the history");
     }
 
     #[test]
@@ -462,7 +507,7 @@ mod tests {
         assert_eq!(texts(&d), ["Body"]);
         assert_eq!(d.synopsis.paragraphs.len(), 1, "the synopsis edit is still there");
         let applied = history.undo(&mut d).unwrap();
-        assert_eq!(applied.field, Field::Synopsis);
+        assert_eq!(applied.field, Field::SYNOPSIS);
         assert_eq!(d.synopsis.paragraphs, original_synopsis);
     }
 
@@ -475,8 +520,8 @@ mod tests {
         history.observe(&a, t0);
         history.observe(&b, t0);
         edit(&mut history, &mut a, &["a1"], at(t0, 10));
-        assert!(history.can_undo(&a.id));
-        assert!(!history.can_undo(&b.id), "an edit to A is not B's undo");
+        assert!(history.can_undo(&a.history_key()));
+        assert!(!history.can_undo(&b.history_key()), "an edit to A is not B's undo");
         assert!(history.undo(&mut b).is_none());
         assert_eq!(texts(&b), ["b"]);
     }
@@ -494,7 +539,7 @@ mod tests {
         d.content.paragraphs = vec![para("completely different")];
         assert!(history.undo(&mut d).is_none(), "refuses rather than corrupting");
         assert_eq!(texts(&d), ["completely different"]);
-        assert!(!history.can_undo(&d.id), "and the stale history is dropped");
+        assert!(!history.can_undo(&d.history_key()), "and the stale history is dropped");
     }
 
     #[test]
