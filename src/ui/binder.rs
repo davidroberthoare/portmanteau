@@ -162,52 +162,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .max_height(scroll_h)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            if !app.search.trim().is_empty() {
-                let hits: Vec<(String, String, String)> = app
-                    .ws
-                    .project
-                    .search(&app.search)
-                    .into_iter()
-                    .map(|(d, excerpt)| (d.id.clone(), d.title.clone(), excerpt))
-                    .collect();
-                section_label(ui, &format!("Search · {} results", hits.len()));
-                ui.add_space(4.0);
-                if hits.is_empty() {
-                    ui.label(
-                        RichText::new("No matches in this project.")
-                            .font(ui_body())
-                            .color(FAINT),
-                    );
-                }
-                for (id, title, excerpt) in hits {
-                    let (rect, resp) =
-                        ui.allocate_exact_size(Vec2::new(ui.available_width(), 44.0), Sense::click());
-                    if resp.hovered() {
-                        ui.painter().rect_filled(rect, CornerRadius::same(5), PANEL_2);
-                    }
-                    ui.painter().text(
-                        rect.left_top() + Vec2::new(6.0, 6.0),
-                        egui::Align2::LEFT_TOP,
-                        &title,
-                        ui_body(),
-                        TEXT,
-                    );
-                    let snippet: String = excerpt.chars().take(52).collect();
-                    ui.painter().text(
-                        rect.left_top() + Vec2::new(6.0, 22.0),
-                        egui::Align2::LEFT_TOP,
-                        snippet,
-                        ui_small(),
-                        FAINT,
-                    );
-                    if resp.clicked() {
-                        action = Some(Action::Select(id));
-                    }
-                }
-                ui.add_space(8.0);
-                return;
-            }
-
             let mut rows = Vec::new();
             collect_rows(app, None, 0, &mut rows);
             for row in rows {

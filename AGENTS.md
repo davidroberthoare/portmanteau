@@ -279,7 +279,8 @@ When you add a command, update **all** of these:
 | `research.add` | Research note + binder entry | `{"title":"…","body":"…"}` |
 | `idea.add` / `idea.update` / `idea.delete` | Idea board | `{"title":"…","body":"…"}` |
 | `beat.update` | Tick or rewrite a beat | `{"id":"beat-…","done":true}` |
-| `search` | Full-text search | `{"query":"…"}` |
+| `search.find` | Find text (plain/whole word/regex; groups Manuscript, Matter, Research, Database) | `{"query":"…","regex":false,"groups":["Research"]}` |
+| `search.replace` | Replace matches, optionally in one document/item; snapshots first | `{"query":"…","replacement":"…","id":"doc-…"}` |
 | `stats` | Words, pages, scenes, log | `{}` |
 | `script.parse` | Loose text → typed blocks + Fountain | `{"text":"INT. …"}` |
 | `export.preview` | What a compile would contain: included and skipped documents for one manuscript type | `{"compile_type":"screenplay","scope":"draft"}` |
@@ -321,7 +322,7 @@ commands write their own output regardless.
 `project_info`, `list_binder`, `read_document`, `create_document`,
 `update_document`, `delete_document`, `move_document`, `snapshot_document`,
 `list_snapshots`, `restore_snapshot`, `compare_snapshot`, `checkpoint`,
-`search_project`, `project_stats`, `parse_script`, `compile_preview`,
+`search_project`, `replace_text`, `project_stats`, `parse_script`, `compile_preview`,
 `list_export_formats`, `export_manuscript`, `add_character`,
 `add_research_note`, `add_idea` and `list_commands`.
 

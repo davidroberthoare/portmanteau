@@ -738,15 +738,70 @@ impl Workspace {
                     Err(error) => ApiResponse::err(command, error),
                 }
             }
-            "search" => {
-                let q = str_arg(&payload, "query").unwrap_or_default();
-                let hits: Vec<Value> = self
-                    .project
-                    .search(&q)
-                    .into_iter()
-                    .map(|(doc, excerpt)| json!({"id": doc.id, "title": doc.title, "excerpt": excerpt}))
-                    .collect();
-                ApiResponse::ok(command, format!("{} matches", hits.len()), Value::Array(hits))
+            "search.find" | "search.replace" => {
+                let query = match find_query(&payload) {
+                    Ok(query) => query,
+                    Err(error) => return ApiResponse::err(command, error),
+                };
+                if command == "search.find" {
+                    match self.project.find_all(&query) {
+                        Ok(hits) => {
+                            let limit = payload.get("limit").and_then(|v| v.as_u64()).unwrap_or(200) as usize;
+                            let total = hits.len();
+                            let rows: Vec<Value> = hits
+                                .iter()
+                                .take(limit)
+                                .map(|hit| {
+                                    json!({
+                                        "kind": match hit.source { FindSource::Document(_) => "document", FindSource::Item(_) => "item" },
+                                        "id": hit.source.id(),
+                                        "title": hit.title,
+                                        "group": hit.group.label(),
+                                        "field": hit.field.label(),
+                                        "paragraph": hit.paragraph,
+                                        "offset": hit.offset,
+                                        "excerpt": hit.excerpt,
+                                    })
+                                })
+                                .collect();
+                            ApiResponse::ok(command, format!("{total} matches"), json!({"total": total, "hits": rows}))
+                        }
+                        Err(error) => ApiResponse::err(command, error),
+                    }
+                } else {
+                    let Some(replacement) = payload.get("replacement").and_then(|v| v.as_str()) else {
+                        return ApiResponse::err(command, "A replacement is required (it may be empty)");
+                    };
+                    // Optional narrowing to one document or item.
+                    let source = match str_arg(&payload, "id") {
+                        Some(id) if self.project.document(&id).is_some() => Some(FindSource::Document(id)),
+                        Some(id) if self.project.items.iter().any(|i| i.id == id) => Some(FindSource::Item(id)),
+                        Some(id) => return ApiResponse::err(command, format!("No document or item {id}")),
+                        None => None,
+                    };
+                    // `start` (a hit's character offset, with its `field`) narrows it to that one match.
+                    let scope = match (source, payload.get("start").and_then(|v| v.as_u64())) {
+                        (Some(source), Some(start)) => {
+                            let field = match str_arg(&payload, "field").as_deref() {
+                                Some("Synopsis") => HitField::Synopsis,
+                                Some("Notes") => HitField::Notes,
+                                _ => HitField::Body,
+                            };
+                            ReplaceScope::Hit(source, field, start as usize)
+                        }
+                        (Some(source), None) => ReplaceScope::Source(source),
+                        (None, _) => ReplaceScope::All,
+                    };
+                    match self.project.replace_matches(&query, replacement, &scope) {
+                        Ok(count) => {
+                            if count > 0 {
+                                self.dirty = true;
+                            }
+                            ApiResponse::ok(command, format!("Replaced {count}"), json!({"replaced": count}))
+                        }
+                        Err(error) => ApiResponse::err(command, error),
+                    }
+                }
             }
             "stats" => ApiResponse::ok(command, "Statistics", self.stats()),
             "script.parse" => {
@@ -1260,6 +1315,25 @@ pub fn default_save_path(project: &Project) -> PathBuf {
         .join(format!("{}.portmanteau", storage::slugify(&project.title)))
 }
 
+/// A search query from a command payload.
+fn find_query(payload: &Value) -> Result<FindQuery, String> {
+    let text = str_arg(payload, "query").unwrap_or_default();
+    let flag = |key: &str| payload.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+    let mut query = FindQuery::new(text);
+    query.options = FindOptions { case_sensitive: flag("case_sensitive"), whole_word: flag("whole_word"), regex: flag("regex") };
+    query.asides = payload.get("asides").and_then(|v| v.as_bool()).unwrap_or(true);
+    if let Some(groups) = payload.get("groups").and_then(|v| v.as_array()) {
+        for name in groups.iter().filter_map(|v| v.as_str()) {
+            let group = SearchGroup::all()
+                .into_iter()
+                .find(|g| g.label().eq_ignore_ascii_case(name) || format!("{g:?}").eq_ignore_ascii_case(name))
+                .ok_or_else(|| format!("Unknown group {name} (Manuscript, Matter, Research, Database)"))?;
+            query.groups.push(group);
+        }
+    }
+    Ok(query)
+}
+
 fn str_arg(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
 }
@@ -1655,7 +1729,8 @@ pub fn command_catalogue() -> Vec<Value> {
         ("research.attach", "Copy a file into a research note's attachments (the project must be saved)", r#"{"id":"doc-...","path":"/path/to/file.pdf"}"#),
         ("research.detach", "Remove an attachment from a research note", r#"{"id":"doc-...","name":"file.pdf"}"#),
         ("research.delete", "Delete a research note and its attached files", r#"{"id":"doc-..."}"#),
-        ("search", "Search the whole manuscript", r#"{"query":"..."}"#),
+        ("search.find", "Find text across documents, research and database notes (plain, whole-word or regex; filter by group)", r#"{"query":"...","case_sensitive":false,"whole_word":false,"regex":false,"groups":["Manuscript","Research"],"asides":true,"limit":200}"#),
+        ("search.replace", "Replace every match (or those in one document/item); each changed document gets a snapshot first", r#"{"query":"...","replacement":"...","id":"doc-...","field":"Text","start":12}"#),
         ("stats", "Word, page and session statistics", "{}"),
         ("script.parse", "Parse plain text into script blocks", r#"{"text":"INT. ..."}"#),
         ("export.preview", "Preview the compiled manuscript: included and skipped documents for one manuscript type", r#"{"compile_type":"screenplay","scope":"draft"}"#),

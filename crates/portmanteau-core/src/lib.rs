@@ -6,6 +6,7 @@
 //! the desktop app.
 
 pub mod compile;
+pub mod find;
 pub mod model;
 pub mod rich_text;
 pub mod sample;
@@ -14,6 +15,7 @@ pub mod spell;
 pub mod text;
 
 pub use compile::*;
+pub use find::{FindHit, FindOptions, FindQuery, FindSource, Finder, HitField, ReplaceScope, SearchGroup};
 pub use model::*;
 pub use rich_text::{
     ImageObject, InlineContent, InlineMark,

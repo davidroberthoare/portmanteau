@@ -1993,33 +1993,6 @@ impl Project {
         }
         false
     }
-
-    pub fn search(&self, query: &str) -> Vec<(&Document, String)> {
-        let q = query.to_lowercase();
-        let mut hits = Vec::new();
-        if q.trim().is_empty() {
-            return hits;
-        }
-        for doc in &self.documents {
-            let body = format!(
-                "{}\n{}\n{}",
-                doc.body_text(),
-                doc.synopsis.plain_text(),
-                doc.notes.plain_text()
-            );
-            if doc.title.to_lowercase().contains(&q) {
-                hits.push((doc, format!("Title — {}", doc.title)));
-            } else if let Some(pos) = body.to_lowercase().find(&q) {
-                let start = body[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
-                let end = body[pos..]
-                    .find('\n')
-                    .map(|i| pos + i)
-                    .unwrap_or(body.len());
-                hits.push((doc, body[start..end].trim().to_string()));
-            }
-        }
-        hits
-    }
 }
 
 #[cfg(test)]
