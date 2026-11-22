@@ -657,18 +657,7 @@ impl PortmanteauApp {
     }
 
     fn new_chapter(&mut self) {
-        let parent = self
-            .selected
-            .as_ref()
-            .and_then(|id| self.ws.project.document(id))
-            .and_then(|d| {
-                if d.kind == DocKind::Folder {
-                    Some(d.id.clone())
-                } else {
-                    d.parent.clone()
-                }
-            })
-            .or_else(|| self.ws.project.folder_id("Draft"));
+        let parent = self.ws.project.new_document_home(self.selected.as_deref());
         let is_script = matches!(
             self.ws.project.kind,
             ProjectKind::Film | ProjectKind::Television | ProjectKind::Theatre

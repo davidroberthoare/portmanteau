@@ -409,18 +409,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 }
             }
             Action::NewUnder(parent) => {
-                let parent = parent.or_else(|| {
-                    app.selected
-                        .as_ref()
-                        .and_then(|id| app.ws.project.document(id))
-                        .and_then(|d| {
-                            if d.kind == DocKind::Folder {
-                                Some(d.id.clone())
-                            } else {
-                                d.parent.clone()
-                            }
-                        })
-                });
+                let parent = parent.or_else(|| app.ws.project.new_document_home(app.selected.as_deref()));
                 let is_script = matches!(
                     app.ws.project.kind,
                     ProjectKind::Film | ProjectKind::Television | ProjectKind::Theatre
@@ -443,18 +432,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 app.block_focus = Some(0);
             }
             Action::NewFolder(parent) => {
-                let parent = parent.or_else(|| {
-                    app.selected
-                        .as_ref()
-                        .and_then(|id| app.ws.project.document(id))
-                        .and_then(|d| {
-                            if d.kind == DocKind::Folder {
-                                Some(d.id.clone())
-                            } else {
-                                d.parent.clone()
-                            }
-                        })
-                });
+                let parent = parent.or_else(|| app.ws.project.new_document_home(app.selected.as_deref()));
                 let id = app
                     .ws
                     .project

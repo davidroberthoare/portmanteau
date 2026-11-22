@@ -1691,6 +1691,19 @@ impl Project {
         list
     }
 
+    /// Where a new binder document goes: the folder the selected document is
+    /// in (or the selected folder itself), else the top of the Draft tree.
+    /// Research has its own page, so it is never the answer.
+    pub fn new_document_home(&self, selected: Option<&str>) -> Option<String> {
+        let near = selected.and_then(|id| self.document(id)).and_then(|d| {
+            let folder = if d.kind.is_folder() { Some(d.id.clone()) } else { d.parent.clone() };
+            let folder_doc = folder.as_deref().and_then(|id| self.document(id))?;
+            let in_research = self.in_research(folder_doc) || (folder_doc.parent.is_none() && folder_doc.title == "Research");
+            (!in_research).then(|| folder_doc.id.clone())
+        });
+        near.or_else(|| self.folder_id("Draft"))
+    }
+
     pub fn next_order(&self, parent: Option<&str>) -> i32 {
         self.documents
             .iter()
@@ -2446,5 +2459,25 @@ mod appearance_tests {
         assert_eq!(linking.len(), 1);
         assert_eq!(linking[0].title, "Cold Harbor");
         assert!(p.items_linking_to(&other).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod new_document_home_tests {
+    use super::*;
+
+    #[test]
+    fn new_documents_go_beside_the_selection_never_into_research() {
+        let mut p = Project::new("T", ProjectKind::Novel);
+        let draft = p.folder_id("Draft").unwrap();
+        let research = p.folder_id("Research").unwrap();
+        let part = p.add_document(Some(draft.clone()), "Part", DocKind::Folder, Medium::Prose);
+        let chapter = p.add_document(Some(part.clone()), "Ch", DocKind::Chapter, Medium::Prose);
+        let note = p.add_document(Some(research.clone()), "Note", DocKind::Research, Medium::Note);
+        assert_eq!(p.new_document_home(Some(&chapter)), Some(part.clone()));
+        assert_eq!(p.new_document_home(Some(&part)), Some(part));
+        assert_eq!(p.new_document_home(None), Some(draft.clone()));
+        assert_eq!(p.new_document_home(Some(&note)), Some(draft.clone()));
+        assert_eq!(p.new_document_home(Some(&research)), Some(draft));
     }
 }
