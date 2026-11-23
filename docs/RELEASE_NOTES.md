@@ -3,6 +3,12 @@
 The newest section is used as the body of the GitHub release. Start each release
 with a line `## vX.Y.Z` (matching `version` in the top-level `Cargo.toml`).
 
+## v0.1.1
+
+- Spell-check no longer flags words like "I'm", "I'll" and names that the
+  dictionary knows, and suggestions now come from the same dictionary.
+- Linux builds now run on older distributions.
+
 ## v0.1.0
 
 First public build of Portmanteau: a native, offline writing studio for novels,

@@ -2930,7 +2930,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arboard",
  "chrono",
@@ -2951,7 +2951,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-api"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "portmanteau-core",
@@ -2964,7 +2964,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "portmanteau-api",
  "portmanteau-core",
@@ -2976,7 +2976,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "regex",
@@ -2988,7 +2988,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-export"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "krilla",
@@ -3001,7 +3001,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-import"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "portmanteau-core",
  "portmanteau-export",
@@ -3011,7 +3011,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "portmanteau-api",
  "portmanteau-core",
@@ -3021,7 +3021,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-update"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flate2",
  "minisign",
