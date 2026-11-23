@@ -11,14 +11,21 @@
 mod app;
 mod history;
 mod icons;
+mod platform;
 mod settings;
 mod spellcheck;
 mod theme;
 mod ui;
+#[cfg(not(target_arch = "wasm32"))]
+mod update;
+#[cfg(target_arch = "wasm32")]
+#[path = "update_web.rs"]
 mod update;
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
+#[cfg(not(target_arch = "wasm32"))]
 fn screenshot_path() -> Option<PathBuf> {
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
@@ -38,11 +45,13 @@ fn screenshot_path() -> Option<PathBuf> {
 }
 
 /// The window and dock icon, compiled in from `assets/icon/icon.png`.
+#[cfg(not(target_arch = "wasm32"))]
 fn app_icon() -> eframe::egui::IconData {
     eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon/icon.png"))
         .expect("assets/icon/icon.png is a valid PNG")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
     let screenshot = screenshot_path();
     // Open at the size the window had when it was last closed.
@@ -69,4 +78,42 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(app))
         }),
     )
+}
+
+/// The browser version: draws the same app into the `<canvas id="portmanteau">`
+/// of `web/index.html`. Projects live in the page (see `web.rs`), not on disk.
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    use eframe::wasm_bindgen::JsCast as _;
+
+    wasm_bindgen_futures::spawn_local(async {
+        let document = eframe::web_sys::window()
+            .and_then(|window| window.document())
+            .expect("a page to draw on");
+        let canvas = document
+            .get_element_by_id("portmanteau")
+            .expect("web/index.html has a canvas with id \"portmanteau\"")
+            .dyn_into::<eframe::web_sys::HtmlCanvasElement>()
+            .expect("#portmanteau is a canvas");
+        let started = eframe::WebRunner::new()
+            .start(
+                canvas,
+                eframe::WebOptions::default(),
+                Box::new(|cc| {
+                    let app = app::PortmanteauApp::new(None);
+                    theme::set_ui_scale(app.settings.ui_scale);
+                    theme::install(&cc.egui_ctx);
+                    Ok(Box::new(app))
+                }),
+            )
+            .await;
+        if let Some(loading) = document.get_element_by_id("loading") {
+            loading.remove();
+        }
+        if let Err(error) = started {
+            if let Some(failed) = document.get_element_by_id("failed") {
+                failed.set_inner_html(&format!("Portmanteau could not start in this browser: {error:?}"));
+            }
+        }
+    });
 }

@@ -16,7 +16,8 @@
 //! snapshots and project checkpoints; it does not replace them.
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 use portmanteau_core::{DatabaseItem, Document, RichParagraph};
 

@@ -590,7 +590,7 @@ fn preview_summary(preview: &Value) -> String {
 }
 
 fn browse(start: Option<&str>) -> Option<String> {
-    let mut dialog = rfd::FileDialog::new()
+    let mut dialog = crate::platform::FileDialog::new()
         .set_title("Import manuscript")
         .add_filter("Manuscripts", &["fountain", "spmd", "fdx", "docx", "txt", "text", "md", "markdown"]);
     if let Some(dir) = start.filter(|d| Path::new(d).is_dir()) {

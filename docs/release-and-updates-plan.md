@@ -379,3 +379,15 @@ Deviations from the plan as first written:
   IndexedDB) and W6 (`trunk` build and the Pages workflow). Testing the running
   web build needs a browser: headless Chromium opening the built files, which
   has not been tried yet.
+
+### Progress: web version, W4 (2026-11-22)
+
+The whole app now compiles for the browser and runs there: `scripts/build-web.sh`
+builds into `../webroot` (wasm-bindgen CLI matching `Cargo.lock`), `web/index.html`
+hosts the canvas, and headless Chromium over a throwaway static server draws the
+Welcome project. How: desktop-only crates (`arboard`, `rfd`, the update crate)
+are target-gated; `src/platform.rs` gives the browser inert file dialogs and
+clipboard; `src/update_web.rs` replaces the updater; `web-time` replaces
+`std::time::Instant`. Still to do: opening and saving projects in the browser
+(W5: IndexedDB plus zip upload/download), images and attachments, a release-size
+build, and the Pages workflow (W6).

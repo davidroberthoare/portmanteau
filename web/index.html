@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portmanteau</title>
+  <link rel="icon" type="image/png" href="icon.png">
+  <style>
+    html, body { margin: 0; height: 100%; background: #f4f2ee; color: #3a3a38;
+      font-family: system-ui, sans-serif; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #loading, #failed { position: fixed; inset: 0; display: flex; align-items: center;
+      justify-content: center; text-align: center; padding: 2rem; pointer-events: none; }
+    #failed:empty { display: none; }
+    @media (prefers-color-scheme: dark) {
+      html, body { background: #26251f; color: #dedbd2; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="portmanteau"></canvas>
+  <div id="loading">Loading Portmanteau…</div>
+  <div id="failed"></div>
+  <script type="module">
+    import init from "./portmanteau.js";
+    init().catch((error) => {
+      document.getElementById("loading")?.remove();
+      document.getElementById("failed").textContent =
+        "Portmanteau could not start in this browser: " + error;
+    });
+  </script>
+</body>
+</html>

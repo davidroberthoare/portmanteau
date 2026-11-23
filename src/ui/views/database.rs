@@ -675,7 +675,8 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
 /// Appearances change only when the writing does, and computing them reads every
 /// document, so keep the last answer for a moment while the writer types.
 fn appearances_cached(ctx: &egui::Context, project: &portmanteau_core::Project, item: &DatabaseItem) -> Vec<portmanteau_core::Appearance> {
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+    use web_time::Instant;
     type Cached = (String, String, Instant, Vec<portmanteau_core::Appearance>);
     let key = egui::Id::unique("database-appearances");
     let fingerprint = format!("{}|{}|{}", project.updated, project.documents.len(), item.title);

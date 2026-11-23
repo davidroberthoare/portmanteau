@@ -3,7 +3,8 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 use eframe::egui::{
     self, Align, Color32, CornerRadius, Frame, Id, Key, Layout, Margin, RichText,
@@ -169,7 +170,7 @@ pub(crate) fn short_path(path: &Path) -> String {
 fn browse_for(mode: PathDialog, current: &str) -> Option<String> {
     let start = Path::new(current.trim());
     let start_dir = if start.is_dir() { Some(start) } else { start.parent().filter(|p| p.is_dir()) };
-    let mut dialog = rfd::FileDialog::new();
+    let mut dialog = crate::platform::FileDialog::new();
     if let Some(dir) = start_dir {
         dialog = dialog.set_directory(dir);
     }
@@ -247,6 +248,7 @@ fn open_url(url: &str) {
 }
 
 /// Open a release page. Only GitHub addresses are ever opened from the update panel.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn open_release_page(url: &str) {
     if url.starts_with("https://github.com/") {
         open_url(url);
@@ -880,7 +882,7 @@ impl PortmanteauApp {
     /// attachments, in one file (a backup, or to send to someone).
     fn export_project_zip(&mut self) {
         let name = format!("{}.portmanteau.zip", portmanteau_api::storage::slugify(&self.ws.project.title));
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::platform::FileDialog::new()
             .set_title("Export project as zip")
             .set_file_name(name)
             .add_filter("Zip file", &["zip"])
@@ -898,7 +900,7 @@ impl PortmanteauApp {
 
     /// File › Open project zip…: unpack a project zip into a new folder and open it.
     fn open_project_zip(&mut self) {
-        let Some(zip) = rfd::FileDialog::new()
+        let Some(zip) = crate::platform::FileDialog::new()
             .set_title("Open project zip")
             .add_filter("Zip file", &["zip"])
             .pick_file()
@@ -912,7 +914,7 @@ impl PortmanteauApp {
             .trim_end_matches(".zip")
             .trim_end_matches(".portmanteau")
             .to_string();
-        let mut dialog = rfd::FileDialog::new()
+        let mut dialog = crate::platform::FileDialog::new()
             .set_title("Unpack into a new project folder")
             .set_file_name(format!("{stem}.portmanteau"));
         if let Some(dir) = zip.parent() {
@@ -1532,7 +1534,7 @@ impl PortmanteauApp {
                             .desired_width(ui.available_width() - 90.0),
                     );
                     if ui.button("Browse…").clicked() {
-                        if let Some(file) = rfd::FileDialog::new()
+                        if let Some(file) = crate::platform::FileDialog::new()
                             .set_title("Choose an image")
                             .add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp"])
                             .pick_file()
@@ -2334,10 +2336,10 @@ impl PortmanteauApp {
             return;
         }
         let Some((target, range, Some(_focused))) = self.image_target(ctx) else { return };
-        let Ok(image) = arboard::Clipboard::new().and_then(|mut clipboard| clipboard.get_image()) else {
+        let Some(image) = crate::platform::clipboard_image() else {
             return; // no picture there: nothing to do
         };
-        let stored = self.store_image_pixels(image.width as u32, image.height as u32, image.bytes.into_owned(), true);
+        let stored = self.store_image_pixels(image.width as u32, image.height as u32, image.bytes, true);
         match stored.and_then(|object| self.insert_image_object(&target, range, object, true)) {
             Ok(()) => ctx.request_repaint(),
             Err(error) => self.toast("Could not paste the picture", error, ToastKind::Error),

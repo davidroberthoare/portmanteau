@@ -1246,3 +1246,12 @@ home-made Levenshtein code with `spellbook` (MPL-2.0, the Hunspell-compatible
 engine behind Helix), which checks and suggests from the same bundled
 LibreOffice Hunspell dictionaries (en_US from SCOWL, en_GB LGPL). Licence
 notices now ship in `assets/dict/README_en_*.txt`; `THIRD_PARTY.md` updated.
+
+## 2026-11-22 — app shell runs in the browser (W4)
+
+`scripts/build-web.sh` → `../webroot`; test with `python3 -m http.server` and
+`chromium --headless=new --use-angle=swiftshader --enable-unsafe-swiftshader
+--virtual-time-budget=40000 --screenshot=… http://127.0.0.1:PORT/`. Desktop-only
+code lives behind `cfg(not(target_arch = "wasm32"))`; `src/platform.rs` and
+`src/update_web.rs` are the browser stand-ins. Debug wasm is ~38 MB; use
+`--release` for anything shared.

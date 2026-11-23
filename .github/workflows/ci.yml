@@ -46,7 +46,7 @@ jobs:
 
 
   wasm:
-    name: Libraries build for the browser (WebAssembly)
+    name: App builds for the browser (WebAssembly)
     # The web version (docs/release-and-updates-plan.md, phase 4) reuses these
     # crates unchanged, so keep them building for the browser.
     runs-on: ubuntu-latest
@@ -56,4 +56,5 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-      - run: cargo check --target wasm32-unknown-unknown -p portmanteau-core -p portmanteau-import -p portmanteau-export -p portmanteau-api
+      - run: cargo check --target wasm32-unknown-unknown --workspace --exclude portmanteau-cli --exclude portmanteau-mcp --exclude portmanteau-update
+      - run: cargo check --target wasm32-unknown-unknown --bin portmanteau

@@ -492,7 +492,7 @@ fn resolved_export_path(project: &Project, settings: &ExportSettings) -> String 
 /// Ask the desktop for a folder, starting where the field already points.
 /// `None` when the writer cancels.
 fn choose_export_folder(current: &str) -> Option<String> {
-    let mut dialog = rfd::FileDialog::new().set_title("Export folder");
+    let mut dialog = crate::platform::FileDialog::new().set_title("Export folder");
     let start = expand_tilde(current);
     if start.is_dir() {
         dialog = dialog.set_directory(start);

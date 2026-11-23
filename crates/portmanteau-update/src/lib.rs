@@ -10,8 +10,10 @@
 //! is tested from saved JSON; [`check`] is the single function that touches the
 //! network.
 
+#[cfg(not(target_arch = "wasm32"))]
 pub mod install;
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 
 pub use semver::Version;
@@ -159,6 +161,7 @@ pub fn is_skipped(release: &Release, skipped: Option<&str>) -> bool {
 
 /// Ask GitHub for the latest release and compare it with `current`. Blocks for
 /// up to ten seconds: call it from a background thread, never the UI thread.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn check(current: &str) -> Result<Outcome, CheckError> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(10)))

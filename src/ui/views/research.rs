@@ -250,14 +250,14 @@ fn run_add(app: &mut PortmanteauApp, title: &str, body: &str, source: Option<&st
 /// A note from whatever text is on the clipboard: the first line (or the web
 /// address, if that is all there is) names it.
 fn paste_clipping(app: &mut PortmanteauApp) {
-    let text = match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+    let text = match crate::platform::clipboard_text() {
         Ok(text) if !text.trim().is_empty() => text,
         Ok(_) => {
             app.toast("Clipboard is empty", "Copy some text first.", ToastKind::Info);
             return;
         }
         Err(e) => {
-            app.toast("No text on the clipboard", e.to_string(), ToastKind::Info);
+            app.toast("No text on the clipboard", e, ToastKind::Info);
             return;
         }
     };
@@ -732,7 +732,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
     for action in actions {
         match action {
             Action::AddFiles => {
-                if let Some(paths) = rfd::FileDialog::new().set_title("Add files to this note").pick_files() {
+                if let Some(paths) = crate::platform::FileDialog::new().set_title("Add files to this note").pick_files() {
                     for path in paths {
                         attach(app, id, &path);
                     }

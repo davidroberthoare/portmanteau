@@ -86,7 +86,7 @@ const COUNT_REFRESH: std::time::Duration = std::time::Duration::from_millis(900)
 pub fn page_counts(ui: &egui::Ui, project: &Project) -> Arc<PageCounts> {
     let key = fingerprint(project, &project.settings_for(ExportKind::Pdf));
     let id = ui.make_persistent_id("page-counts");
-    let cached = ui.data(|d| d.get_temp::<(u64, std::time::Instant, Arc<PageCounts>)>(id));
+    let cached = ui.data(|d| d.get_temp::<(u64, web_time::Instant, Arc<PageCounts>)>(id));
     if let Some((cached_key, at, counts)) = cached {
         if cached_key == key {
             return counts;
@@ -97,7 +97,7 @@ pub fn page_counts(ui: &egui::Ui, project: &Project) -> Arc<PageCounts> {
         }
     }
     let counts = Arc::new(portmanteau_export::page_counts(project));
-    ui.data_mut(|d| d.insert_temp(id, (key, std::time::Instant::now(), counts.clone())));
+    ui.data_mut(|d| d.insert_temp(id, (key, web_time::Instant::now(), counts.clone())));
     counts
 }
 
