@@ -2930,7 +2930,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arboard",
  "chrono",
@@ -2939,6 +2939,7 @@ dependencies = [
  "egui_extras",
  "egui_kittest",
  "image",
+ "js-sys",
  "portmanteau-api",
  "portmanteau-core",
  "portmanteau-export",
@@ -2946,14 +2947,16 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-sys",
  "web-time",
  "winresource",
 ]
 
 [[package]]
 name = "portmanteau-api"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "portmanteau-core",
@@ -2966,7 +2969,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "portmanteau-api",
  "portmanteau-core",
@@ -2978,7 +2981,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "regex",
@@ -2990,7 +2993,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-export"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "krilla",
@@ -3003,7 +3006,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-import"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "portmanteau-core",
  "portmanteau-export",
@@ -3013,7 +3016,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-mcp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "portmanteau-api",
  "portmanteau-core",
@@ -3023,7 +3026,7 @@ dependencies = [
 
 [[package]]
 name = "portmanteau-update"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "flate2",
  "minisign",

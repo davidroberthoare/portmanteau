@@ -48,6 +48,9 @@ pub struct Workspace {
     pub log: Vec<String>,
     pub last_export: Option<portmanteau_export::ExportInfo>,
     pub last_message: String,
+    /// Files under `assets/` held in memory, for a project with no folder (the
+    /// browser version). Kept so a zip opened and saved again loses nothing.
+    pub memory_assets: storage::PackageFiles,
 }
 
 impl Default for Workspace {
@@ -65,6 +68,7 @@ impl Workspace {
             log: vec!["Opened the demonstration project".into()],
             last_export: None,
             last_message: "Ready".into(),
+            memory_assets: Vec::new(),
         }
     }
 
@@ -77,6 +81,7 @@ impl Workspace {
             log: vec!["Opened the welcome project".into()],
             last_export: None,
             last_message: "Ready".into(),
+            memory_assets: Vec::new(),
         }
     }
 
@@ -90,6 +95,7 @@ impl Workspace {
             log: vec![format!("Created {}", title)],
             last_export: None,
             last_message: "New project".into(),
+            memory_assets: Vec::new(),
         }
     }
 
@@ -106,12 +112,39 @@ impl Workspace {
             log: vec![format!("Opened {}", path.display())],
             last_export: None,
             last_message: "Project opened".into(),
+            memory_assets: Vec::new(),
         })
     }
 
     /// Write the project, as it is now in memory, to one `.zip`: the folder
     /// package plus the files under `assets/`. Good for a backup or for sending
     /// the project to someone. The file is written whole or not at all.
+    /// The project, with its attachments, as the bytes of a `.zip`. The same
+    /// content `pack_zip` writes; the browser version stores and downloads it.
+    pub fn zip_bytes(&self) -> Result<Vec<u8>, String> {
+        let assets = match &self.path {
+            Some(dir) => read_assets(&dir.join("assets"), "assets")?,
+            None => self.memory_assets.clone(),
+        };
+        archive::pack_zip(&self.project, assets)
+    }
+
+    /// A project held entirely in memory, from the bytes of a project `.zip`.
+    pub fn from_zip_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let unpacked = archive::unpack_zip(bytes)?;
+        let mut project = unpacked.project;
+        project.ensure_style_sheets();
+        Ok(Self {
+            project,
+            path: None,
+            dirty: false,
+            log: vec!["Opened a project zip".into()],
+            last_export: None,
+            last_message: "Project opened".into(),
+            memory_assets: unpacked.assets,
+        })
+    }
+
     pub fn pack_zip(&self, zip_path: &Path) -> Result<String, String> {
         let assets = match &self.path {
             Some(dir) => read_assets(&dir.join("assets"), "assets")?,

@@ -19,6 +19,8 @@ mod ui;
 #[cfg(not(target_arch = "wasm32"))]
 mod update;
 #[cfg(target_arch = "wasm32")]
+mod web;
+#[cfg(target_arch = "wasm32")]
 #[path = "update_web.rs"]
 mod update;
 
@@ -87,6 +89,8 @@ fn main() {
     use eframe::wasm_bindgen::JsCast as _;
 
     wasm_bindgen_futures::spawn_local(async {
+        // The project left open last time lives in this browser's storage.
+        let saved = web::load_saved().await;
         let document = eframe::web_sys::window()
             .and_then(|window| window.document())
             .expect("a page to draw on");
@@ -99,8 +103,12 @@ fn main() {
             .start(
                 canvas,
                 eframe::WebOptions::default(),
-                Box::new(|cc| {
-                    let app = app::PortmanteauApp::new(None);
+                Box::new(move |cc| {
+                    web::set_context(cc.egui_ctx.clone());
+                    let mut app = app::PortmanteauApp::new(None);
+                    if let Some(bytes) = saved {
+                        app.restore_from_browser(&bytes);
+                    }
                     theme::set_ui_scale(app.settings.ui_scale);
                     theme::install(&cc.egui_ctx);
                     Ok(Box::new(app))

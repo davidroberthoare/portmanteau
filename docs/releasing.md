@@ -16,7 +16,8 @@ Everything is automatic once a version tag is pushed. Plan and background:
    git tag v0.2.0
    git push origin master --tags
    ```
-5. Watch the **Release** workflow (Actions tab). It first checks that the tag
+5. Pushing the tag also runs the **Web version** workflow, which publishes the browser version to GitHub Pages (https://davidroberthoare.github.io/portmanteau/). Pages must be set to "GitHub Actions" as its source once (Settings › Pages; already done).
+6. Watch the **Release** workflow (Actions tab). It first checks that the tag
    matches `Cargo.toml` and that the notes section exists, then builds Linux,
    Windows and macOS in parallel, then publishes the release with the three
    archives and a `SHA256SUMS` file. If any platform fails, nothing is published;

@@ -144,3 +144,24 @@ fn the_catalogue_lists_the_zip_commands() {
         .collect();
     assert!(names.contains(&"project.pack".to_string()) && names.contains(&"project.open_zip".to_string()));
 }
+
+#[test]
+fn a_project_round_trips_through_zip_bytes_in_memory_with_its_attachments() {
+    let dir = std::env::temp_dir().join(format!("portmanteau-bytes-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("assets/images")).unwrap();
+    std::fs::write(dir.join("assets/images/pic.png"), b"not really a png").unwrap();
+    let mut ws = Workspace::welcome();
+    ws.save(Some(dir.clone())).unwrap();
+    let bytes = Workspace::open(&dir).unwrap().zip_bytes().unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+
+    let opened = Workspace::from_zip_bytes(&bytes).unwrap();
+    assert!(opened.path.is_none() && !opened.dirty);
+    assert_eq!(opened.project.title, ws.project.title);
+    assert_eq!(opened.memory_assets.len(), 1, "the attachment is kept in memory");
+    // Saved again from memory, nothing is lost.
+    let again = Workspace::from_zip_bytes(&opened.zip_bytes().unwrap()).unwrap();
+    assert_eq!(again.memory_assets, opened.memory_assets);
+    assert_eq!(again.project.documents.len(), opened.project.documents.len());
+}

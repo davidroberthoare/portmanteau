@@ -371,10 +371,22 @@ pub fn welcome() -> Project {
     let start = p.add_document(Some(draft.clone()), "Start here · Welcome", DocKind::Chapter, Medium::Prose);
     {
         let doc = p.document_mut(&start).unwrap();
-        doc.set_plain_text(
-            "Welcome to Portmanteau. This is a sample project: every part of the app has a small example in it, so you can see how things fit together. Nothing here is saved anywhere until you choose to save it, and you can change or delete all of it.\n\
+        // The browser version keeps the project in the browser and moves it in
+        // and out as zip files; the desktop version works with project folders.
+        let (saved, begin) = if cfg!(target_arch = "wasm32") {
+            (
+                "This copy of Portmanteau keeps your project in this browser, saving a moment after each change, and you can change or delete all of this sample. To keep a copy safe, use File › Export project as zip…; File › Open project zip… brings one back.",
+                "To begin your own work, choose File › New project…, or File › Open project zip… to continue one you already have. The next time you open this page it shows the project you were working on.",
+            )
+        } else {
+            (
+                "Nothing here is saved anywhere until you choose to save it, and you can change or delete all of it.",
+                "To begin your own work, choose File › New project…, or File › Open project… to continue one you already have. The next time you start Portmanteau it opens the last project you used; if that project has moved or been deleted, it comes back to this welcome project.",
+            )
+        };
+        let text = "Welcome to Portmanteau. This is a sample project: every part of the app has a small example in it, so you can see how things fit together. {SAVED}\n\
              \n\
-             To begin your own work, choose File › New project…, or File › Open project… to continue one you already have. The next time you start Portmanteau it opens the last project you used; if that project has moved or been deleted, it comes back to this welcome project.\n\
+             {BEGIN}\n\
              \n\
              Looking around. The icons down the left side switch between the main pages. Write is where you are now: the Binder on the left lists everything in the project, the page is in the middle, and the Inspector on the right shows the status, synopsis, notes and version history of the document you have open. Corkboard and Outline show the same documents as cards and as a list. Research keeps notes and files. Database holds characters, places and other things you want to track. Versions compares and restores earlier drafts. Search finds and replaces across the whole project. Project holds the title and author details. Compile turns your writing into a PDF, EPUB, Word file, Final Draft file and more.\n\
              \n\
@@ -386,8 +398,10 @@ pub fn welcome() -> Project {
              \n\
              Getting your work out. File › Compile & export… makes the finished file. Documents marked as not included in the compile, like this one, are left out, so this welcome page will never end up in your manuscript.\n\
              \n\
-             Have a look at the other samples in the Binder: a prose chapter, a screenplay scene, front and back matter, a research note, and two database entries. Then start something of your own.",
-        );
+             Have a look at the other samples in the Binder: a prose chapter, a screenplay scene, front and back matter, a research note, and two database entries. Then start something of your own."
+            .replace("{SAVED}", saved)
+            .replace("{BEGIN}", begin);
+        doc.set_plain_text(&text);
         doc.set_synopsis_text("How to get started: read this page, look through the samples, then make your own project.");
         doc.label = "Instructions".into();
         doc.status = "To read".into();

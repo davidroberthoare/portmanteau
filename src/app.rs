@@ -423,6 +423,9 @@ pub struct PortmanteauApp {
     pub cmd_output: String,
     pub cmd_selected: usize,
     pub path_dialog: Option<PathDialog>,
+    /// Browser version: when unsaved edits were first noticed, for the autosave.
+    #[cfg(target_arch = "wasm32")]
+    web_dirty_since: Option<Instant>,
     /// The import review window, while it is open.
     pub import_review: Option<crate::ui::import_review::ImportReview>,
     pub path_draft: String,
@@ -584,6 +587,8 @@ impl PortmanteauApp {
             cmd_output: String::new(),
             cmd_selected: 0,
             path_dialog: None,
+            #[cfg(target_arch = "wasm32")]
+            web_dirty_since: None,
             // Development aid, like PORTMANTEAU_VIEW: open the import review on a file.
             import_review: std::env::var("PORTMANTEAU_IMPORT")
                 .ok()
@@ -878,8 +883,10 @@ impl PortmanteauApp {
             });
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     /// File › Export project as zip…: the project as it is now, with its
     /// attachments, in one file (a backup, or to send to someone).
+    #[cfg(not(target_arch = "wasm32"))]
     fn export_project_zip(&mut self) {
         let name = format!("{}.portmanteau.zip", portmanteau_api::storage::slugify(&self.ws.project.title));
         let Some(path) = crate::platform::FileDialog::new()
@@ -899,6 +906,7 @@ impl PortmanteauApp {
     }
 
     /// File › Open project zip…: unpack a project zip into a new folder and open it.
+    #[cfg(not(target_arch = "wasm32"))]
     fn open_project_zip(&mut self) {
         let Some(zip) = crate::platform::FileDialog::new()
             .set_title("Open project zip")
@@ -946,10 +954,12 @@ impl PortmanteauApp {
                 self.show_new_project = true;
                 ui.close();
             }
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Save project").clicked() {
                 self.save_project();
                 ui.close();
             }
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Save project as…").clicked() {
                 self.path_dialog = Some(PathDialog::SaveAs);
                 self.path_draft = self
@@ -963,6 +973,7 @@ impl PortmanteauApp {
                     });
                 ui.close();
             }
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Open project…").clicked() {
                 self.path_dialog = Some(PathDialog::Open);
                 self.path_draft = self
@@ -981,17 +992,23 @@ impl PortmanteauApp {
                 ui.close();
                 self.export_project_zip();
             }
-            let recent = self.settings.recent_projects.clone();
-            ui.add_enabled_ui(!recent.is_empty(), |ui| {
-                ui.menu_button("Open recent", |ui| {
-                    for path in &recent {
-                        if ui.button(short_path(Path::new(path))).clicked() {
-                            self.open_project_path(Path::new(path));
-                            ui.close();
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let recent = self.settings.recent_projects.clone();
+                ui.add_enabled_ui(!recent.is_empty(), |ui| {
+                    ui.menu_button("Open recent", |ui| {
+                        for path in &recent {
+                            if ui.button(short_path(Path::new(path))).clicked() {
+                                self.open_project_path(Path::new(path));
+                                ui.close();
+                            }
                         }
-                    }
+                    });
                 });
-            });
+            }
+            // Import reads from a file path, so it waits for the browser's own
+            // file handling (docs/release-and-updates-plan.md, phase 4).
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Import Fountain, FDX, DOCX or Text…").clicked() {
                 self.import_review = Some(crate::ui::import_review::ImportReview::new(&self.settings.import));
                 ui.close();
@@ -1005,9 +1022,12 @@ impl PortmanteauApp {
                 self.view = View::Compile;
                 ui.close();
             }
-            ui.separator();
-            if ui.button("Quit").clicked() {
-                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                ui.separator();
+                if ui.button("Quit").clicked() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                }
             }
         });
         ui.menu_button(menu_text("Edit"), |ui| {
@@ -1120,6 +1140,7 @@ impl PortmanteauApp {
                 self.show_about = true;
                 ui.close();
             }
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Check for Updates…").clicked() {
                 self.updater.panel_open = true;
                 self.updater.start(ui.ctx(), true);
@@ -1252,7 +1273,9 @@ impl PortmanteauApp {
                         .as_ref()
                         .map(|p| p.display().to_string())
                         .unwrap_or_else(|| {
-                    if self.ws.project.title == "Welcome to Portmanteau" {
+                    if cfg!(target_arch = "wasm32") {
+                        "Saved in this browser · File › Export project as zip… to back up".into()
+                    } else if self.ws.project.title == "Welcome to Portmanteau" {
                         "Welcome project · in memory, not saved yet".into()
                     } else {
                         "Demonstration project · in memory".into()
@@ -1366,6 +1389,10 @@ impl PortmanteauApp {
                         self.selected = Some(id);
                         self.view = View::Write;
                         self.show_new_project = false;
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            self.ws.dirty = true;
+                        }
                         self.toast("Project created", title, ToastKind::Ok);
                     }
                 });
@@ -2140,6 +2167,70 @@ fn slug(title: &str) -> String {
     if s.is_empty() { "untitled".into() } else { s }
 }
 
+#[cfg(target_arch = "wasm32")]
+impl PortmanteauApp {
+    /// Reopen the project kept in this browser's storage.
+    pub fn restore_from_browser(&mut self, bytes: &[u8]) {
+        match Workspace::from_zip_bytes(bytes) {
+            Ok(ws) => {
+                self.install_workspace(ws);
+                self.toast("Welcome back", "Your project was restored from this browser.", ToastKind::Ok);
+            }
+            Err(e) => self.toast("Could not restore your last project", e, ToastKind::Error),
+        }
+    }
+
+    /// File › Open project zip…: pick a zip; it arrives in `web_tick`.
+    fn open_project_zip(&mut self) {
+        crate::web::request_open();
+    }
+
+    /// File › Export project as zip…: download the whole project as one file.
+    fn export_project_zip(&mut self) {
+        let name = format!("{}.portmanteau.zip", portmanteau_api::storage::slugify(&self.ws.project.title));
+        match self.ws.zip_bytes() {
+            Ok(bytes) => {
+                crate::web::download_file(&name, &bytes, "application/zip");
+                self.toast("Project exported", name, ToastKind::Ok);
+            }
+            Err(e) => self.toast("Could not export the project", e, ToastKind::Error),
+        }
+    }
+
+    /// Each frame in the browser: take a zip the writer picked, and keep the
+    /// browser's copy of the project up to date a moment after each change.
+    fn web_tick(&mut self, ctx: &egui::Context) {
+        if let Some((name, bytes)) = crate::web::take_opened() {
+            match Workspace::from_zip_bytes(&bytes) {
+                Ok(ws) => {
+                    self.install_workspace(ws);
+                    self.ws.dirty = true; // so the browser keeps this one from now on
+                    self.toast("Project opened", name, ToastKind::Ok);
+                }
+                Err(e) => self.toast("Could not open that zip", e, ToastKind::Error),
+            }
+        }
+        if let Some(Err(e)) = crate::web::take_save_result() {
+            self.toast("Could not save in this browser", e, ToastKind::Error);
+        }
+        if self.ws.dirty {
+            let since = *self.web_dirty_since.get_or_insert_with(Instant::now);
+            if since.elapsed() >= Duration::from_millis(1500) {
+                match self.ws.zip_bytes() {
+                    Ok(bytes) => {
+                        crate::web::save(bytes);
+                        self.ws.dirty = false;
+                    }
+                    Err(e) => self.toast("Could not save in this browser", e, ToastKind::Error),
+                }
+                self.web_dirty_since = None;
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(1600));
+            }
+        }
+    }
+}
+
 impl eframe::App for PortmanteauApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.draw(ui);
@@ -2160,6 +2251,8 @@ impl PortmanteauApp {
     /// can drive the real thing without an `eframe::Frame`.
     pub(crate) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        #[cfg(target_arch = "wasm32")]
+        self.web_tick(&ctx);
         self.handle_shortcuts(&ctx);
         self.undo_redo_shortcuts(&ctx);
         self.paste_image_shortcut(&ctx);
@@ -2462,25 +2555,30 @@ impl PortmanteauApp {
         self.adopt_workspace(Workspace::open(path), path)
     }
 
-    /// Make an opened project the current one: select something to show, clear
-    /// per-project state, and say what happened.
+    /// Make `ws` the current project: select something to show and clear
+    /// per-project state.
+    fn install_workspace(&mut self, ws: Workspace) {
+        self.ws = ws;
+        self.selected = self
+            .ws
+            .project
+            .documents
+            .iter()
+            .find(|d| d.kind == DocKind::Chapter)
+            .or_else(|| self.ws.project.documents.iter().find(|d| !d.kind.is_folder()))
+            .map(|d| d.id.clone());
+        self.selected_research = self.ws.project.research_docs().first().map(|d| d.id.clone());
+        self.selected_item = self.ws.project.items.first().map(|c| c.id.clone());
+        self.collapsed.clear();
+        self.history = crate::history::History::default();
+        self.view = View::Write;
+    }
+
+    /// Make an opened project the current one and say what happened.
     fn adopt_workspace(&mut self, opened: Result<Workspace, String>, path: &Path) -> bool {
         match opened {
             Ok(ws) => {
-                self.ws = ws;
-                self.selected = self
-                    .ws
-                    .project
-                    .documents
-                    .iter()
-                    .find(|d| d.kind == DocKind::Chapter)
-                    .or_else(|| self.ws.project.documents.iter().find(|d| !d.kind.is_folder()))
-                    .map(|d| d.id.clone());
-                self.selected_research = self.ws.project.research_docs().first().map(|d| d.id.clone());
-                self.selected_item = self.ws.project.items.first().map(|c| c.id.clone());
-                self.collapsed.clear();
-                self.history = crate::history::History::default();
-                self.view = View::Write;
+                self.install_workspace(ws);
                 self.toast("Project opened", path.display().to_string(), ToastKind::Ok);
                 true
             }

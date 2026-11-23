@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 out="${1:-../webroot}"
 profile=debug; flag=""
-if [ "${2:-}" = "--release" ]; then profile=release; flag="--release"; fi
+if [ "${2:-}" = "--release" ]; then profile=web-release; flag="--profile web-release"; fi
 cargo build --target wasm32-unknown-unknown $flag --bin portmanteau
 mkdir -p "$out"
 wasm-bindgen --target web --no-typescript --out-dir "$out" --out-name portmanteau \

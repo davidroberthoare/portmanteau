@@ -27,6 +27,33 @@ pub fn config_path() -> PathBuf {
 
 /// Read the global defaults. A missing or malformed file is not an error:
 /// the built-in defaults are used instead.
+#[cfg(target_arch = "wasm32")]
+fn browser_storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.local_storage().ok()?
+}
+
+#[cfg(target_arch = "wasm32")]
+const BROWSER_KEY: &str = "portmanteau-settings";
+
+/// In the browser the global defaults live in the page's local storage.
+#[cfg(target_arch = "wasm32")]
+pub fn load_settings() -> AppSettings {
+    let text = browser_storage().and_then(|s| s.get_item(BROWSER_KEY).ok().flatten());
+    let mut settings: AppSettings = text.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    settings.ensure_style_sheets();
+    settings
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
+    let json = serde_json::to_string(settings).map_err(|e| e.to_string())?;
+    browser_storage()
+        .ok_or_else(|| "This browser has no local storage available".to_string())?
+        .set_item(BROWSER_KEY, &json)
+        .map_err(|e| format!("{e:?}"))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_settings() -> AppSettings {
     match std::fs::read_to_string(config_path()) {
         Ok(text) => {
@@ -43,6 +70,7 @@ pub fn load_settings() -> AppSettings {
 /// Unit tests exercise the shell and can toggle layout controls, so they must
 /// never overwrite the writer's real configuration. The test binary gets a
 /// no-op save; the app itself still persists normally.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
     if cfg!(test) {
         return Ok(());

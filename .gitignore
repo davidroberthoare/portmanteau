@@ -4,3 +4,4 @@
 /exports
 *.portmanteau.json
 .DS_Store
+_site/

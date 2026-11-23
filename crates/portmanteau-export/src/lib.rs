@@ -148,12 +148,39 @@ fn output_path(project: &Project, settings: &ExportSettings, output: Option<&Pat
     }
 }
 
+/// Write a finished file. In the browser there is no disk: the file waits in
+/// [`take_outbox`] for the page to offer it as a download.
+#[cfg(not(target_arch = "wasm32"))]
+fn write_output(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    fs::write(path, bytes).map_err(|e| format!("Could not write {}: {e}", path.display()))
+}
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static OUTBOX: std::cell::RefCell<Vec<(String, Vec<u8>)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(target_arch = "wasm32")]
+fn write_output(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "manuscript".into());
+    OUTBOX.with(|outbox| outbox.borrow_mut().push((name, bytes.to_vec())));
+    Ok(())
+}
+
+/// Files an export produced in the browser, as (file name, bytes), emptied by
+/// the call.
+#[cfg(target_arch = "wasm32")]
+pub fn take_outbox() -> Vec<(String, Vec<u8>)> {
+    OUTBOX.with(|outbox| std::mem::take(&mut *outbox.borrow_mut()))
+}
+
 fn export_single(
     project: &Project,
     settings: &ExportSettings,
     output: Option<&Path>,
 ) -> Result<ExportInfo, String> {
     let path = output_path(project, settings, output);
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent).map_err(|e| format!("Could not make folder: {e}"))?;
@@ -173,7 +200,7 @@ fn export_single(
         ExportKind::Bundle => bundle_manuscript(project)?,
     };
 
-    fs::write(&path, &bytes).map_err(|e| format!("Could not write {}: {e}", path.display()))?;
+    write_output(&path, &bytes)?;
     let plan = project.compile_plan(settings);
     let has_images = plan.included.iter().any(|doc| {
         rich_document_has_images(&doc.content)

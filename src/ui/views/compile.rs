@@ -391,32 +391,46 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                 .spacing([8.0, 5.0])
                 .min_col_width(48.0)
                 .show(ui, |ui| {
-                    ui.label(RichText::new("Folder").font(ui_small()).color(FAINT));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        // The button keeps its own width at the right; the
-                        // field takes the rest.
-                        if ui
-                            .button(RichText::new("Browse…").font(ui_small()))
-                            .on_hover_text("Choose the folder the export is written to")
-                            .clicked()
-                        {
-                            if let Some(folder) = choose_export_folder(&settings.output_path) {
-                                settings.output_path = folder;
+                    // In the browser there is no folder: the file downloads.
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        ui.label(RichText::new("Folder").font(ui_small()).color(FAINT));
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            // The button keeps its own width at the right; the
+                            // field takes the rest.
+                            if ui
+                                .button(RichText::new("Browse…").font(ui_small()))
+                                .on_hover_text("Choose the folder the export is written to")
+                                .clicked()
+                            {
+                                if let Some(folder) = choose_export_folder(&settings.output_path) {
+                                    settings.output_path = folder;
+                                }
                             }
-                        }
-                        output_field(
-                            ui,
-                            &mut settings.output_path,
-                            "Folder for the export (blank = ./exports)",
-                        );
-                    });
-                    ui.end_row();
+                            output_field(
+                                ui,
+                                &mut settings.output_path,
+                                "Folder for the export (blank = ./exports)",
+                            );
+                        });
+                        ui.end_row();
+
+                    }
 
                     ui.label(RichText::new("Filename").font(ui_small()).color(FAINT));
                     output_field(ui, &mut settings.output_filename, &default_name);
                     ui.end_row();
                 });
             ui.add_space(5.0);
+            #[cfg(target_arch = "wasm32")]
+            {
+                ui.add_space(5.0);
+                ui.label(
+                    RichText::new("The compiled file downloads through your browser.")
+                        .font(ui_small())
+                        .color(FAINT),
+                );
+            }
             ui.label(
                 RichText::new(
                     "Front and back matter are assembled from the binder folders; excluded chapters are skipped.",
@@ -491,6 +505,7 @@ fn resolved_export_path(project: &Project, settings: &ExportSettings) -> String 
 
 /// Ask the desktop for a folder, starting where the field already points.
 /// `None` when the writer cancels.
+#[cfg(not(target_arch = "wasm32"))]
 fn choose_export_folder(current: &str) -> Option<String> {
     let mut dialog = crate::platform::FileDialog::new().set_title("Export folder");
     let start = expand_tilde(current);
@@ -1339,6 +1354,17 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
     // filename twice.
     app.ws.project.set_settings(settings.clone());
     app.ws.project.export = settings.clone();
+    #[cfg(target_arch = "wasm32")]
+    for (name, bytes) in portmanteau_export::take_outbox() {
+        let mime = match name.rsplit('.').next().unwrap_or("") {
+            "pdf" => "application/pdf",
+            "epub" => "application/epub+zip",
+            "html" => "text/html",
+            "txt" | "fountain" | "md" => "text/plain",
+            _ => "application/octet-stream",
+        };
+        crate::web::download_file(&name, &bytes, mime);
+    }
     if res.ok {
         let path = res
             .data

@@ -1,0 +1,58 @@
+name: Web version
+
+# Builds the browser version and publishes it to GitHub Pages
+# (https://davidroberthoare.github.io/portmanteau/). Runs whenever a version tag
+# is pushed (so the web version matches the release) and on demand from the
+# Actions tab. Pages must be set to "GitHub Actions" as its source (repository
+# Settings > Pages). Every third-party action is pinned to a full commit SHA.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the web version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-bindgen (the version Cargo.lock uses)
+        run: |
+          version=$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, "", $3); print $3; exit}' Cargo.lock)
+          echo "wasm-bindgen $version"
+          curl -fsSL "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/$version/wasm-bindgen-$version-x86_64-unknown-linux-musl.tar.gz" | tar xz
+          mkdir -p "$HOME/bin"
+          mv wasm-bindgen-*/wasm-bindgen "$HOME/bin/"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: Build
+        run: scripts/build-web.sh _site --release
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

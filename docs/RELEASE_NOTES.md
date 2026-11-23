@@ -3,6 +3,16 @@
 The newest section is used as the body of the GitHub release. Start each release
 with a line `## vX.Y.Z` (matching `version` in the top-level `Cargo.toml`).
 
+## v0.1.2
+
+- **Portmanteau now runs in your web browser**, at
+  https://davidroberthoare.github.io/portmanteau/ : the whole app, with your
+  project saved in the browser, PDF/EPUB/Word and other exports that download,
+  and File › Export / Open project as zip to back up or move a project (zips
+  made by the desktop app open there, and the other way round).
+- In the browser, pictures, research attachments and importing other files are
+  not available yet.
+
 ## v0.1.1
 
 - Spell-check no longer flags words like "I'm", "I'll" and names that the
