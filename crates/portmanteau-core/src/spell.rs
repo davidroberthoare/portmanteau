@@ -61,29 +61,31 @@ impl SpellChecker {
     /// dictionary and session-ignored words are accepted, and possessives,
     /// inflections and hyphenated compounds are handled by Hunspell.
     pub fn is_correct(&self, word: &str) -> bool {
-        let word = normalise(word);
-        if word.is_empty() {
+        let raw = trim_edges(word);
+        if raw.is_empty() {
             return true;
         }
-        self.known(&word)
+        self.known(raw)
     }
 
-    /// Is the normalised `word` known to one of our sources?
-    fn known(&self, word: &str) -> bool {
-        if self.custom.contains(word) || self.ignored.contains(word) {
+    /// Is `raw` (edges trimmed, original case) known to one of our sources?
+    fn known(&self, raw: &str) -> bool {
+        let word = raw.to_lowercase();
+        if self.custom.contains(&word) || self.ignored.contains(&word) {
             return true;
         }
-        if self.dict.check(word) {
+        if self.dict.check(raw) {
             return true;
         }
         // Hunspell's splitter used to verify hyphenated compounds part by part;
         // do the same here now that tokenisation keeps the hyphen.
-        if word.contains('-') {
+        if raw.contains('-') {
             let mut parts = 0;
-            for part in word.split('-').filter(|part| !part.is_empty()) {
+            for part in raw.split('-').filter(|part| !part.is_empty()) {
                 parts += 1;
-                if !self.custom.contains(part)
-                    && !self.ignored.contains(part)
+                let lower = part.to_lowercase();
+                if !self.custom.contains(&lower)
+                    && !self.ignored.contains(&lower)
                     && !self.dict.check(part)
                 {
                     return false;
@@ -157,11 +159,14 @@ impl SpellChecker {
 /// Lowercase a token and strip punctuation from its edges while keeping
 /// internal apostrophes and hyphens (`cat's`, `well-known`).
 pub fn normalise(word: &str) -> String {
-    let lower = word.to_lowercase();
-    let trimmed = lower.trim_matches(|c: char| !c.is_alphabetic() && c != '\'' && c != '-');
-    trimmed
+    trim_edges(word).to_lowercase()
+}
+
+/// Strip punctuation from a token's edges, keeping its case: the dictionary
+/// needs it (`I'm`, `Venn`) and handles sentence capitals and ALL CAPS itself.
+fn trim_edges(word: &str) -> &str {
+    word.trim_matches(|c: char| !c.is_alphabetic() && c != '\'' && c != '-')
         .trim_matches(|c: char| c == '\'' || c == '-')
-        .to_string()
 }
 
 /// The word that a caret at UTF-8 byte offset `byte` sits in or touches.
@@ -246,6 +251,16 @@ mod tests {
             include_str!("../../../assets/dict/en_US.aff"),
             include_str!("../../../assets/dict/en_US.dic"),
         )
+    }
+
+    #[test]
+    fn capitalised_dictionary_words_are_not_flagged() {
+        let spell = bundled();
+        for word in ["I'm", "I\u{2019}m", "I'd", "I'll", "Venn", "London"] {
+            assert!(spell.check_word(word), "{word} should be accepted");
+        }
+        assert!(spell.check_word("Hello") && spell.check_word("HELLO"));
+        assert!(!spell.check_word("Zzzzqq"));
     }
 
     #[test]
@@ -391,3 +406,4 @@ mod tests {
         assert_eq!(byte_offset(text, 99), text.len());
     }
 }
+
