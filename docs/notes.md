@@ -1291,3 +1291,13 @@ what is next. Things worth knowing:
   path under `assets/` (no `..`, symlinks resolved, picture signature and size
   checked); `project.set_cover` copies through `checked_project_dir`
   (symlink-safe, temp-and-rename), which `checked_research_dir` now shares.
+- Pictures in prose, first pass: `picture.rs` (safe loader under `assets/`,
+  PNG/JPEG sizes, `picture_size_pt`, `ProseParagraph::standalone_image`);
+  `PdfPageLayout.images` + `Flow::picture` + krilla `draw_image`; DOCX
+  `docx_prose_or_picture` (media parts, `rIdImgN`); RTF `\\pict`; EPUB
+  `PictureMode::Packaged`; HTML `PictureMode::Embedded` (base64). The project's
+  folder reaches every writer and preview through `Project.asset_root`
+  (set on open/save, never serialised) copied into `settings_for`. Build now
+  needs krilla's `raster-images` feature (png, zune-jpeg, gif, image-webp,
+  imagesize crates, downloaded at build time only). Verified: PDF, DOCX (WordCraft),
+  RTF (WordCraft), EPUB (ebook-convert) and HTML (chromium) all show the picture.

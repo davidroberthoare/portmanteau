@@ -152,9 +152,15 @@ Not done / next:
   and start). Still PDF-only: front/back regions, a bare title page, no header
   on chapter openers (need real Word sections). RTF headers/footers are
   deliberately skipped (owner, 2026-11-24).
-- **Pictures in prose, a round of its own** (owner: important): inline images
-  through every writer (PDF, DOCX, RTF, EPUB, HTML), sizing/alignment/captions,
-  then the PDF cover page. The PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
+- **Pictures in prose** (owner: important). FIRST PASS DONE 2026-11-24: a
+  picture on its own paragraph is drawn by PDF (krilla), DOCX (inline drawing),
+  RTF (`\\pict`), EPUB (packaged `images/`) and HTML (data URI), centred, scaled
+  to the measure, PNG/JPEG only, read from `<project>/assets` (`picture.rs`;
+  `Project.asset_root` carries the folder). The Compile preview draws them too.
+  STILL TO DO: pictures inside a line of text; floating/wrapped pictures;
+  captions kept with their picture and numbered figures; a size/alignment control
+  in the editor; GIF/WebP; Markdown/Fountain/FDX (placeholders); the PDF cover
+  page; large-image downsampling. Old note: the PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
   and no inline pictures. Needs picture support first.
 - "Start chapters on a right-hand page" (blank verso pages).
 - `.tex` export (text writer over `content` and `layout`; no TeX dependency).

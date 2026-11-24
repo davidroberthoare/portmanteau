@@ -5,6 +5,7 @@ use super::*;
 
 pub(crate) fn html_manuscript(project: &Project, settings: &ExportSettings) -> String {
     let mut classes = ParagraphClasses::default();
+    classes.pictures = PictureMode::Embedded(settings.asset_root.clone());
     let sections = manuscript_sections(project, settings);
     let mut body = String::new();
 

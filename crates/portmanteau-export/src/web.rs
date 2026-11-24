@@ -119,12 +119,63 @@ pub(crate) fn declarations(style: &ElementStyle, fallback_font: &str) -> String 
 /// generated in one place.
 #[derive(Default)]
 pub(crate) struct ParagraphClasses {
+    pub(crate) pictures: PictureMode,
     rules: Vec<String>,
     /// Scene numbering runs across every script document in the compile.
     scenes: SceneNumbers,
 }
 
+/// How a picture in the text reaches the page.
+#[derive(Default)]
+pub(crate) enum PictureMode {
+    /// Print the `[Image]` placeholder.
+    #[default]
+    Placeholder,
+    /// Embed in the markup as a `data:` address (single-file HTML).
+    Embedded(Option<PathBuf>),
+    /// Refer to files the package carries (EPUB): `images/<name>`.
+    Packaged {
+        root: Option<PathBuf>,
+        files: Vec<(String, std::sync::Arc<LoadedPicture>)>,
+    },
+}
+
 impl ParagraphClasses {
+    /// `<img>` markup for a picture, or `None` when it cannot be shown.
+    fn picture_markup(&mut self, image: &ImageObject) -> Option<String> {
+        let (root, packaged) = match &self.pictures {
+            PictureMode::Placeholder => return None,
+            PictureMode::Embedded(root) => (root.clone(), false),
+            PictureMode::Packaged { root, .. } => (root.clone(), true),
+        };
+        let picture = load_picture(root.as_deref(), &image.asset_id)?;
+        let source = if packaged {
+            let PictureMode::Packaged { files, .. } = &mut self.pictures else { return None };
+            let name = match files.iter().position(|(_, known)| std::sync::Arc::ptr_eq(known, &picture) || known.bytes == picture.bytes) {
+                Some(i) => files[i].0.clone(),
+                None => {
+                    let name = format!("img{}.{}", files.len() + 1, picture.ext);
+                    files.push((name.clone(), picture.clone()));
+                    name
+                }
+            };
+            format!("images/{name}")
+        } else {
+            format!("data:{};base64,{}", picture.media, base64(&picture.bytes))
+        };
+        let size = match (image.width, image.height) {
+            (Some(w), Some(h)) if w > 0.0 && h > 0.0 => format!("width:{w:.0}pt;height:auto;"),
+            (Some(w), _) if w > 0.0 => format!("width:{w:.0}pt;height:auto;"),
+            (_, Some(h)) if h > 0.0 => format!("height:{h:.0}pt;width:auto;"),
+            _ => String::new(),
+        };
+        Some(format!(
+            "<img src=\"{}\" alt=\"{}\" style=\"{size}max-width:100%\"/>",
+            html_escape(&source),
+            html_escape(&image.alt_text)
+        ))
+    }
+
     pub(crate) fn class_for(&mut self, style: &ElementStyle, fallback_font: &str) -> String {
         let rule = declarations(style, fallback_font);
         let index = match self.rules.iter().position(|known| *known == rule) {
@@ -316,6 +367,11 @@ pub(crate) fn html_prose_paragraph(
     fallback_font: &str,
 ) -> String {
     let class = classes.class_for(&paragraph.format, fallback_font);
+    if let Some(img) = paragraph.standalone_image().and_then(|image| classes.picture_markup(image)) {
+        // A picture on its own: centred unless the paragraph style says otherwise.
+        let align = if paragraph.format.align == Alignment::Left { "center" } else { css_align(paragraph.format.align) };
+        return format!("<p class=\"{class}\" style=\"text-align:{align};text-indent:0\">{img}</p>\n");
+    }
     let runs = html_runs(paragraph);
     if paragraph.heading {
         format!("<h2 class=\"heading {class}\">{runs}</h2>\n")

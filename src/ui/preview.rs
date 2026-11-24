@@ -101,6 +101,20 @@ pub fn page_counts(ui: &egui::Ui, project: &Project) -> Arc<PageCounts> {
     counts
 }
 
+/// The texture for a picture on a previewed page, decoded once and kept.
+fn picture_texture(ctx: &egui::Context, image: &portmanteau_export::PdfImage) -> Option<egui::TextureHandle> {
+    let id = egui::Id::NULL.with(("preview-picture", &image.asset_id, image.picture.bytes.len()));
+    if let Some(texture) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+        return Some(texture);
+    }
+    let decoded = image::load_from_memory(&image.picture.bytes).ok()?.to_rgba8();
+    let size = [decoded.width() as usize, decoded.height() as usize];
+    let color = egui::ColorImage::from_rgba_unmultiplied(size, decoded.as_raw());
+    let texture = ctx.load_texture(format!("preview-{}", image.asset_id), color, egui::TextureOptions::LINEAR);
+    ctx.data_mut(|d| d.insert_temp(id, texture.clone()));
+    Some(texture)
+}
+
 /// Draw one page of `layout` at `scale` screen points per page point.
 /// A page past the end (an empty manuscript) draws as blank paper.
 pub fn paint_page(ui: &mut egui::Ui, layout: &PdfLayout, index: usize, scale: f32) -> egui::Response {
@@ -129,6 +143,25 @@ pub fn paint_page(ui: &mut egui::Ui, layout: &PdfLayout, index: usize, scale: f3
     let Some(page) = layout.pages.get(index) else {
         return response;
     };
+    for image in &page.images {
+        let image_rect = egui::Rect::from_min_size(
+            rect.min + Vec2::new(image.x, image.y) * scale,
+            Vec2::new(image.width, image.height) * scale,
+        );
+        match picture_texture(ui.ctx(), image) {
+            Some(texture) => {
+                painter.image(
+                    texture.id(),
+                    image_rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+            }
+            None => {
+                painter.rect_filled(image_rect, 0.0, PAPER_EDGE);
+            }
+        }
+    }
     for item in &page.items {
         let mut x = rect.left() + item.x * scale;
         let baseline = rect.top() + item.baseline * scale;

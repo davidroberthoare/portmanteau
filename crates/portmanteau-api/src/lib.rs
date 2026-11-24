@@ -105,6 +105,7 @@ impl Workspace {
         }
         let mut project = storage::load_folder(path)?;
         project.ensure_style_sheets();
+        project.asset_root = Some(path.to_path_buf());
         Ok(Self {
             project,
             path: Some(path.to_path_buf()),
@@ -200,6 +201,7 @@ impl Workspace {
         std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
         storage::save_folder(&self.project, &target)?;
         self.path = Some(target.clone());
+        self.project.asset_root = Some(target.clone());
         self.dirty = false;
         let msg = format!("Saved {}", target.display());
         self.log.push(msg.clone());

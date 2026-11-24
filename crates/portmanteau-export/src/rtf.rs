@@ -155,6 +155,36 @@ pub(crate) fn rtf_prose_paragraph(paragraph: &ProseParagraph, fallback_font: &st
     out
 }
 
+/// A paragraph, or the picture block for one that holds only a picture.
+fn rtf_prose_or_picture(paragraph: &ProseParagraph, fallback_font: &str, settings: &ExportSettings, project: &Project) -> String {
+    if let Some(image) = paragraph.standalone_image() {
+        if let Some(picture) = load_picture(settings.asset_root.as_deref(), &image.asset_id) {
+            let (pw, ph) = paper_pt(settings);
+            let m = page_margins(project, settings);
+            let (w, h) = picture_size_pt(image, &picture, (pw - m.left - m.right).max(36.0), (ph - m.top - m.bottom).max(36.0));
+            let kind = if picture.ext == "png" { "pngblip" } else { "jpegblip" };
+            let mut hex = String::with_capacity(picture.bytes.len() * 2);
+            for byte in &picture.bytes {
+                hex.push_str(&format!("{byte:02x}"));
+            }
+            let align = match paragraph.format.align {
+                Alignment::Right => "\\qr",
+                _ => "\\qc",
+            };
+            return format!(
+                "\\pard{align}\\sb{}\\sa{} {{\\pict\\{kind}\\picw{}\\pich{}\\picwgoal{}\\pichgoal{} {hex}}}\\par\n",
+                pt_to_twips(paragraph.format.before.max(6.0)),
+                pt_to_twips(paragraph.format.after.max(6.0)),
+                picture.px.0,
+                picture.px.1,
+                pt_to_twips(w),
+                pt_to_twips(h),
+            );
+        }
+    }
+    rtf_prose_paragraph(paragraph, fallback_font)
+}
+
 pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> String {
     let st = &settings.styles;
     let serif = settings.font.as_str();
@@ -211,7 +241,7 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
     for doc in front_matter(project, settings) {
         out.push_str(&rtf_plain_paragraph(&st.chapter_heading, serif, &doc.title, true, true));
         for para in prose_paragraphs(project, doc, settings) {
-            out.push_str(&rtf_prose_paragraph(&para, serif));
+            out.push_str(&rtf_prose_or_picture(&para, serif, settings, project));
         }
     }
     for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
@@ -242,14 +272,14 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
             let title = section_title(project, section.doc, i, settings);
             out.push_str(&rtf_plain_paragraph(&st.chapter_heading, serif, &title, true, true));
             for para in prose_paragraphs(project, section.doc, settings) {
-                out.push_str(&rtf_prose_paragraph(&para, serif));
+                out.push_str(&rtf_prose_or_picture(&para, serif, settings, project));
             }
         }
     }
     for doc in back_matter(project, settings) {
         out.push_str(&rtf_plain_paragraph(&st.chapter_heading, serif, &doc.title, true, true));
         for para in prose_paragraphs(project, doc, settings) {
-            out.push_str(&rtf_prose_paragraph(&para, serif));
+            out.push_str(&rtf_prose_or_picture(&para, serif, settings, project));
         }
     }
     out.push_str("}\n");

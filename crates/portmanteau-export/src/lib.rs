@@ -14,12 +14,15 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 mod pdf;
+pub use picture::LoadedPicture;
 pub use pdf::{
+    PdfImage,
     page_counts, pdf_layout, pdf_manuscript, pdf_page_count, PageCounts, PdfSource, text_width, Face, Family, PdfLayout,
     PdfLayoutSection, PdfPageLayout, PdfSegment, PdfText,
 };
 
 mod content;
+mod picture;
 mod util;
 mod web;
 mod epub;
@@ -34,6 +37,7 @@ mod rtf;
 mod txt;
 mod bundle;
 use content::*;
+use picture::*;
 use util::*;
 use web::*;
 use epub::*;
@@ -212,7 +216,18 @@ fn export_single(
     // an estimate from the same layout.
     let pages: u32 = pdf_page_count(project, settings) as u32;
     let page_word = if pages == 1 { "page" } else { "pages" };
-    let message = if has_images {
+    // These writers draw pictures that sit on a line of their own; a picture
+    // that cannot be found or sits inside a line of text stays a placeholder.
+    let draws_pictures = matches!(
+        settings.kind,
+        ExportKind::Pdf | ExportKind::Docx | ExportKind::Rtf | ExportKind::Epub | ExportKind::Html
+    );
+    let message = if has_images && draws_pictures {
+        format!(
+            "{} exported · {pages} {page_word} estimated · Pictures are included; any that could not be found, or sit inside a line of text, appear as [Image] placeholders",
+            settings.kind.label(),
+        )
+    } else if has_images {
         format!(
             "{} exported · {pages} {page_word} estimated · Images represented by alt-text placeholders; source assets are not embedded",
             settings.kind.label(),

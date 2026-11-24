@@ -1589,6 +1589,10 @@ pub struct Project {
     /// settings name another picture.
     #[serde(default)]
     pub cover_image: String,
+    /// Where the project lives on disk, set by whoever opens or saves it (never
+    /// stored): pictures in the text are read from `<folder>/assets`.
+    #[serde(skip)]
+    pub asset_root: Option<std::path::PathBuf>,
     pub export: ExportSettings,
     #[serde(default)]
     pub styles: ElementStyles,
@@ -1628,6 +1632,7 @@ impl Project {
             session_log: Vec::new(),
             daily_target: 1200,
             cover_image: String::new(),
+            asset_root: None,
             export,
             style_sheets: StyleSheet::industry_defaults(&styles),
             styles,
@@ -1716,6 +1721,12 @@ impl Project {
     /// Per-output-format settings. A format that has never been configured is
     /// seeded from the project's element styles rather than sharing one global blob.
     pub fn settings_for(&self, kind: ExportKind) -> ExportSettings {
+        let mut settings = self.settings_without_root(kind);
+        settings.asset_root = self.asset_root.clone();
+        settings
+    }
+
+    fn settings_without_root(&self, kind: ExportKind) -> ExportSettings {
         if let Some(settings) = self.formats.iter().find(|s| s.kind == kind) {
             return settings.clone();
         }

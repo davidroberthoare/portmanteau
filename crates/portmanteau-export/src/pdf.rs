@@ -12,6 +12,9 @@
 //! paragraphs: transitions such as `FADE IN:` are printed only when they are
 //! real blocks in the document.
 
+use crate::picture::{load_picture, picture_size_pt, LoadedPicture};
+use portmanteau_core::ImageObject;
+use std::path::PathBuf;
 use portmanteau_core::{
     Alignment, Block, DocKind, Document, ElementKind, ElementStyle, ExportSettings, InlineContent,
     InlineMark, Project, TextTransform,
@@ -257,9 +260,30 @@ struct LineSource {
     lines: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PdfPageLayout {
     pub items: Vec<PdfText>,
+    /// Pictures on the page.
+    pub images: Vec<PdfImage>,
+}
+
+impl PdfPageLayout {
+    /// Nothing on the page yet: no text and no pictures.
+    pub fn is_blank(&self) -> bool {
+        self.items.is_empty() && self.images.is_empty()
+    }
+}
+
+/// A picture placed on a page, in points from the page's top-left corner.
+#[derive(Clone, Debug)]
+pub struct PdfImage {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub picture: std::sync::Arc<LoadedPicture>,
+    /// The project-relative asset it came from, for previews.
+    pub asset_id: String,
 }
 
 #[derive(Clone, Debug)]
@@ -429,18 +453,53 @@ struct Flow {
     /// The document whose text is being set, and the line of it in hand.
     doc: Option<std::sync::Arc<str>>,
     line: Option<LineSource>,
+    /// The project folder pictures are read from.
+    asset_root: Option<PathBuf>,
 }
 
 impl Flow {
     fn with_pages(frame: Frame, pages: Vec<PdfPageLayout>) -> Self {
         Self {
             pages,
-            current: PdfPageLayout { items: Vec::new() },
+            current: PdfPageLayout::default(),
             cursor: frame.top,
             frame,
             doc: None,
             line: None,
+            asset_root: None,
         }
+    }
+
+    /// A picture on a line of its own, `width` x `height` points, aligned in the
+    /// measure that starts at `left` and is `available` wide. A picture too tall
+    /// for what is left of the page moves to the next one.
+    fn picture(
+        &mut self,
+        image: &ImageObject,
+        picture: std::sync::Arc<LoadedPicture>,
+        (width, height): (f32, f32),
+        left: f32,
+        available: f32,
+        align: Alignment,
+        gap_before: f32,
+    ) {
+        let gap = if self.current.is_blank() { 0.0 } else { gap_before.max(0.0) };
+        self.ensure(gap + height);
+        self.cursor += gap;
+        let x = match align {
+            Alignment::Right => left + (available - width).max(0.0),
+            Alignment::Center => left + (available - width).max(0.0) * 0.5,
+            Alignment::Left | Alignment::Justify => left,
+        };
+        self.current.images.push(PdfImage {
+            x,
+            y: self.cursor,
+            width,
+            height,
+            picture,
+            asset_id: image.asset_id.clone(),
+        });
+        self.cursor += height;
     }
 
     /// The page currently being filled counts, so a one-page section reports
@@ -453,14 +512,14 @@ impl Flow {
     }
 
     fn page_index(&self) -> usize {
-        self.pages.len() + usize::from(!self.current.items.is_empty())
+        self.pages.len() + usize::from(!self.current.is_blank())
     }
 
     fn finish_page(&mut self) {
-        if !self.current.items.is_empty() {
+        if !self.current.is_blank() {
             self.pages.push(std::mem::replace(
                 &mut self.current,
-                PdfPageLayout { items: Vec::new() },
+                PdfPageLayout::default(),
             ));
         }
         self.cursor = self.frame.top;
@@ -473,14 +532,14 @@ impl Flow {
 
     fn ensure(&mut self, height: f32) {
         if self.cursor + height > self.frame.height - self.frame.bottom + 0.01
-            && !self.current.items.is_empty()
+            && !self.current.is_blank()
         {
             self.finish_page();
         }
     }
 
     fn space(&mut self, height: f32) {
-        if self.current.items.is_empty() || height <= 0.0 {
+        if self.current.is_blank() || height <= 0.0 {
             return;
         }
         self.cursor += height;
@@ -535,7 +594,7 @@ impl Flow {
         leading: f32,
         gap_before: f32,
     ) {
-        let gap = if self.current.items.is_empty() {
+        let gap = if self.current.is_blank() {
             0.0
         } else {
             gap_before.max(0.0)
@@ -573,11 +632,11 @@ impl Flow {
     }
 
     fn finish(mut self) -> Vec<PdfPageLayout> {
-        if !self.current.items.is_empty() {
+        if !self.current.is_blank() {
             self.pages.push(self.current);
         }
         if self.pages.is_empty() {
-            self.pages.push(PdfPageLayout { items: Vec::new() });
+            self.pages.push(PdfPageLayout::default());
         }
         self.pages
     }
@@ -615,6 +674,9 @@ fn mirror_pages(layout: &mut PdfLayout, project: &Project, settings: &ExportSett
     for page in layout.pages.iter_mut().skip(1).step_by(2) {
         for item in &mut page.items {
             item.x += shift;
+        }
+        for image in &mut page.images {
+            image.x += shift;
         }
     }
 }
@@ -938,7 +1000,7 @@ fn script_title_page(
         foot -= line.style.size * line.style.leading
             + if line.role == TitleRole::Draft { line.style.before } else { 0.0 };
     }
-    PdfPageLayout { items }
+    PdfPageLayout { items, images: Vec::new() }
 }
 
 pub(crate) fn wrap_plain(text: &str, max_chars: usize) -> Vec<String> {
@@ -1000,6 +1062,7 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
     }
 
     let mut flow = Flow::with_pages(frame, pages);
+    flow.asset_root = settings.asset_root.clone();
     let mut headings: Vec<(String, usize)> = Vec::new();
 
     for doc in front_matter(project, settings) {
@@ -1108,7 +1171,7 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
     if settings.include_toc && !headings.is_empty() {
         let insert_at = usize::from(settings.include_title_page && !pages.is_empty())
             .min(pages.len());
-        pages.insert(insert_at, PdfPageLayout { items: Vec::new() });
+        pages.insert(insert_at, PdfPageLayout::default());
         for section in &mut sections {
             if section.start_page >= insert_at {
                 section.start_page += 1;
@@ -1196,7 +1259,7 @@ fn prose_title_page(
         Alignment::Center,
     );
 
-    PdfPageLayout { items }
+    PdfPageLayout { items, images: Vec::new() }
 }
 
 /// Greedy line breaking by measured width, so a larger title size wraps
@@ -1297,6 +1360,20 @@ fn flow_prose_paragraph(
         format.font.as_str()
     };
     let base = Face::from_style(format, fallback);
+    if let Some(image) = paragraph.standalone_image() {
+        if let Some(picture) = load_picture(flow.asset_root.as_deref(), &image.asset_id) {
+            let indent = format.indent.max(0.0);
+            let available = (flow.frame.content_width() - indent - format.right_indent.max(0.0)).max(24.0);
+            let max_height = (flow.frame.height - flow.frame.top - flow.frame.bottom).max(24.0);
+            let dimensions = picture_size_pt(image, &picture, available, max_height);
+            let left = flow.frame.left + indent;
+            // A picture on its own line is centred unless its style aligns it elsewhere.
+            let align = if format.align == Alignment::Left { Alignment::Center } else { format.align };
+            flow.picture(image, picture, dimensions, left, available, align, format.before.max(8.0));
+            flow.space(format.after.max(8.0));
+            return;
+        }
+    }
     let mut chars = Vec::new();
     for item in &paragraph.content {
         match item {
@@ -1441,7 +1518,7 @@ fn prose_contents_page(
             });
         y += step;
     }
-    Some(PdfPageLayout { items })
+    Some(PdfPageLayout { items, images: Vec::new() })
 }
 
 /// Which region of the book a page belongs to, and what it is, so headers
@@ -1690,6 +1767,19 @@ fn draw(project: &Project, layout: &PdfLayout) -> Vec<u8> {
         let mut page = document.start_page_with(settings);
         let mut surface = page.surface();
         surface.set_fill(Some(Fill::default()));
+        for image in &page_layout.images {
+            let data: krilla::Data = image.picture.bytes.clone().into();
+            let decoded = if image.picture.ext == "png" {
+                krilla::image::Image::from_png(data, true)
+            } else {
+                krilla::image::Image::from_jpeg(data, true)
+            };
+            let Ok(decoded) = decoded else { continue };
+            let Some(size) = krilla::geom::Size::from_wh(image.width, image.height) else { continue };
+            surface.push_transform(&krilla::geom::Transform::from_translate(image.x, image.y));
+            surface.draw_image(decoded, size);
+            surface.pop();
+        }
         for item in &page_layout.items {
             let mut x = item.x;
             for segment in &item.segments {

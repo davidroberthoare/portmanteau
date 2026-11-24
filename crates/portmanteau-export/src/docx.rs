@@ -341,8 +341,53 @@ fn docx_field_runs(text: &str, size_pt: f32, font: &str) -> String {
     out
 }
 
+/// The pictures a Word file carries, in the order they were placed.
+struct DocxMedia {
+    files: Vec<std::sync::Arc<LoadedPicture>>,
+    /// Largest a picture may be, in points.
+    max: (f32, f32),
+    asset_root: Option<PathBuf>,
+}
+
+/// A paragraph, or the drawing for one that holds only a picture.
+fn docx_prose_or_picture(paragraph: &ProseParagraph, settings: &ExportSettings, media: &mut DocxMedia) -> String {
+    if let Some(image) = paragraph.standalone_image() {
+        if let Some(picture) = load_picture(media.asset_root.as_deref(), &image.asset_id) {
+            let (w, h) = picture_size_pt(image, &picture, media.max.0, media.max.1);
+            let n = match media.files.iter().position(|known| known.bytes == picture.bytes) {
+                Some(i) => i + 1,
+                None => {
+                    media.files.push(picture);
+                    media.files.len()
+                }
+            };
+            let (cx, cy) = ((w * 12700.0).round() as i64, (h * 12700.0).round() as i64);
+            let align = match paragraph.format.align {
+                Alignment::Left => "center",
+                other => docx_align(other).unwrap_or("center"),
+            };
+            let descr = xml_escape(&image.alt_text);
+            return format!(
+                "<w:p><w:pPr><w:keepNext/><w:spacing w:before=\"{}\" w:after=\"{}\"/><w:jc w:val=\"{align}\"/></w:pPr><w:r><w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"{cx}\" cy=\"{cy}\"/><wp:docPr id=\"{n}\" name=\"Picture {n}\" descr=\"{descr}\"/><a:graphic xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:nvPicPr><pic:cNvPr id=\"{n}\" name=\"img{n}\" descr=\"{descr}\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"rIdImg{n}\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>",
+                pt_to_twips(paragraph.format.before.max(6.0)),
+                pt_to_twips(paragraph.format.after.max(6.0)),
+            );
+        }
+    }
+    docx_prose_paragraph(paragraph, &settings.font)
+}
+
 pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let mut body = String::new();
+    let mut media = {
+        let (pw, ph) = paper_pt(settings);
+        let m = page_margins(project, settings);
+        DocxMedia {
+            files: Vec::new(),
+            max: ((pw - m.left - m.right).max(36.0), (ph - m.top - m.bottom).max(36.0)),
+            asset_root: settings.asset_root.clone(),
+        }
+    };
     let mut scenes = SceneNumbers::default();
 
     let is_script = project.compile_plan(settings).kind.is_script();
@@ -373,7 +418,7 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
     for doc in front_matter(project, settings) {
         docx_styled_paragraph(&mut body, &doc.title, "Heading1");
         for para in prose_paragraphs(project, doc, settings) {
-            body.push_str(&docx_prose_paragraph(&para, &settings.font));
+            body.push_str(&docx_prose_or_picture(&para, settings, &mut media));
         }
     }
     for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
@@ -396,14 +441,14 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
             let title = section_title(project, section.doc, i, settings);
             docx_styled_paragraph(&mut body, &title, "Heading1");
             for para in prose_paragraphs(project, section.doc, settings) {
-                body.push_str(&docx_prose_paragraph(&para, &settings.font));
+                body.push_str(&docx_prose_or_picture(&para, settings, &mut media));
             }
         }
     }
     for doc in back_matter(project, settings) {
         docx_styled_paragraph(&mut body, &doc.title, "Heading1");
         for para in prose_paragraphs(project, doc, settings) {
-            body.push_str(&docx_prose_paragraph(&para, &settings.font));
+            body.push_str(&docx_prose_or_picture(&para, settings, &mut media));
         }
     }
 
@@ -477,12 +522,27 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
         }
     }
     let document = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{}\n<w:sectPr>{furniture_refs}<w:pgSz w:w=\"{page_w}\" w:h=\"{page_h}\"/><w:pgMar w:top=\"{mt}\" w:right=\"{mr}\" w:bottom=\"{mb}\" w:left=\"{ml}\"/>{section_extra}</w:sectPr></w:body></w:document>",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\"><w:body>{}\n<w:sectPr>{furniture_refs}<w:pgSz w:w=\"{page_w}\" w:h=\"{page_h}\"/><w:pgMar w:top=\"{mt}\" w:right=\"{mr}\" w:bottom=\"{mb}\" w:left=\"{ml}\"/>{section_extra}</w:sectPr></w:body></w:document>",
         body
     );
     let styles = docx_styles(project, settings);
+    let mut media_types = String::new();
+    for (ext, media_type) in [("png", "image/png"), ("jpg", "image/jpeg")] {
+        if media.files.iter().any(|f| f.ext == ext) {
+            media_types.push_str(&format!("<Default Extension=\"{ext}\" ContentType=\"{media_type}\"/>\n"));
+        }
+    }
+    for (index, picture) in media.files.iter().enumerate() {
+        furniture_rels.push_str(&format!(
+            "<Relationship Id=\"rIdImg{}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/img{}.{}\"/>",
+            index + 1,
+            index + 1,
+            picture.ext
+        ));
+    }
     let content_types = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+{media_types}
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
 <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
@@ -532,6 +592,10 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
         ] {
             zip.start_file(name, opts).unwrap();
             zip.write_all(data.as_bytes()).unwrap();
+        }
+        for (index, picture) in media.files.iter().enumerate() {
+            zip.start_file(format!("word/media/img{}.{}", index + 1, picture.ext), opts).unwrap();
+            zip.write_all(&picture.bytes).unwrap();
         }
         for (name, data) in &furniture_parts {
             zip.start_file(name.as_str(), opts).unwrap();

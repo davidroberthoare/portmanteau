@@ -335,6 +335,7 @@ fn book_pages(
 
 pub(crate) fn epub_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let mut classes = ParagraphClasses::default();
+    classes.pictures = PictureMode::Packaged { root: settings.asset_root.clone(), files: Vec::new() };
     let pages = book_pages(project, settings, &mut classes);
     let css = stylesheet(project, settings, WebTarget::Epub, &classes);
     let fonts = used_fonts(&css);
@@ -397,6 +398,15 @@ pub(crate) fn epub_manuscript(project: &Project, settings: &ExportSettings) -> V
             spine.push_str(&format!("<itemref idref=\"f{index}\"/>\n"));
         }
 
+        if let PictureMode::Packaged { files, .. } = &classes.pictures {
+            for (index, (name, picture)) in files.iter().enumerate() {
+                add(&format!("OEBPS/images/{name}"), deflated, &picture.bytes);
+                manifest.push_str(&format!(
+                    "<item id=\"pic{index}\" href=\"images/{name}\" media-type=\"{}\"/>\n",
+                    picture.media
+                ));
+            }
+        }
         add("OEBPS/nav.xhtml", deflated, nav_document(&pages).as_bytes());
         manifest.push_str("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>\n");
         manifest.push_str("<item id=\"css\" href=\"style.css\" media-type=\"text/css\"/>\n");

@@ -1213,3 +1213,153 @@ fn a_project_cover_cannot_point_outside_the_project() {
     assert!(epub::cover_image(&p, &s).is_none());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A saved-looking project whose first chapter holds text, a picture and a caption.
+fn picture_project(tag: &str) -> (Project, PathBuf) {
+    let dir = std::env::temp_dir().join(format!("pm-pic-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("assets/images")).unwrap();
+    std::fs::write(dir.join("assets/images/dot.png"), TINY_PNG).unwrap();
+    let mut p = demo();
+    let id = p
+        .compile_plan(&p.settings_for(ExportKind::Pdf))
+        .included
+        .iter()
+        .find(|d| !matches!(d.kind, DocKind::FrontMatter | DocKind::BackMatter))
+        .unwrap()
+        .id
+        .clone();
+    let text = |t: &str, style: &str| RichParagraph {
+        style_id: style.into(),
+        content: vec![InlineContent::Text(TextRun::with_marks(t, vec![]))],
+    };
+    p.document_mut(&id).unwrap().content = RichDocument {
+        paragraphs: vec![
+            text("Before the picture.", "body"),
+            RichParagraph {
+                style_id: "body".into(),
+                content: vec![InlineContent::Image(ImageObject {
+                    asset_id: "images/dot.png".into(),
+                    alt_text: "A red dot".into(),
+                    caption: String::new(),
+                    width: Some(120.0),
+                    height: Some(60.0),
+                })],
+            },
+            text("After the picture.", "body"),
+        ],
+    };
+    (p, dir)
+}
+
+#[test]
+fn the_pdf_draws_a_picture_that_sits_on_its_own_line() {
+    let (p, dir) = picture_project("pdf");
+    let mut s = p.settings_for(ExportKind::Pdf);
+    s.asset_root = Some(dir.clone());
+    let layout = pdf_layout(&p, &s);
+    let images: Vec<_> = layout.pages.iter().flat_map(|page| &page.images).collect();
+    assert_eq!(images.len(), 1);
+    assert!((images[0].width - 120.0).abs() < 0.01 && (images[0].height - 60.0).abs() < 0.01);
+    let bytes = pdf_manuscript(&p, &s);
+    assert!(bytes.windows(14).any(|w| w == b"/Subtype/Image" || w == b"/Subtype /Imag"), "the file embeds a picture");
+    // Without the project folder the same text prints the placeholder instead.
+    s.asset_root = None;
+    let layout = pdf_layout(&p, &s);
+    assert!(layout.pages.iter().all(|page| page.images.is_empty()));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Writes a picture-bearing PDF/DOCX/EPUB for a human to look at. Run with
+/// `PM_DUMP=/some/dir cargo test -p portmanteau-export dump_picture_exports -- --ignored`
+/// and `PM_PICTURE=/path/to/picture.png`.
+#[test]
+#[ignore]
+fn dump_picture_exports() {
+    let (Ok(out), Ok(picture)) = (std::env::var("PM_DUMP"), std::env::var("PM_PICTURE")) else {
+        return;
+    };
+    let (mut p, dir) = picture_project("dump");
+    std::fs::copy(&picture, dir.join("assets/images/dot.png")).unwrap();
+    for doc in p.documents.iter_mut() {
+        for para in doc.content.paragraphs.iter_mut() {
+            for item in para.content.iter_mut() {
+                if let InlineContent::Image(i) = item {
+                    i.width = Some(300.0);
+                    i.height = None;
+                }
+            }
+        }
+    }
+    for (kind, name) in [(ExportKind::Pdf, "pic.pdf"), (ExportKind::Docx, "pic.docx"), (ExportKind::Epub, "pic.epub"), (ExportKind::Html, "pic.html"), (ExportKind::Rtf, "pic.rtf")] {
+        let mut s = p.settings_for(kind);
+        s.asset_root = Some(dir.clone());
+        let bytes = match kind {
+            ExportKind::Pdf => pdf_manuscript(&p, &s),
+            ExportKind::Docx => docx_manuscript(&p, &s),
+            ExportKind::Epub => epub_manuscript(&p, &s),
+            ExportKind::Html => html_manuscript(&p, &s).into_bytes(),
+            _ => rtf_manuscript(&p, &s).into_bytes(),
+        };
+        std::fs::write(std::path::Path::new(&out).join(name), bytes).unwrap();
+    }
+}
+
+#[test]
+fn every_prose_writer_carries_a_picture_that_sits_on_its_own_line() {
+    let (p, dir) = picture_project("writers");
+    let with_root = |kind| {
+        let mut s = p.settings_for(kind);
+        s.asset_root = Some(dir.clone());
+        s
+    };
+
+    let docx = docx_manuscript(&p, &with_root(ExportKind::Docx));
+    assert!(epub_file(&docx, "word/document.xml").contains("r:embed=\"rIdImg1\""));
+    assert!(epub_file(&docx, "word/_rels/document.xml.rels").contains("media/img1.png"));
+    assert!(epub_file(&docx, "[Content_Types].xml").contains("Extension=\"png\""));
+    assert!(epub_file(&docx, "word/document.xml").contains("descr=\"A red dot\""));
+
+    let epub = epub_manuscript(&p, &with_root(ExportKind::Epub));
+    assert!(epub_file(&epub, "OEBPS/content.opf").contains("images/img1.png"));
+
+    let html = html_manuscript(&p, &with_root(ExportKind::Html));
+    assert!(html.contains("<img src=\"data:image/png;base64,"));
+    assert!(html.contains("alt=\"A red dot\""));
+
+    let rtf = rtf_manuscript(&p, &with_root(ExportKind::Rtf));
+    assert!(rtf.contains("\\pngblip") && rtf.contains("\\picwgoal2400") && rtf.contains("\\pichgoal1200"));
+
+    // No project folder, or a picture outside assets/: the placeholder stays.
+    let mut s = p.settings_for(ExportKind::Html);
+    s.asset_root = None;
+    assert!(html_manuscript(&p, &s).contains("[Image: A red dot]"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_picture_cannot_be_read_from_outside_the_assets_folder() {
+    let (_, dir) = picture_project("escape");
+    std::fs::write(dir.join("outside.png"), TINY_PNG).unwrap();
+    assert!(load_picture(Some(&dir), "images/dot.png").is_some());
+    for bad in ["../outside.png", "images/../../outside.png", "/etc/passwd"] {
+        assert!(load_picture(Some(&dir), bad).is_none(), "{bad}");
+    }
+    // Not a picture, whatever its name says.
+    std::fs::write(dir.join("assets/images/fake.png"), b"just text").unwrap();
+    assert!(load_picture(Some(&dir), "images/fake.png").is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_picture_is_scaled_to_the_page_and_keeps_its_proportions() {
+    let picture = LoadedPicture { bytes: vec![], ext: "png", media: "image/png", px: (600, 400) };
+    let mut image = ImageObject { asset_id: "x".into(), alt_text: String::new(), caption: String::new(), width: None, height: None };
+    // Natural size is 96 dpi: 450 x 300 pt, scaled down to a 225 pt measure.
+    assert_eq!(picture_size_pt(&image, &picture, 225.0, 1000.0), (225.0, 150.0));
+    image.width = Some(100.0);
+    let (w, h) = picture_size_pt(&image, &picture, 225.0, 1000.0);
+    assert!((w - 100.0).abs() < 0.01 && (h - 66.667).abs() < 0.01);
+    image.height = Some(80.0);
+    assert_eq!(picture_size_pt(&image, &picture, 225.0, 1000.0), (100.0, 80.0));
+}
