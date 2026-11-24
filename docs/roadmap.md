@@ -147,9 +147,14 @@ Done (2026-11-23, uncommitted at the time of writing):
 Not done / next:
 - **Per-document sections** ("start a new section", same as previous) on top of
   the front/body/back regions.
-- DOCX and RTF headers and footers (Word has `PAGE`, `STYLEREF`, odd/even,
-  `titlePg`; RTF is weaker on the chapter field).
-- The PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
+- DOCX headers and footers are DONE for the whole file using the body templates
+  (Word fields PAGE/NUMPAGES/STYLEREF, odd/even, `titlePg`, page-number format
+  and start). Still PDF-only: front/back regions, a bare title page, no header
+  on chapter openers (need real Word sections). RTF headers/footers are
+  deliberately skipped (owner, 2026-11-24).
+- **Pictures in prose, a round of its own** (owner: important): inline images
+  through every writer (PDF, DOCX, RTF, EPUB, HTML), sizing/alignment/captions,
+  then the PDF cover page. The PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
   and no inline pictures. Needs picture support first.
 - "Start chapters on a right-hand page" (blank verso pages).
 - `.tex` export (text writer over `content` and `layout`; no TeX dependency).

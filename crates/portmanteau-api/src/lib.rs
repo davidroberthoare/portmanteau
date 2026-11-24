@@ -316,14 +316,27 @@ impl Workspace {
                 // A saved project keeps its own copy, so the cover travels
                 // with it; an unsaved one points at the file where it is.
                 let stored = match &self.path {
-                    Some(root) => {
-                        let dir = root.join("assets").join("images");
-                        if let Err(e) = std::fs::create_dir_all(&dir) {
-                            return ApiResponse::err(command, format!("Could not create the image folder: {e}"));
-                        }
+                    Some(_) => {
+                        let dir = match self.checked_project_dir(&["assets", "images"], true) {
+                            Ok(dir) => dir,
+                            Err(e) => return ApiResponse::err(command, e),
+                        };
                         let name = format!("cover.{ext}");
-                        if let Err(e) = std::fs::copy(&source, dir.join(&name)) {
-                            return ApiResponse::err(command, format!("Could not copy the cover: {e}"));
+                        let dest = dir.join(&name);
+                        // Never write through a link, and never copy a file onto itself.
+                        if let Ok(meta) = std::fs::symlink_metadata(&dest) {
+                            if !meta.file_type().is_file() {
+                                return ApiResponse::err(command, "The existing cover is not an ordinary file, so it was left alone");
+                            }
+                        }
+                        let same = dest.canonicalize().ok().zip(source.canonicalize().ok()).is_some_and(|(a, b)| a == b);
+                        if !same {
+                            let temp = dir.join(format!(".{name}.tmp"));
+                            let copied = std::fs::copy(&source, &temp).and_then(|_| std::fs::rename(&temp, &dest));
+                            if let Err(e) = copied {
+                                let _ = std::fs::remove_file(&temp);
+                                return ApiResponse::err(command, format!("Could not copy the cover: {e}"));
+                            }
                         }
                         format!("assets/images/{name}")
                     }
@@ -1193,23 +1206,31 @@ impl Workspace {
     /// step is checked and a link in any of those places is refused. `create`
     /// makes the folder first, never through a link.
     fn checked_research_dir(&self, id: &str, create: bool) -> Result<PathBuf, String> {
-        let root = self.path.as_ref().ok_or("Save the project first: attachments are copied into the project folder")?;
+        self.checked_project_dir(&["assets", "research", &safe_dir_name(id)], create)
+    }
+
+    /// A folder inside the project (`parts` below the project folder) that is a
+    /// real directory all the way down: a symlink at any step, or a path that
+    /// resolves anywhere else, is refused. Optionally creates the missing steps.
+    fn checked_project_dir(&self, parts: &[&str], create: bool) -> Result<PathBuf, String> {
+        let root = self.path.as_ref().ok_or("Save the project first: files are copied into the project folder")?;
         let real_root = root.canonicalize().map_err(|e| format!("Could not read the project folder: {e}"))?;
-        let refuse = || "The attachments folder is not where the project keeps it (a link points elsewhere), so it was not used".to_string();
+        let refuse = || "A folder inside the project is not where it should be (a link points elsewhere), so it was not used".to_string();
         let mut step = root.clone();
-        for part in ["assets", "research", &safe_dir_name(id)] {
+        let mut expected = real_root.clone();
+        for part in parts {
             step = step.join(part);
+            expected = expected.join(part);
             match std::fs::symlink_metadata(&step) {
                 Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => return Err(refuse()),
                 Ok(_) => {}
                 Err(_) if create => {
-                    std::fs::create_dir(&step).map_err(|e| format!("Could not prepare the attachments folder: {e}"))?;
+                    std::fs::create_dir(&step).map_err(|e| format!("Could not prepare the folder: {e}"))?;
                 }
-                Err(_) => return Err("The attachments folder does not exist".into()),
+                Err(_) => return Err("The folder does not exist".into()),
             }
         }
         let real = step.canonicalize().map_err(|_| refuse())?;
-        let expected = real_root.join("assets").join("research").join(safe_dir_name(id));
         if real != expected {
             return Err(refuse());
         }

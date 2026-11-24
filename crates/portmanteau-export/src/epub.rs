@@ -141,12 +141,30 @@ pub(crate) fn cover_image(
         return None;
     }
     let own = settings.cover_image.trim();
-    let raw = if own.is_empty() { project.cover_image.trim() } else { own };
+    let from_project = own.is_empty();
+    let raw = if from_project { project.cover_image.trim() } else { own };
     if raw.is_empty() {
         return None;
     }
     let mut path = std::path::PathBuf::from(raw);
-    if path.is_relative() {
+    if from_project {
+        if let Some(root) = &settings.asset_root {
+            // A saved project's cover is its own copy under `assets/`. A path
+            // read from a project file must stay inside that folder: no absolute
+            // paths, no `..`, and nothing that a symlink leads out of it.
+            if !path.is_relative()
+                || path.components().any(|c| !matches!(c, std::path::Component::Normal(_)))
+            {
+                return None;
+            }
+            let real_assets = fs::canonicalize(root.join("assets")).ok()?;
+            let real = fs::canonicalize(root.join(&path)).ok()?;
+            if !real.starts_with(&real_assets) {
+                return None;
+            }
+            path = real;
+        }
+    } else if path.is_relative() {
         if let Some(root) = &settings.asset_root {
             path = root.join(path);
         }
@@ -157,7 +175,19 @@ pub(crate) fn cover_image(
         "png" => "image/png",
         _ => return None,
     };
+    const MAX_COVER_BYTES: u64 = 30 * 1024 * 1024;
+    if fs::metadata(&path).ok()?.len() > MAX_COVER_BYTES {
+        return None;
+    }
     let bytes = fs::read(&path).ok()?;
+    // The file must really be the picture its extension claims.
+    let looks_right = match media {
+        "image/png" => bytes.starts_with(&[0x89, b'P', b'N', b'G']),
+        _ => bytes.starts_with(&[0xFF, 0xD8]),
+    };
+    if !looks_right {
+        return None;
+    }
     Some((ext, media, bytes))
 }
 

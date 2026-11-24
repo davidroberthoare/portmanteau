@@ -1163,3 +1163,53 @@ fn epub_uses_the_project_cover_unless_the_format_has_its_own_or_it_is_switched_o
     assert!(!has_cover(&settings), "the format's own picture wins, even when it is missing");
     let _ = fs::remove_dir_all(dir);
 }
+
+#[test]
+fn docx_headers_and_footers_use_word_fields() {
+    let p = demo();
+    let mut s = p.settings_for(ExportKind::Docx);
+    s.header_footer.body.odd.header = ["{author}".into(), "".into(), "{chapter}".into()];
+    s.header_footer.different_odd_even = true;
+    s.header_footer.body.even.footer[1] = "{page} of {pages}".into();
+    s.header_footer.different_first_page = true;
+    let docx = docx_manuscript(&p, &s);
+    let doc = epub_file(&docx, "word/document.xml");
+    assert!(doc.contains("w:headerReference w:type=\"default\""));
+    assert!(doc.contains("w:footerReference w:type=\"even\""));
+    assert!(doc.contains("<w:titlePg/>"));
+    assert!(epub_file(&docx, "word/settings.xml").contains("evenAndOddHeaders"));
+    let header = epub_file(&docx, "word/header1.xml");
+    assert!(header.contains("<w:hdr "));
+    assert!(header.contains("STYLEREF"));
+    let even_footer = epub_file(&docx, "word/footer2.xml");
+    assert!(even_footer.contains(" PAGE ") && even_footer.contains(" NUMPAGES "));
+    assert!(epub_file(&docx, "[Content_Types].xml").contains("/word/header1.xml"));
+    // No templates, no parts.
+    let plain = docx_manuscript(&p, &{ let mut n = p.settings_for(ExportKind::Docx); n.header_footer.body = PageFurniture::default(); n });
+    assert!(!epub_file(&plain, "word/document.xml").contains("headerReference"));
+}
+
+#[test]
+fn a_project_cover_cannot_point_outside_the_project() {
+    let dir = std::env::temp_dir().join(format!("pm-cover-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("assets/images")).unwrap();
+    let secret = dir.join("secret.png");
+    std::fs::write(&secret, [0x89, b'P', b'N', b'G', 1, 2, 3]).unwrap();
+    std::fs::write(dir.join("assets/images/cover.png"), [0x89, b'P', b'N', b'G', 1]).unwrap();
+    let mut p = demo();
+    let mut s = p.settings_for(ExportKind::Epub);
+    s.include_cover = true;
+    s.asset_root = Some(dir.clone());
+    p.cover_image = "assets/images/cover.png".into();
+    assert!(epub::cover_image(&p, &s).is_some());
+    for bad in ["../secret.png", secret.to_str().unwrap(), "assets/../secret.png"] {
+        p.cover_image = bad.into();
+        assert!(epub::cover_image(&p, &s).is_none(), "{bad} must be refused");
+    }
+    // A file that is not the picture its name says.
+    std::fs::write(dir.join("assets/images/cover.png"), b"not a picture").unwrap();
+    p.cover_image = "assets/images/cover.png".into();
+    assert!(epub::cover_image(&p, &s).is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}

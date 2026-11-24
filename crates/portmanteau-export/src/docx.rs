@@ -278,6 +278,69 @@ pub(crate) fn docx_cover_style_id(role: TitleRole) -> String {
     format!("ScriptCover{role:?}")
 }
 
+/// One header or footer part for Word: three slots (left, centre, right) set on
+/// tab stops, with `{fields}` written as Word fields so Word keeps them live.
+fn docx_furniture_part(tag: &str, slots: &[String; 3], text_width: i64, size_pt: f32, font: &str) -> String {
+    // The part's root element is `hdr` or `ftr`.
+    let tag = if tag == "header" { "hdr" } else { "ftr" };
+    let mut runs = String::new();
+    for (i, slot) in slots.iter().enumerate() {
+        if i > 0 {
+            runs.push_str("<w:r><w:tab/></w:r>");
+        }
+        runs.push_str(&docx_field_runs(slot, size_pt, font));
+    }
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:{tag} xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><w:pPr><w:tabs><w:tab w:val=\"center\" w:pos=\"{}\"/><w:tab w:val=\"right\" w:pos=\"{}\"/></w:tabs><w:spacing w:before=\"0\" w:after=\"0\"/></w:pPr>{runs}</w:p></w:{tag}>",
+        text_width / 2,
+        text_width
+    )
+}
+
+fn docx_field_runs(text: &str, size_pt: f32, font: &str) -> String {
+    let inner = format!(
+        "<w:rFonts w:ascii=\"{f}\" w:hAnsi=\"{f}\"/><w:sz w:val=\"{}\"/>",
+        (size_pt * 2.0).round() as i32,
+        f = xml_escape(font)
+    );
+    let props = format!("<w:rPr>{inner}</w:rPr>");
+    let field = |instr: &str, shown: &str| {
+        format!(
+            "<w:r>{props}<w:fldChar w:fldCharType=\"begin\"/></w:r><w:r>{props}<w:instrText xml:space=\"preserve\"> {instr} </w:instrText></w:r><w:r>{props}<w:fldChar w:fldCharType=\"separate\"/></w:r><w:r>{props}<w:t>{shown}</w:t></w:r><w:r>{props}<w:fldChar w:fldCharType=\"end\"/></w:r>"
+        )
+    };
+    let mut out = String::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let Some(open) = rest.find('{') else { break };
+        let Some(close) = rest[open..].find('}') else { break };
+        let name = &rest[open..open + close + 1];
+        let known = ["{page}", "{pages}", "{title}", "{author}", "{chapter}", "{chapter_number}"];
+        if !known.contains(&name) {
+            // Not a field: keep the brace as text and carry on after it.
+            out.push_str(&docx_text_run(&rest[..open + 1], &inner));
+            rest = &rest[open + 1..];
+            continue;
+        }
+        if open > 0 {
+            out.push_str(&docx_text_run(&rest[..open], &inner));
+        }
+        match name {
+            "{page}" => out.push_str(&field("PAGE", "1")),
+            "{pages}" => out.push_str(&field("NUMPAGES", "1")),
+            "{chapter}" => out.push_str(&field("STYLEREF \"heading 1\"", "")),
+            "{chapter_number}" => out.push_str(&field("STYLEREF \"heading 1\" \\n", "")),
+            // Title and author are known now; they go in as plain text below.
+            other => out.push_str(&docx_text_run(other, &inner)),
+        }
+        rest = &rest[open + close + 1..];
+    }
+    if !rest.is_empty() {
+        out.push_str(&docx_text_run(rest, &inner));
+    }
+    out
+}
+
 pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> Vec<u8> {
     let mut body = String::new();
     let mut scenes = SceneNumbers::default();
@@ -352,12 +415,73 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
         pt_to_twips(margins.bottom),
         pt_to_twips(margins.left),
     );
+    // Headers and footers (prose only; scripts print their own page number).
+    // Word has one section here, so the body's templates apply to the whole file;
+    // front and back matter regions, a bare title page and "no header on chapter
+    // openers" are PDF features.
+    let hf = &settings.header_footer;
+    let mut furniture_parts: Vec<(String, String)> = Vec::new();
+    let mut furniture_refs = String::new();
+    let mut furniture_rels = String::new();
+    let mut furniture_types = String::new();
+    let mut section_extra = String::new();
+    if !is_script {
+        let text_width = (page_w as i64 - ml as i64 - mr as i64).max(1);
+        let mut variants: Vec<(&str, &PageSlots)> = vec![("default", &hf.body.odd)];
+        if hf.different_odd_even {
+            variants.push(("even", &hf.body.even));
+        }
+        if hf.different_first_page {
+            variants.push(("first", &hf.body.first));
+        }
+        if variants.iter().any(|(_, slots)| !slots.is_empty()) {
+            let clean = |text: &String| {
+                text.replace("{title}", project.title.trim())
+                    .replace("{author}", project.author.trim())
+                    .replace("{page}", if hf.page_numbers { "{page}" } else { "" })
+            };
+            let size = hf.size;
+            for (n, (kind, slots)) in variants.iter().enumerate() {
+                for (tag, texts) in [("hdr", &slots.header), ("ftr", &slots.footer)] {
+                    let word_tag = if tag == "hdr" { "header" } else { "footer" };
+                    let name = format!("{word_tag}{}.xml", n + 1);
+                    let id = format!("rIdHf{}{}", tag, n + 1);
+                    let cleaned = [clean(&texts[0]), clean(&texts[1]), clean(&texts[2])];
+                    furniture_parts.push((
+                        format!("word/{name}"),
+                        docx_furniture_part(word_tag, &cleaned, text_width, size, &settings.font),
+                    ));
+                    furniture_refs.push_str(&format!(
+                        "<w:{word_tag}Reference w:type=\"{kind}\" r:id=\"{id}\"/>"
+                    ));
+                    furniture_rels.push_str(&format!(
+                        "<Relationship Id=\"{id}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/{word_tag}\" Target=\"{name}\"/>"
+                    ));
+                    furniture_types.push_str(&format!(
+                        "<Override PartName=\"/word/{name}\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.{word_tag}+xml\"/>"
+                    ));
+                }
+            }
+            if hf.different_first_page {
+                section_extra.push_str("<w:titlePg/>");
+            }
+        }
+        let fmt = match hf.number_format {
+            NumberFormat::Arabic => None,
+            NumberFormat::RomanLower => Some("lowerRoman"),
+            NumberFormat::RomanUpper => Some("upperRoman"),
+        };
+        if fmt.is_some() || hf.start_number != 1 {
+            let fmt_attr = fmt.map(|f| format!(" w:fmt=\"{f}\"")).unwrap_or_default();
+            section_extra = format!("<w:pgNumType{fmt_attr} w:start=\"{}\"/>{section_extra}", hf.start_number);
+        }
+    }
     let document = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>{}\n<w:sectPr><w:pgSz w:w=\"{page_w}\" w:h=\"{page_h}\"/><w:pgMar w:top=\"{mt}\" w:right=\"{mr}\" w:bottom=\"{mb}\" w:left=\"{ml}\"/></w:sectPr></w:body></w:document>",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{}\n<w:sectPr>{furniture_refs}<w:pgSz w:w=\"{page_w}\" w:h=\"{page_h}\"/><w:pgMar w:top=\"{mt}\" w:right=\"{mr}\" w:bottom=\"{mb}\" w:left=\"{ml}\"/>{section_extra}</w:sectPr></w:body></w:document>",
         body
     );
     let styles = docx_styles(project, settings);
-    let content_types = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    let content_types = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
@@ -365,22 +489,26 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
 <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
 <Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>
 <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
-</Types>"#;
+{furniture_types}</Types>"#);
     let rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
 </Relationships>"#;
-    let doc_rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    let doc_rels = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>
-</Relationships>"#;
+{furniture_rels}</Relationships>"#);
     // Word's "Mirror margins": the left margin becomes the inside one.
     let mirror = settings.mirror_margins && !project.compile_plan(settings).kind.is_script();
     let word_settings = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:settings xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">{}</w:settings>",
-        if mirror { "<w:mirrorMargins/>" } else { "" }
+        format!(
+            "{}{}",
+            if mirror { "<w:mirrorMargins/>" } else { "" },
+            if !is_script && hf.different_odd_even && !furniture_parts.is_empty() { "<w:evenAndOddHeaders/>" } else { "" }
+        )
     );
     let core = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>{}</dc:title><dc:creator>{}</dc:creator></cp:coreProperties>",
@@ -394,15 +522,19 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
         let mut zip = ZipWriter::new(cursor);
         let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
         for (name, data) in [
-            ("[Content_Types].xml", content_types),
+            ("[Content_Types].xml", content_types.as_str()),
             ("_rels/.rels", rels),
             ("word/document.xml", &document),
             ("word/styles.xml", styles.as_str()),
             ("word/settings.xml", word_settings.as_str()),
-            ("word/_rels/document.xml.rels", doc_rels),
+            ("word/_rels/document.xml.rels", doc_rels.as_str()),
             ("docProps/core.xml", &core),
         ] {
             zip.start_file(name, opts).unwrap();
+            zip.write_all(data.as_bytes()).unwrap();
+        }
+        for (name, data) in &furniture_parts {
+            zip.start_file(name.as_str(), opts).unwrap();
             zip.write_all(data.as_bytes()).unwrap();
         }
         zip.finish().unwrap();

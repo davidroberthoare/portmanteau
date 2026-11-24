@@ -1281,3 +1281,13 @@ what is next. Things worth knowing:
   author left / chapter right running heads, no head on chapter openers).
   Not verified in Word: the DOCX `mirrorMargins` part and RTF `\margmirror`
   are covered by string tests only.
+
+## 2026-11-24
+- Committed the Compile redesign (ead59f6).
+- DOCX headers/footers: `docx_furniture_part` writes header/footer parts with
+  tab-stop slots and Word fields; odd/even via `evenAndOddHeaders`, first page via
+  `titlePg`. Checked with wordcraft-cli (`convert --strict`, pdftotext).
+- Security review follow-ups: EPUB cover from a project file must be a relative
+  path under `assets/` (no `..`, symlinks resolved, picture signature and size
+  checked); `project.set_cover` copies through `checked_project_dir`
+  (symlink-safe, temp-and-rename), which `checked_research_dir` now shares.
