@@ -130,6 +130,18 @@ pub enum CompileTab {
     Format(ExportKind),
 }
 
+/// Which group of settings the Compile screen is showing for the format.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum CompileSection {
+    /// What goes in: documents, front and back matter, switches.
+    #[default]
+    Contents,
+    /// Paper, margins, headers and footers, cover.
+    Layout,
+    /// Element and paragraph styles.
+    Styles,
+}
+
 impl Default for CompileTab {
     fn default() -> Self {
         CompileTab::Format(ExportKind::Pdf)
@@ -375,6 +387,8 @@ pub struct PortmanteauApp {
     pub view: View,
     /// Selected tab on the Compile screen.
     pub compile_tab: CompileTab,
+    /// Selected group of settings (Contents, Layout, Styles) under it.
+    pub compile_section: CompileSection,
     /// Selected tab on the Settings screen: 0 = Preferences, 1 = Display.
     pub settings_tab: usize,
     pub write_mode: WriteMode,
@@ -530,6 +544,12 @@ impl PortmanteauApp {
             last_input: Instant::now(),
             view: initial_view(),
             compile_tab,
+            // Development aid: PORTMANTEAU_COMPILE_SECTION=layout|styles.
+            compile_section: match std::env::var("PORTMANTEAU_COMPILE_SECTION").as_deref() {
+                Ok("layout") => CompileSection::Layout,
+                Ok("styles") => CompileSection::Styles,
+                _ => CompileSection::Contents,
+            },
             settings_tab: 0,
             // Development aid, like PORTMANTEAU_VIEW: open Write in Paged mode.
             write_mode: if std::env::var("PORTMANTEAU_PAGED").is_ok() || start_paged {

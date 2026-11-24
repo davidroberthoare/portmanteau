@@ -5,12 +5,12 @@
 use eframe::egui::{
     self, Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Stroke, Vec2,
 };
-use portmanteau_core::{ElementStyles, ExportKind, StyleSheet};
+use portmanteau_core::{CompileType, ElementStyles, ExportKind, StyleSheet};
 
 use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::*;
 use crate::ui::views::{
-    content_frame, custom_styles_editor, element_styles_editor, manuscript_preview_navigator,
+    content_frame, manuscript_preview_navigator, style_editor,
     meta_line, page_head, primary_button, quiet_button, section_label, style_sheets_editor,
     BUILTIN_ELEMENTS,
 };
@@ -325,15 +325,12 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 hairline(ui);
                                 ui.add_space(8.0);
 
-                                let mut base_styles_changed = element_styles_editor(
+                                let base_styles_changed = style_editor(
                                     ui,
                                     &mut app.settings.styles,
-                                    false,
-                                    false,
+                                    "settings",
+                                    CompileType::Prose,
                                 );
-                                ui.add_space(2.0);
-                                base_styles_changed |=
-                                    custom_styles_editor(ui, &mut app.settings.styles);
                                 if base_styles_changed {
                                     app.settings.sync_sheet_formats_from_element_styles();
                                 }

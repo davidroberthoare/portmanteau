@@ -26,9 +26,6 @@ fn default_style_sheets() -> Vec<StyleSheet> {
 
 fn screenplay_export_defaults(mut settings: ExportSettings) -> ExportSettings {
     settings.paper = PaperSize::Letter;
-    settings.header_footer.number_location = HfLocation::Header;
-    settings.header_footer.number_align = Alignment::Right;
-    settings.header_footer.number_spacing = 36.0;
     settings
 }
 
@@ -630,12 +627,19 @@ impl ExportKind {
     }
 }
 
+/// The page a format is set on: office sheets and the usual book trim sizes.
+/// `Custom` takes its size from `ExportSettings::custom_paper_mm`.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PaperSize {
     A4,
     Letter,
     A5,
-    UsTrade,
+    Trade5x8,
+    Trade5_25x8,
+    Trade5_5x8_5,
+    Trade6x9,
+    BFormat,
+    Custom,
 }
 
 impl PaperSize {
@@ -644,23 +648,40 @@ impl PaperSize {
             PaperSize::A4 => "A4",
             PaperSize::Letter => "US Letter",
             PaperSize::A5 => "A5",
-            PaperSize::UsTrade => "Trade paperback",
+            PaperSize::Trade5x8 => "5 × 8 in",
+            PaperSize::Trade5_25x8 => "5.25 × 8 in",
+            PaperSize::Trade5_5x8_5 => "5.5 × 8.5 in",
+            PaperSize::Trade6x9 => "6 × 9 in",
+            PaperSize::BFormat => "B-format (129 × 198 mm)",
+            PaperSize::Custom => "Custom size",
         }
     }
+    /// Width and height in millimetres. `Custom` has no size of its own: ask
+    /// `ExportSettings::paper_mm`.
     pub fn mm(self) -> (f32, f32) {
         match self {
             PaperSize::A4 => (210.0, 297.0),
             PaperSize::Letter => (215.9, 279.4),
             PaperSize::A5 => (148.0, 210.0),
-            PaperSize::UsTrade => (152.4, 228.6),
+            PaperSize::Trade5x8 => (127.0, 203.2),
+            PaperSize::Trade5_25x8 => (133.35, 203.2),
+            PaperSize::Trade5_5x8_5 => (139.7, 215.9),
+            PaperSize::Trade6x9 => (152.4, 228.6),
+            PaperSize::BFormat => (129.0, 198.0),
+            PaperSize::Custom => (152.4, 228.6),
         }
     }
-    pub fn all() -> [PaperSize; 4] {
+    pub fn all() -> [PaperSize; 9] {
         [
-            PaperSize::A4,
             PaperSize::Letter,
+            PaperSize::A4,
             PaperSize::A5,
-            PaperSize::UsTrade,
+            PaperSize::Trade5x8,
+            PaperSize::Trade5_25x8,
+            PaperSize::Trade5_5x8_5,
+            PaperSize::Trade6x9,
+            PaperSize::BFormat,
+            PaperSize::Custom,
         ]
     }
 }
@@ -1285,55 +1306,134 @@ fn roman_numeral(mut n: u32) -> String {
 }
 
 /// Where a page number sits on the page.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum HfLocation {
-    Header,
-    Footer,
+/// The six places text can sit on a page: left, centre and right in the
+/// header and in the footer. Each holds plain text with `{fields}` (see
+/// `HEADER_FIELDS`), written as it is typed.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
+pub struct PageSlots {
+    pub header: [String; 3],
+    pub footer: [String; 3],
 }
 
-impl HfLocation {
+impl PageSlots {
+    pub fn is_empty(&self) -> bool {
+        self.header.iter().chain(self.footer.iter()).all(|s| s.trim().is_empty())
+    }
+}
+
+/// What a header or footer slot may contain, as `(field, what it prints)`.
+pub const HEADER_FIELDS: [(&str, &str); 6] = [
+    ("{page}", "page number"),
+    ("{pages}", "total pages"),
+    ("{title}", "book title"),
+    ("{author}", "author"),
+    ("{chapter}", "chapter title"),
+    ("{chapter_number}", "chapter number"),
+];
+
+/// Headers and footers for one stretch of pages: right-hand (odd) pages, left-hand
+/// (even) pages when they differ, and the first page of the stretch when it
+/// differs.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
+pub struct PageFurniture {
+    pub odd: PageSlots,
+    pub even: PageSlots,
+    pub first: PageSlots,
+}
+
+/// How the front or back matter gets its headers and footers.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum RegionMode {
+    /// The same headers and footers as the body.
+    #[default]
+    SameAsBody,
+    /// Its own.
+    Custom,
+    /// None at all.
+    None,
+}
+
+impl RegionMode {
     pub fn label(self) -> &'static str {
         match self {
-            HfLocation::Header => "Header",
-            HfLocation::Footer => "Footer",
+            RegionMode::SameAsBody => "Same as the body",
+            RegionMode::Custom => "Custom",
+            RegionMode::None => "None",
         }
     }
-    pub fn all() -> [HfLocation; 2] {
-        [HfLocation::Header, HfLocation::Footer]
+    pub fn all() -> [RegionMode; 3] {
+        [RegionMode::SameAsBody, RegionMode::Custom, RegionMode::None]
     }
 }
 
-/// Header and footer controls for the compiled PDF. `header_text` blank means
-/// the running header repeats the project title.
+/// Front matter and back matter are their own regions of the book.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+pub struct RegionFurniture {
+    pub mode: RegionMode,
+    pub furniture: PageFurniture,
+    pub number_format: NumberFormat,
+    /// Start counting again at 1 where this region begins.
+    pub restart_numbering: bool,
+}
+
+impl Default for RegionFurniture {
+    fn default() -> Self {
+        Self {
+            mode: RegionMode::SameAsBody,
+            furniture: PageFurniture::default(),
+            number_format: NumberFormat::Arabic,
+            restart_numbering: false,
+        }
+    }
+}
+
+/// Headers, footers and page numbers for the paged formats. Prose books use
+/// the templates; a script prints its own page number at the top right and
+/// reads only `page_numbers`, `number_format` and `start_number`.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct HeaderFooter {
+    /// Master switch for page numbers: off, `{page}` prints nothing.
     pub page_numbers: bool,
-    pub number_on_first_page: bool,
     pub number_format: NumberFormat,
-    pub number_location: HfLocation,
-    pub number_align: Alignment,
-    pub number_spacing: f32,
+    /// The number of the first physical page (the title page counts).
     pub start_number: u32,
-    pub running_header: bool,
-    pub header_text: String,
-    pub header_align: Alignment,
+    /// Start the body at page 1 after any front matter.
+    pub restart_body_numbering: bool,
+    /// Left-hand pages use `even`, right-hand pages `odd`.
+    pub different_odd_even: bool,
+    /// The first page of each region uses `first`.
+    pub different_first_page: bool,
+    /// Leave the header off the page where a chapter opens.
+    pub no_header_on_chapter_openers: bool,
+    /// Baseline of the header from the top edge, points.
     pub header_spacing: f32,
+    /// Baseline of the footer from the bottom edge, points.
+    pub footer_spacing: f32,
+    pub size: f32,
+    /// The body of the book.
+    pub body: PageFurniture,
+    pub front: RegionFurniture,
+    pub back: RegionFurniture,
 }
 
 impl Default for HeaderFooter {
     fn default() -> Self {
+        let mut body = PageFurniture::default();
+        body.odd.footer[1] = "{page}".into();
         Self {
             page_numbers: true,
-            number_on_first_page: false,
             number_format: NumberFormat::Arabic,
-            number_location: HfLocation::Footer,
-            number_align: Alignment::Center,
-            number_spacing: 30.0,
             start_number: 1,
-            running_header: false,
-            header_text: String::new(),
-            header_align: Alignment::Center,
+            restart_body_numbering: false,
+            different_odd_even: false,
+            different_first_page: false,
+            no_header_on_chapter_openers: true,
             header_spacing: 36.0,
+            footer_spacing: 30.0,
+            size: 9.0,
+            body,
+            front: RegionFurniture::default(),
+            back: RegionFurniture::default(),
         }
     }
 }
@@ -1384,6 +1484,36 @@ pub struct ExportSettings {
     /// constant of its own.
     #[serde(default)]
     pub margins: Option<crate::rich_text::PageMargins>,
+    /// Book margins: `margins.left` is the inside (binding) edge and
+    /// `margins.right` the outside edge, swapped on left-hand pages. Prose in
+    /// the paged formats (PDF, DOCX, RTF) only.
+    #[serde(default)]
+    pub mirror_margins: bool,
+    /// Put a cover in the formats that can carry one (EPUB).
+    #[serde(default = "default_true")]
+    pub include_cover: bool,
+    /// Where the project lives on disk, set for the duration of an export so a
+    /// project-relative cover path can be found. Never saved.
+    #[serde(skip)]
+    pub asset_root: Option<std::path::PathBuf>,
+    /// Width and height in millimetres when `paper` is `Custom`.
+    #[serde(default = "default_custom_paper_mm")]
+    pub custom_paper_mm: (f32, f32),
+}
+
+fn default_custom_paper_mm() -> (f32, f32) {
+    PaperSize::Trade6x9.mm()
+}
+
+impl ExportSettings {
+    /// The page size in millimetres, taking the custom size into account.
+    pub fn paper_mm(&self) -> (f32, f32) {
+        if self.paper == PaperSize::Custom {
+            (self.custom_paper_mm.0.clamp(50.0, 600.0), self.custom_paper_mm.1.clamp(50.0, 600.0))
+        } else {
+            self.paper.mm()
+        }
+    }
 }
 
 impl Default for ExportSettings {
@@ -1413,6 +1543,10 @@ impl Default for ExportSettings {
             scope: crate::CompileScope::Draft,
             each_separately: false,
             margins: None,
+            mirror_margins: false,
+            include_cover: true,
+            asset_root: None,
+            custom_paper_mm: default_custom_paper_mm(),
         }
     }
 }
@@ -1450,6 +1584,11 @@ pub struct Project {
     pub checkpoints: Vec<Checkpoint>,
     pub session_log: Vec<SessionEntry>,
     pub daily_target: u32,
+    /// The book's cover picture: a path inside the project (`assets/images/…`)
+    /// or an absolute path. Formats that carry a cover use it unless their own
+    /// settings name another picture.
+    #[serde(default)]
+    pub cover_image: String,
     pub export: ExportSettings,
     #[serde(default)]
     pub styles: ElementStyles,
@@ -1488,6 +1627,7 @@ impl Project {
             checkpoints: Vec::new(),
             session_log: Vec::new(),
             daily_target: 1200,
+            cover_image: String::new(),
             export,
             style_sheets: StyleSheet::industry_defaults(&styles),
             styles,
@@ -2135,10 +2275,6 @@ mod tests {
         let settings = project.settings_for(ExportKind::Pdf);
         assert_eq!(settings.paper, PaperSize::Letter);
         assert!(settings.header_footer.page_numbers);
-        assert!(!settings.header_footer.number_on_first_page);
-        assert_eq!(settings.header_footer.number_location, HfLocation::Header);
-        assert_eq!(settings.header_footer.number_align, Alignment::Right);
-        assert_eq!(settings.header_footer.number_spacing, 36.0);
     }
 
     #[test]
@@ -2353,7 +2489,7 @@ mod tests {
         assert_eq!(restored.styles, ElementStyles::default());
         assert!(restored.formats.is_empty());
         assert!(restored.export.header_footer.page_numbers);
-        assert!(!restored.export.header_footer.running_header);
+        assert!(restored.export.header_footer.body.odd.footer[1] == "{page}");
         assert_eq!(restored.export.cover_image, "");
     }
 

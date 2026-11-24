@@ -332,7 +332,6 @@ pub fn demo() -> Project {
     pdf.font_size = 11.0;
     pdf.line_spacing = 1.45;
     pdf.header_footer.page_numbers = true;
-    pdf.header_footer.running_header = false;
     p.set_settings(pdf.clone());
     p.export = pdf;
 
@@ -340,7 +339,6 @@ pub fn demo() -> Project {
     epub.font_size = 12.0;
     epub.line_spacing = 1.6;
     epub.header_footer.page_numbers = false;
-    epub.header_footer.running_header = false;
     p.set_settings(epub);
 
     let mut fdx = p.settings_for(ExportKind::Fdx);

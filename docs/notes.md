@@ -1255,3 +1255,29 @@ notices now ship in `assets/dict/README_en_*.txt`; `THIRD_PARTY.md` updated.
 code lives behind `cfg(not(target_arch = "wasm32"))`; `src/platform.rs` and
 `src/update_web.rs` are the browser stand-ins. Debug wasm is ~38 MB; use
 `--release` for anything shared.
+
+
+## Compile redesign build log (2026-11-23)
+
+See the "Compile redesign" section of `docs/roadmap.md` for what is done and
+what is next. Things worth knowing:
+
+- Compile's settings column is three tabs (`CompileSection`): Contents, Layout,
+  Styles. `PORTMANTEAU_COMPILE_SECTION=layout|styles` opens one for screenshots
+  (use a fresh `XDG_CONFIG_HOME` to open on PDF).
+- `HeaderFooter` was replaced, not extended: the old `running_header`,
+  `header_text`, `number_location`, `number_align`, `number_on_first_page` and
+  `HfLocation` are gone. `export.settings.update` takes the new
+  `header_footer` shape (see `merge_header_footer` in the API crate).
+- Page numbers count the title page (it prints none). Contents is inserted as an
+  empty page first so its page numbers come from the same `page_labels` as the
+  footers.
+- Mirroring is a post-pass in `pdf_layout` (`mirror_pages`): the text block is
+  laid out with the inside margin on the left, then left-hand pages shift by
+  `right - left`. Line breaks and page counts do not change.
+- Verified by looking: a mirrored 5.5 x 8.5 PDF measured with `pdftotext
+  -bbox-layout` (right-hand text at 65.2 pt, left-hand at 48.2 pt), and a
+  contact sheet of a templated PDF (roman front matter, body restarting at 1,
+  author left / chapter right running heads, no head on chapter openers).
+  Not verified in Word: the DOCX `mirrorMargins` part and RTF `\margmirror`
+  are covered by string tests only.

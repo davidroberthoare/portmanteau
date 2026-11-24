@@ -17,7 +17,7 @@ use eframe::egui::{
     Stroke, TextEdit, Vec2,
 };
 use portmanteau_core::{
-    Alignment, CustomStyle, ElementStyle, ElementStyles, ExportSettings, ParagraphStyle, Project,
+    Alignment, CompileType, CustomStyle, ElementStyle, ElementStyles, ExportSettings, ParagraphStyle, Project,
     StyleSheet, TextTransform,
 };
 
@@ -137,22 +137,6 @@ const PROSE_ELEMENTS: [(&str, &str); 3] = [
     ("General", "general"),
 ];
 
-const SCRIPT_ELEMENTS: [(&str, &str); 13] = [
-    ("Scene heading", "scene_heading"),
-    ("Action", "action"),
-    ("Character", "character"),
-    ("Parenthetical", "parenthetical"),
-    ("Dialogue", "dialogue"),
-    ("Transition", "transition"),
-    ("Act", "act"),
-    ("Scene", "scene"),
-    ("Stage direction", "stage_direction"),
-    ("Shot", "action"),
-    ("Extension", "extension"),
-    ("Intercut", "intercut"),
-    ("Subheading", "subheading"),
-];
-
 /// Every built-in element in editor order, paired with its display label.
 /// The Display preview picker and the count in its header read this list.
 pub const BUILTIN_ELEMENTS: [(&str, &str); 18] = [
@@ -189,91 +173,180 @@ pub const FONT_FAMILIES: [&str; 8] = [
     "DejaVu Sans",
 ];
 
-fn style_summary(label: &str, style: &ElementStyle) -> String {
-    let font = if style.font.trim().is_empty() {
-        "inherit"
-    } else {
-        style.font.as_str()
+/// The built-in elements that make sense for one kind of manuscript, in the
+/// order a writer thinks of them.
+pub fn elements_for(kind: CompileType) -> Vec<(&'static str, &'static str)> {
+    const TITLE: [(&str, &str); 3] = TITLE_PAGE_ELEMENTS;
+    let mut list: Vec<(&str, &str)> = TITLE.to_vec();
+    let rest: &[(&str, &str)] = match kind {
+        CompileType::Prose => &PROSE_ELEMENTS,
+        CompileType::Screenplay => &[
+            ("Scene heading", "scene_heading"),
+            ("Action", "action"),
+            ("Character", "character"),
+            ("Parenthetical", "parenthetical"),
+            ("Dialogue", "dialogue"),
+            ("Transition", "transition"),
+            ("Extension", "extension"),
+            ("Intercut", "intercut"),
+            ("Subheading", "subheading"),
+        ],
+        CompileType::TvScript => &[
+            ("Act", "act"),
+            ("Scene heading", "scene_heading"),
+            ("Action", "action"),
+            ("Character", "character"),
+            ("Parenthetical", "parenthetical"),
+            ("Dialogue", "dialogue"),
+            ("Transition", "transition"),
+            ("Extension", "extension"),
+            ("Intercut", "intercut"),
+            ("Subheading", "subheading"),
+        ],
+        CompileType::StagePlay => &[
+            ("Act", "act"),
+            ("Scene", "scene"),
+            ("Character", "character"),
+            ("Parenthetical", "parenthetical"),
+            ("Dialogue", "dialogue"),
+            ("Stage direction", "stage_direction"),
+        ],
     };
-    format!(
-        "{label} — {font} · {:.0} pt · {:.1}×",
-        style.size, style.leading
-    )
+    list.extend_from_slice(rest);
+    list
 }
 
-/// The shared per-element style editor, modelled after a word processor's
-/// Paragraph dialog. Elements are grouped into three collapsible sections so
-/// the Compile screen and its Display tab stay compact. Each row edits an owned
-/// clone, applied after the draw pass.
-///
-/// `grey_prose` / `grey_script` disable the group that cannot apply to the open
-/// project's medium (a novel has no script elements, a screenplay no prose
-/// elements). Settings passes both `false`: its defaults apply to everything.
-pub fn element_styles_editor(
+/// The one style editor: pick the kind of manuscript, pick a style (title page
+/// parts, headings, body, character cues, then the writer's own styles), and
+/// edit it in a single form. Used by Compile (per output format) and by the
+/// Settings defaults. `scope` keeps each use's picks apart. Returns true when
+/// any style changed.
+#[allow(deprecated)]
+pub fn style_editor(
     ui: &mut egui::Ui,
     styles: &mut ElementStyles,
-    grey_prose: bool,
-    grey_script: bool,
+    scope: &str,
+    default_type: CompileType,
 ) -> bool {
+    let id = egui::Id::new(("style_editor_pick", scope));
+    let (mut kind, mut key): (CompileType, String) = ui
+        .data_mut(|d| d.get_temp(id))
+        .unwrap_or((default_type, "body".to_owned()));
     let mut changed = false;
-    let sections: [(&str, &str, &str, &[(&str, &str)]); 3] = [
-        (
-            "Title page",
-            "Title page title",
-            "title_page_title",
-            &TITLE_PAGE_ELEMENTS,
-        ),
-        ("Prose", "Body", "body", &PROSE_ELEMENTS),
-        ("Script", "Action", "action", &SCRIPT_ELEMENTS),
-    ];
-
-    for (section, summary_label, summary_key, elements) in sections {
-        let greyed = match section {
-            "Prose" => grey_prose,
-            "Script" => grey_script,
-            _ => false,
-        };
-        let summary = styles
-            .element_mut(summary_key)
-            .map(|style| style_summary(summary_label, style))
+    let builtin = elements_for(kind);
+    let valid = builtin.iter().any(|(_, k)| *k == key)
+        || key
+            .strip_prefix("custom:")
+            .and_then(|i| i.parse::<usize>().ok())
+            .is_some_and(|i| i < styles.custom.len());
+    if !valid {
+        key = builtin
+            .iter()
+            .find(|(_, k)| *k == "body" || *k == "action")
+            .or(builtin.first())
+            .map(|(_, k)| (*k).to_owned())
             .unwrap_or_default();
-        egui::CollapsingHeader::new(
-            RichText::new(format!(
-                "{}    {summary}",
-                if section == "Script" { "Film screenplay" } else { section }
-            ))
-                .font(ui_body())
-                .color(if greyed { FAINT } else { TEXT }),
-        )
-        .id_salt(("style_section", section))
-        .default_open(section == "Prose")
-        .show(ui, |ui| {
-            ui.add_enabled_ui(!greyed, |ui| {
-                ui.add_space(4.0);
-                section_label(ui, "Type & paragraph");
-                ui.add_space(2.0);
-                let mut first = true;
-                for (label, key) in elements {
-                    if !first {
-                        ui.add_space(3.0);
-                    }
-                    first = false;
-                    let Some(mut draft) = styles.element_mut(key).cloned() else {
-                        continue;
-                    };
-                    if element_row(ui, key, label, &mut draft) {
-                        if let Some(target) = styles.element_mut(key) {
-                            *target = draft;
-                            changed = true;
-                        }
+    }
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Type").font(ui_small()).color(MUTED));
+        egui::ComboBox::from_id_salt(("style_type", scope))
+            .selected_text(RichText::new(kind.label()).font(ui_small()))
+            .width(150.0)
+            .show_ui(ui, |ui| {
+                for t in CompileType::all() {
+                    ui.selectable_value(&mut kind, t, t.label());
+                }
+            });
+    });
+    ui.add_space(3.0);
+    let current_label = match key.strip_prefix("custom:").and_then(|i| i.parse::<usize>().ok()) {
+        Some(i) => styles.custom.get(i).map(|c| c.name.clone()).unwrap_or_default(),
+        None => elements_for(kind)
+            .iter()
+            .find(|(_, k)| *k == key)
+            .map(|(l, _)| (*l).to_owned())
+            .unwrap_or_default(),
+    };
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Style").font(ui_small()).color(MUTED));
+        egui::ComboBox::from_id_salt(("style_pick", scope))
+            .selected_text(RichText::new(current_label).font(ui_small()))
+            .width(200.0)
+            .show_ui(ui, |ui| {
+                for (label, k) in elements_for(kind) {
+                    ui.selectable_value(&mut key, k.to_owned(), label);
+                }
+                if !styles.custom.is_empty() {
+                    ui.separator();
+                }
+                for (i, custom) in styles.custom.iter().enumerate() {
+                    ui.selectable_value(&mut key, format!("custom:{i}"), &custom.name);
+                }
+            });
+        if quiet_button(ui, "New style").clicked() {
+            let mut name = "New style".to_string();
+            let mut n = 2;
+            while styles.custom.iter().any(|c| c.name == name) || styles.element(&name).is_some() {
+                name = format!("New style {n}");
+                n += 1;
+            }
+            styles.custom.push(CustomStyle {
+                name,
+                style: ElementStyle::default(),
+            });
+            key = format!("custom:{}", styles.custom.len() - 1);
+            changed = true;
+        }
+    });
+    ui.add_space(6.0);
+
+    let custom_index = key.strip_prefix("custom:").and_then(|i| i.parse::<usize>().ok());
+    match custom_index {
+        Some(index) if index < styles.custom.len() => {
+            let mut remove = false;
+            let mut draft = styles.custom[index].clone();
+            let mut row = false;
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Name").font(ui_small()).color(FAINT));
+                row |= ui
+                    .add(TextEdit::singleline(&mut draft.name).font(ui_small()).desired_width(170.0))
+                    .changed();
+                if ui
+                    .add(egui::Button::new(RichText::new("Remove").font(ui_small()).color(RED)))
+                    .clicked()
+                {
+                    remove = true;
+                }
+            });
+            ui.add_space(4.0);
+            row |= element_row(ui, &format!("{scope}_custom_{index}"), "Paragraph", &mut draft.style);
+            if remove {
+                styles.custom.remove(index);
+                key = "body".into();
+                changed = true;
+            } else if row {
+                styles.custom[index] = draft;
+                changed = true;
+            }
+        }
+        _ => {
+            let label = elements_for(kind)
+                .iter()
+                .find(|(_, k)| *k == key)
+                .map(|(l, _)| *l)
+                .unwrap_or("Style");
+            if let Some(mut draft) = styles.element_mut(&key).cloned() {
+                if element_row(ui, &format!("{scope}_{key}"), label, &mut draft) {
+                    if let Some(target) = styles.element_mut(&key) {
+                        *target = draft;
+                        changed = true;
                     }
                 }
-                ui.add_space(2.0);
-                hairline(ui);
-            });
-        });
-        ui.add_space(2.0);
+            }
+        }
     }
+    ui.data_mut(|d| d.insert_temp(id, (kind, key)));
     changed
 }
 
@@ -421,115 +494,6 @@ fn grid_drag(
             .suffix(suffix),
     )
     .changed()
-}
-
-/// The writer-defined styles, shown below the built-in sections. Each row edits
-/// an owned clone and writes it back after drawing; add and remove happen once
-/// the list has finished drawing so the vec is not mutated mid-iteration.
-/// Returns true when the list changed.
-pub fn custom_styles_editor(ui: &mut egui::Ui, styles: &mut ElementStyles) -> bool {
-    let count = styles.custom.len();
-    let mut changed = false;
-    egui::CollapsingHeader::new(
-        RichText::new(format!(
-            "Custom styles    {count} {}",
-            if count == 1 { "style" } else { "styles" }
-        ))
-        .font(ui_body())
-        .color(TEXT),
-    )
-    .id_salt("custom_style_section")
-    .default_open(true)
-    .show(ui, |ui| {
-        ui.add_space(4.0);
-        section_label(ui, "Writer-defined elements");
-        ui.add_space(2.0);
-        if styles.custom.is_empty() {
-            ui.label(
-                RichText::new(
-                    "None yet. Add “Epigraph”, “Pull quote” or any element your book needs.",
-                )
-                .font(ui_small())
-                .color(FAINT),
-            );
-            ui.add_space(4.0);
-        }
-
-        let mut remove: Option<usize> = None;
-        for (index, custom) in styles.custom.iter_mut().enumerate() {
-            let mut draft = custom.clone();
-            let mut row_changed = false;
-            Frame::new()
-                .fill(PANEL_2)
-                .stroke(Stroke::new(1.0, BORDER_SOFT))
-                .corner_radius(CornerRadius::same(5))
-                .inner_margin(Margin::symmetric(10, 7))
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Name").font(ui_small()).color(FAINT));
-                        row_changed |= ui
-                            .add(
-                                TextEdit::singleline(&mut draft.name)
-                                    .font(ui_small())
-                                    .desired_width(180.0),
-                            )
-                            .changed();
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        RichText::new("Remove").font(ui_small()).color(RED),
-                                    )
-                                    .fill(PANEL_3)
-                                    .stroke(Stroke::new(1.0, BORDER_SOFT))
-                                    .corner_radius(CornerRadius::same(5)),
-                                )
-                                .clicked()
-                            {
-                                remove = Some(index);
-                            }
-                        });
-                    });
-                    ui.add_space(4.0);
-                    row_changed |= element_row(
-                        ui,
-                        &format!("custom_style_{index}"),
-                        "Paragraph",
-                        &mut draft.style,
-                    );
-                });
-            if row_changed {
-                *custom = draft;
-                changed = true;
-            }
-        }
-
-        if let Some(index) = remove {
-            styles.custom.remove(index);
-            changed = true;
-        }
-
-        ui.add_space(4.0);
-        if quiet_button(ui, "Add custom style").clicked() {
-            let mut name = "New style".to_string();
-            let mut suffix = 2;
-            while styles.custom.iter().any(|style| style.name == name)
-                || styles.element(&name).is_some()
-            {
-                name = format!("New style {suffix}");
-                suffix += 1;
-            }
-            styles.custom.push(CustomStyle {
-                name,
-                style: ElementStyle::default(),
-            });
-            changed = true;
-        }
-        ui.add_space(2.0);
-        hairline(ui);
-    });
-    changed
 }
 
 /// Edit stylesheet names, display transforms and next-style rules. Formatting

@@ -130,21 +130,34 @@ fn used_fonts(css: &str) -> Vec<&'static EpubFont> {
         .collect()
 }
 
-/// Resolve an optional EPUB cover. A missing or unreadable file is not an
-/// export error: the book is still valid without its cover.
-pub(crate) fn cover_image(settings: &ExportSettings) -> Option<(String, &'static str, Vec<u8>)> {
-    let raw = settings.cover_image.trim();
+/// Resolve an optional EPUB cover: this format's own picture if it names one,
+/// else the project's. A missing or unreadable file is not an export error:
+/// the book is still valid without its cover.
+pub(crate) fn cover_image(
+    project: &Project,
+    settings: &ExportSettings,
+) -> Option<(String, &'static str, Vec<u8>)> {
+    if !settings.include_cover {
+        return None;
+    }
+    let own = settings.cover_image.trim();
+    let raw = if own.is_empty() { project.cover_image.trim() } else { own };
     if raw.is_empty() {
         return None;
     }
-    let path = Path::new(raw);
+    let mut path = std::path::PathBuf::from(raw);
+    if path.is_relative() {
+        if let Some(root) = &settings.asset_root {
+            path = root.join(path);
+        }
+    }
     let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
     let media = match ext.as_str() {
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
         _ => return None,
     };
-    let bytes = fs::read(path).ok()?;
+    let bytes = fs::read(&path).ok()?;
     Some((ext, media, bytes))
 }
 
@@ -303,7 +316,7 @@ pub(crate) fn epub_manuscript(project: &Project, settings: &ExportSettings) -> V
     let css = stylesheet(project, settings, WebTarget::Epub, &classes);
     let fonts = used_fonts(&css);
     let css = format!("{}{css}", font_face_css(&fonts));
-    let cover = cover_image(settings);
+    let cover = cover_image(project, settings);
 
     let mut buf = Vec::new();
     {

@@ -293,6 +293,47 @@ impl Workspace {
                 self.dirty = true;
                 ApiResponse::ok(command, "Project details updated", json!({"updated": true}))
             }
+            "project.set_cover" => {
+                let raw = str_arg(&payload, "path").unwrap_or_default();
+                let raw = raw.trim();
+                if raw.is_empty() {
+                    self.project.cover_image.clear();
+                    self.project.touch();
+                    self.dirty = true;
+                    return ApiResponse::ok(command, "Cover removed", json!({"cover_image": ""}));
+                }
+                let source = PathBuf::from(raw);
+                let ext = source
+                    .extension()
+                    .map(|e| e.to_string_lossy().to_ascii_lowercase())
+                    .unwrap_or_default();
+                if !matches!(ext.as_str(), "png" | "jpg" | "jpeg") {
+                    return ApiResponse::err(command, "A cover must be a .png or .jpg picture");
+                }
+                if !source.is_file() {
+                    return ApiResponse::err(command, format!("No such file: {raw}"));
+                }
+                // A saved project keeps its own copy, so the cover travels
+                // with it; an unsaved one points at the file where it is.
+                let stored = match &self.path {
+                    Some(root) => {
+                        let dir = root.join("assets").join("images");
+                        if let Err(e) = std::fs::create_dir_all(&dir) {
+                            return ApiResponse::err(command, format!("Could not create the image folder: {e}"));
+                        }
+                        let name = format!("cover.{ext}");
+                        if let Err(e) = std::fs::copy(&source, dir.join(&name)) {
+                            return ApiResponse::err(command, format!("Could not copy the cover: {e}"));
+                        }
+                        format!("assets/images/{name}")
+                    }
+                    None => source.display().to_string(),
+                };
+                self.project.cover_image = stored.clone();
+                self.project.touch();
+                self.dirty = true;
+                ApiResponse::ok(command, "Cover set", json!({"cover_image": stored}))
+            }
             "project.checkpoint" => {
                 let label = str_arg(&payload, "label").unwrap_or_else(|| "Manual checkpoint".into());
                 let id = self.project.checkpoint(label, "manual");
@@ -1022,6 +1063,8 @@ impl Workspace {
                 }
                 self.project.set_settings(settings.clone());
                 self.project.export = settings.clone();
+                // Not saved with the settings: lets a project-relative cover be found.
+                settings.asset_root = self.path.clone();
                 let target = if settings.output_path.trim().is_empty() {
                     None
                 } else {
@@ -1569,6 +1612,20 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
             settings.paper = p;
         }
     }
+    // A width and height in millimetres make the paper a custom size.
+    if payload.get("paper_width_mm").is_some() || payload.get("paper_height_mm").is_some() {
+        let (w, h) = settings.paper_mm();
+        let w = match payload.get("paper_width_mm") {
+            Some(v) => parse_finite_f32(v, "paper_width_mm", 50.0, 600.0)?,
+            None => w,
+        };
+        let h = match payload.get("paper_height_mm") {
+            Some(v) => parse_finite_f32(v, "paper_height_mm", 50.0, 600.0)?,
+            None => h,
+        };
+        settings.custom_paper_mm = (w, h);
+        settings.paper = PaperSize::Custom;
+    }
     if let Some(v) = payload.get("font").and_then(|v| v.as_str()) {
         settings.font = v.into();
     }
@@ -1581,6 +1638,9 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
     if let Some(v) = payload.get("cover_image").and_then(|v| v.as_str()) {
         settings.cover_image = v.into();
     }
+    if let Some(v) = payload.get("include_cover").and_then(|v| v.as_bool()) {
+        settings.include_cover = v;
+    }
     for (key, field) in [
         ("include_title_page", &mut settings.include_title_page),
         ("include_toc", &mut settings.include_toc),
@@ -1589,6 +1649,7 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
         ("include_synopsis", &mut settings.include_synopsis),
         ("include_notes", &mut settings.include_notes),
         ("include_hyperlinks", &mut settings.include_hyperlinks),
+        ("mirror_margins", &mut settings.mirror_margins),
     ] {
         if let Some(v) = payload.get(key).and_then(|v| v.as_bool()) {
             *field = v;
@@ -1622,14 +1683,16 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
     Ok(())
 }
 
-fn parse_alignment(value: &str) -> Option<Alignment> {
-    Alignment::all().into_iter().find(|a| {
-        format!("{a:?}").eq_ignore_ascii_case(value) || a.label().eq_ignore_ascii_case(value)
-    })
-}
-
 /// Merge a nested `{"header_footer":{...}}` object. Unknown subfields are
 /// ignored; invalid values are rejected before the caller commits the clone.
+///
+/// Shape: switches (`page_numbers`, `different_odd_even`, `different_first_page`,
+/// `no_header_on_chapter_openers`, `restart_body_numbering`), `number_format`,
+/// `start_number`, spacing and `size`; `body` with `odd`, `even` and `first`
+/// templates, each `{"header":[left,centre,right],"footer":[…]}` holding text
+/// with `{page}`, `{pages}`, `{title}`, `{author}`, `{chapter}`,
+/// `{chapter_number}`; and `front` / `back` with `mode` (same, custom, none),
+/// `number_format`, `restart_numbering` and their own templates.
 fn merge_header_footer(header_footer: &mut HeaderFooter, payload: &Value) -> Result<(), String> {
     let Some(fields) = payload.get("header_footer") else {
         return Ok(());
@@ -1639,41 +1702,28 @@ fn merge_header_footer(header_footer: &mut HeaderFooter, payload: &Value) -> Res
     };
     for (key, field) in [
         ("page_numbers", &mut header_footer.page_numbers),
-        ("number_on_first_page", &mut header_footer.number_on_first_page),
-        ("running_header", &mut header_footer.running_header),
+        ("restart_body_numbering", &mut header_footer.restart_body_numbering),
+        ("different_odd_even", &mut header_footer.different_odd_even),
+        ("different_first_page", &mut header_footer.different_first_page),
+        (
+            "no_header_on_chapter_openers",
+            &mut header_footer.no_header_on_chapter_openers,
+        ),
     ] {
         if let Some(v) = object.get(key).and_then(|v| v.as_bool()) {
             *field = v;
         }
     }
-    if let Some(v) = object.get("number_format").and_then(|v| v.as_str()) {
-        header_footer.number_format = NumberFormat::all()
-            .into_iter()
-            .find(|f| format!("{f:?}").eq_ignore_ascii_case(v) || f.label().eq_ignore_ascii_case(v))
-            .ok_or_else(|| {
-                format!("number_format must be Arabic, RomanLower or RomanUpper (got {v:?})")
-            })?;
+    if let Some(v) = object.get("number_format") {
+        header_footer.number_format = parse_number_format(v)?;
     }
-    if let Some(v) = object.get("number_location").and_then(|v| v.as_str()) {
-        header_footer.number_location = HfLocation::all()
-            .into_iter()
-            .find(|l| format!("{l:?}").eq_ignore_ascii_case(v) || l.label().eq_ignore_ascii_case(v))
-            .ok_or_else(|| format!("number_location must be Header or Footer (got {v:?})"))?;
-    }
-    if let Some(v) = object.get("number_align").and_then(|v| v.as_str()) {
-        header_footer.number_align =
-            parse_alignment(v).ok_or_else(|| format!("number_align invalid (got {v:?})"))?;
-    }
-    if let Some(v) = object.get("header_align").and_then(|v| v.as_str()) {
-        header_footer.header_align =
-            parse_alignment(v).ok_or_else(|| format!("header_align invalid (got {v:?})"))?;
-    }
-    for (key, field) in [
-        ("number_spacing", &mut header_footer.number_spacing),
-        ("header_spacing", &mut header_footer.header_spacing),
+    for (key, field, min, max) in [
+        ("header_spacing", &mut header_footer.header_spacing, 0.0, 300.0),
+        ("footer_spacing", &mut header_footer.footer_spacing, 0.0, 300.0),
+        ("size", &mut header_footer.size, 5.0, 24.0),
     ] {
         if let Some(v) = object.get(key) {
-            *field = parse_finite_f32(v, key, 0.0, 300.0)?;
+            *field = parse_finite_f32(v, key, min, max)?;
         }
     }
     if let Some(v) = object.get("start_number") {
@@ -1682,8 +1732,65 @@ fn merge_header_footer(header_footer: &mut HeaderFooter, payload: &Value) -> Res
             .ok_or_else(|| "start_number must be a non-negative integer".to_string())?;
         header_footer.start_number = n.min(9999) as u32;
     }
-    if let Some(v) = object.get("header_text").and_then(|v| v.as_str()) {
-        header_footer.header_text = v.into();
+    if let Some(v) = object.get("body") {
+        merge_furniture(&mut header_footer.body, v)?;
+    }
+    for (key, region) in [
+        ("front", &mut header_footer.front),
+        ("back", &mut header_footer.back),
+    ] {
+        let Some(v) = object.get(key) else { continue };
+        if let Some(mode) = v.get("mode").and_then(|m| m.as_str()) {
+            region.mode = RegionMode::all()
+                .into_iter()
+                .find(|m| {
+                    format!("{m:?}").eq_ignore_ascii_case(mode)
+                        || m.label().eq_ignore_ascii_case(mode)
+                        || (matches!(m, RegionMode::SameAsBody) && mode.eq_ignore_ascii_case("same"))
+                })
+                .ok_or_else(|| format!("{key}.mode must be same, custom or none (got {mode:?})"))?;
+        }
+        if let Some(f) = v.get("number_format") {
+            region.number_format = parse_number_format(f)?;
+        }
+        if let Some(r) = v.get("restart_numbering").and_then(|r| r.as_bool()) {
+            region.restart_numbering = r;
+        }
+        merge_furniture(&mut region.furniture, v)?;
+    }
+    Ok(())
+}
+
+fn parse_number_format(v: &Value) -> Result<NumberFormat, String> {
+    let name = v.as_str().unwrap_or_default();
+    NumberFormat::all()
+        .into_iter()
+        .find(|f| format!("{f:?}").eq_ignore_ascii_case(name) || f.label().eq_ignore_ascii_case(name))
+        .ok_or_else(|| format!("number_format must be Arabic, RomanLower or RomanUpper (got {v})"))
+}
+
+fn merge_furniture(furniture: &mut PageFurniture, value: &Value) -> Result<(), String> {
+    for (key, slots) in [
+        ("odd", &mut furniture.odd),
+        ("even", &mut furniture.even),
+        ("first", &mut furniture.first),
+    ] {
+        let Some(v) = value.get(key) else { continue };
+        for (row, target) in [("header", &mut slots.header), ("footer", &mut slots.footer)] {
+            let Some(list) = v.get(row) else { continue };
+            let list = list
+                .as_array()
+                .filter(|l| l.len() == 3)
+                .ok_or_else(|| format!("{key}.{row} must be a list of three texts: left, centre, right"))?;
+            for (slot, text) in target.iter_mut().zip(list) {
+                *slot = text
+                    .as_str()
+                    .ok_or_else(|| format!("{key}.{row} entries must be text"))?
+                    .chars()
+                    .take(200)
+                    .collect();
+            }
+        }
     }
     Ok(())
 }
@@ -1833,6 +1940,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("project.save", "Save the project to a folder package", r#"{"path":"..."}"#),
         ("project.pack", "Write the project (and its attachments) to one .zip file, for a backup or to send to someone", r#"{"path":"My Novel.portmanteau.zip"}"#),
         ("project.open_zip", "Unpack a project .zip into a new folder and open it", r#"{"path":"My Novel.portmanteau.zip","folder":"My Novel.portmanteau"}"#),
+        ("project.set_cover", "Set the book's cover picture (a .png or .jpg; a saved project keeps its own copy) or clear it with an empty path. EPUB uses it unless that format names its own cover_image", r#"{"path":"/path/to/cover.jpg"}"#),
         ("project.checkpoint", "Save a full version checkpoint", r#"{"label":"..."}"#),
         ("project.restore_checkpoint", "Restore a checkpoint", r#"{"id":"cp-..."}"#),
         ("project.snapshots", "List document snapshots", "{}"),
@@ -2337,7 +2445,7 @@ mod tests {
                 "format":"PDF",
                 "font_size":15.5,
                 "line_spacing":1.9,
-                "header_footer":{"page_numbers":false,"number_format":"RomanLower","start_number":3},
+                "header_footer":{"page_numbers":false,"number_format":"RomanLower","start_number":3,"different_odd_even":true,"body":{"even":{"header":["{author}","","{title}"]}},"front":{"mode":"none"}},
                 "cover_image":"assets/cover.png"
             }),
         );
@@ -2345,6 +2453,8 @@ mod tests {
         assert_eq!(updated.data["font_size"].as_f64().unwrap(), 15.5);
         assert_eq!(updated.data["header_footer"]["page_numbers"], false);
         assert_eq!(updated.data["header_footer"]["number_format"], "RomanLower");
+        assert_eq!(updated.data["header_footer"]["body"]["even"]["header"][0], "{author}");
+        assert_eq!(updated.data["header_footer"]["front"]["mode"], "None");
         assert_eq!(updated.data["header_footer"]["start_number"], 3);
 
         assert_eq!(ws.project.settings_for(ExportKind::Pdf).font_size, 15.5);
@@ -2522,6 +2632,35 @@ mod tests {
             serde_json::to_string(&ws.project).unwrap(),
             serde_json::to_string(&reopened.project).unwrap()
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn set_cover_keeps_a_copy_in_a_saved_project_and_clears_with_an_empty_path() {
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("set-cover"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let picture = dir.join("front.jpg");
+        std::fs::write(&picture, b"JPGDATA").unwrap();
+        let mut ws = Workspace::new_project("Covered", ProjectKind::Novel);
+
+        // Unsaved: points at the file where it is.
+        let r = ws.execute("project.set_cover", json!({"path": picture.display().to_string()}));
+        assert!(r.ok, "{}", r.message);
+        assert_eq!(ws.project.cover_image, picture.display().to_string());
+
+        // Saved: the project keeps its own copy.
+        let folder = dir.join("book.portmanteau");
+        let saved = ws.execute("project.save", json!({"path": folder.display().to_string()}));
+        assert!(saved.ok, "{}", saved.message);
+        let r = ws.execute("project.set_cover", json!({"path": picture.display().to_string()}));
+        assert!(r.ok, "{}", r.message);
+        assert_eq!(ws.project.cover_image, "assets/images/cover.jpg");
+        assert_eq!(std::fs::read(folder.join("assets/images/cover.jpg")).unwrap(), b"JPGDATA");
+
+        assert!(!ws.execute("project.set_cover", json!({"path": dir.join("x.txt").display().to_string()})).ok);
+        assert!(!ws.execute("project.set_cover", json!({"path": dir.join("missing.png").display().to_string()})).ok);
+        assert!(ws.execute("project.set_cover", json!({"path": ""})).ok);
+        assert!(ws.project.cover_image.is_empty());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

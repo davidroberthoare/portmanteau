@@ -594,7 +594,28 @@ pub fn pdf_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
     if plan.kind.is_script() {
         script_layout(project, settings)
     } else {
-        prose_layout(project, settings)
+        let mut layout = prose_layout(project, settings);
+        if settings.mirror_margins {
+            mirror_pages(&mut layout, project, settings);
+        }
+        layout
+    }
+}
+
+/// Book margins. The layout is set with the inside margin on the left, as on a
+/// right-hand page; on every left-hand page (the 2nd, 4th, …) the text block
+/// moves over so the inside margin is on the right. The block keeps its width,
+/// so line breaks and page counts do not change.
+fn mirror_pages(layout: &mut PdfLayout, project: &Project, settings: &ExportSettings) {
+    let margins = page_margins(project, settings);
+    let shift = margins.right - margins.left;
+    if shift.abs() < 0.01 {
+        return;
+    }
+    for page in layout.pages.iter_mut().skip(1).step_by(2) {
+        for item in &mut page.items {
+            item.x += shift;
+        }
     }
 }
 
@@ -1080,32 +1101,40 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
 
     let mut pages = flow.finish();
 
-    // Contents is assembled last because it needs the real page numbers, then
-    // inserted after the title page. Section starts after the insertion move by
-    // one page.
+    // Contents needs the real page numbers, so it goes in as an empty page
+    // first (everything after it moves one page later) and is filled once the
+    // numbers are known.
+    let mut contents_at = None;
     if settings.include_toc && !headings.is_empty() {
-        let insert_at = usize::from(settings.include_title_page && !pages.is_empty());
-        let toc = prose_contents_page(settings, &frame, &headings);
-        if let Some(toc) = toc {
-            pages.insert(insert_at.min(pages.len()), toc);
-            for section in &mut sections {
-                if section.start_page >= insert_at {
-                    section.start_page += 1;
-                }
+        let insert_at = usize::from(settings.include_title_page && !pages.is_empty())
+            .min(pages.len());
+        pages.insert(insert_at, PdfPageLayout { items: Vec::new() });
+        for section in &mut sections {
+            if section.start_page >= insert_at {
+                section.start_page += 1;
             }
-            sections.insert(
-                insert_at.min(sections.len()),
-                PdfLayoutSection {
-                    label: "Contents".into(),
-                    doc_id: None,
-                    start_page: insert_at,
-                    page_count: 1,
-                },
-            );
+        }
+        sections.insert(
+            insert_at.min(sections.len()),
+            PdfLayoutSection {
+                label: "Contents".into(),
+                doc_id: None,
+                start_page: insert_at,
+                page_count: 1,
+            },
+        );
+        contents_at = Some(insert_at);
+    }
+
+    let infos = page_infos(project, settings, &sections, pages.len());
+    let labels = page_labels(settings, &infos);
+    if let Some(at) = contents_at {
+        if let Some(toc) = prose_contents_page(settings, &frame, &headings, &labels) {
+            pages[at] = toc;
         }
     }
 
-    apply_prose_furniture(project, settings, &frame, &mut pages, body_size, body_face);
+    apply_prose_furniture(project, settings, &frame, &mut pages, &infos, &labels, body_face);
 
     PdfLayout {
         width: frame.width,
@@ -1354,6 +1383,7 @@ fn prose_contents_page(
     settings: &ExportSettings,
     frame: &Frame,
     headings: &[(String, usize)],
+    labels: &[String],
 ) -> Option<PdfPageLayout> {
     let body = &settings.styles.body;
     let size = body.size.max(8.0);
@@ -1382,8 +1412,8 @@ fn prose_contents_page(
         // The contents page is inserted before the first heading, so every
         // heading moves one page later. Physical pages count from the start
         // number, exactly as the footer does.
-        let printed = *start as u32 + settings.header_footer.start_number + 1;
-        let number = settings.header_footer.number_format.format(printed);
+        // Headings were noted before the contents page was inserted.
+        let number = labels.get(*start + 1).cloned().unwrap_or_default();
         let number_width = text_width(&number, face, size);
         let max_title = (frame.content_width() - number_width - 18.0).max(40.0);
         let mut chars = Vec::new();
@@ -1414,59 +1444,188 @@ fn prose_contents_page(
     Some(PdfPageLayout { items })
 }
 
+/// Which region of the book a page belongs to, and what it is, so headers
+/// and footers can follow it.
+#[derive(Clone, Debug, Default)]
+struct PageInfo {
+    /// `None` for the title page, which never carries furniture.
+    region: Option<Region>,
+    first_of_region: bool,
+    /// A page where a chapter (or front or back matter document) opens.
+    chapter_opener: bool,
+    chapter: String,
+    chapter_number: String,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Region {
+    Front,
+    Body,
+    Back,
+}
+
+fn page_infos(
+    project: &Project,
+    settings: &ExportSettings,
+    sections: &[PdfLayoutSection],
+    page_count: usize,
+) -> Vec<PageInfo> {
+    let mut infos = vec![PageInfo::default(); page_count];
+    let mut chapter = 0usize;
+    for section in sections {
+        let region = match &section.doc_id {
+            Some(id) => match project.document(id).map(|d| d.kind) {
+                Some(DocKind::FrontMatter) => Region::Front,
+                Some(DocKind::BackMatter) => Region::Back,
+                _ => Region::Body,
+            },
+            // The generated title page is page one; the contents follows it.
+            None if settings.include_title_page && section.start_page == 0 => continue,
+            None => Region::Front,
+        };
+        if region == Region::Body {
+            chapter += 1;
+        }
+        let end = (section.start_page + section.page_count.max(1)).min(page_count);
+        for page in section.start_page..end {
+            infos[page].region = Some(region);
+            infos[page].chapter_opener = section.doc_id.is_some() && page == section.start_page;
+            infos[page].chapter = section.label.clone();
+            infos[page].chapter_number = if region == Region::Body {
+                chapter.to_string()
+            } else {
+                String::new()
+            };
+        }
+    }
+    let mut seen: Vec<Region> = Vec::new();
+    for info in &mut infos {
+        if let Some(region) = info.region {
+            if !seen.contains(&region) {
+                seen.push(region);
+                info.first_of_region = true;
+            }
+        }
+    }
+    infos
+}
+
+/// The printed page number of every page, by position. The title page counts
+/// but prints nothing; a region may restart at 1 and use its own numerals.
+fn page_labels(settings: &ExportSettings, infos: &[PageInfo]) -> Vec<String> {
+    let hf = &settings.header_footer;
+    let mut number = hf.start_number;
+    let mut previous: Option<Region> = None;
+    let mut labels = Vec::with_capacity(infos.len());
+    for info in infos {
+        if let Some(region) = info.region {
+            if previous.is_some() && previous != Some(region) {
+                let restart = match region {
+                    Region::Body => hf.restart_body_numbering,
+                    Region::Front => hf.front.restart_numbering,
+                    Region::Back => hf.back.restart_numbering,
+                };
+                if restart {
+                    number = 1;
+                }
+            }
+            previous = Some(region);
+        }
+        let format = match info.region {
+            Some(Region::Front) => hf.front.number_format,
+            Some(Region::Back) => hf.back.number_format,
+            _ => hf.number_format,
+        };
+        labels.push(if info.region.is_some() { format.format(number) } else { String::new() });
+        number += 1;
+    }
+    labels
+}
+
+fn expand_fields(
+    text: &str,
+    project: &Project,
+    settings: &ExportSettings,
+    info: &PageInfo,
+    label: &str,
+    total: usize,
+) -> String {
+    let page = if settings.header_footer.page_numbers { label } else { "" };
+    text.replace("{page}", page)
+        .replace("{pages}", &total.to_string())
+        .replace("{title}", project.title.trim())
+        .replace("{author}", project.author.trim())
+        .replace("{chapter_number}", &info.chapter_number)
+        .replace("{chapter}", &info.chapter)
+        .trim()
+        .to_owned()
+}
+
 fn apply_prose_furniture(
     project: &Project,
     settings: &ExportSettings,
     frame: &Frame,
     pages: &mut [PdfPageLayout],
-    size: f32,
+    infos: &[PageInfo],
+    labels: &[String],
     face: Face,
 ) {
     let hf = &settings.header_footer;
-    let running = if hf.header_text.trim().is_empty() {
-        project.title.clone()
-    } else {
-        hf.header_text.clone()
-    };
+    let size = hf.size.clamp(5.0, 24.0);
+    let total = pages.len();
+    let left = frame.left;
+    let right = frame.width - frame.right;
     for (index, page) in pages.iter_mut().enumerate() {
-        if hf.running_header && index > 0 {
-            let text = &running;
-            let width = text_width(text, face, 9.0);
-            let x = aligned_x(hf.header_align, width, frame.left, frame.width - frame.right);
-            page.items.push(PdfText {
-                x,
-                baseline: hf.header_spacing.max(12.0),
-                size: 9.0,
-                segments: vec![PdfSegment {
-                    text: text.clone(),
-                    face,
-                }],
-                source: None,
-            });
-        }
-        if hf.page_numbers && (index > 0 || hf.number_on_first_page) {
-            let number = hf.number_format.format(hf.start_number + index as u32);
-            let width = text_width(&number, face, 9.0);
-            let x = aligned_x(hf.number_align, width, frame.left, frame.width - frame.right);
-            let baseline = match hf.number_location {
-                portmanteau_core::HfLocation::Header => hf.number_spacing.max(12.0),
-                portmanteau_core::HfLocation::Footer => {
-                    frame.height - hf.number_spacing.max(12.0)
+        let info = &infos[index];
+        let Some(region) = info.region else { continue };
+        let furniture = match region {
+            Region::Body => &hf.body,
+            Region::Front | Region::Back => {
+                let r = if region == Region::Front { &hf.front } else { &hf.back };
+                match r.mode {
+                    portmanteau_core::RegionMode::None => continue,
+                    portmanteau_core::RegionMode::Custom => &r.furniture,
+                    portmanteau_core::RegionMode::SameAsBody => &hf.body,
                 }
+            }
+        };
+        // Page 1 is a right-hand page, so counting from the first page, odd
+        // pages sit on the right.
+        let left_hand = index % 2 == 1;
+        let slots = if hf.different_first_page && info.first_of_region {
+            &furniture.first
+        } else if hf.different_odd_even && left_hand {
+            &furniture.even
+        } else {
+            &furniture.odd
+        };
+        let header_off = hf.no_header_on_chapter_openers && info.chapter_opener;
+        for (row, texts) in [(0, &slots.header), (1, &slots.footer)] {
+            if row == 0 && header_off {
+                continue;
+            }
+            let baseline = if row == 0 {
+                hf.header_spacing.max(12.0)
+            } else {
+                frame.height - hf.footer_spacing.max(12.0)
             };
-            page.items.push(PdfText {
-                x,
-                baseline,
-                size: 9.0,
-                segments: vec![PdfSegment {
-                    text: number,
-                    face,
-                }],
-                source: None,
-            });
+            for (column, raw) in texts.iter().enumerate() {
+                let text = expand_fields(raw, project, settings, info, &labels[index], total);
+                if text.is_empty() {
+                    continue;
+                }
+                let width = text_width(&text, face, size);
+                let align = [Alignment::Left, Alignment::Center, Alignment::Right][column];
+                page.items.push(PdfText {
+                    x: aligned_x(align, width, left, right),
+                    baseline,
+                    size,
+                    segments: vec![PdfSegment { text, face }],
+                    source: None,
+                });
+            }
         }
     }
-    let _ = size;
 }
 
 fn aligned_x(align: Alignment, width: f32, left: f32, right: f32) -> f32 {
@@ -1573,7 +1732,6 @@ mod tests {
         settings.include_title_page = false;
         settings.include_toc = false;
         settings.header_footer.page_numbers = false;
-        settings.header_footer.running_header = false;
         settings
     }
 
@@ -2132,7 +2290,6 @@ mod tests {
         let mut settings = project.settings_for(ExportKind::Pdf);
         settings.include_title_page = false;
         settings.include_toc = false;
-        settings.header_footer.running_header = false;
         settings.header_footer.page_numbers = false;
         settings.include_chapter_numbers = false;
 
@@ -2160,32 +2317,126 @@ mod tests {
         );
     }
 
-    #[test]
-    fn prose_running_headers_are_optional() {
-        let project = demo();
-        let mut settings = project.settings_for(ExportKind::Pdf);
-        settings.include_toc = false;
-        settings.header_footer.page_numbers = false;
-        settings.header_footer.header_text = "Running head".into();
+    fn page_has(layout: &PdfLayout, page: usize, text: &str) -> bool {
+        layout.pages[page]
+            .items
+            .iter()
+            .any(|item| item.segments.iter().any(|segment| segment.text == text))
+    }
 
-        let has_header = |settings: &ExportSettings| {
-            let layout = pdf_layout(&project, settings);
-            layout
-                .pages
-                .get(1)
-                .map(|page| {
-                    page.items.iter().any(|item| {
-                        item.segments
-                            .iter()
-                            .any(|segment| segment.text == "Running head")
-                    })
-                })
-                .unwrap_or(false)
-        };
-        settings.header_footer.running_header = true;
-        assert!(has_header(&settings));
-        settings.header_footer.running_header = false;
-        assert!(!has_header(&settings));
+    /// Three chapters of several pages each, set on a small trim.
+    fn long_book() -> (Project, ExportSettings) {
+        let mut project = Project::new("Long Book", portmanteau_core::ProjectKind::Novel);
+        project.author = "A. Writer".into();
+        let draft = project.folder_id("Draft").unwrap();
+        for n in 1..=3 {
+            let id = project.add_document(
+                Some(draft.clone()),
+                &format!("Chapter {n}"),
+                DocKind::Chapter,
+                portmanteau_core::Medium::Prose,
+            );
+            let text = vec!["A paragraph of ordinary words to fill the page. ".repeat(12); 30].join("\n");
+            project.document_mut(&id).unwrap().set_plain_text(&text);
+        }
+        let mut settings = project.settings_for(ExportKind::Pdf);
+        settings.paper = portmanteau_core::PaperSize::Trade5x8;
+        settings.include_toc = false;
+        (project, settings)
+    }
+
+    /// A page inside a chapter, not the one where it opens.
+    fn mid_chapter_page(layout: &PdfLayout, odd: bool) -> usize {
+        (1..layout.pages.len())
+            .find(|page| {
+                page % 2 == usize::from(!odd)
+                    && !layout.sections.iter().any(|s| s.start_page == *page)
+            })
+            .expect("the demo has multi-page chapters at this trim")
+    }
+
+    #[test]
+    fn headers_use_fields_and_leave_chapter_openers_bare() {
+        let (project, mut settings) = long_book();
+        settings.header_footer.body.odd.header[1] = "{title}".into();
+        let title = project.title.trim().to_owned();
+
+        let layout = pdf_layout(&project, &settings);
+        let opener = layout.sections.iter().find(|s| s.doc_id.is_some()).unwrap().start_page;
+        assert!(!page_has(&layout, opener, &title), "no head where a chapter opens");
+        let mid = mid_chapter_page(&layout, true);
+        assert!(page_has(&layout, mid, &title));
+
+        settings.header_footer.no_header_on_chapter_openers = false;
+        let layout = pdf_layout(&project, &settings);
+        assert!(page_has(&layout, opener, &title));
+    }
+
+    #[test]
+    fn odd_and_even_pages_can_carry_different_text() {
+        let (project, mut settings) = long_book();
+        let hf = &mut settings.header_footer;
+        hf.no_header_on_chapter_openers = false;
+        hf.different_odd_even = true;
+        hf.body.even.header[0] = "{author}".into();
+        hf.body.odd.header[2] = "Right-hand head".into();
+        let author = project.author.trim().to_owned();
+        assert!(!author.is_empty());
+
+        let layout = pdf_layout(&project, &settings);
+        let verso = mid_chapter_page(&layout, false);
+        let recto = mid_chapter_page(&layout, true);
+        assert!(page_has(&layout, verso, &author));
+        assert!(!page_has(&layout, verso, "Right-hand head"));
+        assert!(page_has(&layout, recto, "Right-hand head"));
+        assert!(!page_has(&layout, recto, &author));
+    }
+
+    #[test]
+    fn the_running_chapter_field_follows_the_page() {
+        let (project, mut settings) = long_book();
+        settings.header_footer.no_header_on_chapter_openers = false;
+        settings.header_footer.body.odd.header[1] = "{chapter_number}: {chapter}".into();
+        let layout = pdf_layout(&project, &settings);
+        let section = layout.sections.iter().find(|s| s.doc_id.is_some()).unwrap();
+        let expected = format!("1: {}", section.label);
+        assert!(page_has(&layout, section.start_page, &expected), "{expected}");
+    }
+
+    #[test]
+    fn regions_number_in_their_own_numerals_and_the_body_can_restart() {
+        let mut project = Project::new("Regions", portmanteau_core::ProjectKind::Novel);
+        let draft = project.folder_id("Draft").unwrap();
+        project.add_document(Some(draft), "One", DocKind::Chapter, portmanteau_core::Medium::Prose);
+        let mut settings = project.settings_for(ExportKind::Pdf);
+        settings.include_title_page = true;
+        settings.include_toc = true;
+        settings.header_footer.front.number_format = portmanteau_core::NumberFormat::RomanLower;
+        settings.header_footer.restart_body_numbering = true;
+        let layout = pdf_layout(&project, &settings);
+        // Title page, contents, then the chapter.
+        assert_eq!(layout.pages.len(), 3);
+        assert!(page_has(&layout, 1, "ii"), "contents is page ii");
+        assert!(page_has(&layout, 2, "1"), "the body starts again at 1");
+        assert!(!page_has(&layout, 0, "i"), "the title page prints no number");
+        settings.header_footer.restart_body_numbering = false;
+        let layout = pdf_layout(&project, &settings);
+        assert!(page_has(&layout, 2, "3"));
+    }
+
+    #[test]
+    fn different_first_page_swaps_the_templates_of_each_region() {
+        let mut project = Project::new("First", portmanteau_core::ProjectKind::Novel);
+        let draft = project.folder_id("Draft").unwrap();
+        project.add_document(Some(draft), "One", DocKind::Chapter, portmanteau_core::Medium::Prose);
+        let mut settings = project.settings_for(ExportKind::Pdf);
+        settings.include_title_page = true;
+        settings.include_toc = false;
+        settings.header_footer.different_first_page = true;
+        settings.header_footer.body.first.footer[1] = "Opening".into();
+        let layout = pdf_layout(&project, &settings);
+        assert!(page_has(&layout, 1, "Opening"));
+        assert!(!page_has(&layout, 1, "2"), "the first page drops the usual number");
     }
 
     #[test]

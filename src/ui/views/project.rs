@@ -139,6 +139,39 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         },
     );
 
+    let mut cover_command: Option<String> = None;
+    card(
+        ui,
+        "Cover",
+        "The picture an ebook opens with. A saved project keeps its own copy. Each output format can use a different one in Compile.",
+        |ui| {
+            ui.horizontal(|ui| {
+                label_cell(ui, "Cover");
+                let shown = if project.cover_image.is_empty() {
+                    "None".to_owned()
+                } else {
+                    std::path::Path::new(&project.cover_image)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| project.cover_image.clone())
+                };
+                ui.label(RichText::new(shown).font(ui_body()));
+                if quiet_button(ui, "Choose…").clicked() {
+                    if let Some(path) = crate::platform::FileDialog::new()
+                        .set_title("Cover picture")
+                        .add_filter("Pictures", &["png", "jpg", "jpeg"])
+                        .pick_file()
+                    {
+                        cover_command = Some(path.display().to_string());
+                    }
+                }
+                if !project.cover_image.is_empty() && quiet_button(ui, "Remove").clicked() {
+                    cover_command = Some(String::new());
+                }
+            });
+        },
+    );
+
     card(
         ui,
         "Writing goal",
@@ -157,6 +190,12 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
     if !changes.is_empty() {
         app.ws.execute("project.update", serde_json::Value::Object(changes));
+    }
+    if let Some(path) = cover_command {
+        let response = app.ws.execute("project.set_cover", json!({ "path": path }));
+        if !response.ok {
+            app.toast("Could not set the cover", response.message, crate::app::ToastKind::Error);
+        }
     }
 }
 

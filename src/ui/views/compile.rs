@@ -10,15 +10,15 @@ use eframe::egui::{
     Stroke, TextEdit, Vec2,
 };
 use portmanteau_core::{
-    Alignment, CompileScope, CompileType, DocKind, ElementStyles, ExportKind, ExportSettings,
-    HfLocation, NumberFormat, PageMargins, PaperSize, Project, ProjectKind,
+    CompileScope, CompileType, DocKind, ElementStyles, ExportKind, ExportSettings,
+    NumberFormat, PageMargins, PaperSize, Project, ProjectKind, RegionMode,
 };
 
-use crate::app::{CompileTab, PortmanteauApp, ToastKind};
+use crate::app::{CompileSection, CompileTab, PortmanteauApp, ToastKind};
 use crate::theme::*;
 use crate::ui::views::{
-    content_frame, custom_styles_editor, element_styles_editor, manuscript_preview_navigator,
-    meta_line, page_head, quiet_button, style_sheets_editor, FONT_FAMILIES,
+    content_frame, manuscript_preview_navigator, meta_line, page_head, quiet_button,
+    style_editor, FONT_FAMILIES,
 };
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
@@ -52,31 +52,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     };
     let CompileTab::Format(kind) = tab;
     let mut compile = false;
-    let front_docs: Vec<(String, String, bool)> = app
-        .ws
-        .project
-        .ordered_documents()
-        .into_iter()
-        .filter(|d| d.kind == DocKind::FrontMatter)
-        .map(|d| (d.id.clone(), d.title.clone(), d.include_in_export))
-        .collect();
-    let back_docs: Vec<(String, String, bool)> = app
-        .ws
-        .project
-        .ordered_documents()
-        .into_iter()
-        .filter(|d| d.kind == DocKind::BackMatter)
-        .map(|d| (d.id.clone(), d.title.clone(), d.include_in_export))
-        .collect();
-    // Binder items the scope selector can narrow to, with their depth so the
-    // labels read like the binder.
-    let scope_items: Vec<(String, String)> = app
-        .ws
-        .project
-        .ordered_documents()
-        .into_iter()
-        .map(|d| (d.id.clone(), d.title.clone()))
-        .collect();
     let selected_id = app.selected.clone();
     // Automatic mode resolves to a concrete type for the preview and the
     // export; the saved setting stays "auto".
@@ -88,7 +63,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut effective = settings.clone();
     effective.compile_type = Some(resolved_kind);
     let mut matter_toggles: Vec<(String, bool)> = Vec::new();
-    let mut style_sheets_changed = false;
 
     content_frame().show(ui, |ui| {
         let height = (ui.available_height() - 4.0).max(420.0);
@@ -125,26 +99,15 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 Vec2::new(400.0, height),
                 Layout::top_down(Align::Min),
                 |ui| {
-                    ScrollArea::vertical()
-                        .id_salt("compile_params")
-                        .auto_shrink([false, false])
-                        .max_height(height)
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            output_tab(
-                                app,
-                                ui,
-                                kind,
-                                &mut settings,
-                                &front_docs,
-                                &back_docs,
-                                &scope_items,
-                                selected_id.as_deref(),
-                                &mut matter_toggles,
-                                &mut compile,
-                                &mut style_sheets_changed,
-                            );
-                        });
+                    output_tab(
+                        app,
+                        ui,
+                        kind,
+                        &mut settings,
+                        selected_id.as_deref(),
+                        &mut matter_toggles,
+                        &mut compile,
+                    );
                 },
             );
             ui.add_space(16.0);
@@ -179,10 +142,6 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     app.ws.project.set_settings(settings.clone());
     app.ws.project.export = settings.clone();
     if before != settings {
-        app.ws.dirty = true;
-    }
-    if style_sheets_changed {
-        app.ws.project.touch();
         app.ws.dirty = true;
     }
     let mut matter_changed = false;
@@ -297,14 +256,12 @@ fn output_tab(
     ui: &mut egui::Ui,
     kind: ExportKind,
     settings: &mut ExportSettings,
-    front_docs: &[(String, String, bool)],
-    back_docs: &[(String, String, bool)],
-    scope_items: &[(String, String)],
     selected_id: Option<&str>,
     toggles: &mut Vec<(String, bool)>,
     compile: &mut bool,
-    style_sheets_changed: &mut bool,
 ) {
+    // Pinned above the tabs: which format this is, where it goes, and the
+    // Compile button, so none of them scroll away while settings are edited.
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.label(RichText::new(kind.label()).font(serif(21.0)).color(TEXT));
@@ -324,32 +281,81 @@ fn output_tab(
         });
     });
     ui.add_space(8.0);
-
-    selection_panel(ui, settings, scope_items, selected_id);
-    ui.add_space(10.0);
-
     output_panel(app, ui, settings);
-    ui.add_space(10.0);
-
+    ui.add_space(8.0);
     action_panel(app, ui, settings, compile);
-    ui.add_space(12.0);
+    ui.add_space(10.0);
+    section_tabs(ui, &mut app.compile_section);
+    ui.add_space(8.0);
 
     let compile_type = app
         .ws
         .project
         .compile_plan_for(settings, selected_id)
         .kind;
-    style_panel(ui, &mut settings.styles, app.ws.project.kind, compile_type);
-    ui.add_space(12.0);
-    if style_sheets_editor(ui, &mut app.ws.project.style_sheets) {
-        *style_sheets_changed = true;
-        app.ws.project.sync_element_styles_from_sheets();
-        settings.styles = app.ws.project.styles.clone();
-    }
-    ui.add_space(8.0);
+    ScrollArea::vertical()
+        .id_salt("compile_params")
+        .auto_shrink([false, false])
+        .max_height(ui.available_height())
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            match app.compile_section {
+                CompileSection::Contents => {
+                    contents_panel(app, ui, settings, selected_id, toggles);
+                    ui.add_space(10.0);
+                    if compile_type.is_script() {
+                        script_panel(ui, settings, kind, compile_type);
+                    } else {
+                        include_panel(ui, settings, kind);
+                    }
+                }
+                CompileSection::Layout => {
+                    type_panel(ui, kind, settings, compile_type, &app.ws.project.cover_image);
+                    if kind == ExportKind::Pdf {
+                        ui.add_space(8.0);
+                        header_footer_panel(ui, settings, compile_type);
+                    }
+                    ui.add_space(8.0);
+                    reset_row(app, ui, settings);
+                }
+                CompileSection::Styles => {
+                    style_panel(ui, &mut settings.styles, compile_type);
+                    ui.add_space(8.0);
+                    reset_row(app, ui, settings);
+                }
+            }
+            ui.add_space(12.0);
+        });
+}
 
-    type_panel(ui, kind, settings, compile_type);
-    ui.add_space(8.0);
+/// The three groups of settings: what goes in, how the pages look, and the
+/// type styles.
+fn section_tabs(ui: &mut egui::Ui, current: &mut CompileSection) {
+    ui.horizontal(|ui| {
+        for (section, label) in [
+            (CompileSection::Contents, "Contents"),
+            (CompileSection::Layout, "Layout"),
+            (CompileSection::Styles, "Styles"),
+        ] {
+            let selected = *current == section;
+            let text = RichText::new(label).font(ui_body()).color(if selected {
+                Color32::WHITE
+            } else {
+                MUTED
+            });
+            let button = egui::Button::new(text)
+                .fill(if selected { ACCENT } else { PANEL })
+                .stroke(Stroke::new(1.0, if selected { ACCENT } else { BORDER_SOFT }))
+                .corner_radius(CornerRadius::same(6))
+                .min_size(Vec2::new(86.0, 28.0));
+            if ui.add(button).clicked() {
+                *current = section;
+            }
+        }
+    });
+}
+
+fn reset_row(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSettings) {
     ui.horizontal(|ui| {
         if quiet_button(ui, "Reset this format to base style").clicked() {
             *settings = seeded_settings(&app.ws.project.styles, app.ws.project.kind, settings.kind);
@@ -360,19 +366,6 @@ fn output_tab(
                 .color(FAINT),
         );
     });
-    ui.add_space(12.0);
-
-    if compile_type.is_script() {
-        script_panel(ui, settings, kind, compile_type);
-    } else {
-        ui.columns(2, |cols| {
-            front_panel(&mut cols[0], settings, kind, front_docs, toggles);
-            body_panel(&mut cols[1], settings, kind, back_docs, toggles);
-        });
-    }
-    ui.add_space(12.0);
-
-    preview_panel(app, ui, settings);
 }
 
 fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSettings) {
@@ -431,13 +424,6 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                         .color(FAINT),
                 );
             }
-            ui.label(
-                RichText::new(
-                    "Front and back matter are assembled from the binder folders; excluded chapters are skipped.",
-                )
-                .font(ui_small())
-                .color(FAINT),
-            );
         });
 }
 
@@ -622,16 +608,7 @@ fn action_panel(
         });
 }
 
-fn style_panel(
-    ui: &mut egui::Ui,
-    styles: &mut ElementStyles,
-    project_kind: ProjectKind,
-    compile_type: CompileType,
-) {
-    // Grey out the element group that cannot apply to this compile.
-    let _ = project_kind;
-    let grey_prose = compile_type.is_script();
-    let grey_script = compile_type == CompileType::Prose;
+fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, compile_type: CompileType) {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -639,18 +616,16 @@ fn style_panel(
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "Element styles");
+            section_label(ui, "Type styles for this format");
             ui.label(
                 RichText::new(
-                    "Per-element type for this output format, including writer-defined styles. The global defaults live in Settings → Display.",
+                    "Pick a type of manuscript and a style, then set its font and paragraph. The global defaults live in Settings → Display.",
                 )
                 .font(ui_small())
                 .color(FAINT),
             );
-            ui.add_space(6.0);
-            element_styles_editor(ui, styles, grey_prose, grey_script);
-            ui.add_space(2.0);
-            custom_styles_editor(ui, styles);
+            ui.add_space(8.0);
+            style_editor(ui, styles, "compile", compile_type);
         });
 }
 
@@ -659,6 +634,7 @@ fn type_panel(
     kind: ExportKind,
     settings: &mut ExportSettings,
     compile_type: CompileType,
+    project_cover: &str,
 ) {
     Frame::new()
         .fill(PANEL)
@@ -687,6 +663,24 @@ fn type_panel(
                             }
                         });
                 });
+                if settings.paper == PaperSize::Custom {
+                    ui.horizontal(|ui| {
+                        ui.add_space(8.0);
+                        for (label, value) in [
+                            ("Width", &mut settings.custom_paper_mm.0),
+                            ("Height", &mut settings.custom_paper_mm.1),
+                        ] {
+                            ui.label(RichText::new(label).font(ui_small()).color(MUTED));
+                            ui.add(
+                                egui::DragValue::new(value)
+                                    .speed(0.5)
+                                    .range(50.0..=600.0)
+                                    .fixed_decimals(1)
+                                    .suffix(" mm"),
+                            );
+                        }
+                    });
+                }
                 ui.add_space(4.0);
             }
 
@@ -703,40 +697,69 @@ fn type_panel(
                 }
             });
 
-            if kind == ExportKind::Pdf {
+            if kind == ExportKind::Epub {
                 ui.add_space(7.0);
-                header_footer_panel(ui, settings);
-            }
-
-            if matches!(kind, ExportKind::Epub | ExportKind::Html) {
-                ui.add_space(7.0);
-                ui.label(
-                    RichText::new("Cover image")
-                        .font(ui_small())
-                        .color(MUTED),
-                );
-                ui.add(
-                    TextEdit::singleline(&mut settings.cover_image)
-                        .hint_text("Path to a .jpg or .png")
-                        .font(mono(9.0))
-                        .desired_width(f32::INFINITY),
-                );
+                check(ui, settings, |s| &mut s.include_cover, "Include a cover");
+                if settings.include_cover {
+                    let file_name = |path: &str| {
+                        Path::new(path)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| path.to_owned())
+                    };
+                    let own = settings.cover_image.trim().to_owned();
+                    ui.horizontal_wrapped(|ui| {
+                        if !own.is_empty() {
+                            ui.label(
+                                RichText::new(format!("This format uses {}", file_name(&own)))
+                                    .font(ui_small())
+                                    .color(MUTED),
+                            );
+                            if quiet_button(ui, "Use the project cover").clicked() {
+                                settings.cover_image.clear();
+                            }
+                        } else if project_cover.trim().is_empty() {
+                            ui.label(
+                                RichText::new("No cover yet. Add one on the Project page, or pick one for this format.")
+                                    .font(ui_small())
+                                    .color(FAINT),
+                            );
+                        } else {
+                            ui.label(
+                                RichText::new(format!("Using the project cover, {}", file_name(project_cover)))
+                                    .font(ui_small())
+                                    .color(MUTED),
+                            );
+                        }
+                        if quiet_button(ui, "Choose another…").clicked() {
+                            if let Some(path) = crate::platform::FileDialog::new()
+                                .set_title("Cover picture")
+                                .add_filter("Pictures", &["png", "jpg", "jpeg"])
+                                .pick_file()
+                            {
+                                settings.cover_image = path.display().to_string();
+                            }
+                        }
+                    });
+                }
             }
         });
 }
 
 /// What "Custom margins" starts from, so ticking the box changes nothing until
 /// a value is edited: the automatic margins for this manuscript type, in points.
-fn automatic_margins(compile_type: CompileType) -> PageMargins {
+fn automatic_margins(compile_type: CompileType, mirrored: bool) -> PageMargins {
     if compile_type.is_script() {
         // Film and TV: a 1.5" binding edge, 1" elsewhere (before any paper scaling).
         PageMargins::default()
     } else {
         // The book default: 20 mm at the sides, 22 mm top and bottom.
-        let (side, vertical) = (20.0 * 72.0 / 25.4, 22.0 * 72.0 / 25.4);
+        let mm = |v: f32| v * 72.0 / 25.4;
+        let (inside, outside) = if mirrored { (23.0, 17.0) } else { (20.0, 20.0) };
+        let vertical = mm(22.0);
         PageMargins {
-            left: side,
-            right: side,
+            left: mm(inside),
+            right: mm(outside),
             top: vertical,
             bottom: vertical,
         }
@@ -744,30 +767,46 @@ fn automatic_margins(compile_type: CompileType) -> PageMargins {
 }
 
 /// Page margins, in inches. Off means automatic. An EPUB reflows, so only its
-/// side margins apply; the paged formats use all four.
+/// side margins apply; the paged formats use all four. A prose book in a paged
+/// format can mirror them: the left field becomes the inside (binding) edge and
+/// the right one the outside edge, swapped on left-hand pages.
 fn margins_row(
     ui: &mut egui::Ui,
     kind: ExportKind,
     settings: &mut ExportSettings,
     compile_type: CompileType,
 ) {
+    let can_mirror = !compile_type.is_script()
+        && matches!(kind, ExportKind::Pdf | ExportKind::Docx | ExportKind::Rtf);
+    if can_mirror {
+        ui.checkbox(&mut settings.mirror_margins, "Book margins (inside and outside)")
+            .on_hover_text("Facing pages: the inside margin sits at the spine of every page");
+    } else {
+        settings.mirror_margins = false;
+    }
+    let mirrored = settings.mirror_margins;
     let mut custom = settings.margins.is_some();
     if ui
         .checkbox(&mut custom, "Custom margins")
         .on_hover_text("Off: book or script margins for the chosen paper")
         .changed()
     {
-        settings.margins = custom.then(|| automatic_margins(compile_type));
+        settings.margins = custom.then(|| automatic_margins(compile_type, mirrored));
     }
     let Some(margins) = settings.margins.as_mut() else {
         ui.add_space(4.0);
         return;
     };
     let reflows = kind == ExportKind::Epub;
+    let (left_label, right_label) = if mirrored {
+        ("Inside", "Outside")
+    } else {
+        ("Left", "Right")
+    };
     ui.indent("custom_margins", |ui| {
         ui.horizontal(|ui| {
-            margin_field(ui, "Left", &mut margins.left);
-            margin_field(ui, "Right", &mut margins.right);
+            margin_field(ui, left_label, &mut margins.left);
+            margin_field(ui, right_label, &mut margins.right);
         });
         if !reflows {
             ui.horizontal(|ui| {
@@ -793,119 +832,223 @@ fn margin_field(ui: &mut egui::Ui, label: &str, points: &mut f32) {
     }
 }
 
-fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings) {
-    // Edit a local clone, then commit once the draw pass is over so the combo
-    // boxes can borrow the settings without fighting the rest of the panel.
+/// Which stretch of the book the Headers & footers editor is showing.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum HfRegion {
+    Body,
+    Front,
+    Back,
+}
+
+/// Which template within the stretch.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum HfVariant {
+    Odd,
+    Even,
+    First,
+}
+
+fn number_format_combo(ui: &mut egui::Ui, id: &str, value: &mut NumberFormat) {
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(RichText::new(value.label()).font(ui_small()))
+        .width(96.0)
+        .show_ui(ui, |ui| {
+            for format in NumberFormat::all() {
+                ui.selectable_value(value, format, format.label());
+            }
+        });
+}
+
+/// Headers, footers and page numbers. A book gets templates of six slots with
+/// fields, optional left/right-hand and first-page variants, and its front
+/// matter, body and back matter can each have their own. A script only has
+/// page numbers (they print at the top right).
+#[allow(deprecated)]
+fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile_type: CompileType) {
+    // Edit a local clone, then commit once the draw pass is over.
     let mut hf = settings.header_footer.clone();
+    let state_id = egui::Id::new("hf_editor_state");
+    let (mut region, mut variant, mut focused): (HfRegion, HfVariant, Option<(usize, usize)>) = ui
+        .data_mut(|d| d.get_temp(state_id))
+        .unwrap_or((HfRegion::Body, HfVariant::Odd, None));
 
-    hairline(ui);
-    ui.add_space(6.0);
-    section_label(ui, "Headers & footers");
-    ui.add_space(4.0);
+    Frame::new()
+        .fill(PANEL)
+        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::symmetric(14, 11))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            section_label(ui, "Headers & footers");
+            ui.add_space(5.0);
 
-    let mut page_numbers = hf.page_numbers;
-    if ui.checkbox(&mut page_numbers, "Page numbers").changed() {
-        hf.page_numbers = page_numbers;
-    }
-    if hf.page_numbers {
-        ui.indent("hf_page_numbers", |ui| {
-            ui.horizontal(|ui| {
-                let mut first = hf.number_on_first_page;
-                if ui.checkbox(&mut first, "On first page").changed() {
-                    hf.number_on_first_page = first;
-                }
-                ui.add_space(8.0);
-                let mut start = hf.start_number;
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut start)
-                            .speed(1.0)
-                            .range(1..=9999)
-                            .prefix("start at "),
-                    )
-                    .changed()
-                {
-                    hf.start_number = start;
+            ui.horizontal_wrapped(|ui| {
+                ui.checkbox(&mut hf.page_numbers, "Page numbers");
+                if hf.page_numbers {
+                    ui.add_space(6.0);
+                    number_format_combo(ui, "hf_number_format", &mut hf.number_format);
+                    ui.label(RichText::new("first page is").font(ui_small()).color(MUTED));
+                    ui.add(egui::DragValue::new(&mut hf.start_number).speed(1.0).range(1..=9999));
                 }
             });
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Format").font(ui_small()).color(MUTED));
-                egui::ComboBox::from_id_salt("hf_number_format")
-                    .selected_text(RichText::new(hf.number_format.label()).font(ui_small()))
-                    .width(105.0)
-                    .show_ui(ui, |ui| {
-                        for format in NumberFormat::all() {
-                            ui.selectable_value(&mut hf.number_format, format, format.label());
-                        }
-                    });
-                ui.add_space(6.0);
-                ui.label(RichText::new("Where").font(ui_small()).color(MUTED));
-                egui::ComboBox::from_id_salt("hf_number_location")
-                    .selected_text(RichText::new(hf.number_location.label()).font(ui_small()))
-                    .width(80.0)
-                    .show_ui(ui, |ui| {
-                        for location in HfLocation::all() {
-                            ui.selectable_value(&mut hf.number_location, location, location.label());
-                        }
-                    });
-            });
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Align").font(ui_small()).color(MUTED));
-                egui::ComboBox::from_id_salt("hf_number_align")
-                    .selected_text(RichText::new(hf.number_align.label()).font(ui_small()))
-                    .width(80.0)
-                    .show_ui(ui, |ui| {
-                        for align in [Alignment::Left, Alignment::Center, Alignment::Right] {
-                            ui.selectable_value(&mut hf.number_align, align, align.label());
-                        }
-                    });
-                ui.add_space(6.0);
-                ui.label(RichText::new("Spacing").font(ui_small()).color(MUTED));
-                ui.add(
-                    egui::DragValue::new(&mut hf.number_spacing)
-                        .speed(0.5)
-                        .range(0.0..=120.0)
-                        .suffix(" pt"),
+
+            if compile_type.is_script() {
+                ui.label(
+                    RichText::new("A script prints its page number at the top right, from page 2.")
+                        .font(ui_small())
+                        .color(FAINT),
                 );
-            });
-        });
-    }
+                return;
+            }
 
-    ui.add_space(4.0);
-    let mut running = hf.running_header;
-    if ui.checkbox(&mut running, "Running header").changed() {
-        hf.running_header = running;
-    }
-    if hf.running_header {
-        ui.indent("hf_running_header", |ui| {
-            ui.add(
-                TextEdit::singleline(&mut hf.header_text)
-                    .hint_text("blank = book title")
-                    .font(ui_small())
-                    .desired_width(f32::INFINITY),
+            ui.checkbox(&mut hf.different_odd_even, "Different left-hand and right-hand pages");
+            ui.checkbox(&mut hf.different_first_page, "Different first page of each part");
+            ui.checkbox(
+                &mut hf.no_header_on_chapter_openers,
+                "No header on the page where a chapter opens",
             );
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Align").font(ui_small()).color(MUTED));
-                egui::ComboBox::from_id_salt("hf_header_align")
-                    .selected_text(RichText::new(hf.header_align.label()).font(ui_small()))
-                    .width(80.0)
-                    .show_ui(ui, |ui| {
-                        for align in [Alignment::Left, Alignment::Center, Alignment::Right] {
-                            ui.selectable_value(&mut hf.header_align, align, align.label());
+            ui.checkbox(&mut hf.restart_body_numbering, "Start the body at page 1");
+
+            ui.add_space(6.0);
+            hairline(ui);
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new("Edit").font(ui_small()).color(MUTED));
+                for (r, label) in [
+                    (HfRegion::Front, "Front matter"),
+                    (HfRegion::Body, "Body"),
+                    (HfRegion::Back, "Back matter"),
+                ] {
+                    ui.selectable_value(&mut region, r, label);
+                }
+            });
+            ui.add_space(4.0);
+
+            // Front and back matter choose how they get their templates.
+            let mut editable = true;
+            if region != HfRegion::Body {
+                let r = if region == HfRegion::Front { &mut hf.front } else { &mut hf.back };
+                ui.horizontal(|ui| {
+                    egui::ComboBox::from_id_salt(("hf_region_mode", region as u8))
+                        .selected_text(RichText::new(r.mode.label()).font(ui_small()))
+                        .width(150.0)
+                        .show_ui(ui, |ui| {
+                            for mode in RegionMode::all() {
+                                ui.selectable_value(&mut r.mode, mode, mode.label());
+                            }
+                        });
+                    number_format_combo(ui, &format!("hf_region_numbers_{}", region as u8), &mut r.number_format);
+                    ui.checkbox(&mut r.restart_numbering, "Restart at 1");
+                });
+                editable = r.mode == RegionMode::Custom;
+                if !editable {
+                    ui.label(
+                        RichText::new(match r.mode {
+                            RegionMode::None => "No headers or footers here.",
+                            _ => "Uses the body's headers and footers.",
+                        })
+                        .font(ui_small())
+                        .color(FAINT),
+                    );
+                }
+            }
+
+            if editable {
+                // Only the variants that are switched on can be edited.
+                let mut variants = vec![(
+                    HfVariant::Odd,
+                    if hf.different_odd_even { "Right-hand pages" } else { "All pages" },
+                )];
+                if hf.different_odd_even {
+                    variants.push((HfVariant::Even, "Left-hand pages"));
+                }
+                if hf.different_first_page {
+                    variants.push((HfVariant::First, "First page"));
+                }
+                if !variants.iter().any(|(v, _)| *v == variant) {
+                    variant = HfVariant::Odd;
+                }
+                ui.horizontal(|ui| {
+                    for (v, label) in &variants {
+                        ui.selectable_value(&mut variant, *v, *label);
+                    }
+                });
+                ui.add_space(4.0);
+                let furniture = match region {
+                    HfRegion::Body => &mut hf.body,
+                    HfRegion::Front => &mut hf.front.furniture,
+                    HfRegion::Back => &mut hf.back.furniture,
+                };
+                let slots = match variant {
+                    HfVariant::Odd => &mut furniture.odd,
+                    HfVariant::Even => &mut furniture.even,
+                    HfVariant::First => &mut furniture.first,
+                };
+                egui::Grid::new(("hf_slots", region as u8, variant as u8))
+                    .num_columns(4)
+                    .spacing([6.0, 5.0])
+                    .show(ui, |ui| {
+                        ui.label("");
+                        for label in ["Left", "Centre", "Right"] {
+                            ui.label(RichText::new(label).font(ui_small()).color(FAINT));
+                        }
+                        ui.end_row();
+                        for (row, (label, texts)) in
+                            [("Header", &mut slots.header), ("Footer", &mut slots.footer)]
+                                .into_iter()
+                                .enumerate()
+                        {
+                            ui.label(RichText::new(label).font(ui_small()).color(MUTED));
+                            for (column, text) in texts.iter_mut().enumerate() {
+                                let response = ui.add(
+                                    TextEdit::singleline(text)
+                                        .font(ui_small())
+                                        .desired_width(84.0),
+                                );
+                                if response.has_focus() {
+                                    focused = Some((row, column));
+                                }
+                            }
+                            ui.end_row();
                         }
                     });
-                ui.add_space(6.0);
-                ui.label(RichText::new("Spacing").font(ui_small()).color(MUTED));
-                ui.add(
-                    egui::DragValue::new(&mut hf.header_spacing)
-                        .speed(0.5)
-                        .range(0.0..=120.0)
-                        .suffix(" pt"),
-                );
+                ui.horizontal(|ui| {
+                    egui::ComboBox::from_id_salt("hf_insert_field")
+                        .selected_text(RichText::new("Insert field…").font(ui_small()))
+                        .width(130.0)
+                        .show_ui(ui, |ui| {
+                            for (token, what) in portmanteau_core::HEADER_FIELDS {
+                                if ui.selectable_label(false, format!("{token}   {what}")).clicked() {
+                                    let (row, column) = focused.unwrap_or((1, 1));
+                                    let target = if row == 0 {
+                                        &mut slots.header[column]
+                                    } else {
+                                        &mut slots.footer[column]
+                                    };
+                                    target.push_str(token);
+                                }
+                            }
+                        });
+                    ui.label(
+                        RichText::new("adds to the box you last clicked")
+                            .font(ui_small())
+                            .color(FAINT),
+                    );
+                });
+            }
+
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new("Header from top").font(ui_small()).color(MUTED));
+                ui.add(egui::DragValue::new(&mut hf.header_spacing).speed(0.5).range(6.0..=120.0).suffix(" pt"));
+                ui.label(RichText::new("footer from bottom").font(ui_small()).color(MUTED));
+                ui.add(egui::DragValue::new(&mut hf.footer_spacing).speed(0.5).range(6.0..=120.0).suffix(" pt"));
+                ui.label(RichText::new("size").font(ui_small()).color(MUTED));
+                ui.add(egui::DragValue::new(&mut hf.size).speed(0.1).range(5.0..=24.0).suffix(" pt"));
             });
         });
-    }
 
+    ui.data_mut(|d| d.insert_temp(state_id, (region, variant, focused)));
     settings.header_footer = hf;
 }
 
@@ -982,14 +1125,20 @@ fn script_panel(
         });
 }
 
-/// Manuscript type and scope: which kind of document this compile is, and
-/// which part of the binder it draws from.
-fn selection_panel(
+/// What is in the compile: the kind of manuscript (asked only when the project
+/// really mixes kinds), whole book or one part, and one list of every document
+/// with a tick for whether it goes in. Front and back matter are ordinary
+/// entries of that list.
+fn contents_panel(
+    app: &PortmanteauApp,
     ui: &mut egui::Ui,
     settings: &mut ExportSettings,
-    scope_items: &[(String, String)],
     selected_id: Option<&str>,
+    toggles: &mut Vec<(String, bool)>,
 ) {
+    let project = &app.ws.project;
+    let title_of = |id: &str| project.document(id).map(|d| d.title.clone());
+    let auto_kind = project.compile_plan_for(settings, selected_id).kind;
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -997,89 +1146,153 @@ fn selection_panel(
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "What is being compiled");
+            section_label(ui, "What goes in");
             ui.add_space(5.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Manuscript").font(ui_small()).color(MUTED));
-                let selected = settings
-                    .compile_type
-                    .map(|t| t.label())
-                    .unwrap_or("Auto (from the binder)");
-                egui::ComboBox::from_id_salt("compile_type")
-                    .selected_text(RichText::new(selected).font(ui_small()))
-                    .width(190.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut settings.compile_type, None, "Auto (from the binder)");
-                        for compile_type in CompileType::all() {
-                            ui.selectable_value(
-                                &mut settings.compile_type,
-                                Some(compile_type),
-                                compile_type.label(),
-                            );
-                        }
-                    });
-            });
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Scope").font(ui_small()).color(MUTED));
-                let mut draft = settings.scope == CompileScope::Draft;
-                let before = settings.scope.clone();
-                egui::ComboBox::from_id_salt("compile_scope")
-                    .selected_text(
-                        RichText::new(match &settings.scope {
-                            CompileScope::Draft => "Whole draft".to_owned(),
-                            CompileScope::Subtree(id) => scope_items
-                                .iter()
-                                .find(|(item, _)| item == id)
-                                .map(|(_, title)| title.clone())
-                                .unwrap_or_else(|| "Whole draft".to_owned()),
-                            CompileScope::Documents(_) => "Selected documents".to_owned(),
-                        })
-                        .font(ui_small()),
-                    )
-                    .width(190.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut draft, true, "Whole draft");
-                        for (id, title) in scope_items.iter().take(40) {
-                            ui.selectable_value(
-                                &mut settings.scope,
-                                CompileScope::Subtree(id.clone()),
-                                title,
-                            );
-                        }
-                    });
-                if draft {
-                    settings.scope = CompileScope::Draft;
+
+            // The kind of manuscript follows the documents. Only a project
+            // that holds more than one kind is ever asked.
+            let types = project.compile_types_in(&settings.scope);
+            if types.len() > 1 {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Compile as").font(ui_small()).color(MUTED));
+                    let shown = settings.compile_type.unwrap_or(auto_kind).label();
+                    egui::ComboBox::from_id_salt("compile_type")
+                        .selected_text(RichText::new(shown).font(ui_small()))
+                        .width(170.0)
+                        .show_ui(ui, |ui| {
+                            for t in types {
+                                ui.selectable_value(&mut settings.compile_type, Some(t), t.label());
+                            }
+                        });
+                });
+                ui.label(
+                    RichText::new("This project has more than one kind of document; each export is one kind.")
+                        .font(ui_small())
+                        .color(FAINT),
+                );
+                ui.add_space(4.0);
+            } else {
+                settings.compile_type = None;
+            }
+
+            let whole = settings.scope == CompileScope::Draft;
+            if ui.radio(whole, "Whole book").clicked() {
+                settings.scope = CompileScope::Draft;
+            }
+            let part_id = match &settings.scope {
+                CompileScope::Subtree(id) => Some(id.clone()),
+                _ => selected_id.map(str::to_owned),
+            };
+            let part_title = part_id.as_deref().and_then(title_of);
+            let part_active = matches!(settings.scope, CompileScope::Subtree(_));
+            let part_label = match &part_title {
+                Some(t) => format!("Only “{t}” and what is inside it"),
+                None => "Only part of the book".to_owned(),
+            };
+            let clicked = ui
+                .add_enabled(part_title.is_some(), egui::RadioButton::new(part_active, part_label))
+                .on_disabled_hover_text("Select an item in the binder first")
+                .clicked();
+            if clicked {
+                if let Some(id) = part_id {
+                    settings.scope = CompileScope::Subtree(id);
                 }
-                let _ = before;
-                if let Some(id) = selected_id {
-                    if ui
-                        .small_button("Use binder selection")
-                        .on_hover_text("Compile the selected binder item and everything beneath it")
-                        .clicked()
-                    {
-                        settings.scope = CompileScope::Subtree(id.to_owned());
+            }
+            if part_active {
+                if let (CompileScope::Subtree(current), Some(sel)) = (&settings.scope, selected_id) {
+                    if current != sel {
+                        if let Some(title) = title_of(sel) {
+                            if ui
+                                .small_button(format!("Use “{title}” instead"))
+                                .on_hover_text("Compile the item now selected in the binder")
+                                .clicked()
+                            {
+                                settings.scope = CompileScope::Subtree(sel.to_owned());
+                            }
+                        }
                     }
                 }
-            });
-            ui.add_space(4.0);
-            ui.label(
-                RichText::new(
-                    "Each export is one kind of manuscript. Documents of another kind are listed as skipped, not silently dropped.",
-                )
-                .font(ui_small())
-                .color(FAINT),
-            );
+            }
+
+            ui.add_space(7.0);
+            hairline(ui);
+            ui.add_space(7.0);
+            document_list(app, ui, settings, toggles);
         });
 }
 
-fn front_panel(
+/// Every document the compile could draw from, in binder order, each with a
+/// tick. Documents the chosen kind cannot take are listed greyed with why.
+fn document_list(
+    app: &PortmanteauApp,
     ui: &mut egui::Ui,
-    settings: &mut ExportSettings,
-    kind: ExportKind,
-    front_docs: &[(String, String, bool)],
+    settings: &ExportSettings,
     toggles: &mut Vec<(String, bool)>,
 ) {
+    let project = &app.ws.project;
+    let plan = project.compile_plan_for(settings, app.selected.as_deref());
+    let reasons: std::collections::HashMap<&str, &str> = plan
+        .skipped
+        .iter()
+        .map(|s| (s.doc.id.as_str(), s.reason.as_str()))
+        .collect();
+    let included: std::collections::HashSet<&str> =
+        plan.included.iter().map(|d| d.id.as_str()).collect();
+    let counts = crate::ui::preview::page_counts(ui, project);
+    let mut shown = 0;
+    ScrollArea::vertical()
+        .id_salt("compile_documents")
+        .max_height(300.0)
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            for doc in project.ordered_documents() {
+                let in_plan = included.contains(doc.id.as_str());
+                let reason = reasons.get(doc.id.as_str()).copied();
+                if !in_plan && reason.is_none() {
+                    continue;
+                }
+                shown += 1;
+                let mut depth: usize = 0;
+                let mut parent = doc.parent.clone();
+                while let Some(id) = parent {
+                    depth += 1;
+                    parent = project.document(&id).and_then(|p| p.parent.clone());
+                }
+                ui.horizontal(|ui| {
+                    ui.add_space(depth.saturating_sub(1) as f32 * 14.0);
+                    let can_toggle = in_plan || reason == Some("Excluded from compile");
+                    let mut value = doc.include_in_export;
+                    let text = RichText::new(&doc.title)
+                        .font(ui_small())
+                        .color(if in_plan { TEXT } else { FAINT });
+                    if ui
+                        .add_enabled(can_toggle, egui::Checkbox::new(&mut value, text))
+                        .changed()
+                    {
+                        toggles.push((doc.id.clone(), value));
+                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let note = if in_plan {
+                            format!("{} w · {} pp", doc.words(), counts.label(&doc.id))
+                        } else {
+                            reason.unwrap_or_default().to_owned()
+                        };
+                        ui.label(RichText::new(note).font(mono(8.5)).color(FAINT));
+                    });
+                });
+            }
+            if shown == 0 {
+                ui.label(
+                    RichText::new("Nothing of this kind is in the chosen part of the book.")
+                        .font(ui_small())
+                        .color(FAINT),
+                );
+            }
+        });
+}
+
+/// The switches for a prose compile.
+fn include_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, kind: ExportKind) {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -1087,7 +1300,7 @@ fn front_panel(
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "Front matter");
+            section_label(ui, "Also include");
             ui.add_space(5.0);
             let plain_text = matches!(
                 kind,
@@ -1095,9 +1308,6 @@ fn front_panel(
             );
             if !plain_text {
                 check(ui, settings, |s| &mut s.include_title_page, "Title page");
-            }
-            matter_list(ui, front_docs, toggles);
-            if !plain_text {
                 check(ui, settings, |s| &mut s.include_toc, "Table of contents");
                 check(
                     ui,
@@ -1106,73 +1316,12 @@ fn front_panel(
                     "Chapter numbers",
                 );
             }
-        });
-}
-
-fn body_panel(
-    ui: &mut egui::Ui,
-    settings: &mut ExportSettings,
-    kind: ExportKind,
-    back_docs: &[(String, String, bool)],
-    toggles: &mut Vec<(String, bool)>,
-) {
-    Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::symmetric(14, 11))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            section_label(ui, "Body & back matter");
-            ui.add_space(5.0);
-            check(
-                ui,
-                settings,
-                |s| &mut s.include_scene_numbers,
-                "Scene numbers",
-            );
-            check(ui, settings, |s| &mut s.include_synopsis, "Include synopses");
-            check(ui, settings, |s| &mut s.include_notes, "Include author notes");
+            check(ui, settings, |s| &mut s.include_synopsis, "Synopses");
+            check(ui, settings, |s| &mut s.include_notes, "Author notes");
             if kind.writes_hyperlinks() {
                 check(ui, settings, |s| &mut s.include_hyperlinks, "Write links as links");
             }
-            ui.add_space(7.0);
-            hairline(ui);
-            ui.add_space(7.0);
-            section_label(ui, "Back matter");
-            ui.add_space(3.0);
-            matter_list(ui, back_docs, toggles);
-            ui.add_space(7.0);
-            hairline(ui);
-            ui.add_space(7.0);
-            section_label(ui, "Draft");
-            ui.add_space(3.0);
-            ui.label(
-                RichText::new(format!(
-                    "{} is compiled from the binder. Script media keep their element types.",
-                    kind.label()
-                ))
-                .font(ui_small())
-                .color(FAINT),
-            );
         });
-}
-
-fn matter_list(
-    ui: &mut egui::Ui,
-    docs: &[(String, String, bool)],
-    toggles: &mut Vec<(String, bool)>,
-) {
-    if docs.is_empty() {
-        ui.label(RichText::new("(none)").font(ui_small()).color(FAINT));
-        return;
-    }
-    for (id, title, include) in docs {
-        let mut value = *include;
-        if ui.checkbox(&mut value, title).changed() {
-            toggles.push((id.clone(), value));
-        }
-    }
 }
 
 fn check(
@@ -1185,111 +1334,6 @@ fn check(
     if ui.checkbox(&mut value, label).changed() {
         *field(settings) = value;
     }
-}
-
-fn preview_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &ExportSettings) {
-    Frame::new()
-        .fill(BG)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::same(14))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                section_label(ui, "What will be compiled");
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    meta_line(ui, &["order follows the binder"]);
-                });
-            });
-            ui.add_space(5.0);
-            let plan = app
-                .ws
-                .project
-                .compile_plan_for(settings, app.selected.as_deref());
-            ui.horizontal(|ui| {
-                pill(ui, plan.kind.label(), format_color(settings.kind), PANEL_2);
-                if settings.each_separately && plan.kind.is_script() {
-                    let groups = app.ws.project.compile_groups(&plan);
-                    ui.label(
-                        RichText::new(format!(
-                            "{} separate file{}",
-                            groups.len(),
-                            if groups.len() == 1 { "" } else { "s" }
-                        ))
-                        .font(ui_small())
-                        .color(FAINT),
-                    );
-                }
-            });
-            ui.add_space(4.0);
-            let docs = &plan.included;
-            let counts = crate::ui::preview::page_counts(ui, &app.ws.project);
-            for d in docs.iter().take(14) {
-                ui.horizontal(|ui| {
-                    let glyph = if d.medium.is_script() { "▶" } else { "¶" };
-                    ui.label(
-                        RichText::new(glyph)
-                            .font(ui_small())
-                            .color(if d.medium.is_script() { PURPLE_INK } else { ACCENT_INK }),
-                    );
-                    ui.label(RichText::new(&d.title).font(ui_small()).color(TEXT));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            RichText::new(format!("{} w · {} pp", d.words(), counts.label(&d.id)))
-                                .font(mono(8.5))
-                                .color(FAINT),
-                        );
-                    });
-                });
-            }
-            if docs.is_empty() {
-                ui.label(
-                    RichText::new("Nothing of this kind is included in the scope.")
-                        .font(ui_small())
-                        .color(FAINT),
-                );
-            }
-            if !plan.skipped.is_empty() {
-                ui.add_space(6.0);
-                hairline(ui);
-                ui.add_space(5.0);
-                ui.label(
-                    RichText::new(format!("Skipped ({})", plan.skipped.len()))
-                        .font(ui_small())
-                        .color(FAINT),
-                );
-                for skipped in plan.skipped.iter().take(4) {
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new(&skipped.doc.title)
-                                .font(ui_small())
-                                .color(FAINT),
-                        );
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            ui.label(
-                                RichText::new(&skipped.reason)
-                                    .font(mono(8.0))
-                                    .color(FAINT),
-                            );
-                        });
-                    });
-                }
-                if plan.skipped.len() > 4 {
-                    ui.label(
-                        RichText::new(format!("… and {} more", plan.skipped.len() - 4))
-                            .font(ui_small())
-                            .color(FAINT),
-                    );
-                }
-            }
-            if docs.len() > 14 {
-                ui.label(
-                    RichText::new(format!("… and {} more sections", docs.len() - 14))
-                        .font(ui_small())
-                        .color(FAINT),
-                );
-            }
-        });
 }
 
 #[derive(Clone, Default)]
@@ -1459,6 +1503,7 @@ mod tests {
     fn ticking_custom_margins_seeds_the_automatic_values_and_unticking_returns_to_auto() {
         let mut app = PortmanteauApp::new(None);
         app.compile_tab = crate::app::CompileTab::Format(ExportKind::Pdf);
+        app.compile_section = crate::app::CompileSection::Layout;
         let before = app.ws.project.settings_for(ExportKind::Pdf);
         assert!(before.margins.is_none(), "margins start automatic");
 
@@ -1500,5 +1545,36 @@ mod tests {
             app.borrow().ws.project.settings_for(ExportKind::Pdf).margins.is_none(),
             "unticking returns to automatic"
         );
+    }
+
+    #[test]
+    fn the_three_tabs_show_their_own_settings() {
+        let mut app = PortmanteauApp::new(None);
+        app.compile_tab = crate::app::CompileTab::Format(ExportKind::Pdf);
+        let app = Rc::new(RefCell::new(app));
+        let ui_app = Rc::clone(&app);
+        let mut harness = Harness::builder()
+            .with_size(Vec2::new(1440.0, 930.0))
+            .with_accessibility_check(false)
+            .allow_missing_glyphs()
+            .build_ui(move |ui| {
+                show(&mut ui_app.borrow_mut(), ui);
+            });
+        harness.run_steps(3);
+        // Contents: what goes in, no scope or manuscript dropdowns.
+        assert!(harness.query_by_label("Whole book").is_some());
+        assert!(harness.query_by_label("Scope").is_none());
+        assert!(harness.query_by_label("Manuscript").is_none());
+
+        harness.get_by_label("Layout").click();
+        harness.run_steps(3);
+        assert!(harness.query_by_label("Book margins (inside and outside)").is_some());
+        assert!(harness.query_by_label("Different left-hand and right-hand pages").is_some());
+
+        harness.get_by_label("Styles").click();
+        harness.run_steps(3);
+        assert!(harness.query_by_label("Type").is_some());
+        assert!(harness.query_by_label("Style").is_some());
+        assert!(harness.query_by_label("Element styles").is_none());
     }
 }

@@ -363,6 +363,7 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
 <Default Extension="xml" ContentType="application/xml"/>
 <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
 <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>
 <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
 </Types>"#;
     let rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -373,7 +374,14 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
     let doc_rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>
 </Relationships>"#;
+    // Word's "Mirror margins": the left margin becomes the inside one.
+    let mirror = settings.mirror_margins && !project.compile_plan(settings).kind.is_script();
+    let word_settings = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:settings xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">{}</w:settings>",
+        if mirror { "<w:mirrorMargins/>" } else { "" }
+    );
     let core = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>{}</dc:title><dc:creator>{}</dc:creator></cp:coreProperties>",
         xml_escape(&project.title),
@@ -390,6 +398,7 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
             ("_rels/.rels", rels),
             ("word/document.xml", &document),
             ("word/styles.xml", styles.as_str()),
+            ("word/settings.xml", word_settings.as_str()),
             ("word/_rels/document.xml.rels", doc_rels),
             ("docProps/core.xml", &core),
         ] {

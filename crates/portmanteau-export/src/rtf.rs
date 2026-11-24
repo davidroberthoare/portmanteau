@@ -168,7 +168,12 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
     let (page_w, page_h) = paper_twips(settings);
     let margins = page_margins(project, settings);
     out.push_str(&format!(
-        "\\paperw{page_w}\\paperh{page_h}\\margl{}\\margr{}\\margt{}\\margb{}\n",
+        "\\paperw{page_w}\\paperh{page_h}{}\\margl{}\\margr{}\\margt{}\\margb{}\n",
+        if settings.mirror_margins && !project.compile_plan(settings).kind.is_script() {
+            "\\margmirror"
+        } else {
+            ""
+        },
         pt_to_twips(margins.left),
         pt_to_twips(margins.right),
         pt_to_twips(margins.top),

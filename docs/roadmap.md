@@ -123,3 +123,38 @@ The look is light and quiet: warm-gray chrome, soft-white paper, the manuscript
 dominating (`src/theme.rs`, brief in `docs/ui-style-guidelines.md`). Keep
 reducing persistent control rows in workspaces as they are touched (Compile still
 carries a long format list), and put any dark theme on the same tokens.
+
+## Compile redesign (agreed 2026-11-23)
+
+Done (2026-11-23, uncommitted at the time of writing):
+- Contents / Layout / Styles tabs; one "What goes in" list replaces the
+  Manuscript and Scope dropdowns (`Project::compile_types_in`).
+- One style editor (`views::style_editor`): type picker, style picker, one form.
+  Used by Compile (per format) and Settings. The stylesheet editor (next-style
+  rules, display uppercase, script margins) stays in Settings only.
+- Trim sizes (5x8, 5.25x8, 5.5x8.5, 6x9, B-format, A4/A5/Letter, Custom w x h),
+  `mirror_margins` (left = inside, right = outside; PDF shifts left-hand pages,
+  DOCX writes `w:mirrorMargins`, RTF `\margmirror`). Automatic mirrored margins
+  are 23 mm inside, 17 mm outside.
+- Headers and footers: `HeaderFooter` is now six slots with fields
+  (`{page} {pages} {title} {author} {chapter} {chapter_number}`), right/left-hand
+  variants, a first-page variant per region, no header on chapter openers, and
+  front matter / body / back matter regions (same as body, custom, none; own
+  numerals; restart numbering). PDF only; scripts keep their own top-right number.
+- Project cover (`Project.cover_image`, command `project.set_cover`) with a
+  per-format override and `include_cover`; EPUB uses it.
+
+Not done / next:
+- **Per-document sections** ("start a new section", same as previous) on top of
+  the front/body/back regions.
+- DOCX and RTF headers and footers (Word has `PAGE`, `STYLEREF`, odd/even,
+  `titlePg`; RTF is weaker on the chapter field).
+- The PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
+  and no inline pictures. Needs picture support first.
+- "Start chapters on a right-hand page" (blank verso pages).
+- `.tex` export (text writer over `content` and `layout`; no TeX dependency).
+- **Table of contents customization** (the last item of this work): title text,
+  depth (parts/chapters/scenes), page numbers on/off, dot leaders, which
+  documents appear, numbering style, per-level styles, and a real linked TOC in
+  PDF/EPUB.
+- Grey out style properties that do not apply to a format (EPUB ignores some).

@@ -114,7 +114,7 @@ fn docx_and_rtf_page_size_follow_the_paper_setting() {
         (PaperSize::Letter, 12240, 15840),
         (PaperSize::A4, 11906, 16838),
         (PaperSize::A5, 8391, 11906),
-        (PaperSize::UsTrade, 8640, 12960),
+        (PaperSize::Trade6x9, 8640, 12960),
     ];
     for (paper, width, height) in expected {
         let mut s = p.settings_for(ExportKind::Docx);
@@ -1084,4 +1084,82 @@ fn the_hyperlinks_option_controls_links_in_every_format_that_can_carry_them() {
     for kind in [ExportKind::Pdf, ExportKind::Txt, ExportKind::Fountain, ExportKind::Fdx] {
         assert!(!kind.writes_hyperlinks(), "{kind:?} has no links to write yet");
     }
+}
+
+#[test]
+fn mirrored_margins_swap_the_text_block_on_left_hand_pages() {
+    let p = demo();
+    let mut s = p.settings_for(ExportKind::Pdf);
+    s.paper = PaperSize::Trade5x8;
+    s.margins = Some(PageMargins { left: 80.0, right: 30.0, top: 54.0, bottom: 54.0 });
+    s.mirror_margins = true;
+    s.header_footer.page_numbers = false;
+    let layout = pdf_layout(&p, &s);
+    assert!(layout.pages.len() >= 4);
+    let body_left = |page: usize| {
+        layout.pages[page]
+            .items
+            .iter()
+            .filter(|t| t.source.is_some())
+            .map(|t| t.x)
+            .fold(f32::MAX, f32::min)
+    };
+    // Right-hand pages start at the inside margin; left-hand pages at the outside.
+    assert!((body_left(2) - 80.0).abs() < 0.5, "recto at {}", body_left(2));
+    assert!((body_left(3) - 30.0).abs() < 0.5, "verso at {}", body_left(3));
+    // Same page count as without mirroring: the block only moves.
+    s.mirror_margins = false;
+    assert_eq!(pdf_layout(&p, &s).pages.len(), layout.pages.len());
+}
+
+#[test]
+fn docx_and_rtf_carry_mirrored_margins() {
+    let p = demo();
+    let mut s = p.settings_for(ExportKind::Docx);
+    s.mirror_margins = true;
+    let docx = docx_manuscript(&p, &s);
+    assert!(epub_file(&docx, "word/settings.xml").contains("<w:mirrorMargins/>"));
+    s.mirror_margins = false;
+    assert!(!epub_file(&docx_manuscript(&p, &s), "word/settings.xml").contains("mirrorMargins"));
+    let mut r = p.settings_for(ExportKind::Rtf);
+    r.mirror_margins = true;
+    assert!(rtf_manuscript(&p, &r).contains("\\margmirror"));
+}
+
+#[test]
+fn custom_paper_uses_its_own_size_and_book_trims_are_offered() {
+    let p = demo();
+    let mut s = p.settings_for(ExportKind::Docx);
+    s.paper = PaperSize::Custom;
+    s.custom_paper_mm = (127.0, 203.2);
+    let xml = docx_document_xml(docx_manuscript(&p, &s));
+    assert!(xml.contains("<w:pgSz w:w=\"7200\" w:h=\"11520\"/>"), "{xml}");
+    assert!(PaperSize::all().contains(&PaperSize::Trade5_5x8_5));
+}
+
+#[test]
+fn epub_uses_the_project_cover_unless_the_format_has_its_own_or_it_is_switched_off() {
+    let mut p = demo();
+    let dir = std::env::temp_dir().join(portmanteau_core::new_id("project-cover"));
+    fs::create_dir_all(dir.join("assets/images")).unwrap();
+    fs::write(dir.join("assets/images/cover.png"), TINY_PNG).unwrap();
+    p.cover_image = "assets/images/cover.png".into();
+    let has_cover = |settings: &ExportSettings| {
+        let bytes = epub_manuscript(&p, settings);
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let found = (0..archive.len())
+            .any(|i| archive.by_index(i).unwrap().name() == "OEBPS/cover-image/cover.png");
+        found
+    };
+    let mut settings = p.settings_for(ExportKind::Epub);
+    // A project-relative path needs the folder the project lives in.
+    assert!(!has_cover(&settings));
+    settings.asset_root = Some(dir.clone());
+    assert!(has_cover(&settings), "the project cover reaches the EPUB");
+    settings.include_cover = false;
+    assert!(!has_cover(&settings), "switched off");
+    settings.include_cover = true;
+    settings.cover_image = dir.join("missing.png").display().to_string();
+    assert!(!has_cover(&settings), "the format's own picture wins, even when it is missing");
+    let _ = fs::remove_dir_all(dir);
 }

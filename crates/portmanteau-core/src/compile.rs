@@ -176,6 +176,31 @@ impl Project {
         }
     }
 
+    /// The kinds of manuscript among the documents a compile in `scope` could
+    /// take (front and back matter, research and folders do not count). More
+    /// than one means the writer has to say which kind this export is.
+    pub fn compile_types_in(&self, scope: &CompileScope) -> Vec<CompileType> {
+        let mut found = Vec::new();
+        for doc in self.ordered_documents() {
+            if doc.kind.is_folder()
+                || !self.in_scope(doc, scope)
+                || self.in_research(doc)
+                || !doc.include_in_export
+                || matches!(
+                    doc.kind,
+                    DocKind::FrontMatter | DocKind::BackMatter | DocKind::Research | DocKind::Character
+                )
+            {
+                continue;
+            }
+            let kind = CompileType::from_medium(doc.medium);
+            if !found.contains(&kind) {
+                found.push(kind);
+            }
+        }
+        found
+    }
+
     /// Work out what a compile with these settings contains. `selected` is the
     /// binder selection: in automatic mode it decides the type when it names an
     /// included document.
@@ -283,6 +308,15 @@ mod tests {
 
     fn titles(plan: &CompilePlan<'_>) -> Vec<String> {
         plan.included.iter().map(|d| d.title.clone()).collect()
+    }
+
+    #[test]
+    fn mixed_projects_report_every_kind_and_single_kind_ones_one() {
+        let project = sample::demo();
+        let kinds = project.compile_types_in(&CompileScope::Draft);
+        assert!(kinds.contains(&CompileType::Prose));
+        assert!(kinds.contains(&CompileType::TvScript));
+        assert!(kinds.len() > 1);
     }
 
     #[test]

@@ -13,6 +13,9 @@ use super::*;
 /// 22 mm top and bottom, which is a comfortable trade-paperback text block.
 const PROSE_SIDE_MM: f32 = 20.0;
 const PROSE_VERTICAL_MM: f32 = 22.0;
+/// Automatic margins for a book with facing pages: inside (spine) and outside.
+const PROSE_INSIDE_MM: f32 = 23.0;
+const PROSE_OUTSIDE_MM: f32 = 17.0;
 
 /// Width of a US Letter page in points. Script sheets are designed on it, so a
 /// narrower page scales the whole sheet by `paper width / LETTER_WIDTH`.
@@ -28,7 +31,7 @@ pub(crate) fn pt_to_twips(pt: f32) -> i64 {
 
 /// Paper size in points.
 pub(crate) fn paper_pt(settings: &ExportSettings) -> (f32, f32) {
-    let (w_mm, h_mm) = settings.paper.mm();
+    let (w_mm, h_mm) = settings.paper_mm();
     (mm_to_pt(w_mm), mm_to_pt(h_mm))
 }
 
@@ -70,9 +73,15 @@ pub(crate) fn page_margins(project: &Project, settings: &ExportSettings) -> Page
                 bottom: sheet.bottom * scale,
             }
         } else {
+            // A bound book gives the spine more room than the outer edge.
+            let (inside, outside) = if settings.mirror_margins {
+                (PROSE_INSIDE_MM, PROSE_OUTSIDE_MM)
+            } else {
+                (PROSE_SIDE_MM, PROSE_SIDE_MM)
+            };
             PageMargins {
-                left: mm_to_pt(PROSE_SIDE_MM),
-                right: mm_to_pt(PROSE_SIDE_MM),
+                left: mm_to_pt(inside),
+                right: mm_to_pt(outside),
                 top: mm_to_pt(PROSE_VERTICAL_MM),
                 bottom: mm_to_pt(PROSE_VERTICAL_MM),
             }
