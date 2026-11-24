@@ -191,6 +191,7 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 alt_text: String::new(),
                 caption: String::new(),
                 standalone: false,
+                width: crate::app::DEFAULT_PICTURE_WIDTH,
                 error: String::new(),
             });
         }
@@ -350,6 +351,7 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 alt_text: String::new(),
                 caption: String::new(),
                 standalone: false,
+                width: crate::app::DEFAULT_PICTURE_WIDTH,
                 error: String::new(),
             });
         }

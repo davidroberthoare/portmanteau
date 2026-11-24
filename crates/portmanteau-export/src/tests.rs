@@ -1338,6 +1338,38 @@ fn every_prose_writer_carries_a_picture_that_sits_on_its_own_line() {
 }
 
 #[test]
+fn a_caption_prints_under_its_picture_in_every_writer() {
+    let (mut p, dir) = picture_project("caption");
+    for doc in p.documents.iter_mut() {
+        for para in doc.content.paragraphs.iter_mut() {
+            for item in para.content.iter_mut() {
+                if let InlineContent::Image(image) = item {
+                    image.caption = "Figure one: a red dot".into();
+                }
+            }
+        }
+    }
+    let with_root = |kind| {
+        let mut s = p.settings_for(kind);
+        s.asset_root = Some(dir.clone());
+        s
+    };
+    assert!(html_manuscript(&p, &with_root(ExportKind::Html)).contains("Figure one: a red dot"));
+    assert!(rtf_manuscript(&p, &with_root(ExportKind::Rtf)).contains("Figure one: a red dot"));
+    let docx = docx_manuscript(&p, &with_root(ExportKind::Docx));
+    assert!(epub_file(&docx, "word/document.xml").contains("Figure one: a red dot"));
+    let layout = pdf_layout(&p, &with_root(ExportKind::Pdf));
+    let text: String = layout
+        .pages
+        .iter()
+        .flat_map(|page| page.items.iter())
+        .map(|item| format!("{item:?}"))
+        .collect();
+    assert!(text.contains("Figure one"), "the PDF lays the caption out");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn a_picture_cannot_be_read_from_outside_the_assets_folder() {
     let (_, dir) = picture_project("escape");
     std::fs::write(dir.join("outside.png"), TINY_PNG).unwrap();

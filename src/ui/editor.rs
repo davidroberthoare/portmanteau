@@ -1250,6 +1250,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                 alt_text: String::new(),
                 caption: String::new(),
                 standalone: false,
+                width: crate::app::DEFAULT_PICTURE_WIDTH,
                 error: String::new(),
             });
         }
@@ -1544,6 +1545,7 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 alt_text: String::new(),
                 caption: String::new(),
                 standalone: false,
+                width: crate::app::DEFAULT_PICTURE_WIDTH,
                 error: String::new(),
             });
         }

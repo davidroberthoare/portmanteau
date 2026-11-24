@@ -486,9 +486,12 @@ impl Flow {
         available: f32,
         align: Alignment,
         gap_before: f32,
+        caption_room: f32,
     ) {
         let gap = if self.current.is_blank() { 0.0 } else { gap_before.max(0.0) };
-        self.ensure(gap + height);
+        // A caption stays on the picture's page: room for its first line is
+        // asked for up front.
+        self.ensure(gap + height + caption_room);
         self.cursor += gap;
         let x = match align {
             Alignment::Right => left + (available - width).max(0.0),
@@ -1388,8 +1391,9 @@ fn flow_prose_paragraph(
             let left = flow.frame.left + indent;
             // A picture on its own line is centred unless its style aligns it elsewhere.
             let align = if format.align == Alignment::Left { Alignment::Center } else { format.align };
-            flow.picture(image, picture, dimensions, left, available, align, format.before.max(8.0));
-            flow.space(format.after.max(8.0));
+            let caption_room = if paragraph.captioned { size * 0.9 * 1.3 + 4.0 } else { 0.0 };
+            flow.picture(image, picture, dimensions, left, available, align, format.before.max(8.0), caption_room);
+            flow.space(if paragraph.captioned { 2.0 } else { format.after.max(8.0) });
             return;
         }
     }
@@ -1471,6 +1475,7 @@ fn flow_wrapped_text(
         heading: false,
         uppercase: false,
         index: None,
+        captioned: false,
     };
     flow_prose_paragraph(flow, &paragraph, format, fallback_font);
 }

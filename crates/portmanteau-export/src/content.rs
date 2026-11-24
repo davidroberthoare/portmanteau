@@ -91,6 +91,9 @@ pub(crate) struct ProseParagraph {
     /// point back at the text it came from. `None` for generated text
     /// (synopsis and note blocks).
     pub(crate) index: Option<usize>,
+    /// True on a picture whose caption follows as the next paragraph, so a
+    /// writer can keep the two on one page.
+    pub(crate) captioned: bool,
 }
 
 impl ProseParagraph {
@@ -165,7 +168,7 @@ pub(crate) fn prose_paragraphs(
         .paragraphs
         .iter()
         .enumerate()
-        .filter_map(|(index, paragraph)| {
+        .flat_map(|(index, paragraph)| {
             let style = sheet.style(&paragraph.style_id);
             let format = prose_style(project, settings, style);
             let name = style
@@ -185,14 +188,53 @@ pub(crate) fn prose_paragraphs(
                     }
                 }
             }
-            let resolved = ProseParagraph {
+            let caption = paragraph
+                .content
+                .iter()
+                .find_map(|item| match item {
+                    InlineContent::Image(image) if !image.caption.trim().is_empty() => {
+                        Some(image.caption.trim().to_owned())
+                    }
+                    _ => None,
+                });
+            let mut resolved = ProseParagraph {
                 format,
                 content,
                 heading,
                 uppercase,
                 index: Some(index),
+                captioned: false,
             };
-            (!resolved.is_empty()).then_some(resolved)
+            if resolved.is_empty() {
+                return Vec::new();
+            }
+            let mut out = Vec::new();
+            if let (Some(caption), true) = (caption, resolved.standalone_image().is_some()) {
+                resolved.captioned = true;
+                let style = ElementStyle {
+                    size: (resolved.format.size * 0.9).max(7.0),
+                    italic: true,
+                    align: Alignment::Center,
+                    indent: resolved.format.indent,
+                    right_indent: resolved.format.right_indent,
+                    first_line_indent: 0.0,
+                    before: 2.0,
+                    ..resolved.format.clone()
+                };
+                let caption = ProseParagraph {
+                    format: style,
+                    content: vec![InlineContent::Text(TextRun::plain(caption))],
+                    heading: false,
+                    uppercase: resolved.uppercase,
+                    index: resolved.index,
+                    captioned: false,
+                };
+                out.push(resolved);
+                out.push(caption);
+            } else {
+                out.push(resolved);
+            }
+            out
         })
         .collect()
 }

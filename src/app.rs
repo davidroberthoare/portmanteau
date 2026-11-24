@@ -196,8 +196,9 @@ fn browse_for(mode: PathDialog, current: &str) -> Option<String> {
     picked.map(|path| path.display().to_string())
 }
 
-/// The image's stored description: displayed at most 240 points on a side as
-/// a figure on its own paragraph, 20 as a glyph within a line of text.
+/// The image's stored description: `width` points wide (but no taller than
+/// 1.4 times that) as a figure on its own paragraph, 20 points on the long side
+/// as a glyph within a line of text.
 fn image_object(
     file_name: &str,
     pixel_width: u32,
@@ -205,9 +206,13 @@ fn image_object(
     standalone: bool,
     alt: &str,
     caption: &str,
+    width: f32,
 ) -> portmanteau_core::ImageObject {
-    let display_max = if standalone { 240.0 } else { 20.0 };
-    let scale = display_max / pixel_width.max(pixel_height).max(1) as f32;
+    let scale = if standalone {
+        (width / pixel_width.max(1) as f32).min(width * 1.4 / pixel_height.max(1) as f32)
+    } else {
+        20.0 / pixel_width.max(pixel_height).max(1) as f32
+    };
     portmanteau_core::ImageObject {
         asset_id: format!("images/{file_name}"),
         alt_text: alt.trim().to_owned(),
@@ -371,8 +376,14 @@ pub struct ImageInsertState {
     pub alt_text: String,
     pub caption: String,
     pub standalone: bool,
+    /// How wide a picture on its own paragraph prints, in points.
+    pub width: f32,
     pub error: String,
 }
+
+/// A picture on its own paragraph starts 4.5 inches wide (it shrinks to fit a
+/// narrower page); the Insert image window offers other sizes.
+pub const DEFAULT_PICTURE_WIDTH: f32 = 324.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
@@ -1136,6 +1147,7 @@ impl PortmanteauApp {
                             alt_text: String::new(),
                             caption: String::new(),
                             standalone: true,
+                            width: DEFAULT_PICTURE_WIDTH,
                             error: String::new(),
                         });
                     }
@@ -1599,6 +1611,20 @@ impl PortmanteauApp {
                 );
                 ui.checkbox(&mut state.standalone, "Place on its own paragraph");
                 ui.add_space(6.0);
+                ui.add_enabled_ui(state.standalone, |ui| {
+                    section_label(ui, "Size on the page");
+                    ui.horizontal(|ui| {
+                        for (label, width) in [
+                            ("Small", 144.0),
+                            ("Medium", DEFAULT_PICTURE_WIDTH),
+                            ("Large", 432.0),
+                            ("Full width", 468.0),
+                        ] {
+                            ui.selectable_value(&mut state.width, width, label);
+                        }
+                    });
+                });
+                ui.add_space(6.0);
                 section_label(ui, "Caption (standalone image)");
                 ui.add_enabled(
                     state.standalone,
@@ -1641,7 +1667,7 @@ impl PortmanteauApp {
     }
 
     /// Copy an image file into the project and describe it.
-    fn store_image_file(&mut self, source: &Path, standalone: bool, alt: &str, caption: &str) -> Result<portmanteau_core::ImageObject, String> {
+    fn store_image_file(&mut self, source: &Path, standalone: bool, alt: &str, caption: &str, width: f32) -> Result<portmanteau_core::ImageObject, String> {
         let root = self
             .ws
             .path
@@ -1663,7 +1689,7 @@ impl PortmanteauApp {
             .map_err(|error| format!("Could not create the project image folder: {error}"))?;
         std::fs::copy(source, image_dir.join(&file_name))
             .map_err(|error| format!("Could not copy the image into the project: {error}"))?;
-        Ok(image_object(&file_name, pixel_width, pixel_height, standalone, alt, caption))
+        Ok(image_object(&file_name, pixel_width, pixel_height, standalone, alt, caption, width))
     }
 
     /// Store pixels (a pasted picture) in the project as a PNG and describe it.
@@ -1682,7 +1708,7 @@ impl PortmanteauApp {
         image::DynamicImage::ImageRgba8(buffer)
             .save(image_dir.join(&file_name))
             .map_err(|error| format!("Could not store the image: {error}"))?;
-        Ok(image_object(&file_name, width, height, standalone, "", ""))
+        Ok(image_object(&file_name, width, height, standalone, "", "", DEFAULT_PICTURE_WIDTH))
     }
 
     fn insert_image_from_state(&mut self, state: &ImageInsertState) -> Result<(), String> {
@@ -1691,6 +1717,7 @@ impl PortmanteauApp {
             state.standalone,
             &state.alt_text,
             &state.caption,
+            state.width,
         )?;
         self.insert_image_object(&state.target, state.range.clone(), image, state.standalone)
     }
@@ -1711,6 +1738,7 @@ impl PortmanteauApp {
             alt_text: alt_text.clone(),
             caption: String::new(),
             standalone,
+            width: DEFAULT_PICTURE_WIDTH,
             error: String::new(),
         };
         let sheet = match &state.target {
@@ -2481,7 +2509,7 @@ impl PortmanteauApp {
         for path in dropped {
             let Some((target, range, _)) = self.image_target(ctx) else { return };
             let result = self
-                .store_image_file(&path, true, "", "")
+                .store_image_file(&path, true, "", "", DEFAULT_PICTURE_WIDTH)
                 .and_then(|object| self.insert_image_object(&target, range, object, true));
             if let Err(error) = result {
                 self.toast("Could not insert the picture", error, ToastKind::Error);
@@ -3191,6 +3219,7 @@ mod shell_probe {
             alt_text: "Harbor map".into(),
             caption: "Low tide".into(),
             standalone: true,
+            width: DEFAULT_PICTURE_WIDTH,
             error: String::new(),
         })
         .expect("insert image");
@@ -3690,7 +3719,7 @@ mod shell_probe {
         let caret = 12;
         let object = app.store_image_pixels(6, 4, rgba, true).unwrap();
         assert!(dir.join("assets").join(&object.asset_id).is_file(), "the PNG is in the project");
-        assert_eq!(object.width.map(|w| w.round()), Some(240.0), "shown at most 240 points wide as a figure");
+        assert_eq!(object.width.map(|w| w.round()), Some(324.0), "a pasted figure starts 4.5 inches wide");
         app.insert_image_object(&target, caret..caret, object.clone(), true).unwrap();
         let content = &app.ws.project.document(&doc_id).unwrap().content;
         let images: Vec<_> = content

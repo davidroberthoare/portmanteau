@@ -157,9 +157,12 @@ Not done / next:
   RTF (`\\pict`), EPUB (packaged `images/`) and HTML (data URI), centred, scaled
   to the measure, PNG/JPEG only, read from `<project>/assets` (`picture.rs`;
   `Project.asset_root` carries the folder). The Compile preview draws them too.
+  Second round 2026-11-24: a picture's caption prints under it in every writer
+  (generated paragraph in `prose_paragraphs`; PDF keeps it on the picture's page);
+  Insert image offers Small/Medium/Large/Full width (default 4.5 in).
   STILL TO DO: pictures inside a line of text; floating/wrapped pictures;
-  captions kept with their picture and numbered figures; a size/alignment control
-  in the editor; GIF/WebP; Markdown/Fountain/FDX (placeholders); the PDF cover
+  numbered figures; resizing or re-aligning a picture already in the text (no
+  editor control yet; only at insert); caption editing after insert; GIF/WebP; Markdown/Fountain/FDX (placeholders); the PDF cover
   page; large-image downsampling. Old note: the PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
   and no inline pictures. Needs picture support first.
 - "Start chapters on a right-hand page": DONE for prose PDF (`chapters_start_right`; blank left-hand pages carry no furniture but count in the numbering). Not yet DOCX/RTF (page-break-before odd page needs section breaks).
