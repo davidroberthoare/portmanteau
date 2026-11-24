@@ -107,7 +107,9 @@ fn picture_texture(ctx: &egui::Context, image: &portmanteau_export::PdfImage) ->
     if let Some(texture) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
         return Some(texture);
     }
-    let decoded = image::load_from_memory(&image.picture.bytes).ok()?.to_rgba8();
+    // The preview never needs more than a screenful of pixels: shrink big
+    // pictures before they become a texture.
+    let decoded = image::load_from_memory(&image.picture.bytes).ok()?.thumbnail(2048, 2048).to_rgba8();
     let size = [decoded.width() as usize, decoded.height() as usize];
     let color = egui::ColorImage::from_rgba_unmultiplied(size, decoded.as_raw());
     let texture = ctx.load_texture(format!("preview-{}", image.asset_id), color, egui::TextureOptions::LINEAR);

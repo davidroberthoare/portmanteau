@@ -1489,6 +1489,10 @@ pub struct ExportSettings {
     /// the paged formats (PDF, DOCX, RTF) only.
     #[serde(default)]
     pub mirror_margins: bool,
+    /// Each body chapter opens on a right-hand (odd-numbered) page, leaving a
+    /// blank left-hand page when needed. Prose PDF only.
+    #[serde(default)]
+    pub chapters_start_right: bool,
     /// Put a cover in the formats that can carry one (EPUB).
     #[serde(default = "default_true")]
     pub include_cover: bool,
@@ -1544,6 +1548,7 @@ impl Default for ExportSettings {
             each_separately: false,
             margins: None,
             mirror_margins: false,
+            chapters_start_right: false,
             include_cover: true,
             asset_root: None,
             custom_paper_mm: default_custom_paper_mm(),

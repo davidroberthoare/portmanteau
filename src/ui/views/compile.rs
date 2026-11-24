@@ -790,6 +790,12 @@ fn margins_row(
     } else {
         settings.mirror_margins = false;
     }
+    if kind == ExportKind::Pdf && !compile_type.is_script() {
+        ui.checkbox(&mut settings.chapters_start_right, "Start chapters on right-hand pages")
+            .on_hover_text("Leaves a blank left-hand page when a chapter would otherwise open on one");
+    } else {
+        settings.chapters_start_right = false;
+    }
     let mirrored = settings.mirror_margins;
     let mut custom = settings.margins.is_some();
     if ui

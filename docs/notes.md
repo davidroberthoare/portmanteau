@@ -1301,3 +1301,4 @@ what is next. Things worth knowing:
   needs krilla's `raster-images` feature (png, zune-jpeg, gif, image-webp,
   imagesize crates, downloaded at build time only). Verified: PDF, DOCX (WordCraft),
   RTF (WordCraft), EPUB (ebook-convert) and HTML (chromium) all show the picture.
+- `chapters_start_right` (prose PDF): `Flow::page_break_to_right`, with `parity_shift` accounting for the contents page inserted afterwards. Picture loader hardened after review: no links anywhere under `assets/`, max 12,000 px a side / 60 MP, preview textures downscaled to 2048.

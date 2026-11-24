@@ -162,7 +162,7 @@ Not done / next:
   in the editor; GIF/WebP; Markdown/Fountain/FDX (placeholders); the PDF cover
   page; large-image downsampling. Old note: the PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
   and no inline pictures. Needs picture support first.
-- "Start chapters on a right-hand page" (blank verso pages).
+- "Start chapters on a right-hand page": DONE for prose PDF (`chapters_start_right`; blank left-hand pages carry no furniture but count in the numbering). Not yet DOCX/RTF (page-break-before odd page needs section breaks).
 - `.tex` export (text writer over `content` and `layout`; no TeX dependency).
 - **Table of contents customization** (the last item of this work): title text,
   depth (parts/chapters/scenes), page numbers on/off, dot leaders, which

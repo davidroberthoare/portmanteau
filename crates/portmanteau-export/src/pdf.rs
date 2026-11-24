@@ -455,6 +455,9 @@ struct Flow {
     line: Option<LineSource>,
     /// The project folder pictures are read from.
     asset_root: Option<PathBuf>,
+    /// Pages that will be inserted ahead of this flow's pages afterwards (the
+    /// contents page), so the real page parity is known while laying out.
+    parity_shift: usize,
 }
 
 impl Flow {
@@ -467,6 +470,7 @@ impl Flow {
             doc: None,
             line: None,
             asset_root: None,
+            parity_shift: 0,
         }
     }
 
@@ -521,6 +525,16 @@ impl Flow {
                 &mut self.current,
                 PdfPageLayout::default(),
             ));
+        }
+        self.cursor = self.frame.top;
+    }
+
+    /// Break the page, then leave one blank if the next would be left-hand, so a
+    /// chapter opens on a right-hand page (odd page number, even 0-based index).
+    fn page_break_to_right(&mut self) {
+        self.finish_page();
+        if (self.pages.len() + self.parity_shift) % 2 == 1 {
+            self.pages.push(PdfPageLayout::default());
         }
         self.cursor = self.frame.top;
     }
@@ -1063,6 +1077,7 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
 
     let mut flow = Flow::with_pages(frame, pages);
     flow.asset_root = settings.asset_root.clone();
+    flow.parity_shift = usize::from(settings.include_toc);
     let mut headings: Vec<(String, usize)> = Vec::new();
 
     for doc in front_matter(project, settings) {
@@ -1090,7 +1105,11 @@ fn prose_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
 
     let compiled = manuscript_sections(project, settings);
     for (index, section) in compiled.iter().enumerate() {
-        flow.page_break();
+        if settings.chapters_start_right {
+            flow.page_break_to_right();
+        } else {
+            flow.page_break();
+        }
         let start = flow.here();
         let title = section_title(project, section.doc, index, settings);
         headings.push((title.clone(), start));

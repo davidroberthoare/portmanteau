@@ -31,9 +31,28 @@ pub(crate) fn load_picture(asset_root: Option<&Path>, asset_id: &str) -> Option<
     {
         return None;
     }
-    let assets = fs::canonicalize(root.join("assets")).ok()?;
-    let real = fs::canonicalize(assets.join(relative)).ok()?;
-    if !real.starts_with(&assets) || fs::metadata(&real).ok()?.len() > MAX_PICTURE_BYTES {
+    // `<project>/assets` and every step below it must be a real folder, and the
+    // file itself an ordinary file: a link anywhere on the way means the picture
+    // may live outside the project, so it is not read.
+    let real_root = fs::canonicalize(root).ok()?;
+    let mut step = root.join("assets");
+    let mut expected = real_root.join("assets");
+    let mut parts: Vec<std::ffi::OsString> = vec![];
+    parts.extend(relative.components().map(|c| c.as_os_str().to_owned()));
+    let last = parts.len().checked_sub(1)?;
+    for (i, part) in std::iter::once(None).chain(parts.iter().map(Some)).enumerate() {
+        if let Some(part) = part {
+            step = step.join(part);
+            expected = expected.join(part);
+        }
+        let meta = fs::symlink_metadata(&step).ok()?;
+        let is_file_step = i == last + 1;
+        if meta.file_type().is_symlink() || (is_file_step && !meta.is_file()) || (!is_file_step && !meta.is_dir()) {
+            return None;
+        }
+    }
+    let real = fs::canonicalize(&step).ok()?;
+    if real != expected || fs::metadata(&real).ok()?.len() > MAX_PICTURE_BYTES {
         return None;
     }
     let bytes = fs::read(&real).ok()?;
@@ -44,7 +63,9 @@ pub(crate) fn load_picture(asset_root: Option<&Path>, asset_id: &str) -> Option<
     } else {
         return None;
     };
-    if px.0 == 0 || px.1 == 0 {
+    // Refuse absurd sizes (a small file can declare a huge picture): at most
+    // 12,000 pixels a side and 60 million in all.
+    if px.0 == 0 || px.1 == 0 || px.0 > 12_000 || px.1 > 12_000 || u64::from(px.0) * u64::from(px.1) > 60_000_000 {
         return None;
     }
     Some(Arc::new(LoadedPicture { bytes, ext, media, px }))

@@ -1694,6 +1694,7 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
         ("include_notes", &mut settings.include_notes),
         ("include_hyperlinks", &mut settings.include_hyperlinks),
         ("mirror_margins", &mut settings.mirror_margins),
+        ("chapters_start_right", &mut settings.chapters_start_right),
     ] {
         if let Some(v) = payload.get(key).and_then(|v| v.as_bool()) {
             *field = v;

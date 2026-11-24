@@ -1363,3 +1363,51 @@ fn a_picture_is_scaled_to_the_page_and_keeps_its_proportions() {
     image.height = Some(80.0);
     assert_eq!(picture_size_pt(&image, &picture, 225.0, 1000.0), (100.0, 80.0));
 }
+
+#[test]
+fn chapters_can_open_on_right_hand_pages() {
+    let p = demo();
+    let mut s = p.settings_for(ExportKind::Pdf);
+    s.chapters_start_right = true;
+    let layout = pdf_layout(&p, &s);
+    let openers: Vec<usize> = layout
+        .sections
+        .iter()
+        .filter(|section| {
+            section.doc_id.as_deref().and_then(|id| p.document(id)).is_some_and(|d| !matches!(d.kind, DocKind::FrontMatter | DocKind::BackMatter) && !d.kind.is_folder())
+        })
+        .map(|section| section.start_page)
+        .collect();
+    assert!(openers.len() >= 2);
+    assert!(openers.iter().all(|page| page % 2 == 0), "0-based even index = right-hand page: {openers:?}");
+    s.chapters_start_right = false;
+    assert!(pdf_layout(&p, &s).page_count() <= layout.page_count());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_picture_or_folder_is_not_read() {
+    let (_, dir) = picture_project("links");
+    let outside = std::env::temp_dir().join(format!("pm-outside-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&outside);
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("secret.png"), TINY_PNG).unwrap();
+    std::os::unix::fs::symlink(outside.join("secret.png"), dir.join("assets/images/link.png")).unwrap();
+    std::os::unix::fs::symlink(&outside, dir.join("assets/elsewhere")).unwrap();
+    assert!(load_picture(Some(&dir), "images/link.png").is_none());
+    assert!(load_picture(Some(&dir), "elsewhere/secret.png").is_none());
+    assert!(load_picture(Some(&dir), "images/dot.png").is_some());
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&outside);
+}
+
+#[test]
+fn a_picture_that_declares_a_huge_size_is_refused() {
+    let (_, dir) = picture_project("huge");
+    let mut png = TINY_PNG.to_vec();
+    png[16..20].copy_from_slice(&40_000u32.to_be_bytes());
+    png[20..24].copy_from_slice(&40_000u32.to_be_bytes());
+    std::fs::write(dir.join("assets/images/huge.png"), png).unwrap();
+    assert!(load_picture(Some(&dir), "images/huge.png").is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}
