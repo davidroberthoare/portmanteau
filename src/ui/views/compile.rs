@@ -310,7 +310,7 @@ fn output_tab(
                     }
                 }
                 CompileSection::Layout => {
-                    type_panel(ui, kind, settings, compile_type, &app.ws.project.cover_image);
+                    type_panel(ui, kind, settings, compile_type, &app.ws.project.cover_image, &app.ws);
                     if kind == ExportKind::Pdf {
                         ui.add_space(8.0);
                         header_footer_panel(ui, settings, compile_type);
@@ -635,6 +635,7 @@ fn type_panel(
     settings: &mut ExportSettings,
     compile_type: CompileType,
     project_cover: &str,
+    ws: &portmanteau_api::Workspace,
 ) {
     Frame::new()
         .fill(PANEL)
@@ -737,7 +738,12 @@ fn type_panel(
                                 .add_filter("Pictures", &["png", "jpg", "jpeg"])
                                 .pick_file()
                             {
-                                settings.cover_image = path.display().to_string();
+                                // A saved project keeps its own copy, so the export
+                                // never reads a picture from outside the project.
+                                let stem = format!("cover-{}", kind.label().to_ascii_lowercase());
+                                settings.cover_image = ws
+                                    .store_project_image(&path, &stem)
+                                    .unwrap_or_else(|_| path.display().to_string());
                             }
                         }
                     });

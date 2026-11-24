@@ -141,33 +141,26 @@ pub(crate) fn cover_image(
         return None;
     }
     let own = settings.cover_image.trim();
-    let from_project = own.is_empty();
-    let raw = if from_project { project.cover_image.trim() } else { own };
+    let raw = if own.is_empty() { project.cover_image.trim() } else { own };
     if raw.is_empty() {
         return None;
     }
     let mut path = std::path::PathBuf::from(raw);
-    if from_project {
-        if let Some(root) = &settings.asset_root {
-            // A saved project's cover is its own copy under `assets/`. A path
-            // read from a project file must stay inside that folder: no absolute
-            // paths, no `..`, and nothing that a symlink leads out of it.
-            if !path.is_relative()
-                || path.components().any(|c| !matches!(c, std::path::Component::Normal(_)))
-            {
-                return None;
-            }
-            let real_assets = fs::canonicalize(root.join("assets")).ok()?;
-            let real = fs::canonicalize(root.join(&path)).ok()?;
-            if !real.starts_with(&real_assets) {
-                return None;
-            }
-            path = real;
+    if let Some(root) = &settings.asset_root {
+        // In a saved project, every cover (the project's or this format's) is a
+        // copy under `assets/`. A path read from a project file must stay inside
+        // that folder: no absolute paths, no `..`, nothing a symlink leads out of.
+        if !path.is_relative()
+            || path.components().any(|c| !matches!(c, std::path::Component::Normal(_)))
+        {
+            return None;
         }
-    } else if path.is_relative() {
-        if let Some(root) = &settings.asset_root {
-            path = root.join(path);
+        let real_assets = fs::canonicalize(root.join("assets")).ok()?;
+        let real = fs::canonicalize(root.join(&path)).ok()?;
+        if !real.starts_with(&real_assets) {
+            return None;
         }
+        path = real;
     }
     let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
     let media = match ext.as_str() {

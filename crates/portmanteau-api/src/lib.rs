@@ -316,30 +316,10 @@ impl Workspace {
                 // A saved project keeps its own copy, so the cover travels
                 // with it; an unsaved one points at the file where it is.
                 let stored = match &self.path {
-                    Some(_) => {
-                        let dir = match self.checked_project_dir(&["assets", "images"], true) {
-                            Ok(dir) => dir,
-                            Err(e) => return ApiResponse::err(command, e),
-                        };
-                        let name = format!("cover.{ext}");
-                        let dest = dir.join(&name);
-                        // Never write through a link, and never copy a file onto itself.
-                        if let Ok(meta) = std::fs::symlink_metadata(&dest) {
-                            if !meta.file_type().is_file() {
-                                return ApiResponse::err(command, "The existing cover is not an ordinary file, so it was left alone");
-                            }
-                        }
-                        let same = dest.canonicalize().ok().zip(source.canonicalize().ok()).is_some_and(|(a, b)| a == b);
-                        if !same {
-                            let temp = dir.join(format!(".{name}.tmp"));
-                            let copied = std::fs::copy(&source, &temp).and_then(|_| std::fs::rename(&temp, &dest));
-                            if let Err(e) = copied {
-                                let _ = std::fs::remove_file(&temp);
-                                return ApiResponse::err(command, format!("Could not copy the cover: {e}"));
-                            }
-                        }
-                        format!("assets/images/{name}")
-                    }
+                    Some(_) => match self.store_project_image(&source, "cover") {
+                        Ok(stored) => stored,
+                        Err(e) => return ApiResponse::err(command, e),
+                    },
                     None => source.display().to_string(),
                 };
                 self.project.cover_image = stored.clone();
@@ -1207,6 +1187,47 @@ impl Workspace {
     /// makes the folder first, never through a link.
     fn checked_research_dir(&self, id: &str, create: bool) -> Result<PathBuf, String> {
         self.checked_project_dir(&["assets", "research", &safe_dir_name(id)], create)
+    }
+
+    /// Copy a picture into the project's `assets/images` as `<stem>.<ext>` and
+    /// return its project-relative path. Never writes through a link and never
+    /// copies a file onto itself; the copy goes through a fresh exclusive temp
+    /// file and is renamed into place.
+    pub fn store_project_image(&self, source: &Path, stem: &str) -> Result<String, String> {
+        let ext = source
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        let dir = self.checked_project_dir(&["assets", "images"], true)?;
+        let name = format!("{}.{ext}", safe_dir_name(stem));
+        let dest = dir.join(&name);
+        if let Ok(meta) = std::fs::symlink_metadata(&dest) {
+            if !meta.file_type().is_file() {
+                return Err("The existing picture is not an ordinary file, so it was left alone".into());
+            }
+        }
+        let same = dest.canonicalize().ok().zip(source.canonicalize().ok()).is_some_and(|(a, b)| a == b);
+        if !same {
+            use std::io::Write;
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let temp = dir.join(format!(".{name}.{}.{unique}.tmp", std::process::id()));
+            let result = (|| -> std::io::Result<()> {
+                let mut input = std::fs::File::open(source)?;
+                let mut output = std::fs::OpenOptions::new().write(true).create_new(true).open(&temp)?;
+                std::io::copy(&mut input, &mut output)?;
+                output.flush()?;
+                drop(output);
+                std::fs::rename(&temp, &dest)
+            })();
+            if let Err(e) = result {
+                let _ = std::fs::remove_file(&temp);
+                return Err(format!("Could not copy the picture: {e}"));
+            }
+        }
+        Ok(format!("assets/images/{name}"))
     }
 
     /// A folder inside the project (`parts` below the project folder) that is a
