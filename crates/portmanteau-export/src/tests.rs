@@ -106,7 +106,7 @@ fn docx_is_a_zip() {
 }
 
 #[test]
-fn docx_and_rtf_page_size_follow_the_paper_setting() {
+fn docx_page_size_follows_the_paper_setting() {
     let p = demo();
     // Width and height in twentieths of a point for every paper the
     // Compile screen offers.
@@ -123,15 +123,6 @@ fn docx_and_rtf_page_size_follow_the_paper_setting() {
         assert!(
             xml.contains(&format!("<w:pgSz w:w=\"{width}\" w:h=\"{height}\"/>")),
             "DOCX should carry {} as {width}x{height} twips",
-            paper.label()
-        );
-
-        let mut s = p.settings_for(ExportKind::Rtf);
-        s.paper = paper;
-        let rtf = rtf_manuscript(&p, &s);
-        assert!(
-            rtf.contains(&format!("\\paperw{width}\\paperh{height}")),
-            "RTF should carry {} as {width}x{height} twips",
             paper.label()
         );
     }
@@ -313,10 +304,6 @@ fn prose_export_keeps_inline_marks_and_paragraph_breaks() {
     assert!(markdown.contains("*italic.*"));
     assert!(markdown.contains("Second paragraph.\n"));
 
-    let rtf = rtf_manuscript(&project, &project.settings_for(ExportKind::Rtf));
-    assert!(rtf.contains("\\b Bold\\b0"));
-    assert!(rtf.contains("\\i italic.\\i0"));
-
     let xml = docx_document_xml(docx_manuscript(
         &project,
         &project.settings_for(ExportKind::Docx),
@@ -493,7 +480,7 @@ fn lossy_text_export_warns_and_uses_an_image_alt_placeholder() {
 }
 
 #[test]
-fn custom_margins_reach_docx_and_rtf() {
+fn custom_margins_reach_docx() {
     let p = demo();
     let margins = Some(PageMargins {
         left: 90.0,
@@ -508,10 +495,6 @@ fn custom_margins_reach_docx_and_rtf() {
         xml.contains(r#"<w:pgMar w:top="1080" w:right="720" w:bottom="2160" w:left="1800"/>"#),
         "{xml}"
     );
-    let mut s = p.settings_for(ExportKind::Rtf);
-    s.margins = margins;
-    let rtf = rtf_manuscript(&p, &s);
-    assert!(rtf.contains("\\margl1800\\margr720\\margt1080\\margb2160"), "{rtf}");
 }
 
 #[test]
@@ -610,62 +593,6 @@ fn docx_script_paragraphs_use_script_styles_and_print_no_invented_heading() {
     assert!(!xml.contains("w:ind w:left=\"4320\""), "no hard-coded indents");
 }
 
-fn rtf_braces_balance(rtf: &str) -> bool {
-    let mut depth = 0i32;
-    let mut chars = rtf.chars();
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' => {
-                chars.next(); // an escaped character is not a brace
-            }
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth < 0 {
-                    return false;
-                }
-            }
-            _ => {}
-        }
-    }
-    depth == 0
-}
-
-#[test]
-fn rtf_styles_reach_title_headings_and_script_elements() {
-    let p = demo();
-    let mut s = p.settings_for(ExportKind::Rtf);
-    s.styles.title_page_title.size = 40.0;
-    s.styles.chapter_heading.size = 30.0;
-    s.styles.body.leading = 2.0;
-    let rtf = rtf_manuscript(&p, &s);
-    assert!(rtf.contains("\\fs80"), "title size from the title style");
-    assert!(rtf.contains("\\fs60"), "heading size from the heading style");
-    assert!(rtf.contains("\\sl480\\slmult1"), "body leading reaches RTF");
-    assert!(!rtf.contains("\\fs52") && !rtf.contains("\\fs36"), "no hard-coded sizes");
-    assert!(rtf_braces_balance(&rtf));
-
-    let mut s = p.settings_for(ExportKind::Rtf);
-    s.compile_type = Some(CompileType::TvScript);
-    s.styles.dialogue.indent = 100.0;
-    s.styles.dialogue.right_indent = 40.0;
-    let rtf = rtf_manuscript(&p, &s);
-    assert!(rtf.contains("\\li2000\\ri800"), "dialogue indents come from its style");
-    assert!(!rtf.contains("\\li4400") && !rtf.contains("\\li3200"), "no hard-coded script indents");
-    assert!(rtf_braces_balance(&rtf));
-}
-
-#[test]
-fn rtf_text_with_braces_and_unicode_stays_valid() {
-    let mut p = Project::new("Odd {title} \\ ünïcode — dash", ProjectKind::Novel);
-    let parent = p.folder_id("Draft");
-    let id = p.add_document(parent, "One", DocKind::Chapter, Medium::Prose);
-    p.document_mut(&id).unwrap().set_plain_text("A } stray { brace, a backslash \\ and “quotes”.");
-    let rtf = rtf_manuscript(&p, &p.settings_for(ExportKind::Rtf));
-    assert!(rtf_braces_balance(&rtf), "{rtf}");
-    assert!(rtf.contains("\\u8220?"), "curly quote is written as a unicode escape");
-}
-
 /// Every piece of text a format's output carries, for "is it in there?" checks.
 fn output_text(kind: ExportKind, project: &Project, settings: &ExportSettings) -> String {
     match kind {
@@ -697,19 +624,17 @@ fn output_text(kind: ExportKind, project: &Project, settings: &ExportSettings) -
         ExportKind::Docx => docx_document_xml(docx_manuscript(project, settings)),
         ExportKind::Html => html_manuscript(project, settings),
         ExportKind::Markdown => markdown_manuscript(project, settings),
-        ExportKind::Rtf => rtf_manuscript(project, settings),
         ExportKind::Txt => txt_manuscript(project, settings),
         other => panic!("not a prose text format: {other:?}"),
     }
 }
 
-const PROSE_FORMATS: [ExportKind; 7] = [
+const PROSE_FORMATS: [ExportKind; 6] = [
     ExportKind::Pdf,
     ExportKind::Epub,
     ExportKind::Docx,
     ExportKind::Html,
     ExportKind::Markdown,
-    ExportKind::Rtf,
     ExportKind::Txt,
 ];
 
@@ -762,7 +687,6 @@ fn every_script_writer_numbers_scenes_the_same_way_and_adds_no_heading() {
         ExportKind::Epub,
         ExportKind::Docx,
         ExportKind::Html,
-        ExportKind::Rtf,
     ];
     for kind in formats {
         let mut settings = p.settings_for(kind);
@@ -771,12 +695,7 @@ fn every_script_writer_numbers_scenes_the_same_way_and_adds_no_heading() {
         settings.include_toc = false;
         settings.include_scene_numbers = true;
         let numbered = output_text(kind, &p, &settings);
-        // RTF writes the non-breaking gap as a unicode escape.
-        let first = if kind == ExportKind::Rtf {
-            "1\\u160?\\u160?\\u160?EXT. COLD HARBOR"
-        } else {
-            "1\u{a0}\u{a0}\u{a0}EXT. COLD HARBOR"
-        };
+        let first = "1\u{a0}\u{a0}\u{a0}EXT. COLD HARBOR";
         assert!(numbered.contains(first), "{kind:?} should number the first scene");
         assert!(
             !numbered.contains("Cold Harbor · Pilot") || kind == ExportKind::Pdf,
@@ -802,9 +721,6 @@ fn every_flowing_format_drops_the_title_block_to_where_the_pdf_puts_it() {
     let title = docx_style_xml(&styles, "Title");
     let before = format!("w:before=\"{}\"", pt_to_twips(drop));
     assert!(title.contains(&before), "{title} should contain {before}");
-
-    let rtf = rtf_manuscript(&p, &p.settings_for(ExportKind::Rtf));
-    assert!(rtf.contains(&format!("\\sb{}", pt_to_twips(drop))), "RTF title spacing");
 
     let html = html_manuscript(&p, &p.settings_for(ExportKind::Html));
     assert!(html.contains(&format!(".title-page {{ margin-top: {drop:.1}pt; }}")), "HTML title drop");
@@ -865,7 +781,6 @@ fn every_script_writer_prints_the_trade_cover_not_a_book_title_page() {
         ExportKind::Epub,
         ExportKind::Docx,
         ExportKind::Html,
-        ExportKind::Rtf,
         ExportKind::Txt,
     ] {
         let mut s = p.settings_for(kind);
@@ -890,8 +805,6 @@ fn every_script_writer_prints_the_trade_cover_not_a_book_title_page() {
     s.include_title_page = true;
     let xml = docx_document_xml(docx_manuscript(&p, &s));
     assert!(xml.contains("<w:pageBreakBefore/>"), "DOCX breaks after the cover");
-    let rtf = rtf_manuscript(&p, &s);
-    assert!(rtf.contains("\\pagebb"), "RTF breaks after the cover");
     s.include_title_page = false;
     assert!(!docx_document_xml(docx_manuscript(&p, &s)).contains("<w:pageBreakBefore/>"));
 }
@@ -910,10 +823,6 @@ fn the_opening_fade_in_is_flush_left_in_every_flowing_format() {
     let transition = docx_style_xml(&styles, "ScriptTransition");
     assert!(transition.contains("w:jc w:val=\"right\""), "other transitions stay right-hand: {transition}");
 
-    let rtf = rtf_manuscript(&p, &s);
-    let fade = rtf.lines().find(|l| l.contains("FADE IN")).expect("FADE IN in the RTF");
-    assert!(fade.contains("\\ql") && !fade.contains("\\qr"), "{fade}");
-
     let html = html_manuscript(&p, &s);
     assert!(html.contains("script-transition script-opening\">FADE IN"), "HTML marks the opening");
     let rule = html.split(".script-opening {").nth(1).and_then(|r| r.split('}').next()).expect("a rule");
@@ -931,7 +840,6 @@ fn the_cover_prints_the_projects_contact_and_the_writers_draft_date() {
         ExportKind::Epub,
         ExportKind::Docx,
         ExportKind::Html,
-        ExportKind::Rtf,
         ExportKind::Txt,
     ] {
         let mut s = p.settings_for(kind);
@@ -1055,10 +963,9 @@ fn the_hyperlinks_option_controls_links_in_every_format_that_can_carry_them() {
         ExportKind::Html | ExportKind::Epub => text.contains(r#"<a href="https://example.org/chart?a=1&amp;b=2">the chart</a>"#),
         ExportKind::Markdown => text.contains("[the chart](https://example.org/chart?a=1&b=2)"),
         ExportKind::Docx => text.contains(r#"HYPERLINK &quot;https://example.org/chart?a=1&amp;b=2&quot;"#),
-        ExportKind::Rtf => text.contains(r#"{\field{\*\fldinst{HYPERLINK "https://example.org/chart?a=1&b=2"}}"#),
         _ => false,
     };
-    for kind in [ExportKind::Html, ExportKind::Epub, ExportKind::Markdown, ExportKind::Docx, ExportKind::Rtf] {
+    for kind in [ExportKind::Html, ExportKind::Epub, ExportKind::Markdown, ExportKind::Docx] {
         assert!(kind.writes_hyperlinks());
         let mut s = p.settings_for(kind);
         s.compile_type = Some(CompileType::Prose);
@@ -1115,7 +1022,7 @@ fn mirrored_margins_swap_the_text_block_on_left_hand_pages() {
 }
 
 #[test]
-fn docx_and_rtf_carry_mirrored_margins() {
+fn docx_carries_mirrored_margins() {
     let p = demo();
     let mut s = p.settings_for(ExportKind::Docx);
     s.mirror_margins = true;
@@ -1123,9 +1030,6 @@ fn docx_and_rtf_carry_mirrored_margins() {
     assert!(epub_file(&docx, "word/settings.xml").contains("<w:mirrorMargins/>"));
     s.mirror_margins = false;
     assert!(!epub_file(&docx_manuscript(&p, &s), "word/settings.xml").contains("mirrorMargins"));
-    let mut r = p.settings_for(ExportKind::Rtf);
-    r.mirror_margins = true;
-    assert!(rtf_manuscript(&p, &r).contains("\\margmirror"));
 }
 
 #[test]
@@ -1294,15 +1198,14 @@ fn dump_picture_exports() {
             }
         }
     }
-    for (kind, name) in [(ExportKind::Pdf, "pic.pdf"), (ExportKind::Docx, "pic.docx"), (ExportKind::Epub, "pic.epub"), (ExportKind::Html, "pic.html"), (ExportKind::Rtf, "pic.rtf")] {
+    for (kind, name) in [(ExportKind::Pdf, "pic.pdf"), (ExportKind::Docx, "pic.docx"), (ExportKind::Epub, "pic.epub"), (ExportKind::Html, "pic.html")] {
         let mut s = p.settings_for(kind);
         s.asset_root = Some(dir.clone());
         let bytes = match kind {
             ExportKind::Pdf => pdf_manuscript(&p, &s),
             ExportKind::Docx => docx_manuscript(&p, &s),
             ExportKind::Epub => epub_manuscript(&p, &s),
-            ExportKind::Html => html_manuscript(&p, &s).into_bytes(),
-            _ => rtf_manuscript(&p, &s).into_bytes(),
+            _ => html_manuscript(&p, &s).into_bytes(),
         };
         std::fs::write(std::path::Path::new(&out).join(name), bytes).unwrap();
     }
@@ -1330,9 +1233,6 @@ fn every_prose_writer_carries_a_picture_that_sits_on_its_own_line() {
     assert!(html.contains("<img src=\"data:image/png;base64,"));
     assert!(html.contains("alt=\"A red dot\""));
 
-    let rtf = rtf_manuscript(&p, &with_root(ExportKind::Rtf));
-    assert!(rtf.contains("\\pngblip") && rtf.contains("\\picwgoal2400") && rtf.contains("\\pichgoal1200"));
-
     // No project folder, or a picture outside assets/: the placeholder stays.
     let mut s = p.settings_for(ExportKind::Html);
     s.asset_root = None;
@@ -1358,7 +1258,6 @@ fn a_caption_prints_under_its_picture_in_every_writer() {
         s
     };
     assert!(html_manuscript(&p, &with_root(ExportKind::Html)).contains("Figure one: a red dot"));
-    assert!(rtf_manuscript(&p, &with_root(ExportKind::Rtf)).contains("Figure one: a red dot"));
     let docx = docx_manuscript(&p, &with_root(ExportKind::Docx));
     assert!(epub_file(&docx, "word/document.xml").contains("Figure one: a red dot"));
     let layout = pdf_layout(&p, &with_root(ExportKind::Pdf));
@@ -1507,10 +1406,6 @@ fn the_contents_heading_page_numbers_and_leaders_follow_the_settings() {
     h.include_toc = true;
     h.toc_title = "In This Book".into();
     assert!(html_manuscript(&p, &h).contains(">In This Book</h2>"));
-    let mut r = p.settings_for(ExportKind::Rtf);
-    r.include_toc = true;
-    r.toc_title = "In This Book".into();
-    assert!(rtf_manuscript(&p, &r).contains("In This Book"));
 }
 
 #[test]

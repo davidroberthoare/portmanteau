@@ -1323,6 +1323,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
                         doc_id: doc_id.to_owned(),
                         paragraph: *paragraph,
                         pos,
+                        serial: ui.input(|i| i.time).to_bits(),
                     });
                 }
             }

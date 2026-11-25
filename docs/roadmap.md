@@ -8,6 +8,8 @@ the running build log. Read `AGENTS.md` first for the architecture and rules.
 writes, brings existing work in from other programs, and gets it out as
 ebook, print and manuscript formats, all from one project.
 
+> The RTF exporter was removed on 2026-11-25 (owner: not a useful format).
+
 ## Now: releases, updates and the web build
 
 Plan, status and deviations: `docs/release-and-updates-plan.md`. Built and
@@ -52,7 +54,7 @@ by value:
 2. Word: hyperlinks, images (needs asset embedding), footnotes, tables, tracked
    changes, comments.
 3. Character extraction: offer to create database characters from script cues.
-4. Markdown and RTF readers.
+4. Markdown reader.
 
 ## Drag-and-drop binder
 
@@ -134,7 +136,7 @@ Done (2026-11-23, uncommitted at the time of writing):
   rules, display uppercase, script margins) stays in Settings only.
 - Trim sizes (5x8, 5.25x8, 5.5x8.5, 6x9, B-format, A4/A5/Letter, Custom w x h),
   `mirror_margins` (left = inside, right = outside; PDF shifts left-hand pages,
-  DOCX writes `w:mirrorMargins`, RTF `\margmirror`). Automatic mirrored margins
+  DOCX writes `w:mirrorMargins`). Automatic mirrored margins
   are 23 mm inside, 17 mm outside.
 - Headers and footers: `HeaderFooter` is now six slots with fields
   (`{page} {pages} {title} {author} {chapter} {chapter_number}`), right/left-hand
@@ -144,7 +146,7 @@ Done (2026-11-23, uncommitted at the time of writing):
 - Project cover (`Project.cover_image`, command `project.set_cover`) with a
   per-format override and `include_cover`; EPUB uses it, and prose PDF opens with it
   as an uncounted first page (`add_cover_page`, added after numbering and mirroring so
-  the title page stays page one). DOCX/RTF covers: not yet.
+  the title page stays page one). DOCX cover: not yet.
 
 Not done / next:
 - **Per-document sections** ("start a new section", same as previous) on top of
@@ -152,11 +154,10 @@ Not done / next:
 - DOCX headers and footers are DONE for the whole file using the body templates
   (Word fields PAGE/NUMPAGES/STYLEREF, odd/even, `titlePg`, page-number format
   and start). Still PDF-only: front/back regions, a bare title page, no header
-  on chapter openers (need real Word sections). RTF headers/footers are
-  deliberately skipped (owner, 2026-11-24).
+  on chapter openers (need real Word sections).
 - **Pictures in prose** (owner: important). FIRST PASS DONE 2026-11-24: a
   picture on its own paragraph is drawn by PDF (krilla), DOCX (inline drawing),
-  RTF (`\\pict`), EPUB (packaged `images/`) and HTML (data URI), centred, scaled
+  EPUB (packaged `images/`) and HTML (data URI), centred, scaled
   to the measure, PNG/JPEG only, read from `<project>/assets` (`picture.rs`;
   `Project.asset_root` carries the folder). The Compile preview draws them too.
   Second round 2026-11-24: a picture's caption prints under it in every writer
@@ -169,14 +170,14 @@ Not done / next:
   Description. PDF (and so the Compile preview) really wraps text beside the
   picture (`Flow.float`, `wrap_chars_with`, caption set inside the picture's
   width); HTML/EPUB float a `<figure>`; DOCX writes an anchored picture with
-  square wrapping (its caption prints as the line after); RTF shows it aligned but not wrapped.
+  square wrapping (its caption prints as the line after).
   The editor wraps too (2026-11-25): `script_flow_galley` treats a wrapped picture as a
   float box (`FloatBox`) and lays the following paragraphs out narrower beside it,
   splitting a paragraph that passes the picture's bottom (`job_from_char`).
-  STILL TO DO: pictures inside a line of text; wrap in RTF; numbered figures; a picture's controls on the
+  STILL TO DO: pictures inside a line of text; numbered figures; a picture's controls on the
   picture itself (click to select, drag handles); picture edits in undo; GIF/WebP; Markdown/Fountain/FDX (placeholders); large-image downsampling. Old note: the PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
   and no inline pictures. Needs picture support first.
-- "Start chapters on a right-hand page": DONE for prose PDF (`chapters_start_right`; blank left-hand pages carry no furniture but count in the numbering). Not yet DOCX/RTF (page-break-before odd page needs section breaks).
+- "Start chapters on a right-hand page": DONE for prose PDF (`chapters_start_right`; blank left-hand pages carry no furniture but count in the numbering). Not yet DOCX (page-break-before odd page needs section breaks).
 - `.tex` export (text writer over `content` and `layout`; no TeX dependency).
 - **Table of contents customization** (the last item of this work): title text,
   depth (parts/chapters/scenes), page numbers on/off, dot leaders, which

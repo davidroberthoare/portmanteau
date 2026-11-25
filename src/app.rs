@@ -375,6 +375,9 @@ pub struct PictureMenu {
     pub doc_id: String,
     pub paragraph: usize,
     pub pos: egui::Pos2,
+    /// Tells one right-click from the next, so each opens fresh at the
+    /// pointer but can then be dragged by its title bar.
+    pub serial: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -1467,7 +1470,7 @@ impl PortmanteauApp {
                         "Prose and screenplay editors with typed elements",
                         "Research, a story database and structured planning",
                         "Snapshots, checkpoints, version comparison and restore",
-                        "PDF, EPUB, DOCX, Final Draft, Fountain, HTML, Markdown, RTF and text",
+                        "PDF, EPUB, DOCX, Final Draft, Fountain, HTML, Markdown and text",
                         "A JSON command API and an MCP server under the desktop UI",
                     ] {
                         ui.horizontal(|ui| {
@@ -1607,11 +1610,11 @@ impl PortmanteauApp {
         let mut open = true;
         let mut edits = Vec::new();
         egui::Window::new("Picture")
-            .id(Id::unique("picture_menu"))
+            .id(Id::unique(("picture_menu", menu.serial)))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
-            .fixed_pos(menu.pos)
+            .default_pos(menu.pos)
             .default_width(260.0)
             .show(ctx, |ui| {
                 edits = crate::ui::inspector::picture_controls(ui, &menu.doc_id, menu.paragraph, &image);

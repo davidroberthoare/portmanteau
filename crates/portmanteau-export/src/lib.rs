@@ -1,7 +1,7 @@
 //! Compilation and export.
 //!
 //! One manuscript model, many finish lines: print-ready PDF, reflowable EPUB,
-//! editor-friendly DOCX, Final Draft FDX, Fountain, HTML, Markdown, RTF and
+//! editor-friendly DOCX, Final Draft FDX, Fountain, HTML, Markdown and
 //! plain text — plus a project bundle for local archiving and backup.
 
 use std::fs;
@@ -33,7 +33,6 @@ mod fdx;
 mod fountain;
 mod html;
 mod markdown;
-mod rtf;
 mod txt;
 mod bundle;
 use content::*;
@@ -48,7 +47,6 @@ use fdx::*;
 use fountain::*;
 use html::*;
 use markdown::*;
-use rtf::*;
 use txt::*;
 use bundle::*;
 
@@ -199,7 +197,6 @@ fn export_single(
         ExportKind::Fountain => fountain_manuscript(project, settings).into_bytes(),
         ExportKind::Html => html_manuscript(project, settings).into_bytes(),
         ExportKind::Markdown => markdown_manuscript(project, settings).into_bytes(),
-        ExportKind::Rtf => rtf_manuscript(project, settings).into_bytes(),
         ExportKind::Txt => txt_manuscript(project, settings).into_bytes(),
         ExportKind::Bundle => bundle_manuscript(project)?,
     };
@@ -220,7 +217,7 @@ fn export_single(
     // that cannot be found or sits inside a line of text stays a placeholder.
     let draws_pictures = matches!(
         settings.kind,
-        ExportKind::Pdf | ExportKind::Docx | ExportKind::Rtf | ExportKind::Epub | ExportKind::Html
+        ExportKind::Pdf | ExportKind::Docx | ExportKind::Epub | ExportKind::Html
     );
     let message = if has_images && draws_pictures {
         format!(

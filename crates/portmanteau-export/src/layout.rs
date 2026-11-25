@@ -4,7 +4,7 @@
 //! module, so a writer who changes the page margins (or the paper) in Compile
 //! sees the same page in every format.
 //!
-//! Units: the model stores points (1/72 inch). DOCX and RTF want twips
+//! Units: the model stores points (1/72 inch). DOCX wants twips
 //! (1/20 point); CSS takes points directly.
 
 use super::*;
@@ -35,7 +35,7 @@ pub(crate) fn paper_pt(settings: &ExportSettings) -> (f32, f32) {
     (mm_to_pt(w_mm), mm_to_pt(h_mm))
 }
 
-/// Paper size in twips, the unit DOCX and RTF use.
+/// Paper size in twips, the unit DOCX uses.
 pub(crate) fn paper_twips(settings: &ExportSettings) -> (i64, i64) {
     let (w, h) = paper_pt(settings);
     (pt_to_twips(w), pt_to_twips(h))
@@ -117,7 +117,7 @@ pub(crate) const TITLE_PAGE_DROP: f32 = 0.30;
 const TITLE_ASCENT: f32 = 0.93;
 
 /// Space to put above the title in a format that flows from the top margin
-/// (DOCX, RTF, HTML, EPUB), so the title lands where the PDF puts it. The PDF
+/// (DOCX, HTML, EPUB), so the title lands where the PDF puts it. The PDF
 /// places the title's first *baseline* at `TITLE_PAGE_DROP` of the page height;
 /// a flowing format places the *top* of the line, so one ascent comes off.
 pub(crate) fn title_drop_pt(project: &Project, settings: &ExportSettings) -> f32 {

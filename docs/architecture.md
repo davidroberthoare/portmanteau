@@ -55,7 +55,7 @@ into prose.
 - PDF is a self-contained PDF 1.4 writer (no external typesetter).
 - EPUB and DOCX are zip containers written with `zip`.
 - FDX is Final Draft XML; Fountain is the plain-text interchange format.
-- HTML, Markdown, RTF and TXT share the same section assembly.
+- HTML, Markdown and TXT share the same section assembly.
 - Bundle zips the project JSON, notes and exports for archive or hand-off.
 
 `export()` takes an optional output path. If the path looks like a folder (no

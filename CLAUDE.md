@@ -66,7 +66,7 @@ Done this session:
 - **UI cleanup**: dead or repeated controls removed, each with a comment on
   what it should become; a shell test keeps them out.
 - Bugs found by looking at output: PDF ignored Justify and always centred the
-  title page; EPUB referenced fonts it never packaged; DOCX/RTF/TXT ignored
+  title page; EPUB referenced fonts it never packaged; DOCX/TXT ignored
   the Contents switch; only the PDF numbered scenes; the Fountain export was
   not valid Fountain (blank line between cue and dialogue).
 
@@ -74,12 +74,11 @@ How to check output visually (all on this machine):
 - PDF: `pdftoppm -png`, and `pdftotext -bbox-layout` to measure positions.
 - EPUB / HTML: `ebook-convert x.epub x.pdf`, or `chromium --headless --print-to-pdf`,
   then `pdftoppm`. Calibre rescales type, so trust it for structure, not size.
-- **DOCX / RTF: `wordcraft-cli`** (the WordCraft app). `render f out.png --page N`,
+- **DOCX: `wordcraft-cli`** (the WordCraft app). `render f out.png --page N`,
   `info f` (page count), `inspect f` (parsed paragraph properties as JSON),
   `convert f out.pdf --strict` (fails on undrawable characters or missing pictures).
-  LibreOffice does not run in this sandbox. WordCraft's PNG render of RTF shows
-  space-before at page tops slightly differently from its DOCX render; compare via
-  `convert ... out.pdf` and `pdftotext -bbox-layout` when geometry matters.
+  LibreOffice does not run in this sandbox. When geometry matters, compare via
+  `convert ... out.pdf` and `pdftotext -bbox-layout`.
 - Rebuild with `cargo build --workspace`: a plain `cargo build` leaves the CLI stale.
 
 - **Research** (`src/ui/views/research.rs`): a research note is an ordinary binder
@@ -94,7 +93,7 @@ How to check output visually (all on this machine):
   or the popup's Link button edits one; Ctrl/Cmd+click follows it (`App::open_link`;
   only http/https ever reach the system opener; email links are deliberately unsupported); pasting text links the
   addresses in it; HTML and Markdown exports write anchors (hrefs percent-encoded,
-  `export_href`); DOCX/RTF/PDF print the text only.
+  `export_href`); DOCX/PDF print the text only.
 - **Fixed formatting toolbar** (`src/ui/rich_toolbar.rs`): `show(ui, field_id,
   &mut content, &Options{styles})` above any rich `TextEdit`, plus `after_edit(...)`
   after the edited text is synced back. Works on the selection, or holds "pending
@@ -110,7 +109,7 @@ How to check output visually (all on this machine):
   `assets/images` and need a saved project. Headings (chapter heading and any style
   named "heading") draw bold in the editor, as every export sets them.
 - **Hyperlinks in exports**: `ExportSettings.include_hyperlinks` (default on),
-  offered for HTML, EPUB, Markdown, DOCX and RTF (`ExportKind::writes_hyperlinks`);
+  offered for HTML, EPUB, Markdown and DOCX (`ExportKind::writes_hyperlinks`);
   off strips links in `prose_paragraphs`, so no writer needs its own switch. PDF
   does not write links yet (would need link annotations).
 - **Database page** (`ui/views/database.rs`): items have a kind, colour, tags and
@@ -175,7 +174,7 @@ How to check output visually (all on this machine):
 5. Undo for binder operations, research and database text.
 6. Drag-and-drop binder, native file pickers (`rfd`), word-level diff, FDX
    image insertion before first save, packaging. Also: DOCX import of hyperlinks,
-   hyperlinks in DOCX/RTF/PDF export, research tags.
+   hyperlinks in DOCX/PDF export, research tags.
 
 ## Working style
 

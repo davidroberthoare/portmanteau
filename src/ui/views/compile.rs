@@ -1,5 +1,5 @@
 //! Compile: choose an output format, decide what goes in the book, and write a
-//! real file — PDF, EPUB, DOCX, Final Draft, Fountain, HTML, Markdown, RTF,
+//! real file — PDF, EPUB, DOCX, Final Draft, Fountain, HTML, Markdown,
 //! plain text or a complete project bundle. Editor display settings live in the
 //! separate Settings workspace.
 
@@ -173,7 +173,6 @@ fn tab_label(kind: ExportKind) -> &'static str {
         ExportKind::Fountain => "Fountain",
         ExportKind::Html => "HTML",
         ExportKind::Markdown => "Markdown",
-        ExportKind::Rtf => "RTF",
         ExportKind::Txt => "TXT",
         ExportKind::Bundle => "Bundle",
     }
@@ -219,7 +218,6 @@ fn format_color(kind: ExportKind) -> Color32 {
         ExportKind::Fountain => Color32::from_rgb(122, 176, 186),
         ExportKind::Html => Color32::from_rgb(190, 148, 120),
         ExportKind::Markdown => Color32::from_rgb(158, 166, 150),
-        ExportKind::Rtf => Color32::from_rgb(150, 138, 172),
         ExportKind::Txt => MUTED,
         ExportKind::Bundle => Color32::from_rgb(186, 146, 104),
     }
@@ -649,7 +647,7 @@ fn type_panel(
 
             if matches!(
                 kind,
-                ExportKind::Pdf | ExportKind::Docx | ExportKind::Rtf
+                ExportKind::Pdf | ExportKind::Docx
             ) {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Paper").font(ui_small()).color(MUTED));
@@ -783,7 +781,7 @@ fn margins_row(
     compile_type: CompileType,
 ) {
     let can_mirror = !compile_type.is_script()
-        && matches!(kind, ExportKind::Pdf | ExportKind::Docx | ExportKind::Rtf);
+        && matches!(kind, ExportKind::Pdf | ExportKind::Docx);
     if can_mirror {
         ui.checkbox(&mut settings.mirror_margins, "Book margins (inside and outside)")
             .on_hover_text("Facing pages: the inside margin sits at the spine of every page");
@@ -1116,7 +1114,7 @@ fn script_panel(
             );
             check(ui, settings, |s| &mut s.include_synopsis, "Include synopses");
             check(ui, settings, |s| &mut s.include_notes, "Include author notes");
-            if !matches!(kind, ExportKind::Txt | ExportKind::Markdown | ExportKind::Rtf) {
+            if !matches!(kind, ExportKind::Txt | ExportKind::Markdown) {
                 check(
                     ui,
                     settings,
@@ -1316,7 +1314,7 @@ fn include_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, kind: ExportK
             ui.add_space(5.0);
             let plain_text = matches!(
                 kind,
-                ExportKind::Txt | ExportKind::Markdown | ExportKind::Rtf
+                ExportKind::Txt | ExportKind::Markdown
             );
             if !plain_text {
                 check(ui, settings, |s| &mut s.include_title_page, "Title page");

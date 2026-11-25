@@ -281,7 +281,7 @@ pub(crate) fn section_title(_project: &Project, doc: &Document, index: usize, se
 
 /// The entries of a Contents list: one title per compiled section, numbered
 /// the way the chapter headings are. Writers that cannot know page numbers
-/// (DOCX, RTF, plain text) print this as a simple list.
+/// (DOCX, plain text) print this as a simple list.
 pub(crate) fn contents_entries(project: &Project, settings: &ExportSettings) -> Vec<String> {
     manuscript_sections(project, settings)
         .iter()

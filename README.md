@@ -39,7 +39,7 @@ Everything below works today unless it says otherwise.
 
 ### Get work out
 
-- Export to PDF, EPUB, DOCX, Final Draft, Fountain, HTML, Markdown, RTF, plain text, or a project bundle. **File › Export project as zip…** saves the whole project (with its pictures and attachments) as one file for backup or sending, and **Open project zip…** brings one back.
+- Export to PDF, EPUB, DOCX, Final Draft, Fountain, HTML, Markdown, plain text, or a project bundle. **File › Export project as zip…** saves the whole project (with its pictures and attachments) as one file for backup or sending, and **Open project zip…** brings one back.
 - Each compile is one kind of manuscript (prose, film, TV or stage), drawn from the whole draft or one part of it. TV and stage scripts can compile as one file per script.
 - **Ebook and print:** EPUB for e-readers and a PDF with embedded fonts, laid out for the paper size you choose (US Letter by default, plus A4, A5 and trade paperback), with margins, title page, contents and scene numbering you can set per format.
 - Not there yet for publishing: print-ready extras such as bleed and cover wraps, ISBN and copyright-page templates, and PDF hyperlinks.

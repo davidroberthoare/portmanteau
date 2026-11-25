@@ -512,7 +512,7 @@ mod tests {
     #[test]
     fn demo_project_compiles_to_us_letter() {
         let project = demo();
-        for export in [ExportKind::Pdf, ExportKind::Docx, ExportKind::Rtf] {
+        for export in [ExportKind::Pdf, ExportKind::Docx] {
             assert_eq!(
                 project.settings_for(export).paper,
                 PaperSize::Letter,

@@ -543,7 +543,6 @@ pub enum ExportKind {
     Fountain,
     Html,
     Markdown,
-    Rtf,
     Txt,
     Bundle,
 }
@@ -554,7 +553,7 @@ impl ExportKind {
     pub fn writes_hyperlinks(self) -> bool {
         matches!(
             self,
-            ExportKind::Html | ExportKind::Epub | ExportKind::Markdown | ExportKind::Docx | ExportKind::Rtf
+            ExportKind::Html | ExportKind::Epub | ExportKind::Markdown | ExportKind::Docx
         )
     }
 
@@ -567,7 +566,6 @@ impl ExportKind {
             ExportKind::Fountain => "Fountain",
             ExportKind::Html => "HTML",
             ExportKind::Markdown => "Markdown",
-            ExportKind::Rtf => "Rich Text (.rtf)",
             ExportKind::Txt => "Plain text",
             ExportKind::Bundle => "Project bundle",
         }
@@ -592,7 +590,6 @@ impl ExportKind {
             ExportKind::Fountain => "fountain",
             ExportKind::Html => "html",
             ExportKind::Markdown => "md",
-            ExportKind::Rtf => "rtf",
             ExportKind::Txt => "txt",
             ExportKind::Bundle => "zip",
         }
@@ -606,12 +603,11 @@ impl ExportKind {
             ExportKind::Fountain => "Plain-text screenplay with formatting",
             ExportKind::Html => "Single web page with clean CSS",
             ExportKind::Markdown => "Portable plain text with structure",
-            ExportKind::Rtf => "Rich text for any word processor",
             ExportKind::Txt => "UTF-8 plain text, unformatted",
             ExportKind::Bundle => "Project, snapshots and notes in one archive",
         }
     }
-    pub fn all() -> [ExportKind; 10] {
+    pub fn all() -> [ExportKind; 9] {
         [
             ExportKind::Pdf,
             ExportKind::Epub,
@@ -620,7 +616,6 @@ impl ExportKind {
             ExportKind::Fountain,
             ExportKind::Html,
             ExportKind::Markdown,
-            ExportKind::Rtf,
             ExportKind::Txt,
             ExportKind::Bundle,
         ]
@@ -1495,7 +1490,7 @@ pub struct ExportSettings {
     pub margins: Option<crate::rich_text::PageMargins>,
     /// Book margins: `margins.left` is the inside (binding) edge and
     /// `margins.right` the outside edge, swapped on left-hand pages. Prose in
-    /// the paged formats (PDF, DOCX, RTF) only.
+    /// the paged formats (PDF, DOCX) only.
     #[serde(default)]
     pub mirror_margins: bool,
     /// Each body chapter opens on a right-hand (odd-numbered) page, leaving a
@@ -2291,7 +2286,6 @@ mod tests {
             for export in [
                 ExportKind::Pdf,
                 ExportKind::Docx,
-                ExportKind::Rtf,
                 ExportKind::Epub,
             ] {
                 assert_eq!(

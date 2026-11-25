@@ -38,7 +38,7 @@ The person who commissioned it cares about:
 2. **Versioning** — named snapshots, whole-project checkpoints, comparison,
    restore, and an audit trail around export.
 3. **Many real output formats** — PDF, EPUB, DOCX, Final Draft (FDX), Fountain,
-   HTML, Markdown, RTF, plain text and a portable project bundle — each with
+   HTML, Markdown, plain text and a portable project bundle — each with
    front matter, back matter and page/type settings.
 4. **Agent-testable internals** — every important action is a JSON command, also
    exposed through MCP, so a UI can be replaced or automated.
