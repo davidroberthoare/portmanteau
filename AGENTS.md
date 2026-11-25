@@ -255,6 +255,7 @@ When you add a command, update **all** of these:
 | `project.update` | Change title, subtitle, author, genre, logline, contact, draft_label, draft_date, daily_target | `{"contact":"Ada\nada@example.com","draft_date":"14 March 2027"}` |
 | `project.set_cover` | Set the cover picture (.png/.jpg; a saved project keeps a copy) or clear it with an empty path | `{"path":"/tmp/cover.jpg"}` |
 | `research.list` | List research notes (kind, source, words, attachments) | `{}` |
+| `document.picture` | Change a picture's size, alignment, wrapping, padding, caption | `{"id":"doc-…","paragraph":3,"align":"right","wrap":true}` |
 | `research.update` | Change a note's title, body, kind or source | `{"id":"doc-…","kind":"Interview"}` |
 | `research.attach` | Copy a file into a note's attachments (project must be saved) | `{"id":"doc-…","path":"/tmp/x.pdf"}` |
 | `research.detach` | Remove an attachment | `{"id":"doc-…","name":"x.pdf"}` |

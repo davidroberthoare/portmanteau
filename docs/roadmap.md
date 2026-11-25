@@ -160,9 +160,18 @@ Not done / next:
   Second round 2026-11-24: a picture's caption prints under it in every writer
   (generated paragraph in `prose_paragraphs`; PDF keeps it on the picture's page);
   Insert image offers Small/Medium/Large/Full width (default 4.5 in).
-  STILL TO DO: pictures inside a line of text; floating/wrapped pictures;
-  numbered figures; resizing or re-aligning a picture already in the text (no
-  editor control yet; only at insert); caption editing after insert; GIF/WebP; Markdown/Fountain/FDX (placeholders); the PDF cover
+  Third round 2026-11-24: position (left/centre/right), "text wraps around it"
+  and padding, like Word's Position/Wrap Text. Model: `ImageObject.align/wrap/padding`;
+  command `document.picture` (MCP `update_picture`); the inspector's Document tab
+  lists each picture with Width, Position, Wrap, Space around, Caption and
+  Description. PDF (and so the Compile preview) really wraps text beside the
+  picture (`Flow.float`, `wrap_chars_with`, caption set inside the picture's
+  width); HTML/EPUB float a `<figure>`; DOCX writes an anchored picture with
+  square wrapping (its caption prints as the line after); RTF and the editor
+  show it aligned but not wrapped.
+  STILL TO DO: pictures inside a line of text; wrap in RTF; the editor drawing
+  text around a wrapped picture; numbered figures; a picture's controls on the
+  picture itself (click to select, drag handles); picture edits in undo; GIF/WebP; Markdown/Fountain/FDX (placeholders); the PDF cover
   page; large-image downsampling. Old note: the PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
   and no inline pictures. Needs picture support first.
 - "Start chapters on a right-hand page": DONE for prose PDF (`chapters_start_right`; blank left-hand pages carry no furniture but count in the numbering). Not yet DOCX/RTF (page-break-before odd page needs section breaks).

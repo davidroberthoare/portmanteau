@@ -620,6 +620,88 @@ impl Workspace {
                 self.dirty = true;
                 ApiResponse::ok(command, "Document updated", json!({"id": id}))
             }
+            "document.picture" => {
+                // Change one picture's size, alignment, wrapping, padding, caption or
+                // description. `paragraph` is the 0-based paragraph that holds it.
+                let Some(id) = str_arg(&payload, "id") else {
+                    return ApiResponse::err(command, "A document id is required");
+                };
+                let Some(index) = payload.get("paragraph").and_then(|v| v.as_u64()) else {
+                    return ApiResponse::err(command, "A paragraph number is required");
+                };
+                let Some(doc) = self.project.document_mut(&id) else {
+                    return ApiResponse::err(command, "Document not found");
+                };
+                let Some(image) = doc
+                    .content
+                    .paragraphs
+                    .get_mut(index as usize)
+                    .and_then(|paragraph| {
+                        paragraph.content.iter_mut().find_map(|item| match item {
+                            portmanteau_core::InlineContent::Image(image) => Some(image),
+                            _ => None,
+                        })
+                    })
+                else {
+                    return ApiResponse::err(command, "That paragraph holds no picture");
+                };
+                let number = |key: &str| payload.get(key).and_then(|v| v.as_f64()).map(|v| v as f32);
+                let aspect = match (image.width, image.height) {
+                    (Some(w), Some(h)) if w > 0.0 && h > 0.0 => h / w,
+                    _ => 0.0,
+                };
+                if let Some(width) = number("width") {
+                    if !(8.0..=2000.0).contains(&width) {
+                        return ApiResponse::err(command, "Width must be between 8 and 2000 points");
+                    }
+                    image.width = Some(width);
+                    if aspect > 0.0 && number("height").is_none() {
+                        image.height = Some(width * aspect);
+                    }
+                }
+                if let Some(height) = number("height") {
+                    if !(8.0..=3000.0).contains(&height) {
+                        return ApiResponse::err(command, "Height must be between 8 and 3000 points");
+                    }
+                    image.height = Some(height);
+                }
+                if let Some(value) = payload.get("align").and_then(|v| v.as_str()) {
+                    image.align = match value.to_ascii_lowercase().as_str() {
+                        "left" => portmanteau_core::PictureAlign::Left,
+                        "center" | "centre" => portmanteau_core::PictureAlign::Center,
+                        "right" => portmanteau_core::PictureAlign::Right,
+                        _ => return ApiResponse::err(command, "align must be left, center or right"),
+                    };
+                }
+                if let Some(value) = payload.get("wrap").and_then(|v| v.as_bool()) {
+                    image.wrap = value;
+                }
+                if let Some(value) = number("padding") {
+                    image.padding = value.clamp(0.0, 72.0);
+                }
+                if let Some(value) = payload.get("caption").and_then(|v| v.as_str()) {
+                    image.caption = value.trim().to_owned();
+                }
+                if let Some(value) = payload.get("alt_text").and_then(|v| v.as_str()) {
+                    image.alt_text = value.trim().to_owned();
+                }
+                // Text can only run beside a picture that sits at one side.
+                if image.align == portmanteau_core::PictureAlign::Center {
+                    image.wrap = false;
+                }
+                let result = json!({
+                    "id": id,
+                    "paragraph": index,
+                    "width": image.width,
+                    "height": image.height,
+                    "align": format!("{:?}", image.align).to_lowercase(),
+                    "wrap": image.wrap,
+                    "padding": image.padding,
+                });
+                doc.touch();
+                self.dirty = true;
+                ApiResponse::ok(command, "Picture updated", result)
+            }
             "document.delete" => {
                 let Some(id) = str_arg(&payload, "id") else {
                     return ApiResponse::err(command, "A document id is required");
@@ -2001,6 +2083,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("snapshot.diff", "Compare a snapshot with the current document", r#"{"document_id":"...","id":"snap-..."}"#),
         ("item.add", "Add a story-database item", r#"{"kind":"Character","title":"...","notes":"...","tags":["..."]}"#),
         ("item.update", "Change a story-database item", r#"{"id":"item-...","title":"...","tags":["..."]}"#),
+        ("document.picture", "Change a picture's size, alignment (left/center/right), text wrapping, padding, caption or description", r#"{"id":"doc-...","paragraph":3,"width":200,"align":"right","wrap":true,"padding":12,"caption":"..."}"#),
         ("research.add", "Add a research note", r#"{"title":"...","body":"...","kind":"Interview","source":"..."}"#),
         ("research.list", "List research notes with their kind, source and attachments", "{}"),
         ("research.update", "Change a research note's title, body, kind or source", r#"{"id":"doc-...","kind":"Data","source":"..."}"#),
@@ -2461,6 +2544,45 @@ mod tests {
         assert!(res.ok, "{}", res.message);
         assert!(res.data["added"].as_u64().unwrap() > 0);
         assert!(res.data["lines"].as_array().unwrap().len() > 0);
+    }
+
+    #[test]
+    fn document_picture_changes_size_position_wrapping_and_padding() {
+        let mut ws = Workspace::demo();
+        let id = ws
+            .project
+            .documents
+            .iter()
+            .find(|d| d.kind == DocKind::Chapter)
+            .map(|d| d.id.clone())
+            .unwrap();
+        ws.project.document_mut(&id).unwrap().content.paragraphs.push(portmanteau_core::RichParagraph {
+            style_id: "image".into(),
+            content: vec![portmanteau_core::InlineContent::Image(portmanteau_core::ImageObject {
+                asset_id: "images/a.png".into(),
+                width: Some(200.0),
+                height: Some(100.0),
+                ..Default::default()
+            })],
+        });
+        let at = ws.project.document(&id).unwrap().content.paragraphs.len() - 1;
+        let res = ws.execute(
+            "document.picture",
+            json!({"id": id, "paragraph": at, "width": 100, "align": "right", "wrap": true, "padding": 14, "caption": " Low tide "}),
+        );
+        assert!(res.ok, "{}", res.message);
+        let doc = ws.project.document(&id).unwrap();
+        let portmanteau_core::InlineContent::Image(image) = &doc.content.paragraphs[at].content[0] else { panic!() };
+        assert_eq!(image.width, Some(100.0));
+        assert_eq!(image.height, Some(50.0), "width alone keeps the proportions");
+        assert!(image.wrap && image.padding == 14.0 && image.caption == "Low tide");
+        // A centred picture cannot wrap.
+        let res = ws.execute("document.picture", json!({"id": id, "paragraph": at, "align": "center"}));
+        assert!(res.ok && !res.data["wrap"].as_bool().unwrap());
+        // Bad input is refused and changes nothing.
+        assert!(!ws.execute("document.picture", json!({"id": id, "paragraph": at, "width": 99999})).ok);
+        assert!(!ws.execute("document.picture", json!({"id": id, "paragraph": 0, "align": "left"})).ok);
+        assert!(!ws.execute("document.picture", json!({"id": id, "paragraph": at, "align": "sideways"})).ok);
     }
 
     #[test]

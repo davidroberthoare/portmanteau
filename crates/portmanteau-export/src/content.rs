@@ -94,6 +94,10 @@ pub(crate) struct ProseParagraph {
     /// True on a picture whose caption follows as the next paragraph, so a
     /// writer can keep the two on one page.
     pub(crate) captioned: bool,
+    /// True on the generated caption of a picture that text wraps around: the
+    /// PDF and web writers set that caption inside the picture's own box, so
+    /// they skip this paragraph; the others print it as an ordinary line.
+    pub(crate) float_caption: bool,
 }
 
 impl ProseParagraph {
@@ -204,13 +208,14 @@ pub(crate) fn prose_paragraphs(
                 uppercase,
                 index: Some(index),
                 captioned: false,
+                float_caption: false,
             };
             if resolved.is_empty() {
                 return Vec::new();
             }
             let mut out = Vec::new();
             if let (Some(caption), true) = (caption, resolved.standalone_image().is_some()) {
-                resolved.captioned = true;
+                resolved.captioned = !resolved.standalone_image().is_some_and(|i| i.wrap && i.align != PictureAlign::Center);
                 let style = ElementStyle {
                     size: (resolved.format.size * 0.9).max(7.0),
                     italic: true,
@@ -228,6 +233,9 @@ pub(crate) fn prose_paragraphs(
                     uppercase: resolved.uppercase,
                     index: resolved.index,
                     captioned: false,
+                    float_caption: resolved
+                        .standalone_image()
+                        .is_some_and(|image| image.wrap && image.align != PictureAlign::Center),
                 };
                 out.push(resolved);
                 out.push(caption);

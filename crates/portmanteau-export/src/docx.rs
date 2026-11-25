@@ -362,13 +362,31 @@ fn docx_prose_or_picture(paragraph: &ProseParagraph, settings: &ExportSettings, 
                 }
             };
             let (cx, cy) = ((w * 12700.0).round() as i64, (h * 12700.0).round() as i64);
-            let align = match paragraph.format.align {
-                Alignment::Left => "center",
-                other => docx_align(other).unwrap_or("center"),
-            };
             let descr = xml_escape(&image.alt_text);
+            let graphic = format!(
+                "<wp:docPr id=\"{n}\" name=\"Picture {n}\" descr=\"{descr}\"/><a:graphic xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:nvPicPr><pic:cNvPr id=\"{n}\" name=\"img{n}\" descr=\"{descr}\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"rIdImg{n}\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>"
+            );
+            if image.wrap && image.align != PictureAlign::Center {
+                // Text runs beside it: an anchored picture with square wrapping,
+                // held by an empty one-point paragraph so the text that follows
+                // flows around it.
+                let pad = (image.padding.max(0.0) * 12700.0).round() as i64;
+                let (side, dist_l, dist_r) = if image.align == PictureAlign::Left {
+                    ("left", 0, pad)
+                } else {
+                    ("right", pad, 0)
+                };
+                return format!(
+                    "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\" w:line=\"20\" w:lineRule=\"exact\"/></w:pPr><w:r><w:drawing><wp:anchor distT=\"0\" distB=\"{pad}\" distL=\"{dist_l}\" distR=\"{dist_r}\" simplePos=\"0\" relativeHeight=\"251658240\" behindDoc=\"0\" locked=\"0\" layoutInCell=\"1\" allowOverlap=\"0\"><wp:simplePos x=\"0\" y=\"0\"/><wp:positionH relativeFrom=\"margin\"><wp:align>{side}</wp:align></wp:positionH><wp:positionV relativeFrom=\"paragraph\"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx=\"{cx}\" cy=\"{cy}\"/><wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/><wp:wrapSquare wrapText=\"bothSides\"/>{graphic}</wp:anchor></w:drawing></w:r></w:p>"
+                );
+            }
+            let align = match image.align {
+                PictureAlign::Left => "left",
+                PictureAlign::Center => "center",
+                PictureAlign::Right => "right",
+            };
             return format!(
-                "<w:p><w:pPr><w:keepNext/><w:spacing w:before=\"{}\" w:after=\"{}\"/><w:jc w:val=\"{align}\"/></w:pPr><w:r><w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"{cx}\" cy=\"{cy}\"/><wp:docPr id=\"{n}\" name=\"Picture {n}\" descr=\"{descr}\"/><a:graphic xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:nvPicPr><pic:cNvPr id=\"{n}\" name=\"img{n}\" descr=\"{descr}\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"rIdImg{n}\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>",
+                "<w:p><w:pPr><w:keepNext/><w:spacing w:before=\"{}\" w:after=\"{}\"/><w:jc w:val=\"{align}\"/></w:pPr><w:r><w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"{cx}\" cy=\"{cy}\"/>{graphic}</wp:inline></w:drawing></w:r></w:p>",
                 pt_to_twips(paragraph.format.before.max(6.0)),
                 pt_to_twips(paragraph.format.after.max(6.0)),
             );

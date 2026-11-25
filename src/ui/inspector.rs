@@ -302,6 +302,139 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         // box and the latest version here; one home is enough.
     }
     crate::ui::editor::apply_field_spell(app, spelling);
+    pictures_section(app, ui, doc_id);
+}
+
+/// One row per picture sitting on its own paragraph in this document: size,
+/// position, wrapping, padding, caption and description. Every change goes
+/// through the `document.picture` command.
+fn pictures_section(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
+    use portmanteau_core::{InlineContent, PictureAlign};
+    let pictures: Vec<(usize, portmanteau_core::ImageObject)> = app
+        .ws
+        .project
+        .document(doc_id)
+        .map(|doc| {
+            doc.content
+                .paragraphs
+                .iter()
+                .enumerate()
+                .filter_map(|(index, paragraph)| {
+                    let mut images = paragraph.content.iter().filter_map(|item| match item {
+                        InlineContent::Image(image) => Some(image.clone()),
+                        _ => None,
+                    });
+                    let only_picture = paragraph.content.iter().all(|item| match item {
+                        InlineContent::Image(_) => true,
+                        InlineContent::Text(run) => run.text.trim().is_empty(),
+                        InlineContent::HardBreak => true,
+                    });
+                    images.next().filter(|_| only_picture).map(|image| (index, image))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if pictures.is_empty() {
+        return;
+    }
+    ui.add_space(12.0);
+    hairline(ui);
+    ui.add_space(10.0);
+    section_label(ui, "Pictures");
+    ui.add_space(4.0);
+    let mut edits: Vec<serde_json::Value> = Vec::new();
+    for (number, (paragraph, image)) in pictures.iter().enumerate() {
+        let name = if image.alt_text.trim().is_empty() {
+            image.asset_id.rsplit('/').next().unwrap_or("picture").to_owned()
+        } else {
+            image.alt_text.clone()
+        };
+        egui::CollapsingHeader::new(RichText::new(format!("{}. {name}", number + 1)).font(ui_body()))
+            .id_salt(("picture", doc_id, *paragraph))
+            .show(ui, |ui| {
+                let edit = |extra: serde_json::Value| {
+                    let mut value = extra;
+                    value["id"] = doc_id.into();
+                    value["paragraph"] = (*paragraph).into();
+                    value
+                };
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Width").font(ui_small()).color(FAINT));
+                    let mut width = image.width.unwrap_or(240.0);
+                    if ui
+                        .add(egui::DragValue::new(&mut width).speed(2.0).range(24.0..=468.0).suffix(" pt"))
+                        .changed()
+                    {
+                        edits.push(edit(serde_json::json!({"width": width})));
+                    }
+                    if crate::ui::views::quiet_button(ui, "Fit width").clicked() {
+                        edits.push(edit(serde_json::json!({"width": 468.0})));
+                    }
+                });
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Position").font(ui_small()).color(FAINT));
+                    for (label, value, key) in [
+                        ("Left", PictureAlign::Left, "left"),
+                        ("Center", PictureAlign::Center, "center"),
+                        ("Right", PictureAlign::Right, "right"),
+                    ] {
+                        if ui.selectable_label(image.align == value, label).clicked() {
+                            edits.push(edit(serde_json::json!({"align": key})));
+                        }
+                    }
+                });
+                let can_wrap = image.align != PictureAlign::Center;
+                let mut wrap = image.wrap && can_wrap;
+                if ui
+                    .add_enabled(can_wrap, egui::Checkbox::new(&mut wrap, "Text wraps around it"))
+                    .on_disabled_hover_text("Put the picture on the left or the right first")
+                    .changed()
+                {
+                    edits.push(edit(serde_json::json!({"wrap": wrap})));
+                }
+                ui.add_enabled_ui(wrap, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Space around").font(ui_small()).color(FAINT));
+                        let mut padding = image.padding;
+                        if ui
+                            .add(egui::DragValue::new(&mut padding).speed(0.5).range(0.0..=72.0).suffix(" pt"))
+                            .changed()
+                        {
+                            edits.push(edit(serde_json::json!({"padding": padding})));
+                        }
+                    });
+                });
+                ui.add_space(4.0);
+                ui.label(RichText::new("Caption").font(ui_small()).color(FAINT));
+                let mut caption = image.caption.clone();
+                if ui
+                    .add(TextEdit::singleline(&mut caption).desired_width(f32::INFINITY))
+                    .changed()
+                {
+                    edits.push(edit(serde_json::json!({"caption": caption})));
+                }
+                ui.label(RichText::new("Description (for screen readers)").font(ui_small()).color(FAINT));
+                let mut alt = image.alt_text.clone();
+                if ui
+                    .add(TextEdit::singleline(&mut alt).desired_width(f32::INFINITY))
+                    .changed()
+                {
+                    edits.push(edit(serde_json::json!({"alt_text": alt})));
+                }
+                ui.label(
+                    RichText::new("Text wraps in exports and the Compile preview; the editor shows the picture on its own line.")
+                        .font(ui_small())
+                        .color(FAINT),
+                );
+            });
+    }
+    for edit in edits {
+        let result = app.ws.execute("document.picture", edit);
+        if !result.ok {
+            app.toast("Picture not changed", result.message, ToastKind::Error);
+        }
+    }
 }
 
 fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {

@@ -509,6 +509,27 @@ pub enum InlineMark {
     Strikethrough,
 }
 
+/// Where a picture sits across the page.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PictureAlign {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
+/// Space kept clear around a picture that text wraps past, in points.
+pub const DEFAULT_PICTURE_PADDING: f32 = 10.0;
+
+fn default_picture_padding() -> f32 {
+    DEFAULT_PICTURE_PADDING
+}
+
+fn is_default_padding(value: &f32) -> bool {
+    (*value - DEFAULT_PICTURE_PADDING).abs() < f32::EPSILON
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct ImageObject {
     /// Project-relative asset identifier, not an arbitrary filesystem path.
@@ -523,6 +544,35 @@ pub struct ImageObject {
     pub width: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<f32>,
+    /// Which side of the page a picture on its own paragraph sits on.
+    #[serde(default, skip_serializing_if = "is_default_align")]
+    pub align: PictureAlign,
+    /// With `align` Left or Right: text runs on beside the picture instead of
+    /// stopping above and resuming below it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub wrap: bool,
+    /// Clear space around a wrapped picture, in points.
+    #[serde(default = "default_picture_padding", skip_serializing_if = "is_default_padding")]
+    pub padding: f32,
+}
+
+fn is_default_align(value: &PictureAlign) -> bool {
+    *value == PictureAlign::Center
+}
+
+impl Default for ImageObject {
+    fn default() -> Self {
+        Self {
+            asset_id: String::new(),
+            alt_text: String::new(),
+            caption: String::new(),
+            width: None,
+            height: None,
+            align: PictureAlign::Center,
+            wrap: false,
+            padding: DEFAULT_PICTURE_PADDING,
+        }
+    }
 }
 
 impl RichDocument {
@@ -1427,7 +1477,8 @@ mod tests {
                         caption: "The old harbor".into(),
                         width: Some(240.0),
                         height: None,
-                    }),
+..Default::default()
+}),
                     InlineContent::Text(TextRun::plain("after")),
                 ],
             }],
@@ -1450,7 +1501,8 @@ mod tests {
                 caption: "Scene reference".into(),
                 width: None,
                 height: None,
-            })],
+..Default::default()
+})],
         };
         assert!(paragraph.has_image());
         assert_eq!(paragraph.editor_text(), "\u{FFFC}");
@@ -1468,7 +1520,8 @@ mod tests {
                 caption: "The harbor, 1987".into(),
                 width: None,
                 height: None,
-            },
+..Default::default()
+},
             true,
             &sheet,
         );
@@ -1689,7 +1742,8 @@ mod tests {
                         caption: String::new(),
                         width: None,
                         height: None,
-                    }),
+..Default::default()
+}),
                     InlineContent::Text(TextRun::plain("B")),
                 ],
             }],

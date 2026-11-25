@@ -167,9 +167,10 @@ fn rtf_prose_or_picture(paragraph: &ProseParagraph, fallback_font: &str, setting
             for byte in &picture.bytes {
                 hex.push_str(&format!("{byte:02x}"));
             }
-            let align = match paragraph.format.align {
-                Alignment::Right => "\\qr",
-                _ => "\\qc",
+            let align = match image.align {
+                PictureAlign::Left => "\\ql",
+                PictureAlign::Right => "\\qr",
+                PictureAlign::Center => "\\qc",
             };
             return format!(
                 "\\pard{align}\\sb{}\\sa{} {{\\pict\\{kind}\\picw{}\\pich{}\\picwgoal{}\\pichgoal{} {hex}}}\\par\n",

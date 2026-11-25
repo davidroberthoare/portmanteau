@@ -2327,9 +2327,6 @@ pub(crate) fn paint_rich_images(
                     let cursor = galley.pos_from_cursor(egui::text::CCursor::new(char_offset));
                     let mut center = galley_pos + cursor.center().to_vec2();
                     let standalone = paragraph.style_id == "image";
-                    if standalone {
-                        center.x = widget_rect.center().x;
-                    }
                     let width = image
                         .width
                         .unwrap_or(if standalone { 240.0 } else { 20.0 })
@@ -2340,6 +2337,16 @@ pub(crate) fn paint_rich_images(
                         .unwrap_or(if standalone { 150.0 } else { 20.0 })
                         .max(12.0)
                         * zoom;
+                    if standalone {
+                        let margin = (galley_pos.x - widget_rect.left()).max(0.0);
+                        center.x = match image.align {
+                            portmanteau_core::PictureAlign::Left => galley_pos.x + width * 0.5,
+                            portmanteau_core::PictureAlign::Center => widget_rect.center().x,
+                            portmanteau_core::PictureAlign::Right => {
+                                widget_rect.right() - margin - width * 0.5
+                            }
+                        };
+                    }
                     let rect = egui::Rect::from_center_size(center, Vec2::new(width, height));
                     if let Some(texture) = textures.get(&image.asset_id) {
                         ui.painter().image(

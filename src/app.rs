@@ -219,6 +219,7 @@ fn image_object(
         caption: caption.trim().to_owned(),
         width: Some(pixel_width as f32 * scale),
         height: Some(pixel_height as f32 * scale),
+        ..Default::default()
     }
 }
 

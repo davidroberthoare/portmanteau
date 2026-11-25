@@ -13,7 +13,7 @@
 //! real blocks in the document.
 
 use crate::picture::{load_picture, picture_size_pt, LoadedPicture};
-use portmanteau_core::ImageObject;
+use portmanteau_core::{ImageObject, PictureAlign};
 use std::path::PathBuf;
 use portmanteau_core::{
     Alignment, Block, DocKind, Document, ElementKind, ElementStyle, ExportSettings, InlineContent,
@@ -345,13 +345,24 @@ fn chars_width(chars: &[StyledChar], size: f32) -> f32 {
 /// the column is broken at a character boundary rather than running off the
 /// page. Explicit newlines force a break.
 fn wrap_chars(chars: &[StyledChar], max_width: f32, size: f32) -> Vec<Vec<StyledChar>> {
-    let max_width = max_width.max(4.0);
+    wrap_chars_with(chars, size, |_| max_width)
+}
+
+/// Like `wrap_chars`, but each line may have its own measure (text running
+/// beside a picture is narrower than text below it): `width_for(n)` is the
+/// width of the n-th line (0-based).
+fn wrap_chars_with(
+    chars: &[StyledChar],
+    size: f32,
+    mut width_for: impl FnMut(usize) -> f32,
+) -> Vec<Vec<StyledChar>> {
     let mut lines: Vec<Vec<StyledChar>> = Vec::new();
     let mut line: Vec<StyledChar> = Vec::new();
     let mut width = 0.0f32;
     let mut last_space: Option<usize> = None;
 
     for &styled in chars {
+        let max_width = width_for(lines.len()).max(4.0);
         if styled.c == '\n' {
             trim_trailing_spaces(&mut line);
             lines.push(std::mem::take(&mut line));
@@ -458,9 +469,30 @@ struct Flow {
     /// Pages that will be inserted ahead of this flow's pages afterwards (the
     /// contents page), so the real page parity is known while laying out.
     parity_shift: usize,
+    /// A picture that text runs past, until the text is below it.
+    float: Option<FloatBox>,
+}
+
+/// A wrapped picture's claim on one side of the page.
+#[derive(Clone, Copy)]
+struct FloatBox {
+    /// The page it sits on (the index of the page being filled when placed).
+    page: usize,
+    on_left: bool,
+    /// How much of the measure it takes, padding included.
+    taken: f32,
+    /// Text lines starting above this point are narrowed.
+    bottom: f32,
 }
 
 impl Flow {
+    /// The side and width a line starting at `y` must give up to a wrapped picture.
+    fn float_at(&self, y: f32) -> Option<(bool, f32)> {
+        self.float
+            .filter(|f| f.page == self.pages.len() && y < f.bottom - 0.01)
+            .map(|f| (f.on_left, f.taken))
+    }
+
     fn with_pages(frame: Frame, pages: Vec<PdfPageLayout>) -> Self {
         Self {
             pages,
@@ -471,6 +503,7 @@ impl Flow {
             line: None,
             asset_root: None,
             parity_shift: 0,
+            float: None,
         }
     }
 
@@ -488,6 +521,10 @@ impl Flow {
         gap_before: f32,
         caption_room: f32,
     ) {
+        // A picture on a line of its own starts below any picture beside text.
+        if let Some(f) = self.float.filter(|f| f.page == self.pages.len()) {
+            self.cursor = self.cursor.max(f.bottom);
+        }
         let gap = if self.current.is_blank() { 0.0 } else { gap_before.max(0.0) };
         // A caption stays on the picture's page: room for its first line is
         // asked for up front.
@@ -1370,6 +1407,9 @@ fn flow_prose_paragraph(
     body: &ElementStyle,
     fallback_font: &str,
 ) {
+    if paragraph.float_caption {
+        return;
+    }
     let format = &paragraph.format;
     let size = format.size.max(7.0);
     let fallback = if format.font.trim().is_empty() {
@@ -1387,10 +1427,17 @@ fn flow_prose_paragraph(
             let indent = format.indent.max(0.0);
             let available = (flow.frame.content_width() - indent - format.right_indent.max(0.0)).max(24.0);
             let max_height = (flow.frame.height - flow.frame.top - flow.frame.bottom).max(24.0);
-            let dimensions = picture_size_pt(image, &picture, available, max_height);
             let left = flow.frame.left + indent;
-            // A picture on its own line is centred unless its style aligns it elsewhere.
-            let align = if format.align == Alignment::Left { Alignment::Center } else { format.align };
+            if image.wrap && image.align != PictureAlign::Center {
+                flow_wrapped_picture(flow, image, picture, format, base, left, available, max_height);
+                return;
+            }
+            let dimensions = picture_size_pt(image, &picture, available, max_height);
+            let align = match image.align {
+                PictureAlign::Left => Alignment::Left,
+                PictureAlign::Center => Alignment::Center,
+                PictureAlign::Right => Alignment::Right,
+            };
             let caption_room = if paragraph.captioned { size * 0.9 * 1.3 + 4.0 } else { 0.0 };
             flow.picture(image, picture, dimensions, left, available, align, format.before.max(8.0), caption_room);
             flow.space(if paragraph.captioned { 2.0 } else { format.after.max(8.0) });
@@ -1428,9 +1475,19 @@ fn flow_prose_paragraph(
     let right_indent = format.right_indent.max(0.0);
     let width = (flow.frame.content_width() - indent - right_indent).max(24.0);
     let first_indent = format.first_line_indent.max(0.0);
-    let lines = wrap_chars(&chars, width - first_indent.min(width * 0.5), size);
     let before = format.before.max(0.0);
     let after = format.after.max(0.0);
+    let first_extra = first_indent.min(width * 0.5);
+    let start_y = flow.cursor + if flow.current.is_blank() { 0.0 } else { before };
+    let lines = {
+        let flow = &*flow;
+        wrap_chars_with(&chars, size, |i| {
+            let taken = flow
+                .float_at(start_y + i as f32 * leading)
+                .map_or(0.0, |(_, taken)| taken);
+            width - if i == 0 { first_extra } else { 0.0 } - taken
+        })
+    };
 
     let mut offset = 0usize;
     for (index, line) in lines.iter().enumerate() {
@@ -1444,14 +1501,20 @@ fn flow_prose_paragraph(
         let first = index == 0;
         let line_width = chars_width(line, size);
         let extra = if first { first_indent } else { 0.0 };
-        let left = flow.frame.left + indent + extra;
-        let available = (width - extra).max(8.0);
+        let gap_before = if first { before } else { 0.0 };
+        // Beside a wrapped picture the line gives up that side of the measure.
+        let line_top = flow.cursor + if flow.current.is_blank() { 0.0 } else { gap_before };
+        let (side_left, side_taken) = match flow.float_at(line_top) {
+            Some((on_left, taken)) => (if on_left { taken } else { 0.0 }, taken),
+            None => (0.0, 0.0),
+        };
+        let left = flow.frame.left + indent + extra + side_left;
+        let available = (width - extra - side_taken).max(8.0);
         let x = match format.align {
             Alignment::Right => left + (available - line_width).max(0.0),
             Alignment::Center => left + (available - line_width).max(0.0) * 0.5,
             Alignment::Left | Alignment::Justify => left,
         };
-        let gap_before = if first { before } else { 0.0 };
         // The last line of a justified paragraph stays ragged, as in print.
         if format.align == Alignment::Justify && index + 1 < lines.len() {
             flow.text_line_justified(line, left, available, size, leading, gap_before);
@@ -1461,6 +1524,69 @@ fn flow_prose_paragraph(
     }
     flow.line = None;
     flow.space(after);
+}
+
+/// A picture pinned to the left or right edge of the measure with the text
+/// running on beside it (and below it, once past its bottom edge). The caption
+/// sits under the picture, inside the picture's own width.
+#[allow(clippy::too_many_arguments)]
+fn flow_wrapped_picture(
+    flow: &mut Flow,
+    image: &ImageObject,
+    picture: std::sync::Arc<LoadedPicture>,
+    format: &ElementStyle,
+    base: Face,
+    left: f32,
+    available: f32,
+    max_height: f32,
+) {
+    let pad = image.padding.max(0.0);
+    // Never more than 60% of the measure, so there is always room for text.
+    let (width, height) = picture_size_pt(image, &picture, available * 0.6, max_height * 0.8);
+    let size = format.size.max(7.0);
+    let caption_size = (size * 0.9).max(7.0);
+    let caption_leading = caption_size * 1.3;
+    let mut caption_lines = Vec::new();
+    if !image.caption.trim().is_empty() {
+        let mut chars = Vec::new();
+        push_text(&mut chars, image.caption.trim(), base.with_marks(false, true));
+        caption_lines = wrap_chars(&chars, width, caption_size);
+    }
+    let caption_height = if caption_lines.is_empty() {
+        0.0
+    } else {
+        2.0 + caption_lines.len() as f32 * caption_leading
+    };
+    // Two floats never share a line: the second starts below the first.
+    if let Some(f) = flow.float.filter(|f| f.page == flow.pages.len()) {
+        flow.cursor = flow.cursor.max(f.bottom);
+    }
+    let gap = if flow.current.is_blank() { 0.0 } else { format.before.max(4.0) };
+    flow.ensure(gap + height + caption_height);
+    flow.cursor += gap;
+    let top = flow.cursor;
+    let on_left = image.align == PictureAlign::Left;
+    let x = if on_left { left } else { left + available - width };
+    flow.current.images.push(PdfImage {
+        x,
+        y: top,
+        width,
+        height,
+        picture,
+        asset_id: image.asset_id.clone(),
+    });
+    flow.cursor = top + height + 2.0;
+    for line in &caption_lines {
+        let line_width = chars_width(line, caption_size);
+        flow.text_line(line, x + (width - line_width).max(0.0) * 0.5, caption_size, caption_leading, 0.0);
+    }
+    flow.cursor = top;
+    flow.float = Some(FloatBox {
+        page: flow.pages.len(),
+        on_left,
+        taken: width + pad,
+        bottom: top + height + caption_height + pad,
+    });
 }
 
 fn flow_wrapped_text(
@@ -1476,6 +1602,7 @@ fn flow_wrapped_text(
         uppercase: false,
         index: None,
         captioned: false,
+        float_caption: false,
     };
     flow_prose_paragraph(flow, &paragraph, format, fallback_font);
 }

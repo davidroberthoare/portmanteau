@@ -18,7 +18,7 @@ pub use compile::*;
 pub use find::{FindHit, FindOptions, FindQuery, FindSource, Finder, HitField, ReplaceScope, SearchGroup};
 pub use model::*;
 pub use rich_text::{
-    ImageObject, InlineContent, InlineMark,
+    ImageObject, InlineContent, PictureAlign, DEFAULT_PICTURE_PADDING, InlineMark,
     PageMargins, ParagraphStyle, RichDocument, RichParagraph, StyleSheet, TextPosition, TextRun,
     TextTransform,
 };

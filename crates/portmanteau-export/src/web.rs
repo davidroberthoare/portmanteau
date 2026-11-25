@@ -142,6 +142,10 @@ pub(crate) enum PictureMode {
 
 impl ParagraphClasses {
     /// `<img>` markup for a picture, or `None` when it cannot be shown.
+    fn draws_pictures(&self) -> bool {
+        !matches!(self.pictures, PictureMode::Placeholder)
+    }
+
     fn picture_markup(&mut self, image: &ImageObject) -> Option<String> {
         let (root, packaged) = match &self.pictures {
             PictureMode::Placeholder => return None,
@@ -276,7 +280,7 @@ pub(crate) fn stylesheet(
     }
 
     // 2. Headings and the title page.
-    css.push_str(&format!(".heading {{ {} font-weight: bold; }}\n", declarations(&st.chapter_heading, serif)));
+    css.push_str(&format!(".heading {{ {} font-weight: bold; clear: both; }}\n", declarations(&st.chapter_heading, serif)));
     css.push_str(".chapter { break-before: page; page-break-before: always; }\n");
     if project.compile_plan(settings).kind.is_script() {
         // The script cover: its own lines carry the space above them, and the
@@ -367,9 +371,39 @@ pub(crate) fn html_prose_paragraph(
     fallback_font: &str,
 ) -> String {
     let class = classes.class_for(&paragraph.format, fallback_font);
-    if let Some(img) = paragraph.standalone_image().and_then(|image| classes.picture_markup(image)) {
-        // A picture on its own: centred unless the paragraph style says otherwise.
-        let align = if paragraph.format.align == Alignment::Left { "center" } else { css_align(paragraph.format.align) };
+    if paragraph.float_caption && classes.draws_pictures() {
+        // Printed inside the figure that holds its picture.
+        return String::new();
+    }
+    if let Some((image, img)) = paragraph
+        .standalone_image()
+        .and_then(|image| classes.picture_markup(image).map(|markup| (image, markup)))
+    {
+        if image.wrap && image.align != PictureAlign::Center {
+            let side = if image.align == PictureAlign::Left { "left" } else { "right" };
+            let pad = image.padding.max(0.0);
+            let margin = if image.align == PictureAlign::Left {
+                format!("0 {pad:.0}pt {pad:.0}pt 0")
+            } else {
+                format!("0 0 {pad:.0}pt {pad:.0}pt")
+            };
+            let caption = if image.caption.trim().is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "<figcaption style=\"font-style:italic;font-size:90%;text-align:center\">{}</figcaption>",
+                    html_escape(image.caption.trim())
+                )
+            };
+            return format!(
+                "<figure style=\"float:{side};margin:{margin};max-width:60%\">{img}{caption}</figure>\n"
+            );
+        }
+        let align = match image.align {
+            PictureAlign::Left => "left",
+            PictureAlign::Center => "center",
+            PictureAlign::Right => "right",
+        };
         return format!("<p class=\"{class}\" style=\"text-align:{align};text-indent:0\">{img}</p>\n");
     }
     let runs = html_runs(paragraph);

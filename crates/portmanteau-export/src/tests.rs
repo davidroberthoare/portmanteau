@@ -379,7 +379,8 @@ fn fdx_export_keeps_inline_marks_and_image_alt_text() {
             caption: String::new(),
             width: None,
             height: None,
-        })],
+..Default::default()
+})],
     });
 
     let mut settings = p.export.clone();
@@ -470,7 +471,8 @@ fn lossy_text_export_warns_and_uses_an_image_alt_placeholder() {
             caption: String::new(),
             width: None,
             height: None,
-        },
+..Default::default()
+},
         false,
         &sheet,
     );
@@ -1244,7 +1246,8 @@ fn picture_project(tag: &str) -> (Project, PathBuf) {
                     caption: String::new(),
                     width: Some(120.0),
                     height: Some(60.0),
-                })],
+..Default::default()
+})],
             },
             text("After the picture.", "body"),
         ],
@@ -1279,13 +1282,13 @@ fn dump_picture_exports() {
     let (Ok(out), Ok(picture)) = (std::env::var("PM_DUMP"), std::env::var("PM_PICTURE")) else {
         return;
     };
-    let (mut p, dir) = picture_project("dump");
+    let (mut p, dir) = wrapped_picture_project("dump", PictureAlign::Left);
     std::fs::copy(&picture, dir.join("assets/images/dot.png")).unwrap();
     for doc in p.documents.iter_mut() {
         for para in doc.content.paragraphs.iter_mut() {
             for item in para.content.iter_mut() {
                 if let InlineContent::Image(i) = item {
-                    i.width = Some(300.0);
+                    i.width = Some(160.0);
                     i.height = None;
                 }
             }
@@ -1369,6 +1372,83 @@ fn a_caption_prints_under_its_picture_in_every_writer() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A project whose picture sits at the left, wrapped, followed by a long paragraph.
+fn wrapped_picture_project(tag: &str, align: PictureAlign) -> (Project, PathBuf) {
+    let (mut p, dir) = picture_project(tag);
+    let long = "The tide came in over the flats and the gulls wheeled and cried above the harbour wall while the boats rocked at their moorings. ".repeat(14);
+    for doc in p.documents.iter_mut() {
+        let has_picture = doc.content.paragraphs.iter().any(|para| para.has_image());
+        if !has_picture {
+            continue;
+        }
+        for para in doc.content.paragraphs.iter_mut() {
+            for item in para.content.iter_mut() {
+                if let InlineContent::Image(image) = item {
+                    image.wrap = true;
+                    image.align = align;
+                    image.padding = 12.0;
+                    image.width = Some(150.0);
+                    image.height = Some(100.0);
+                    image.caption = "A red dot".into();
+                }
+            }
+        }
+        doc.content.paragraphs.push(RichParagraph {
+            style_id: "body".into(),
+            content: vec![InlineContent::Text(TextRun::with_marks(long.clone(), vec![]))],
+        });
+    }
+    (p, dir)
+}
+
+#[test]
+fn the_pdf_runs_text_beside_a_wrapped_picture_and_below_it_in_full() {
+    for (align, tag) in [(PictureAlign::Left, "wl"), (PictureAlign::Right, "wr")] {
+        let (p, dir) = wrapped_picture_project(tag, align);
+        let mut s = p.settings_for(ExportKind::Pdf);
+        s.asset_root = Some(dir.clone());
+        let layout = pdf_layout(&p, &s);
+        let page = layout.pages.iter().find(|page| !page.images.is_empty()).expect("a page with the picture");
+        let image = &page.images[0];
+        let bottom = image.y + image.height + 12.0;
+        let beside: Vec<_> = page
+            .items
+            .iter()
+            .filter(|t| t.baseline > image.y + 2.0 && t.baseline < image.y + image.height - 2.0)
+            .collect();
+        assert!(!beside.is_empty(), "text sits beside the picture");
+        for t in &beside {
+            let width: f32 = t.segments.iter().map(|seg| text_width(&seg.text, seg.face, t.size)).sum();
+            if align == PictureAlign::Left {
+                assert!(t.x >= image.x + image.width + 11.0, "text starts right of a left picture: {} vs {}", t.x, image.x + image.width);
+            } else {
+                assert!(t.x + width <= image.x - 11.0 + 0.5, "text ends left of a right picture");
+            }
+        }
+        let below: Vec<_> = page.items.iter().filter(|t| t.baseline > bottom + 20.0).collect();
+        assert!(below.iter().any(|t| (t.x - beside.iter().map(|b| b.x).fold(f32::MAX, f32::min)).abs() > 1.0 || align == PictureAlign::Right), "text below the picture uses the full width again");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[test]
+fn a_wrapped_picture_is_anchored_in_docx_and_floated_in_html() {
+    let (p, dir) = wrapped_picture_project("wd", PictureAlign::Right);
+    let with_root = |kind| {
+        let mut s = p.settings_for(kind);
+        s.asset_root = Some(dir.clone());
+        s
+    };
+    let docx = docx_manuscript(&p, &with_root(ExportKind::Docx));
+    let xml = epub_file(&docx, "word/document.xml");
+    assert!(xml.contains("<wp:anchor") && xml.contains("<wp:wrapSquare") && xml.contains("<wp:align>right</wp:align>"));
+    assert!(xml.contains("distL=\"152400\""), "12 pt of padding on the text side");
+    let html = html_manuscript(&p, &with_root(ExportKind::Html));
+    assert!(html.contains("float:right") && html.contains("<figcaption"));
+    assert_eq!(html.matches("A red dot</figcaption>").count(), 1, "the caption prints once");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_picture_cannot_be_read_from_outside_the_assets_folder() {
     let (_, dir) = picture_project("escape");
@@ -1386,7 +1466,7 @@ fn a_picture_cannot_be_read_from_outside_the_assets_folder() {
 #[test]
 fn a_picture_is_scaled_to_the_page_and_keeps_its_proportions() {
     let picture = LoadedPicture { bytes: vec![], ext: "png", media: "image/png", px: (600, 400) };
-    let mut image = ImageObject { asset_id: "x".into(), alt_text: String::new(), caption: String::new(), width: None, height: None };
+    let mut image = ImageObject { asset_id: "x".into(), alt_text: String::new(), caption: String::new(), width: None, height: None, ..Default::default() };
     // Natural size is 96 dpi: 450 x 300 pt, scaled down to a 225 pt measure.
     assert_eq!(picture_size_pt(&image, &picture, 225.0, 1000.0), (225.0, 150.0));
     image.width = Some(100.0);
