@@ -55,7 +55,7 @@ pub(crate) fn markdown_manuscript(project: &Project, settings: &ExportSettings) 
         out.push_str(&format!("by {}\n\n---\n\n", project.author));
     }
     if settings.include_toc {
-        out.push_str("## Contents\n\n");
+        out.push_str(&format!("## {}\n\n", settings.toc_heading()));
         for (i, section) in manuscript_sections(project, settings).iter().enumerate() {
             let title = section_title(project, section.doc, i, settings);
             out.push_str(&format!("{}. {}\n", i + 1, title));

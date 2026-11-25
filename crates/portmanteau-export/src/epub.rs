@@ -276,7 +276,7 @@ fn book_pages(
         // Filled in after the pages exist, because it lists them.
         pages.push(Page {
             file: "contents.xhtml".into(),
-            title: "Contents".into(),
+            title: settings.toc_heading().to_owned(),
             body: String::new(),
             in_nav: false,
         });
@@ -327,7 +327,8 @@ fn book_pages(
     if let Some(contents) = pages.iter().position(|page| page.file == "contents.xhtml") {
         let list = contents_list(&pages);
         pages[contents].body = format!(
-            "<h2 class=\"heading\">Contents</h2>\n<nav class=\"toc\"><ol>\n{list}</ol></nav>\n"
+            "<h2 class=\"heading\">{}</h2>\n<nav class=\"toc\"><ol>\n{list}</ol></nav>\n",
+            xml_escape(settings.toc_heading())
         );
     }
     pages

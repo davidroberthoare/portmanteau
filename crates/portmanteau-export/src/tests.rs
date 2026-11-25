@@ -1474,6 +1474,46 @@ fn the_pdf_opens_with_the_cover_as_an_uncounted_first_page() {
 }
 
 #[test]
+fn the_contents_heading_page_numbers_and_leaders_follow_the_settings() {
+    let p = demo();
+    let text_of = |layout: &PdfLayout| -> Vec<String> {
+        layout
+            .pages
+            .iter()
+            .flat_map(|page| page.items.iter())
+            .map(|item| item.segments.iter().map(|g| g.text.clone()).collect::<String>())
+            .collect()
+    };
+    let mut s = p.settings_for(ExportKind::Pdf);
+    s.include_toc = true;
+    s.toc_title = "Table of Contents".into();
+    let plain = text_of(&pdf_layout(&p, &s));
+    assert!(plain.iter().any(|t| t == "Table of Contents") && !plain.iter().any(|t| t == "Contents"));
+    assert!(!plain.iter().any(|t| t.starts_with(". .")), "no leaders unless asked for");
+    s.toc_leaders = true;
+    assert!(text_of(&pdf_layout(&p, &s)).iter().any(|t| t.starts_with(". . .")), "dots join title and number");
+    s.toc_page_numbers = false;
+    assert!(!text_of(&pdf_layout(&p, &s)).iter().any(|t| t.starts_with(". .")), "no numbers, no leaders");
+
+    if let Ok(out) = std::env::var("PM_TOC") {
+        s.toc_page_numbers = true;
+        std::fs::write(out, pdf_manuscript(&p, &s)).unwrap();
+    }
+    let mut d = p.settings_for(ExportKind::Docx);
+    d.include_toc = true;
+    d.toc_title = "In This Book".into();
+    assert!(epub_file(&docx_manuscript(&p, &d), "word/document.xml").contains("In This Book"));
+    let mut h = p.settings_for(ExportKind::Html);
+    h.include_toc = true;
+    h.toc_title = "In This Book".into();
+    assert!(html_manuscript(&p, &h).contains(">In This Book</h2>"));
+    let mut r = p.settings_for(ExportKind::Rtf);
+    r.include_toc = true;
+    r.toc_title = "In This Book".into();
+    assert!(rtf_manuscript(&p, &r).contains("In This Book"));
+}
+
+#[test]
 fn a_picture_cannot_be_read_from_outside_the_assets_folder() {
     let (_, dir) = picture_project("escape");
     std::fs::write(dir.join("outside.png"), TINY_PNG).unwrap();

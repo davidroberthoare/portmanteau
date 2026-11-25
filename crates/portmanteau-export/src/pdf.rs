@@ -1673,7 +1673,7 @@ fn prose_contents_page(
         baseline: frame.top + 20.0,
         size: heading_size,
         segments: vec![PdfSegment {
-            text: "Contents".into(),
+            text: settings.toc_heading().to_owned(),
             face: heading_face,
         }],
                 source: None,
@@ -1690,14 +1690,20 @@ fn prose_contents_page(
         // heading moves one page later. Physical pages count from the start
         // number, exactly as the footer does.
         // Headings were noted before the contents page was inserted.
-        let number = labels.get(*start + 1).cloned().unwrap_or_default();
+        let number = if settings.toc_page_numbers {
+            labels.get(*start + 1).cloned().unwrap_or_default()
+        } else {
+            String::new()
+        };
         let number_width = text_width(&number, face, size);
         let max_title = (frame.content_width() - number_width - 18.0).max(40.0);
         let mut chars = Vec::new();
         push_text(&mut chars, title, face);
         let mut lines = wrap_chars(&chars, max_title, size);
         lines.truncate(1);
+        let mut title_end = frame.left;
         if let Some(line) = lines.first() {
+            title_end += chars_width(line, size);
             items.push(PdfText {
                 x: frame.left,
                 baseline: y,
@@ -1706,16 +1712,32 @@ fn prose_contents_page(
                 source: None,
             });
         }
-        items.push(PdfText {
-            x: frame.width - frame.right - number_width,
-            baseline: y,
-            size,
-            segments: vec![PdfSegment {
-                text: number,
-                face,
-            }],
+        if !number.is_empty() {
+            let number_x = frame.width - frame.right - number_width;
+            if settings.toc_leaders {
+                // A row of dots from just after the title to just before the number.
+                let dot = ". ";
+                let dot_width = text_width(dot, face, size);
+                let room = number_x - 6.0 - (title_end + 6.0);
+                let count = (room / dot_width).floor() as usize;
+                if count >= 2 {
+                    items.push(PdfText {
+                        x: number_x - 6.0 - count as f32 * dot_width,
+                        baseline: y,
+                        size,
+                        segments: vec![PdfSegment { text: dot.repeat(count), face }],
+                        source: None,
+                    });
+                }
+            }
+            items.push(PdfText {
+                x: number_x,
+                baseline: y,
+                size,
+                segments: vec![PdfSegment { text: number, face }],
                 source: None,
             });
+        }
         y += step;
     }
     Some(PdfPageLayout { items, images: Vec::new() })

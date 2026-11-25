@@ -428,7 +428,7 @@ pub(crate) fn docx_manuscript(project: &Project, settings: &ExportSettings) -> V
         }
     }
     if settings.include_toc {
-        docx_styled_paragraph(&mut body, "Contents", "ContentsHeading");
+        docx_styled_paragraph(&mut body, settings.toc_heading(), "ContentsHeading");
         for title in contents_entries(project, settings) {
             docx_styled_paragraph(&mut body, &title, "ContentsEntry");
         }

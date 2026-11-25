@@ -182,3 +182,5 @@ Not done / next:
   documents appear, numbering style, per-level styles, and a real linked TOC in
   PDF/EPUB.
 - Grey out style properties that do not apply to a format (EPUB ignores some).
+
+- Table of contents, first pass done 2026-11-24: heading text, page numbers and dot leaders (PDF) via `toc_title`, `toc_page_numbers`, `toc_leaders` (Compile > Contents). Still to do: depth/which documents appear, numbering style, per-level styles, linked entries in PDF, page numbers in DOCX (needs a TOC field), EPUB/HTML styling.

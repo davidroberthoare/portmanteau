@@ -230,7 +230,7 @@ pub(crate) fn rtf_manuscript(project: &Project, settings: &ExportSettings) -> St
         }
     }
     if settings.include_toc {
-        out.push_str(&rtf_plain_paragraph(&st.chapter_heading, serif, "Contents", true, true));
+        out.push_str(&rtf_plain_paragraph(&st.chapter_heading, serif, settings.toc_heading(), true, true));
         let entry = ElementStyle {
             first_line_indent: 0.0,
             ..st.body.clone()

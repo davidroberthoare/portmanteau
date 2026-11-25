@@ -1764,6 +1764,9 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
     if let Some(v) = payload.get("cover_image").and_then(|v| v.as_str()) {
         settings.cover_image = v.into();
     }
+    if let Some(v) = payload.get("toc_title").and_then(|v| v.as_str()) {
+        settings.toc_title = v.trim().chars().take(80).collect();
+    }
     if let Some(v) = payload.get("include_cover").and_then(|v| v.as_bool()) {
         settings.include_cover = v;
     }
@@ -1777,6 +1780,8 @@ fn apply_settings_overrides(settings: &mut ExportSettings, payload: &Value) -> R
         ("include_hyperlinks", &mut settings.include_hyperlinks),
         ("mirror_margins", &mut settings.mirror_margins),
         ("chapters_start_right", &mut settings.chapters_start_right),
+        ("toc_page_numbers", &mut settings.toc_page_numbers),
+        ("toc_leaders", &mut settings.toc_leaders),
     ] {
         if let Some(v) = payload.get(key).and_then(|v| v.as_bool()) {
             *field = v;

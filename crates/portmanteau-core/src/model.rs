@@ -1451,6 +1451,15 @@ pub struct ExportSettings {
     pub cover_image: String,
     pub include_title_page: bool,
     pub include_toc: bool,
+    /// The heading above the table of contents; blank means "Contents".
+    #[serde(default)]
+    pub toc_title: String,
+    /// Print each entry's page number (PDF; the other formats list titles only).
+    #[serde(default = "default_true")]
+    pub toc_page_numbers: bool,
+    /// Join an entry to its page number with a row of dots (PDF).
+    #[serde(default)]
+    pub toc_leaders: bool,
     pub include_chapter_numbers: bool,
     pub include_scene_numbers: bool,
     pub include_synopsis: bool,
@@ -1510,6 +1519,12 @@ fn default_custom_paper_mm() -> (f32, f32) {
 }
 
 impl ExportSettings {
+    /// The heading printed above the table of contents.
+    pub fn toc_heading(&self) -> &str {
+        let title = self.toc_title.trim();
+        if title.is_empty() { "Contents" } else { title }
+    }
+
     /// The page size in millimetres, taking the custom size into account.
     pub fn paper_mm(&self) -> (f32, f32) {
         if self.paper == PaperSize::Custom {
@@ -1535,6 +1550,9 @@ impl Default for ExportSettings {
             cover_image: String::new(),
             include_title_page: true,
             include_toc: true,
+            toc_title: String::new(),
+            toc_page_numbers: true,
+            toc_leaders: false,
             include_chapter_numbers: true,
             include_scene_numbers: true,
             include_synopsis: false,

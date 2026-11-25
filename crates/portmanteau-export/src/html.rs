@@ -15,7 +15,7 @@ pub(crate) fn html_manuscript(project: &Project, settings: &ExportSettings) -> S
         body.push_str("</header>\n");
     }
     if settings.include_toc {
-        body.push_str("<nav class=\"toc\"><h2 class=\"heading\">Contents</h2><ol>\n");
+        body.push_str(&format!("<nav class=\"toc\"><h2 class=\"heading\">{}</h2><ol>\n", html_escape(settings.toc_heading())));
         for (index, section) in sections.iter().enumerate() {
             let title = section_title(project, section.doc, index, settings);
             body.push_str(&format!(

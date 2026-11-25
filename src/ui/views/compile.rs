@@ -1321,6 +1321,35 @@ fn include_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, kind: ExportK
             if !plain_text {
                 check(ui, settings, |s| &mut s.include_title_page, "Title page");
                 check(ui, settings, |s| &mut s.include_toc, "Table of contents");
+                if settings.include_toc {
+                    ui.horizontal(|ui| {
+                        ui.add_space(22.0);
+                        ui.label(RichText::new("Heading").font(ui_small()).color(MUTED));
+                        let mut title = settings.toc_title.clone();
+                        if ui
+                            .add(
+                                TextEdit::singleline(&mut title)
+                                    .hint_text("Contents")
+                                    .desired_width(150.0),
+                            )
+                            .changed()
+                        {
+                            settings.toc_title = title;
+                        }
+                    });
+                    if kind == ExportKind::Pdf {
+                        ui.horizontal(|ui| {
+                            ui.add_space(22.0);
+                            check(ui, settings, |s| &mut s.toc_page_numbers, "Page numbers");
+                        });
+                        if settings.toc_page_numbers {
+                            ui.horizontal(|ui| {
+                                ui.add_space(22.0);
+                                check(ui, settings, |s| &mut s.toc_leaders, "Dots between title and number");
+                            });
+                        }
+                    }
+                }
                 check(
                     ui,
                     settings,
@@ -1390,6 +1419,9 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
         "cover_image": settings.cover_image,
         "include_title_page": settings.include_title_page,
         "include_toc": settings.include_toc,
+        "toc_title": settings.toc_title,
+        "toc_page_numbers": settings.toc_page_numbers,
+        "toc_leaders": settings.toc_leaders,
         "include_chapter_numbers": settings.include_chapter_numbers,
         "include_scene_numbers": settings.include_scene_numbers,
         "include_synopsis": settings.include_synopsis,
