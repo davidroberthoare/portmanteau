@@ -3,6 +3,22 @@
 The newest section is used as the body of the GitHub release. Start each release
 with a line `## vX.Y.Z` (matching `version` in the top-level `Cargo.toml`).
 
+## v0.2.0
+
+- **Pictures in your writing.** Insert an image (or drop or paste one in) and
+  choose its size, put it left, centre or right, and have the text wrap around it
+  with space around it, like in Word. Add a caption and a description. Right-click
+  a picture for its settings in a window you can move, or use the list in the
+  Document tab. Pictures and captions come out in PDF, Word, EPUB and HTML.
+- **Text wraps around pictures in the editor**, not only in the exports.
+- **Compile:** an optional cover page in PDF; contents page options (heading
+  text, page numbers, dots between title and number); a Global font setting on the
+  Styles tab that styles follow unless you give them their own.
+- Book layout: trim sizes, inside and outside margins, headers and footers with
+  page numbers and chapter names, and chapters starting on right-hand pages.
+- **Removed:** the RTF export (Word, PDF, EPUB and the rest remain).
+- Fixed: inserting a picture no longer adds a second, duplicate caption.
+
 ## v0.1.2
 
 - **Portmanteau now runs in your web browser**, at
