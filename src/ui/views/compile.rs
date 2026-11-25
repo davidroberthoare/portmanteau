@@ -317,7 +317,7 @@ fn output_tab(
                     reset_row(app, ui, settings);
                 }
                 CompileSection::Styles => {
-                    style_panel(ui, &mut settings.styles, compile_type);
+                    style_panel(ui, &mut settings.styles, &mut settings.font, compile_type);
                     ui.add_space(8.0);
                     reset_row(app, ui, settings);
                 }
@@ -606,7 +606,7 @@ fn action_panel(
         });
 }
 
-fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, compile_type: CompileType) {
+fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, global_font: &mut String, compile_type: CompileType) {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER_SOFT))
@@ -614,6 +614,23 @@ fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, compile_type: Comp
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
+            section_label(ui, "Global font");
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Font").font(ui_small()).color(MUTED));
+                if compile_type.is_script() {
+                    // A script's face comes from its own styles below, so a
+                    // format-wide font choice would silently do nothing.
+                    ui.label(RichText::new("Scripts set their font in each style below").font(ui_small()).color(FAINT));
+                } else {
+                    font_picker(ui, global_font);
+                }
+            });
+            ui.label(
+                RichText::new("Used by every style whose font is left on (inherit).")
+                    .font(ui_small())
+                    .color(FAINT),
+            );
+            ui.add_space(10.0);
             section_label(ui, "Type styles for this format");
             ui.label(
                 RichText::new(
@@ -684,17 +701,6 @@ fn type_panel(
             }
 
             margins_row(ui, kind, settings, compile_type);
-
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Font").font(ui_small()).color(MUTED));
-                if compile_type.is_script() {
-                    // A script's face comes from its own stylesheet, so a
-                    // format-wide font choice would silently do nothing.
-                    ui.label(RichText::new("From the script stylesheet").font(ui_small()).color(FAINT));
-                } else {
-                    font_picker(ui, &mut settings.font);
-                }
-            });
 
             if kind == ExportKind::Epub || (kind == ExportKind::Pdf && !compile_type.is_script()) {
                 ui.add_space(7.0);
@@ -1064,7 +1070,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
 
 fn font_picker(ui: &mut egui::Ui, font: &mut String) {
     let selected = if font.trim().is_empty() {
-        "(inherit)".to_string()
+        "(program default)".to_string()
     } else {
         font.clone()
     };
@@ -1072,7 +1078,7 @@ fn font_picker(ui: &mut egui::Ui, font: &mut String) {
         .selected_text(RichText::new(selected).font(ui_small()).color(TEXT))
         .width(170.0)
         .show_ui(ui, |ui| {
-            ui.selectable_value(font, String::new(), "(inherit)");
+            ui.selectable_value(font, String::new(), "(program default)");
             if !font.trim().is_empty() && !FONT_FAMILIES.contains(&font.as_str()) {
                 let custom = font.clone();
                 ui.selectable_value(font, custom.clone(), format!("{custom} (custom)"));

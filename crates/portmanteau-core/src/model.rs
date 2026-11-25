@@ -823,7 +823,9 @@ pub struct ElementStyles {
 
 impl Default for ElementStyles {
     fn default() -> Self {
-        let serif = "Liberation Serif";
+        // Prose styles leave the font blank ("inherit"), so they follow the
+        // format's global font (`ExportSettings.font`); script styles name Courier.
+        let serif = "";
         let mono = "Courier New";
         Self {
             // A title block is centred in every format; the writer can change
@@ -2414,7 +2416,7 @@ mod tests {
     #[test]
     fn element_styles_defaults_match_the_base_type() {
         let styles = ElementStyles::default();
-        assert_eq!(styles.body.font, "Liberation Serif");
+        assert_eq!(styles.body.font, "", "prose styles inherit the global font");
         assert_eq!(styles.body.size, 11.0);
         assert_eq!(styles.body.leading, 1.4);
         assert_eq!(styles.body.first_line_indent, 14.0);

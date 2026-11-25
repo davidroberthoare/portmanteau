@@ -2739,7 +2739,7 @@ mod tests {
         let mut ws = Workspace::demo();
         let before = ws.execute("style.get", json!({}));
         assert!(before.ok);
-        assert_eq!(before.data["body"]["font"], "Liberation Serif");
+        assert_eq!(before.data["body"]["font"], "");
 
         let updated = ws.execute(
             "style.update",
