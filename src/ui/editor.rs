@@ -1969,6 +1969,7 @@ pub(crate) fn script_flow_galley(
     let mut prev_after = 0.0f32;
     let mut byte_start = 0usize;
     let mut right_edge = wrap_width;
+    let mut float: Option<FloatBox> = None;
     for (index, line) in paragraphs.iter().enumerate() {
         let (kind, style, _) = script_paragraph_style(content, sheet, styles, index);
         // "FADE IN:" opens the script flush left rather than as a right-hand cue.
@@ -1977,40 +1978,111 @@ pub(crate) fn script_flow_galley(
         let indent = style.indent.max(0.0) * zoom;
         let right_indent = style.right_indent.max(0.0) * zoom;
         let column = (wrap_width - indent - right_indent).max(24.0 * zoom);
+        if index > 0 {
+            y += prev_after + style.before.max(0.0) * zoom;
+        }
+        // A picture that text runs around does not take a line of its own: it
+        // becomes a box the following paragraphs flow beside, like a float in
+        // HTML. Its own line is almost no height.
+        let wrapped = content.paragraphs.get(index).and_then(wrapped_picture);
+        if let Some(image) = wrapped {
+            let clear = float.as_ref().map_or(0.0, |f: &FloatBox| f.bottom);
+            y = y.max(clear);
+            let width = image.width.unwrap_or(240.0).max(12.0) * zoom;
+            let height = image.height.unwrap_or(150.0).max(12.0) * zoom;
+            let room = if image.caption.trim().is_empty() { 0.0 } else { CAPTION_ROOM * zoom };
+            let padding = image.padding.max(0.0) * zoom;
+            float = Some(FloatBox {
+                on_left: image.align == portmanteau_core::PictureAlign::Left,
+                width: width + padding,
+                bottom: y + height + room + padding,
+            });
+        }
+        // Rows that start above the bottom of a float run beside it.
+        let beside = float.as_ref().filter(|f| f.bottom > y + 0.5 && wrapped.is_none()).cloned();
+        let narrow = beside.as_ref().map_or(0.0, |f| f.width);
         let mut job = LayoutJob::default();
-        job.wrap.max_width = column;
+        job.wrap.max_width = (column - narrow).max(24.0 * zoom);
         append_script_paragraph(
             &mut job, line, index, byte_start, content, sheet, styles, zoom, misspelled, 0.0,
         );
         byte_start += line.len() + 1;
-        let galley = ui.ctx().fonts_mut(|fonts| fonts.layout_job(job));
-        if index > 0 {
-            y += prev_after + style.before.max(0.0) * zoom;
-        }
+        let galley = ui.ctx().fonts_mut(|fonts| fonts.layout_job(job.clone()));
         let first_indent = style.first_line_indent.max(0.0) * zoom;
-        for (row_index, placed) in galley.rows.iter().enumerate() {
+        let align = if flush_left {
+            portmanteau_core::Alignment::Left
+        } else {
+            style.align
+        };
+        // How many rows sit beside the float; the rest are laid out again at
+        // the full width.
+        let beside_rows = match &beside {
+            Some(f) => galley
+                .rows
+                .iter()
+                .take_while(|placed| y + placed.pos.y < f.bottom)
+                .count()
+                .max(1),
+            None => galley.rows.len(),
+        };
+        let split = beside_rows < galley.rows.len();
+        let mut place = |rows: &mut Vec<egui::epaint::text::PlacedRow>,
+                         placed: &egui::epaint::text::PlacedRow,
+                         row_index: usize,
+                         top: f32,
+                         width_available: f32,
+                         shift: f32,
+                         last_in_paragraph: bool| {
             let mut placed = placed.clone();
             let width = placed.row.size.x;
-            let align = if flush_left {
-                portmanteau_core::Alignment::Left
-            } else {
-                style.align
-            };
             let x = match align {
-                portmanteau_core::Alignment::Right => indent + (column - width).max(0.0),
-                portmanteau_core::Alignment::Center => indent + ((column - width) * 0.5).max(0.0),
-                _ => indent + if row_index == 0 { first_indent } else { 0.0 },
+                portmanteau_core::Alignment::Right => {
+                    indent + shift + (width_available - width).max(0.0)
+                }
+                portmanteau_core::Alignment::Center => {
+                    indent + shift + ((width_available - width) * 0.5).max(0.0)
+                }
+                _ => indent + shift + if row_index == 0 { first_indent } else { 0.0 },
             };
-            placed.pos = egui::pos2(snap(x), snap(y + placed.pos.y));
-            placed.ends_with_newline = index + 1 < count && row_index + 1 == galley.rows.len();
+            placed.pos = egui::pos2(snap(x), snap(top + placed.pos.y));
+            placed.ends_with_newline = index + 1 < count && last_in_paragraph;
             right_edge = right_edge.max(placed.pos.x + width);
             rows.push(placed);
+        };
+        let shift = match &beside {
+            Some(f) if f.on_left => f.width,
+            _ => 0.0,
+        };
+        for (row_index, placed) in galley.rows.iter().take(beside_rows).enumerate() {
+            place(&mut rows, placed, row_index, y, column - narrow, shift, !split && row_index + 1 == galley.rows.len());
         }
-        y += galley.rect.height();
+        let mut height = galley.rect.height();
+        if split {
+            let head_bottom = galley
+                .rows
+                .get(beside_rows - 1)
+                .map_or(0.0, |r| r.pos.y + r.row.size.y);
+            let head_chars: usize = galley
+                .rows
+                .iter()
+                .take(beside_rows)
+                .map(|r| r.row.char_count_excluding_newline().0)
+                .sum();
+            let tail_job = job_from_char(&job, head_chars, column);
+            let tail = ui.ctx().fonts_mut(|fonts| fonts.layout_job(tail_job));
+            for (row_index, placed) in tail.rows.iter().enumerate() {
+                place(&mut rows, placed, row_index + 1, y + head_bottom, column, 0.0, row_index + 1 == tail.rows.len());
+            }
+            height = head_bottom + tail.rect.height();
+        }
+        y += height;
         prev_after = style.after.max(0.0) * zoom;
         if template.is_none() {
             template = Some((*galley).clone());
         }
+    }
+    if let Some(f) = &float {
+        y = y.max(f.bottom);
     }
     let mut out = template.unwrap_or_else(|| {
         (*ui.ctx().fonts_mut(|fonts| fonts.layout_job(LayoutJob::default()))).clone()
@@ -2032,6 +2104,50 @@ pub(crate) fn script_flow_galley(
     out.num_indices = indices;
     out.job = full;
     std::sync::Arc::new(out)
+}
+
+/// The space a wrapped picture takes at one side of the page while the text
+/// that follows runs beside it.
+#[derive(Clone)]
+struct FloatBox {
+    on_left: bool,
+    /// Picture width plus the space kept around it.
+    width: f32,
+    /// Where the box ends, down the page.
+    bottom: f32,
+}
+
+/// The picture of a paragraph that holds one picture and nothing else, when
+/// text is set to wrap around it (it sits left or right, never centred).
+pub(crate) fn wrapped_picture(paragraph: &portmanteau_core::RichParagraph) -> Option<&portmanteau_core::ImageObject> {
+    use portmanteau_core::InlineContent;
+    let mut picture = None;
+    for item in &paragraph.content {
+        match item {
+            InlineContent::Image(image) if picture.is_none() => picture = Some(image),
+            InlineContent::Text(run) if run.text.trim().is_empty() => {}
+            _ => return None,
+        }
+    }
+    picture.filter(|image| image.wrap && image.align != portmanteau_core::PictureAlign::Center)
+}
+
+/// The same job from the given character on, at another width: the rest of a
+/// paragraph that has passed the bottom of a picture.
+fn job_from_char(job: &egui::text::LayoutJob, chars: usize, width: f32) -> egui::text::LayoutJob {
+    use egui::epaint::text::ByteRangeExt;
+    let start = job.text.char_indices().nth(chars).map_or(job.text.len(), |(byte, _)| byte);
+    let mut out = egui::text::LayoutJob::default();
+    out.wrap = job.wrap.clone();
+    out.wrap.max_width = width;
+    for section in &job.sections {
+        let range = section.byte_range.as_usize();
+        if range.end <= start {
+            continue;
+        }
+        out.append(&job.text[range.start.max(start)..range.end], 0.0, section.format.clone());
+    }
+    out
 }
 
 /// Whether a paragraph style is a heading: the chapter heading, or any style
@@ -2126,7 +2242,13 @@ fn append_script_paragraph(
                 run_format.font_id.size = image_height.max(font_size);
                 // Room under a standalone picture for its caption.
                 let room = if image.caption.trim().is_empty() { 0.0 } else { CAPTION_ROOM * zoom };
-                run_format.line_height = Some(image_height.max(font_size) + room);
+                if paragraph.and_then(wrapped_picture).is_some() {
+                    // Text runs beside it, so its own line takes almost no room.
+                    run_format.font_id.size = 2.0 * zoom;
+                    run_format.line_height = Some(2.0 * zoom);
+                } else {
+                    run_format.line_height = Some(image_height.max(font_size) + room);
+                }
                 run_format.color = Color32::TRANSPARENT;
             }
         }
@@ -2346,7 +2468,7 @@ pub(crate) fn paint_rich_images(
                 portmanteau_core::InlineContent::Image(image) => {
                     let cursor = galley.pos_from_cursor(egui::text::CCursor::new(char_offset));
                     let mut center = galley_pos + cursor.center().to_vec2();
-                    let standalone = paragraph.style_id == "image";
+                    let standalone = paragraph.style_id == "image" || wrapped_picture(paragraph).is_some();
                     let width = image
                         .width
                         .unwrap_or(if standalone { 240.0 } else { 20.0 })
@@ -2368,7 +2490,8 @@ pub(crate) fn paint_rich_images(
                         };
                     }
                     let has_caption = standalone && !image.caption.trim().is_empty();
-                    if has_caption {
+                    let floating = wrapped_picture(paragraph).is_some();
+                    if has_caption || floating {
                         // The line is taller than the picture; sit it at the top.
                         center.y = galley_pos.y + cursor.top() + height * 0.5;
                     }

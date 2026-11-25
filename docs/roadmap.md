@@ -169,10 +169,11 @@ Not done / next:
   Description. PDF (and so the Compile preview) really wraps text beside the
   picture (`Flow.float`, `wrap_chars_with`, caption set inside the picture's
   width); HTML/EPUB float a `<figure>`; DOCX writes an anchored picture with
-  square wrapping (its caption prints as the line after); RTF and the editor
-  show it aligned but not wrapped.
-  STILL TO DO: pictures inside a line of text; wrap in RTF; the editor drawing
-  text around a wrapped picture; numbered figures; a picture's controls on the
+  square wrapping (its caption prints as the line after); RTF shows it aligned but not wrapped.
+  The editor wraps too (2026-11-25): `script_flow_galley` treats a wrapped picture as a
+  float box (`FloatBox`) and lays the following paragraphs out narrower beside it,
+  splitting a paragraph that passes the picture's bottom (`job_from_char`).
+  STILL TO DO: pictures inside a line of text; wrap in RTF; numbered figures; a picture's controls on the
   picture itself (click to select, drag handles); picture edits in undo; GIF/WebP; Markdown/Fountain/FDX (placeholders); large-image downsampling. Old note: the PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
   and no inline pictures. Needs picture support first.
 - "Start chapters on a right-hand page": DONE for prose PDF (`chapters_start_right`; blank left-hand pages carry no furniture but count in the numbering). Not yet DOCX/RTF (page-break-before odd page needs section breaks).
