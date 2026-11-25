@@ -109,7 +109,7 @@ impl StyleSheet {
                         ..defaults.body.clone()
                     },
                     semantic_kind: None,
-                    next_style: Some("image-caption".into()),
+                    next_style: Some("body".into()),
                     text_transform: TextTransform::None,
                 },
                 ParagraphStyle {
@@ -250,7 +250,7 @@ impl StyleSheet {
                 ..defaults.action.clone()
             },
             semantic_kind: None,
-            next_style: Some("image-caption".into()),
+            next_style: Some(default_id.to_owned()),
             text_transform: TextTransform::None,
         });
         styles.push(ParagraphStyle {
@@ -1164,16 +1164,8 @@ impl RichDocument {
             },
             content: vec![InlineContent::Image(image.clone())],
         });
-        if !image.caption.is_empty() {
-            output.push(RichParagraph {
-                style_id: if sheet.style("image-caption").is_some() {
-                    "image-caption".into()
-                } else {
-                    paragraph.style_id.clone()
-                },
-                content: vec![InlineContent::Text(TextRun::plain(&image.caption))],
-            });
-        }
+        // The caption stays on the picture (`ImageObject.caption`) and every
+        // writer prints it; a separate caption paragraph would print twice.
         output.push(RichParagraph {
             style_id: paragraph.style_id.clone(),
             content: right,
@@ -1531,14 +1523,14 @@ mod tests {
                 .iter()
                 .map(|paragraph| paragraph.style_id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["body", "image", "image-caption", "body"]
+            vec!["body", "image", "body"]
         );
         assert_eq!(
             document.text_only(),
-            "before \n\nThe harbor, 1987\nafter"
+            "before \n\nafter"
         );
         assert_eq!(document.paragraphs[1].editor_text(), "\u{FFFC}");
-        assert_eq!(document.paragraphs[2].plain_text(), "The harbor, 1987");
+        assert_eq!(document.paragraphs.len(), 3);
     }
 
     #[test]

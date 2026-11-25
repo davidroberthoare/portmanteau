@@ -2381,7 +2381,7 @@ pub(crate) fn paint_rich_images(
                             egui::pos2(rect.center().x, rect.bottom() + 4.0 * zoom),
                             egui::Align2::CENTER_TOP,
                             image.caption.trim(),
-                            FontId::new(13.0 * zoom, egui::FontFamily::Proportional),
+                            serif(12.0 * zoom),
                             PAPER_MUTED,
                         );
                     }
