@@ -1307,7 +1307,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             }
         }
         crate::ui::editor::remember_selection_anchor(ui.ctx(), output.response.id, &output.galley, output.galley_pos);
-        paint_rich_images(
+        let picture_rects = paint_rich_images(
             ui,
             &output.galley,
             output.galley_pos,
@@ -1316,6 +1316,17 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             &image_textures,
             zoom,
         );
+        if ui.input(|i| i.pointer.secondary_clicked()) {
+            if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
+                if let Some((paragraph, _)) = picture_rects.iter().find(|(_, rect)| rect.contains(pos)) {
+                    app.picture_menu = Some(crate::app::PictureMenu {
+                        doc_id: doc_id.to_owned(),
+                        paragraph: *paragraph,
+                        pos,
+                    });
+                }
+            }
+        }
         crate::ui::find_bar::paint_matches(ui, &app.find_bar, &output.galley, output.galley_pos);
         if spell_on {
             let key = Id::unique(("spell_menu", doc_id));
@@ -2113,7 +2124,9 @@ fn append_script_paragraph(
             {
                 let image_height = image.height.unwrap_or(20.0) * zoom;
                 run_format.font_id.size = image_height.max(font_size);
-                run_format.line_height = Some(image_height.max(font_size));
+                // Room under a standalone picture for its caption.
+                let room = if image.caption.trim().is_empty() { 0.0 } else { CAPTION_ROOM * zoom };
+                run_format.line_height = Some(image_height.max(font_size) + room);
                 run_format.color = Color32::TRANSPARENT;
             }
         }
@@ -2306,6 +2319,12 @@ pub(crate) fn load_rich_image_textures(
     loaded
 }
 
+/// Height kept under a picture for its caption line, in points before zoom.
+const CAPTION_ROOM: f32 = 26.0;
+
+/// Draws every picture over the text. Returns the paragraph number and screen
+/// rectangle of each picture that sits alone on its line, for hit-testing
+/// (the right-click menu).
 pub(crate) fn paint_rich_images(
     ui: &egui::Ui,
     galley: &egui::Galley,
@@ -2314,9 +2333,10 @@ pub(crate) fn paint_rich_images(
     content: &portmanteau_core::RichDocument,
     textures: &HashMap<String, egui::TextureHandle>,
     zoom: f32,
-) {
+) -> Vec<(usize, egui::Rect)> {
+    let mut hits = Vec::new();
     let mut char_offset = 0usize;
-    for paragraph in &content.paragraphs {
+    for (paragraph_index, paragraph) in content.paragraphs.iter().enumerate() {
         for item in &paragraph.content {
             match item {
                 portmanteau_core::InlineContent::Text(run) => {
@@ -2347,7 +2367,24 @@ pub(crate) fn paint_rich_images(
                             }
                         };
                     }
+                    let has_caption = standalone && !image.caption.trim().is_empty();
+                    if has_caption {
+                        // The line is taller than the picture; sit it at the top.
+                        center.y = galley_pos.y + cursor.top() + height * 0.5;
+                    }
                     let rect = egui::Rect::from_center_size(center, Vec2::new(width, height));
+                    if standalone {
+                        hits.push((paragraph_index, rect));
+                    }
+                    if has_caption {
+                        ui.painter().text(
+                            egui::pos2(rect.center().x, rect.bottom() + 4.0 * zoom),
+                            egui::Align2::CENTER_TOP,
+                            image.caption.trim(),
+                            FontId::new(13.0 * zoom, egui::FontFamily::Proportional),
+                            PAPER_MUTED,
+                        );
+                    }
                     if let Some(texture) = textures.get(&image.asset_id) {
                         ui.painter().image(
                             texture.id(),
@@ -2380,6 +2417,7 @@ pub(crate) fn paint_rich_images(
         }
         char_offset += 1;
     }
+    hits
 }
 
 /// After a paste into a rich-text field, turn the web addresses it brought in

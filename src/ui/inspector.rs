@@ -305,11 +305,102 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     pictures_section(app, ui, doc_id);
 }
 
+/// The controls for one picture: size, position, wrapping, padding, caption
+/// and description. Returns the `document.picture` payloads the writer's edits
+/// produced; the caller runs them. Used by the inspector list and by the
+/// right-click menu on the picture itself.
+pub(crate) fn picture_controls(
+    ui: &mut egui::Ui,
+    doc_id: &str,
+    paragraph: usize,
+    image: &portmanteau_core::ImageObject,
+) -> Vec<serde_json::Value> {
+    use portmanteau_core::PictureAlign;
+    let mut edits: Vec<serde_json::Value> = Vec::new();
+    let paragraph = &paragraph;
+        let edit = |extra: serde_json::Value| {
+            let mut value = extra;
+            value["id"] = doc_id.into();
+            value["paragraph"] = (*paragraph).into();
+            value
+        };
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Width").font(ui_small()).color(FAINT));
+            let mut width = image.width.unwrap_or(240.0);
+            if ui
+                .add(egui::DragValue::new(&mut width).speed(2.0).range(24.0..=468.0).suffix(" pt"))
+                .changed()
+            {
+                edits.push(edit(serde_json::json!({"width": width})));
+            }
+            if crate::ui::views::quiet_button(ui, "Fit width").clicked() {
+                edits.push(edit(serde_json::json!({"width": 468.0})));
+            }
+        });
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Position").font(ui_small()).color(FAINT));
+            for (label, value, key) in [
+                ("Left", PictureAlign::Left, "left"),
+                ("Center", PictureAlign::Center, "center"),
+                ("Right", PictureAlign::Right, "right"),
+            ] {
+                if ui.selectable_label(image.align == value, label).clicked() {
+                    edits.push(edit(serde_json::json!({"align": key})));
+                }
+            }
+        });
+        let can_wrap = image.align != PictureAlign::Center;
+        let mut wrap = image.wrap && can_wrap;
+        if ui
+            .add_enabled(can_wrap, egui::Checkbox::new(&mut wrap, "Text wraps around it"))
+            .on_disabled_hover_text("Put the picture on the left or the right first")
+            .changed()
+        {
+            edits.push(edit(serde_json::json!({"wrap": wrap})));
+        }
+        ui.add_enabled_ui(wrap, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Space around").font(ui_small()).color(FAINT));
+                let mut padding = image.padding;
+                if ui
+                    .add(egui::DragValue::new(&mut padding).speed(0.5).range(0.0..=72.0).suffix(" pt"))
+                    .changed()
+                {
+                    edits.push(edit(serde_json::json!({"padding": padding})));
+                }
+            });
+        });
+        ui.add_space(4.0);
+        ui.label(RichText::new("Caption").font(ui_small()).color(FAINT));
+        let mut caption = image.caption.clone();
+        if ui
+            .add(TextEdit::singleline(&mut caption).desired_width(f32::INFINITY))
+            .changed()
+        {
+            edits.push(edit(serde_json::json!({"caption": caption})));
+        }
+        ui.label(RichText::new("Description (for screen readers)").font(ui_small()).color(FAINT));
+        let mut alt = image.alt_text.clone();
+        if ui
+            .add(TextEdit::singleline(&mut alt).desired_width(f32::INFINITY))
+            .changed()
+        {
+            edits.push(edit(serde_json::json!({"alt_text": alt})));
+        }
+        ui.label(
+            RichText::new("Text wraps in exports and the Compile preview; the editor shows the picture on its own line.")
+                .font(ui_small())
+                .color(FAINT),
+        );
+    edits
+}
+
 /// One row per picture sitting on its own paragraph in this document: size,
 /// position, wrapping, padding, caption and description. Every change goes
 /// through the `document.picture` command.
 fn pictures_section(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
-    use portmanteau_core::{InlineContent, PictureAlign};
+    use portmanteau_core::InlineContent;
     let pictures: Vec<(usize, portmanteau_core::ImageObject)> = app
         .ws
         .project
@@ -340,93 +431,36 @@ fn pictures_section(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     ui.add_space(12.0);
     hairline(ui);
     ui.add_space(10.0);
-    section_label(ui, "Pictures");
+    section_label(ui, "Pictures in this document");
+    ui.label(RichText::new("Tip: right-click a picture in the text for these controls.").font(ui_small()).color(FAINT));
     ui.add_space(4.0);
     let mut edits: Vec<serde_json::Value> = Vec::new();
     for (number, (paragraph, image)) in pictures.iter().enumerate() {
-        let name = if image.alt_text.trim().is_empty() {
-            image.asset_id.rsplit('/').next().unwrap_or("picture").to_owned()
+        // Name it by its caption or description, else by the words that follow
+        // it, so a long list can be told apart.
+        let name = if !image.caption.trim().is_empty() {
+            image.caption.trim().to_owned()
+        } else if !image.alt_text.trim().is_empty() {
+            image.alt_text.trim().to_owned()
         } else {
-            image.alt_text.clone()
+            let after = app
+                .ws
+                .project
+                .document(doc_id)
+                .and_then(|doc| doc.content.paragraphs.get(paragraph + 1))
+                .map(|p| p.plain_text())
+                .unwrap_or_default();
+            let words: Vec<&str> = after.split_whitespace().take(5).collect();
+            if words.is_empty() {
+                format!("Picture ({})", image.asset_id.rsplit('/').next().unwrap_or("picture"))
+            } else {
+                format!("Picture before \u{201c}{}…\u{201d}", words.join(" "))
+            }
         };
         egui::CollapsingHeader::new(RichText::new(format!("{}. {name}", number + 1)).font(ui_body()))
             .id_salt(("picture", doc_id, *paragraph))
             .show(ui, |ui| {
-                let edit = |extra: serde_json::Value| {
-                    let mut value = extra;
-                    value["id"] = doc_id.into();
-                    value["paragraph"] = (*paragraph).into();
-                    value
-                };
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Width").font(ui_small()).color(FAINT));
-                    let mut width = image.width.unwrap_or(240.0);
-                    if ui
-                        .add(egui::DragValue::new(&mut width).speed(2.0).range(24.0..=468.0).suffix(" pt"))
-                        .changed()
-                    {
-                        edits.push(edit(serde_json::json!({"width": width})));
-                    }
-                    if crate::ui::views::quiet_button(ui, "Fit width").clicked() {
-                        edits.push(edit(serde_json::json!({"width": 468.0})));
-                    }
-                });
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Position").font(ui_small()).color(FAINT));
-                    for (label, value, key) in [
-                        ("Left", PictureAlign::Left, "left"),
-                        ("Center", PictureAlign::Center, "center"),
-                        ("Right", PictureAlign::Right, "right"),
-                    ] {
-                        if ui.selectable_label(image.align == value, label).clicked() {
-                            edits.push(edit(serde_json::json!({"align": key})));
-                        }
-                    }
-                });
-                let can_wrap = image.align != PictureAlign::Center;
-                let mut wrap = image.wrap && can_wrap;
-                if ui
-                    .add_enabled(can_wrap, egui::Checkbox::new(&mut wrap, "Text wraps around it"))
-                    .on_disabled_hover_text("Put the picture on the left or the right first")
-                    .changed()
-                {
-                    edits.push(edit(serde_json::json!({"wrap": wrap})));
-                }
-                ui.add_enabled_ui(wrap, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Space around").font(ui_small()).color(FAINT));
-                        let mut padding = image.padding;
-                        if ui
-                            .add(egui::DragValue::new(&mut padding).speed(0.5).range(0.0..=72.0).suffix(" pt"))
-                            .changed()
-                        {
-                            edits.push(edit(serde_json::json!({"padding": padding})));
-                        }
-                    });
-                });
-                ui.add_space(4.0);
-                ui.label(RichText::new("Caption").font(ui_small()).color(FAINT));
-                let mut caption = image.caption.clone();
-                if ui
-                    .add(TextEdit::singleline(&mut caption).desired_width(f32::INFINITY))
-                    .changed()
-                {
-                    edits.push(edit(serde_json::json!({"caption": caption})));
-                }
-                ui.label(RichText::new("Description (for screen readers)").font(ui_small()).color(FAINT));
-                let mut alt = image.alt_text.clone();
-                if ui
-                    .add(TextEdit::singleline(&mut alt).desired_width(f32::INFINITY))
-                    .changed()
-                {
-                    edits.push(edit(serde_json::json!({"alt_text": alt})));
-                }
-                ui.label(
-                    RichText::new("Text wraps in exports and the Compile preview; the editor shows the picture on its own line.")
-                        .font(ui_small())
-                        .color(FAINT),
-                );
+                edits.extend(picture_controls(ui, doc_id, *paragraph, image));
             });
     }
     for edit in edits {

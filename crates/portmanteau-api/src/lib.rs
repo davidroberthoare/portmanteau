@@ -680,10 +680,11 @@ impl Workspace {
                     image.padding = value.clamp(0.0, 72.0);
                 }
                 if let Some(value) = payload.get("caption").and_then(|v| v.as_str()) {
-                    image.caption = value.trim().to_owned();
+                    // Kept as typed (exports trim it), so a space can be typed mid-sentence.
+                    image.caption = value.to_owned();
                 }
                 if let Some(value) = payload.get("alt_text").and_then(|v| v.as_str()) {
-                    image.alt_text = value.trim().to_owned();
+                    image.alt_text = value.to_owned();
                 }
                 // Text can only run beside a picture that sits at one side.
                 if image.align == portmanteau_core::PictureAlign::Center {
@@ -2580,7 +2581,7 @@ mod tests {
         let portmanteau_core::InlineContent::Image(image) = &doc.content.paragraphs[at].content[0] else { panic!() };
         assert_eq!(image.width, Some(100.0));
         assert_eq!(image.height, Some(50.0), "width alone keeps the proportions");
-        assert!(image.wrap && image.padding == 14.0 && image.caption == "Low tide");
+        assert!(image.wrap && image.padding == 14.0 && image.caption == " Low tide ");
         // A centred picture cannot wrap.
         let res = ws.execute("document.picture", json!({"id": id, "paragraph": at, "align": "center"}));
         assert!(res.ok && !res.data["wrap"].as_bool().unwrap());

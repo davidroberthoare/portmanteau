@@ -369,6 +369,14 @@ pub enum RichTextTarget {
     DocumentNotes(String),
 }
 
+/// The picture the writer right-clicked: where its small settings window opens.
+#[derive(Clone, Debug)]
+pub struct PictureMenu {
+    pub doc_id: String,
+    pub paragraph: usize,
+    pub pos: egui::Pos2,
+}
+
 #[derive(Clone, Debug)]
 pub struct ImageInsertState {
     pub target: RichTextTarget,
@@ -457,6 +465,7 @@ pub struct PortmanteauApp {
     pub path_draft: String,
     pub new_character: Option<NewCharacterState>,
     pub image_insert: Option<ImageInsertState>,
+    pub picture_menu: Option<PictureMenu>,
     pub image_textures: HashMap<String, egui::TextureHandle>,
     pub diff: Option<DiffState>,
     pub outline_filter: usize,
@@ -628,6 +637,7 @@ impl PortmanteauApp {
             path_draft: String::new(),
             new_character: None,
             image_insert: None,
+            picture_menu: None,
             image_textures: HashMap::new(),
             diff: None,
             outline_filter: 0,
@@ -1485,6 +1495,7 @@ impl PortmanteauApp {
         self.diff_modal(ctx);
         self.new_character_modal(ctx);
         self.image_insert_modal(ctx);
+        self.picture_menu_window(ctx);
     }
 
     /// The small "New character" form opened from a Character element's
@@ -1569,6 +1580,53 @@ impl PortmanteauApp {
         }
         if !open {
             self.new_character = None;
+        }
+    }
+
+    /// The window that opens on a right-click over a picture: the same
+    /// controls as the inspector's list, next to the picture itself.
+    fn picture_menu_window(&mut self, ctx: &egui::Context) {
+        let Some(menu) = self.picture_menu.clone() else {
+            return;
+        };
+        let image = self
+            .ws
+            .project
+            .document(&menu.doc_id)
+            .and_then(|doc| doc.content.paragraphs.get(menu.paragraph))
+            .and_then(|paragraph| {
+                paragraph.content.iter().find_map(|item| match item {
+                    portmanteau_core::InlineContent::Image(image) => Some(image.clone()),
+                    _ => None,
+                })
+            });
+        let Some(image) = image else {
+            self.picture_menu = None;
+            return;
+        };
+        let mut open = true;
+        let mut edits = Vec::new();
+        egui::Window::new("Picture")
+            .id(Id::unique("picture_menu"))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .fixed_pos(menu.pos)
+            .default_width(260.0)
+            .show(ctx, |ui| {
+                edits = crate::ui::inspector::picture_controls(ui, &menu.doc_id, menu.paragraph, &image);
+            });
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            open = false;
+        }
+        for edit in edits {
+            let result = self.ws.execute("document.picture", edit);
+            if !result.ok {
+                self.toast("Picture not changed", result.message, ToastKind::Error);
+            }
+        }
+        if !open {
+            self.picture_menu = None;
         }
     }
 
