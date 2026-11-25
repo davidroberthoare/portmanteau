@@ -698,7 +698,7 @@ fn type_panel(
                 }
             });
 
-            if kind == ExportKind::Epub {
+            if kind == ExportKind::Epub || (kind == ExportKind::Pdf && !compile_type.is_script()) {
                 ui.add_space(7.0);
                 check(ui, settings, |s| &mut s.include_cover, "Include a cover");
                 if settings.include_cover {

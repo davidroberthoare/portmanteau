@@ -71,6 +71,22 @@ pub(crate) fn load_picture(asset_root: Option<&Path>, asset_id: &str) -> Option<
     Some(Arc::new(LoadedPicture { bytes, ext, media, px }))
 }
 
+/// The cover picture for a book (this format's own, else the project's), as a
+/// picture a writer can draw. Resolved and checked by `epub::cover_image`.
+pub(crate) fn cover_picture(project: &Project, settings: &ExportSettings) -> Option<Arc<LoadedPicture>> {
+    let (ext, media, bytes) = crate::epub::cover_image(project, settings)?;
+    let (ext, media, px) = if media == "image/png" {
+        ("png", "image/png", png_size(&bytes)?)
+    } else {
+        let _ = ext;
+        ("jpg", "image/jpeg", jpeg_size(&bytes)?)
+    };
+    if px.0 == 0 || px.1 == 0 || px.0 > 12_000 || px.1 > 12_000 || u64::from(px.0) * u64::from(px.1) > 60_000_000 {
+        return None;
+    }
+    Some(Arc::new(LoadedPicture { bytes, ext, media, px }))
+}
+
 fn png_size(bytes: &[u8]) -> Option<(u32, u32)> {
     let w = u32::from_be_bytes(bytes.get(16..20)?.try_into().ok()?);
     let h = u32::from_be_bytes(bytes.get(20..24)?.try_into().ok()?);

@@ -142,7 +142,9 @@ Done (2026-11-23, uncommitted at the time of writing):
   front matter / body / back matter regions (same as body, custom, none; own
   numerals; restart numbering). PDF only; scripts keep their own top-right number.
 - Project cover (`Project.cover_image`, command `project.set_cover`) with a
-  per-format override and `include_cover`; EPUB uses it.
+  per-format override and `include_cover`; EPUB uses it, and prose PDF opens with it
+  as an uncounted first page (`add_cover_page`, added after numbering and mirroring so
+  the title page stays page one). DOCX/RTF covers: not yet.
 
 Not done / next:
 - **Per-document sections** ("start a new section", same as previous) on top of
@@ -171,8 +173,7 @@ Not done / next:
   show it aligned but not wrapped.
   STILL TO DO: pictures inside a line of text; wrap in RTF; the editor drawing
   text around a wrapped picture; numbered figures; a picture's controls on the
-  picture itself (click to select, drag handles); picture edits in undo; GIF/WebP; Markdown/Fountain/FDX (placeholders); the PDF cover
-  page; large-image downsampling. Old note: the PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
+  picture itself (click to select, drag handles); picture edits in undo; GIF/WebP; Markdown/Fountain/FDX (placeholders); large-image downsampling. Old note: the PDF writer draws no pictures (it prints `[Image]`), so no cover page in PDF
   and no inline pictures. Needs picture support first.
 - "Start chapters on a right-hand page": DONE for prose PDF (`chapters_start_right`; blank left-hand pages carry no furniture but count in the numbering). Not yet DOCX/RTF (page-break-before odd page needs section breaks).
 - `.tex` export (text writer over `content` and `layout`; no TeX dependency).

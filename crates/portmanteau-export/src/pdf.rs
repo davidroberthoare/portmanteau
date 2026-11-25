@@ -12,7 +12,7 @@
 //! paragraphs: transitions such as `FADE IN:` are printed only when they are
 //! real blocks in the document.
 
-use crate::picture::{load_picture, picture_size_pt, LoadedPicture};
+use crate::picture::{cover_picture, load_picture, picture_size_pt, LoadedPicture};
 use portmanteau_core::{ImageObject, PictureAlign};
 use std::path::PathBuf;
 use portmanteau_core::{
@@ -711,8 +711,57 @@ pub fn pdf_layout(project: &Project, settings: &ExportSettings) -> PdfLayout {
         if settings.mirror_margins {
             mirror_pages(&mut layout, project, settings);
         }
+        add_cover_page(&mut layout, project, settings);
         layout
     }
+}
+
+/// A sample of the file's bytes names the cover, so the preview never shows a
+/// stale texture after the cover is replaced.
+fn cover_asset_id(picture: &LoadedPicture) -> String {
+    let sum = picture
+        .bytes
+        .iter()
+        .step_by((picture.bytes.len() / 64).max(1))
+        .fold(0u64, |acc, b| acc.wrapping_mul(131).wrapping_add(u64::from(*b)));
+    format!("cover:{sum}")
+}
+
+/// The cover picture as a first page of its own, fitted to the whole sheet. It
+/// goes in last, after margins, contents and page numbers are settled, so it
+/// is not counted, numbered or mirrored: the title page stays page one.
+fn add_cover_page(layout: &mut PdfLayout, project: &Project, settings: &ExportSettings) {
+    let Some(picture) = cover_picture(project, settings) else {
+        return;
+    };
+    let (pw, ph) = (layout.width, layout.height);
+    let scale = (pw / picture.px.0 as f32).min(ph / picture.px.1 as f32);
+    let (width, height) = (picture.px.0 as f32 * scale, picture.px.1 as f32 * scale);
+    let asset_id = cover_asset_id(&picture);
+    let page = PdfPageLayout {
+        items: Vec::new(),
+        images: vec![PdfImage {
+            x: (pw - width) * 0.5,
+            y: (ph - height) * 0.5,
+            width,
+            height,
+            picture,
+            asset_id,
+        }],
+    };
+    layout.pages.insert(0, page);
+    for section in &mut layout.sections {
+        section.start_page += 1;
+    }
+    layout.sections.insert(
+        0,
+        PdfLayoutSection {
+            label: "Cover".into(),
+            doc_id: None,
+            start_page: 0,
+            page_count: 1,
+        },
+    );
 }
 
 /// Book margins. The layout is set with the inside margin on the left, as on a

@@ -1450,6 +1450,30 @@ fn a_wrapped_picture_is_anchored_in_docx_and_floated_in_html() {
 }
 
 #[test]
+fn the_pdf_opens_with_the_cover_as_an_uncounted_first_page() {
+    let (mut p, dir) = picture_project("cover");
+    std::fs::write(dir.join("assets/cover.png"), TINY_PNG).unwrap();
+    p.cover_image = "assets/cover.png".into();
+    let mut s = p.settings_for(ExportKind::Pdf);
+    s.asset_root = Some(dir.clone());
+    s.include_title_page = true;
+    s.include_cover = false;
+    let without = pdf_layout(&p, &s);
+    s.include_cover = true;
+    let with = pdf_layout(&p, &s);
+    assert_eq!(with.pages.len(), without.pages.len() + 1);
+    assert!(with.pages[0].items.is_empty() && with.pages[0].images.len() == 1, "page one is the picture alone");
+    assert!((with.pages[0].images[0].width / with.pages[0].images[0].height - 1.0).abs() < 0.01 || with.pages[0].images[0].width <= with.width + 0.01);
+    let first_text = |layout: &PdfLayout, page: usize| layout.pages[page].items.iter().flat_map(|i| i.segments.iter().map(|g| g.text.clone())).collect::<String>();
+    assert_eq!(first_text(&with, 1), first_text(&without, 0), "the title page follows the cover unchanged");
+    assert_eq!(with.sections[0].label, "Cover");
+    // Without the project folder (an unsaved project) there is no cover to read.
+    s.asset_root = None;
+    assert_eq!(pdf_layout(&p, &s).pages.len(), without.pages.len());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn a_picture_cannot_be_read_from_outside_the_assets_folder() {
     let (_, dir) = picture_project("escape");
     std::fs::write(dir.join("outside.png"), TINY_PNG).unwrap();
