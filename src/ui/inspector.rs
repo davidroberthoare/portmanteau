@@ -265,6 +265,8 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Word target").font(ui_body()).color(MUTED));
             let mut target = doc.word_target;
+            // "words so far / target", so progress is visible at a glance.
+            ui.label(RichText::new(format!("{} /", doc.words())).font(ui_body()).color(TEXT));
             if ui
                 .add(egui::DragValue::new(&mut target).speed(50.0).range(0..=500_000))
                 .changed()
@@ -273,6 +275,16 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 app.ws.dirty = true;
             }
         });
+        if doc.word_target > 0 {
+            let share = doc.words() as f32 / doc.word_target as f32;
+            let (bar, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 5.0), egui::Sense::hover());
+            ui.painter().rect_filled(bar, CornerRadius::same(2), PANEL_3);
+            ui.painter().rect_filled(
+                egui::Rect::from_min_size(bar.min, Vec2::new(bar.width() * share.clamp(0.0, 1.0), 5.0)),
+                CornerRadius::same(2),
+                if share >= 1.0 { ACCENT } else { SAGE },
+            );
+        }
 
         ui.add_space(12.0);
         hairline(ui);
