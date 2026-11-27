@@ -1339,7 +1339,7 @@ impl PortmanteauApp {
                         // open document's name; the estimate disagreed with the
                         // Compile screen's, and the name is already in the editor.
                         ui.label(
-                            RichText::new(format!("{} words", self.ws.project.words()))
+                            RichText::new(format!("{} words in the project", self.ws.project.words()))
                                 .font(ui_body())
                                 .color(MUTED),
                         );
