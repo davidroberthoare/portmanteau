@@ -101,6 +101,16 @@ restore/paste not counted as writing, rest days that keep a streak, a weekly
 summary, export of the log as CSV, and a "write today" reminder (needs no
 daemon: only when the app is open).
 
+## Saving and safety (2026-11-26)
+
+Done: a saved project autosaves in place after a pause; automatic dated backups
+(every 15 minutes while working, newest ten kept, kind "auto"); a quit/close
+question when work has no home or the last autosave failed; a recovery copy of
+an unsaved project in `<config>/recovery/` offered back on the next start
+(`src/recovery.rs`). Not done: the same question when New or Open would replace
+an unsaved project (its recovery copy is kept, so it can be brought back), and
+tidying the large nested checkpoints that older projects already contain.
+
 ## Smaller items
 
 - Keyboard navigation in the binder (arrows, collapse and expand, rename); rename

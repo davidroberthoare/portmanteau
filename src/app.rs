@@ -438,6 +438,22 @@ pub struct PortmanteauApp {
     activity: crate::activity::ActivityTracker,
     /// The detailed statistics window.
     pub stats: crate::ui::stats_window::StatsState,
+    /// Asking whether to save before the window closes.
+    quit_prompt: bool,
+    /// The writer has decided (or nothing needs asking): let the window close.
+    allow_close: bool,
+    /// Close once the Save As the quit prompt started has succeeded.
+    quit_after_save: bool,
+    /// The last autosave failed, so the folder may be behind the screen.
+    save_failed: bool,
+    /// When the last automatic backup was taken (or the app started).
+    last_backup: Instant,
+    /// A safety copy of this unsaved project is on disk (`recovery.rs`).
+    recovery_written: bool,
+    last_recovery: Option<Instant>,
+    /// Unsaved work found from a previous run, waiting for an answer.
+    #[cfg(not(target_arch = "wasm32"))]
+    recovery_offer: Option<Box<crate::recovery::Found>>,
     pub collapsed: HashSet<String>,
     pub search_page: ui::views::search::SearchPage,
     pub find_bar: ui::find_bar::FindBar,
@@ -595,6 +611,20 @@ impl PortmanteauApp {
             history_pending: false,
             activity: crate::activity::ActivityTracker::default(),
             stats: Default::default(),
+            // Development aid: PORTMANTEAU_QUIT_PROMPT=1 shows the quit question.
+            quit_prompt: std::env::var("PORTMANTEAU_QUIT_PROMPT").is_ok(),
+            allow_close: false,
+            quit_after_save: false,
+            save_failed: false,
+            last_backup: Instant::now(),
+            recovery_written: false,
+            last_recovery: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            recovery_offer: if !cfg!(test) && screenshot.is_none() {
+                crate::recovery::find(&crate::recovery::folder()).map(Box::new)
+            } else {
+                None
+            },
             collapsed,
             // Development aid: PORTMANTEAU_FIND=text opens the editor's find bar with that text.
             find_bar: {
@@ -2039,7 +2069,11 @@ impl PortmanteauApp {
     }
 
     fn path_modal(&mut self, ctx: &egui::Context) {
-        let Some(mode) = self.path_dialog else { return };
+        let Some(mode) = self.path_dialog else {
+            // Cancelled: the quit that asked for this save is cancelled too.
+            self.quit_after_save = false;
+            return;
+        };
         let mut open = true;
         let mut commit = false;
         let (title, verb, hint) = match mode {
@@ -2133,6 +2167,10 @@ impl PortmanteauApp {
                         Ok(msg) => {
                             self.path_dialog = None;
                             self.toast("Project saved", msg, ToastKind::Ok);
+                            if self.quit_after_save {
+                                self.quit_after_save = false;
+                                self.close_now(ctx);
+                            }
                         }
                         Err(e) => {
                             self.toast("Could not save project", e, ToastKind::Error);
@@ -2400,12 +2438,23 @@ impl PortmanteauApp {
         self.track_activity(&ctx);
         self.persist_session(&ctx);
         self.autosave(&ctx);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.close_guard(&ctx);
+            self.quit_dialog(&ctx);
+            if !cfg!(test) && self.screenshot.is_none() {
+                self.keep_recovery_copy(&ctx, &crate::recovery::folder());
+            }
+            self.recovery_dialog(&ctx);
+        }
         self.screenshot_tick(&ctx);
     }
 }
 
 /// How long the writer must be idle before a saved project is saved again.
 const AUTOSAVE_IDLE: Duration = Duration::from_millis(2500);
+/// How often, while the writer is working, a dated backup is taken.
+const BACKUP_EVERY: Duration = Duration::from_secs(15 * 60);
 /// How long a preference must hold still before it is written to the config.
 const SETTINGS_SETTLE: Duration = Duration::from_millis(500);
 
@@ -2463,11 +2512,178 @@ impl PortmanteauApp {
             ctx.request_repaint_after(AUTOSAVE_IDLE - idle);
             return;
         }
-        if let Err(error) = self.ws.save(None) {
-            // Say so once, then wait for the next change rather than retry
-            // (and complain) every frame.
-            self.ws.dirty = false;
-            self.toast("Autosave failed", error, ToastKind::Error);
+        match self.ws.save(None) {
+            Ok(_) => {
+                self.save_failed = false;
+                // Every so often, while the writer is working, keep a dated
+                // copy to go back to. It is saved by the next autosave.
+                if self.last_backup.elapsed() >= BACKUP_EVERY {
+                    self.last_backup = Instant::now();
+                    self.ws.execute("project.checkpoint", serde_json::json!({"auto": true}));
+                }
+            }
+            Err(error) => {
+                // Say so once, then wait for the next change rather than retry
+                // (and complain) every frame. Quitting still asks, though.
+                self.ws.dirty = false;
+                self.save_failed = true;
+                self.toast("Autosave failed", error, ToastKind::Error);
+            }
+        }
+    }
+
+    /// Whether closing the window now would lose work.
+    fn has_unsaved_work(&self) -> bool {
+        (self.ws.dirty && self.ws.path.is_none()) || self.save_failed
+    }
+
+    /// Stop the window closing while there is work that has no home, and ask.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn close_guard(&mut self, ctx: &egui::Context) {
+        if self.screenshot.is_some() || self.allow_close {
+            return;
+        }
+        if ctx.input(|i| i.viewport().close_requested()) && self.has_unsaved_work() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.quit_prompt = true;
+        }
+    }
+
+    fn close_now(&mut self, ctx: &egui::Context) {
+        self.allow_close = true;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    /// "Save your work?" before the window closes.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn quit_dialog(&mut self, ctx: &egui::Context) {
+        if !self.quit_prompt {
+            return;
+        }
+        let homeless = self.ws.path.is_none();
+        let title = self.ws.project.title.clone();
+        let mut save = false;
+        let mut quit = false;
+        let mut cancel = false;
+        egui::Window::new("Save your work?")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .min_width(420.0)
+            .show(ctx, |ui| {
+                ui.add_space(4.0);
+                let message = if homeless {
+                    format!("“{title}” has changes that have not been saved anywhere yet. If you quit now they will be lost.")
+                } else {
+                    format!("Portmanteau could not save “{title}” to its folder, so the latest changes may be missing from it.")
+                };
+                ui.label(RichText::new(message).font(ui_body()).color(TEXT));
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    let label = if homeless { "Save…" } else { "Try saving again" };
+                    if ui::views::primary_button(ui, label).clicked() {
+                        save = true;
+                    }
+                    if ui::views::quiet_button(ui, "Quit without saving").clicked() {
+                        quit = true;
+                    }
+                    if ui::views::quiet_button(ui, "Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        if ctx.input(|i| i.key_pressed(Key::Escape)) {
+            cancel = true;
+        }
+        if cancel {
+            self.quit_prompt = false;
+        } else if quit {
+            crate::recovery::remove(&crate::recovery::folder(), &self.ws.project.id);
+            self.quit_prompt = false;
+            self.close_now(ctx);
+        } else if save {
+            self.quit_prompt = false;
+            if homeless {
+                self.quit_after_save = true;
+                self.path_dialog = Some(PathDialog::SaveAs);
+                let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+                self.path_draft = format!("{home}/Portmanteau/{}.portmanteau/", slug(&self.ws.project.title));
+            } else {
+                match self.ws.save(None) {
+                    Ok(_) => {
+                        self.save_failed = false;
+                        self.close_now(ctx);
+                    }
+                    Err(e) => {
+                        self.toast("Could not save", e, ToastKind::Error);
+                        self.quit_prompt = true;
+                    }
+                }
+            }
+        }
+    }
+
+    /// While a project has changes and no home, keep a safety copy of it on
+    /// disk; once it has a home (or no changes) remove the copy.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn keep_recovery_copy(&mut self, ctx: &egui::Context, dir: &Path) {
+        if self.ws.dirty && self.ws.path.is_none() {
+            let due = self.last_recovery.is_none_or(|t| t.elapsed() >= crate::recovery::EVERY);
+            if due {
+                self.last_recovery = Some(Instant::now());
+                self.recovery_written = crate::recovery::write(dir, &self.ws).is_ok();
+            }
+            ctx.request_repaint_after(crate::recovery::EVERY);
+        } else if self.recovery_written {
+            crate::recovery::remove(dir, &self.ws.project.id);
+            self.recovery_written = false;
+            self.last_recovery = None;
+        }
+    }
+
+    /// "Bring back unsaved work?" at start-up, when the last run left a copy.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn recovery_dialog(&mut self, ctx: &egui::Context) {
+        let Some(found) = self.recovery_offer.as_ref() else { return };
+        let title = found.workspace.project.title.clone();
+        let saved = found.saved.clone();
+        let (mut recover, mut discard, mut later) = (false, false, false);
+        egui::Window::new("Bring back unsaved work?")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .min_width(420.0)
+            .show(ctx, |ui| {
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new(format!("Portmanteau closed with “{title}” still unsaved. A safety copy from {saved} was kept."))
+                        .font(ui_body())
+                        .color(TEXT),
+                );
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if ui::views::primary_button(ui, "Bring it back").clicked() {
+                        recover = true;
+                    }
+                    if ui::views::quiet_button(ui, "Discard it").clicked() {
+                        discard = true;
+                    }
+                    if ui::views::quiet_button(ui, "Decide later").clicked() {
+                        later = true;
+                    }
+                });
+            });
+        if recover || discard || later {
+            if let Some(found) = self.recovery_offer.take() {
+                let found = *found;
+                if recover {
+                    let _ = std::fs::remove_file(&found.path);
+                    self.install_workspace(found.workspace);
+                    self.toast("Work restored", "Save it somewhere (File › Save project as…) to keep it.", ToastKind::Ok);
+                } else if discard {
+                    let _ = std::fs::remove_file(&found.path);
+                }
+            }
         }
     }
 
@@ -3665,6 +3881,83 @@ mod shell_probe {
         assert_eq!(body_of(&app, &doc_id), original);
         press(&mut harness, egui::Modifiers::COMMAND, Key::Y);
         assert_eq!(body_of(&app, &doc_id), typed, "Ctrl+Y also redoes");
+    }
+
+    /// Closing the window with work that has no home asks first; a project
+    /// with nothing unsaved closes straight away.
+    #[test]
+    fn closing_with_unsaved_work_asks_first_and_quit_without_saving_closes() {
+        let app = PortmanteauApp::new(None);
+        let (mut harness, app) = app_harness(app);
+        let close = |harness: &mut Harness<'static>| {
+            harness
+                .input_mut()
+                .viewports
+                .entry(egui::ViewportId::ROOT)
+                .or_default()
+                .events
+                .push(egui::ViewportEvent::Close);
+            harness.run_steps(2);
+        };
+        // The sample project, untouched: nothing to ask about.
+        assert!(!app.borrow().ws.dirty);
+        close(&mut harness);
+        assert!(!app.borrow().quit_prompt, "nothing unsaved, so no question");
+
+        app.borrow_mut().ws.dirty = true;
+        close(&mut harness);
+        assert!(app.borrow().quit_prompt, "unsaved work with no home asks");
+        harness.run_steps(2);
+        assert!(harness.query_by_label("Save…").is_some());
+        harness.get_by_label("Cancel").click();
+        harness.run_steps(2);
+        assert!(!app.borrow().quit_prompt, "Cancel keeps the writer in the app");
+
+        close(&mut harness);
+        harness.run_steps(2);
+        harness.get_by_label("Save…").click();
+        harness.run_steps(3);
+        assert!(app.borrow().quit_after_save && app.borrow().path_dialog.is_some(), "Save… opens Save As, and quits after");
+    }
+
+    /// A saved project autosaves in place and keeps dated backups, at most
+    /// ten, without disturbing the writer's own checkpoints.
+    #[test]
+    fn autosave_takes_a_backup_now_and_then_and_a_failure_is_remembered() {
+        let mut app = PortmanteauApp::new(None);
+        let dir = std::env::temp_dir().join(portmanteau_core::new_id("backup"));
+        app.ws.save(Some(dir.clone())).expect("save");
+        let ctx = egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(), |_ui| {}).drop_without_applying_deltas();
+        app.ws.project.checkpoint("mine", "manual");
+        app.ws.dirty = true;
+        app.last_input = Instant::now() - Duration::from_secs(10);
+        app.last_backup = Instant::now() - BACKUP_EVERY - Duration::from_secs(1);
+        app.autosave(&ctx);
+        assert_eq!(app.ws.project.checkpoints.iter().filter(|c| c.kind == "auto").count(), 1);
+        assert!(app.ws.project.checkpoints.iter().any(|c| c.label == "mine"));
+        assert!(!app.save_failed);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// An unsaved project gets a safety copy on disk; saving it removes the
+    /// copy; and the copy can be found again.
+    #[test]
+    fn an_unsaved_project_keeps_a_recovery_copy_until_it_is_saved() {
+        let mut app = PortmanteauApp::new(None);
+        let ctx = egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(), |_ui| {}).drop_without_applying_deltas();
+        let recovery = std::env::temp_dir().join(portmanteau_core::new_id("rec"));
+        app.ws.dirty = true;
+        app.keep_recovery_copy(&ctx, &recovery);
+        assert!(crate::recovery::find(&recovery).is_some(), "a copy is written while it is unsaved");
+
+        let home = std::env::temp_dir().join(portmanteau_core::new_id("rec-home"));
+        app.ws.save(Some(home.clone())).expect("save");
+        app.keep_recovery_copy(&ctx, &recovery);
+        assert!(crate::recovery::find(&recovery).is_none(), "saving it removes the copy");
+        let _ = std::fs::remove_dir_all(recovery);
+        let _ = std::fs::remove_dir_all(home);
     }
 
     /// What the writer chose (zoom, view mode, Compile format, open project) is

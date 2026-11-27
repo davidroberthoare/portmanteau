@@ -3,6 +3,14 @@
 The newest section is used as the body of the GitHub release. Start each release
 with a line `## vX.Y.Z` (matching `version` in the top-level `Cargo.toml`).
 
+## v0.2.2
+
+- **Quitting no longer loses unsaved work.** If a project has changes that have not been saved anywhere (a new or sample project), closing the window now asks: Save…, Quit without saving, or Cancel. Projects that already live in a folder are still saved automatically, and quitting stays instant.
+- **Safety copy for unsaved projects.** While such a project has changes, a copy is kept every few seconds. If Portmanteau stops unexpectedly, the next start offers to bring the work back.
+- **Automatic backups.** While you work in a saved project, a dated backup is taken about every 15 minutes (the newest ten are kept) and shows in Versions as an automatic backup, ready to restore. Your own checkpoints are never pushed out by them.
+- If an autosave fails, quitting now warns you instead of closing quietly.
+- Fixed: project checkpoints were getting larger and larger (each one held a copy of all the earlier ones). They are now just the project.
+
 ## v0.2.1
 
 - **Writing statistics.** A new Writing statistics window (inspector, View menu, or click the progress meter) shows time spent typing and reading, words added, edited and deleted, by day, week, hour of day and document, plus how your prose reads (sentence length, reading ease, dialogue share, repeated words).

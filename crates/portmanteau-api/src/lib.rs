@@ -337,8 +337,12 @@ impl Workspace {
                 ApiResponse::ok(command, "Cover set", json!({"cover_image": stored}))
             }
             "project.checkpoint" => {
-                let label = str_arg(&payload, "label").unwrap_or_else(|| "Manual checkpoint".into());
-                let id = self.project.checkpoint(label, "manual");
+                let id = if payload.get("auto").and_then(|v| v.as_bool()) == Some(true) {
+                    self.project.auto_backup()
+                } else {
+                    let label = str_arg(&payload, "label").unwrap_or_else(|| "Manual checkpoint".into());
+                    self.project.checkpoint(label, "manual")
+                };
                 self.dirty = true;
                 ApiResponse::ok(command, "Checkpoint saved", json!({"id": id}))
             }
@@ -2197,7 +2201,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("project.pack", "Write the project (and its attachments) to one .zip file, for a backup or to send to someone", r#"{"path":"My Novel.portmanteau.zip"}"#),
         ("project.open_zip", "Unpack a project .zip into a new folder and open it", r#"{"path":"My Novel.portmanteau.zip","folder":"My Novel.portmanteau"}"#),
         ("project.set_cover", "Set the book's cover picture (a .png or .jpg; a saved project keeps its own copy) or clear it with an empty path. EPUB uses it unless that format names its own cover_image", r#"{"path":"/path/to/cover.jpg"}"#),
-        ("project.checkpoint", "Save a full version checkpoint", r#"{"label":"..."}"#),
+        ("project.checkpoint", "Save a full version checkpoint (or, with auto:true, an automatic backup: only the newest ten are kept)", r#"{"label":"..."}"#),
         ("project.restore_checkpoint", "Restore a checkpoint", r#"{"id":"cp-..."}"#),
         ("project.snapshots", "List document snapshots", "{}"),
         ("document.list", "List every binder document", "{}"),

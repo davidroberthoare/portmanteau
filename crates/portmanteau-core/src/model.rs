@@ -33,6 +33,9 @@ pub fn now_stamp() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()
 }
 
+/// How many automatic backups a project keeps.
+pub const AUTO_BACKUPS_KEPT: usize = 10;
+
 pub fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
@@ -2178,7 +2181,11 @@ impl Project {
     }
 
     pub fn checkpoint(&mut self, label: impl Into<String>, kind: impl Into<String>) -> String {
-        let payload = serde_json::to_string(self).unwrap_or_default();
+        // The copy leaves out the checkpoints themselves. Including them made
+        // each one hold all the earlier ones, so their size doubled every time.
+        let mut copy = self.clone();
+        copy.checkpoints.clear();
+        let payload = serde_json::to_string(&copy).unwrap_or_default();
         let cp = Checkpoint {
             id: new_id("cp"),
             label: label.into(),
@@ -2189,10 +2196,34 @@ impl Project {
         };
         let id = cp.id.clone();
         self.checkpoints.insert(0, cp);
-        if self.checkpoints.len() > 30 {
-            self.checkpoints.truncate(30);
+        // Keep thirty. When there are more, the oldest automatic backup goes
+        // first, so a flurry of them never pushes out one the writer made.
+        while self.checkpoints.len() > 30 {
+            match self.checkpoints.iter().rposition(|c| c.kind == "auto") {
+                Some(oldest) => {
+                    self.checkpoints.remove(oldest);
+                }
+                None => {
+                    self.checkpoints.pop();
+                }
+            }
         }
         self.touch();
+        id
+    }
+
+    /// An automatic backup of the project as it is now. Only the newest
+    /// `AUTO_BACKUPS_KEPT` automatic ones are kept.
+    pub fn auto_backup(&mut self) -> String {
+        let id = self.checkpoint("Automatic backup", "auto");
+        let mut seen = 0;
+        self.checkpoints.retain(|c| {
+            if c.kind != "auto" {
+                return true;
+            }
+            seen += 1;
+            seen <= AUTO_BACKUPS_KEPT
+        });
         id
     }
 
@@ -2653,6 +2684,30 @@ mod appearance_tests {
 #[cfg(test)]
 mod new_document_home_tests {
     use super::*;
+
+    #[test]
+    fn checkpoints_do_not_nest_and_automatic_backups_are_capped() {
+        let mut p = Project::new("Backups", ProjectKind::Novel);
+        let first = p.checkpoint("one", "manual");
+        let size_one = p.checkpoints.iter().find(|c| c.id == first).unwrap().payload.len();
+        for i in 0..8 {
+            p.checkpoint(format!("m{i}"), "manual");
+        }
+        let newest = p.checkpoints.first().unwrap();
+        assert!(newest.payload.len() < size_one * 2, "a checkpoint no longer carries the others");
+        assert!(!newest.payload.contains("\"payload\""));
+        for _ in 0..15 {
+            p.auto_backup();
+        }
+        let autos = p.checkpoints.iter().filter(|c| c.kind == "auto").count();
+        assert_eq!(autos, AUTO_BACKUPS_KEPT);
+        assert_eq!(p.checkpoints.iter().filter(|c| c.kind == "manual").count(), 9, "the writer's own are kept");
+        for i in 0..30 {
+            p.checkpoint(format!("later{i}"), "manual");
+        }
+        assert_eq!(p.checkpoints.len(), 30);
+        assert!(p.checkpoints.iter().all(|c| c.kind == "manual"), "autos go first when the list is full");
+    }
 
     #[test]
     fn new_documents_go_beside_the_selection_never_into_research() {

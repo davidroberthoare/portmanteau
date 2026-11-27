@@ -13,6 +13,8 @@ mod app;
 mod history;
 mod icons;
 mod platform;
+#[cfg(not(target_arch = "wasm32"))]
+mod recovery;
 mod settings;
 mod spellcheck;
 mod theme;
