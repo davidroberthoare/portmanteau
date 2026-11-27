@@ -297,6 +297,12 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 .color(FAINT),
         );
 
+        ui.add_space(6.0);
+        if crate::ui::views::quiet_button(ui, "Detailed statistics…").clicked() {
+            app.stats.tab = crate::ui::stats_window::StatsTab::Overview;
+            app.stats.open = true;
+        }
+
         // Taking, comparing and restoring versions lives on the Versions tab
         // (and in Edit > Take snapshot). This tab used to repeat a snapshot
         // box and the latest version here; one home is enough.

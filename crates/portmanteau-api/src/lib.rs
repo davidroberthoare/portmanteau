@@ -288,8 +288,15 @@ impl Workspace {
                 if let Some(v) = payload.get("draft_date").and_then(|v| v.as_str()) {
                     self.project.draft_date = v.into();
                 }
-                if let Some(v) = payload.get("daily_target").and_then(|v| v.as_u64()) {
-                    self.project.daily_target = v as u32;
+                if let Some(goals) = payload.get("goals").and_then(|v| v.as_object()) {
+                    let count = |key: &str, max: u64| goals.get(key).and_then(|v| v.as_u64()).map(|v| v.min(max) as u32);
+                    let g = &mut self.project.goals;
+                    if let Some(v) = count("daily_words", 200_000) { g.daily_words = v; }
+                    if let Some(v) = count("weekly_words", 1_000_000) { g.weekly_words = v; }
+                    if let Some(v) = count("daily_minutes", 1_440) { g.daily_minutes = v; }
+                    if let Some(v) = count("weekly_minutes", 10_080) { g.weekly_minutes = v; }
+                    if let Some(v) = goals.get("show_meter").and_then(|v| v.as_bool()) { g.show_meter = v; }
+                    if let Some(v) = goals.get("encouragement").and_then(|v| v.as_bool()) { g.encouragement = v; }
                 }
                 self.project.touch();
                 self.dirty = true;
@@ -1061,6 +1068,47 @@ impl Workspace {
                 }
             }
             "stats" => ApiResponse::ok(command, "Statistics", self.stats()),
+            "stats.activity" => ApiResponse::ok(command, "Writing activity", self.activity_report()),
+            "stats.analysis" => {
+                // Style measures for one document (`id`) or the whole manuscript.
+                let paragraphs: Vec<String> = match str_arg(&payload, "id") {
+                    Some(id) => match self.project.document(&id) {
+                        Some(doc) => doc.content.paragraphs.iter().map(|p| p.plain_text()).collect(),
+                        None => return ApiResponse::err(command, "Document not found"),
+                    },
+                    None => self
+                        .project
+                        .manuscript_documents()
+                        .iter()
+                        .filter(|d| !d.medium.is_script())
+                        .flat_map(|d| d.content.paragraphs.iter().map(|p| p.plain_text()))
+                        .collect(),
+                };
+                ApiResponse::ok(command, "Writing analysis", json!(portmanteau_core::analysis::analyze(&paragraphs)))
+            }
+            "stats.record" => {
+                // Note work done (the app calls this as the writer types and reads).
+                let hour = match str_arg(&payload, "hour") {
+                    Some(h) if h.len() == 13 && h.as_bytes()[10] == b'T' => h,
+                    _ => return ApiResponse::err(command, "hour must look like 2026-11-26T14"),
+                };
+                let number = |key: &str| payload.get(key).and_then(|v| v.as_u64()).unwrap_or(0).min(100_000) as u32;
+                let delta = portmanteau_core::ActivityTotals {
+                    typing_secs: number("typing_secs").min(3_600),
+                    reading_secs: number("reading_secs").min(3_600),
+                    added: number("added"),
+                    edited: number("edited"),
+                    deleted: number("deleted"),
+                };
+                let doc = str_arg(&payload, "doc").unwrap_or_default();
+                // Reading time alone is not worth an "unsaved changes" mark.
+                let worth_saving = delta.typing_secs + delta.added + delta.edited + delta.deleted > 0;
+                self.project.record_activity(&hour, &doc, delta);
+                if worth_saving {
+                    self.dirty = true;
+                }
+                ApiResponse::ok(command, "Activity recorded", json!({"today_words": self.project.today_words()}))
+            }
             "script.parse" => {
                 let text = str_arg(&payload, "text").unwrap_or_default();
                 let medium = payload
@@ -1571,9 +1619,60 @@ impl Workspace {
             "research": self.project.research_docs().len(),
             "checkpoints": self.project.checkpoints.len(),
             "today_words": self.project.today_words(),
-            "daily_target": self.project.daily_target,
+            "goals": self.project.goals,
             "dirty": self.dirty,
             "path": self.path.as_ref().map(|p| p.display().to_string()),
+        })
+    }
+
+    /// Everything the detailed statistics screen shows, as data.
+    pub fn activity_report(&self) -> Value {
+        use portmanteau_core::activity;
+        let log = &self.project.activity;
+        let today = portmanteau_core::today();
+        let progress = portmanteau_core::progress::progress(log, &self.project.goals, &today);
+        let days = activity::per_day(log);
+        let last_days: Vec<Value> = (0..30)
+            .rev()
+            .filter_map(|back| {
+                let d = chrono::Local::now().date_naive() - chrono::Duration::days(back);
+                let key = d.format("%Y-%m-%d").to_string();
+                let t = days.get(&key).copied().unwrap_or_default();
+                Some(json!({"date": key, "totals": t}))
+            })
+            .collect();
+        let weeks = activity::per_week(log);
+        let last_weeks: Vec<Value> = weeks.iter().rev().take(12).rev().map(|(w, t)| json!({"week": w, "totals": t})).collect();
+        let by_doc = activity::per_document(log);
+        let documents: Vec<Value> = by_doc
+            .iter()
+            .map(|(id, t)| {
+                let doc = self.project.document(id);
+                json!({
+                    "id": id,
+                    "title": doc.map(|d| d.title.clone()).unwrap_or_else(|| "(deleted or unattached)".into()),
+                    "words": doc.map(|d| d.words()).unwrap_or(0),
+                    "totals": t,
+                })
+            })
+            .collect();
+        let month_start = (chrono::Local::now().date_naive() - chrono::Duration::days(29)).format("%Y-%m-%d").to_string();
+        json!({
+            "today": today,
+            "goals": self.project.goals,
+            "progress": progress,
+            "totals": {
+                "today": progress.today,
+                "week": progress.week,
+                "last_30_days": activity::total(log, |r| r.hour.get(..10).unwrap_or("") >= month_start.as_str()),
+                "all_time": activity::total(log, |_| true),
+            },
+            "days": last_days,
+            "weeks": last_weeks,
+            "hours_of_day": activity::per_hour_of_day(log),
+            "documents": documents,
+            "badges": portmanteau_core::progress::badges(log, &self.project.goals, &today),
+            "encouragement": portmanteau_core::progress::encouragement(&progress, &self.project.goals),
         })
     }
 
@@ -1606,8 +1705,8 @@ impl Workspace {
             "research": self.project.research_docs().len(),
             "locations": self.project.locations().len(),
             "today": self.project.today_words(),
-            "target": self.project.daily_target,
-            "session": self.project.session_log,
+            "target": self.project.goals.daily_words,
+            "goals": self.project.goals,
         })
     }
 
@@ -2090,7 +2189,7 @@ fn string_list(values: &[Value]) -> Vec<String> {
 pub fn command_catalogue() -> Vec<Value> {
     let entries = [
         ("project.info", "Summarise the open project", "{}"),
-        ("project.update", "Change the project's details: title, subtitle, author, genre, logline, contact (one line each), draft_label, draft_date (blank = today) and daily_target", r#"{"author":"Ada Marlowe","contact":"Ada Marlowe\nada@example.com","draft_date":"14 March 2027"}"#),
+        ("project.update", "Change the project's details: title, subtitle, author, genre, logline, contact (one line each), draft_label, draft_date (blank = today) and goals (daily_words, weekly_words, daily_minutes, weekly_minutes, show_meter, encouragement)", r#"{"author":"Ada Marlowe","contact":"Ada Marlowe\nada@example.com","draft_date":"14 March 2027"}"#),
         ("document.import_preview", "Read an import file without changing the project: the documents it would create, the paragraph styles it uses and their targets, the title-page details, warnings", r#"{"path":"/tmp/script.docx","split":true,"style_map":{"Quote":"style:body"}}"#),
         ("project.new", "Create a project", r#"{"title":"...","kind":"Novel"}"#),
         ("project.open", "Open a project folder package", r#"{"path":"..."}"#),
@@ -2123,6 +2222,9 @@ pub fn command_catalogue() -> Vec<Value> {
         ("search.find", "Find text across documents, research and database notes (plain, whole-word or regex; filter by group and by field)", r#"{"query":"...","case_sensitive":false,"whole_word":false,"regex":false,"groups":["Manuscript","Research"],"fields":["Text","Synopsis","Notes"],"limit":200}"#),
         ("search.replace", "Replace every match, or just those in one document/item (id), one field of it (field) or one match (start); each changed document gets a snapshot first", r#"{"query":"...","replacement":"...","id":"doc-...","field":"Text","start":12}"#),
         ("stats", "Word, page and session statistics", "{}"),
+        ("stats.activity", "Writing activity: time typing and reading, words added, edited and deleted by day, week, hour of day and document; goal progress, streaks and badges", "{}"),
+        ("stats.analysis", "How the prose reads: sentence length, readability, dialogue share, -ly words, most-used words, echoed words; for one document (id) or the whole manuscript", r#"{"id":"doc-..."}"#),
+        ("stats.record", "Note work done in an hour (YYYY-MM-DDTHH): typing_secs, reading_secs, added, edited, deleted, doc. The app calls this as the writer works", r#"{"hour":"2026-11-26T14","doc":"doc-...","typing_secs":120,"added":80}"#),
         ("script.parse", "Parse plain text into script blocks", r#"{"text":"INT. ..."}"#),
         ("export.preview", "Preview the compiled manuscript: included and skipped documents for one manuscript type", r#"{"compile_type":"screenplay","scope":"draft"}"#),
         ("export.formats", "List supported output formats", "{}"),
@@ -2613,6 +2715,46 @@ mod tests {
         assert!(!ws.execute("document.picture", json!({"id": id, "paragraph": at, "width": 99999})).ok);
         assert!(!ws.execute("document.picture", json!({"id": id, "paragraph": 0, "align": "left"})).ok);
         assert!(!ws.execute("document.picture", json!({"id": id, "paragraph": at, "align": "sideways"})).ok);
+    }
+
+    #[test]
+    fn statistics_record_report_analyse_and_goals_round_trip() {
+        let mut ws = Workspace::demo();
+        let id = ws.project.documents.iter().find(|d| d.kind == DocKind::Chapter).map(|d| d.id.clone()).unwrap();
+        let hour = format!("{}T10", portmanteau_core::today());
+        let before = ws.project.today_words();
+        let r = ws.execute("stats.record", json!({"hour": hour, "doc": id, "typing_secs": 300, "reading_secs": 60, "added": 120, "edited": 15, "deleted": 4}));
+        assert!(r.ok, "{}", r.message);
+        assert_eq!(ws.project.today_words(), before + 120);
+        assert!(!ws.execute("stats.record", json!({"hour": "tomorrow"})).ok, "a bad hour is refused");
+
+        let report = ws.execute("stats.activity", json!({}));
+        assert!(report.ok);
+        assert!(report.data["totals"]["today"]["typing_secs"].as_u64().unwrap() >= 300);
+        assert_eq!(report.data["days"].as_array().unwrap().len(), 30);
+        assert_eq!(report.data["badges"].as_array().unwrap().len(), 14);
+        assert!(report.data["documents"].as_array().unwrap().iter().any(|d| d["id"] == json!(id)));
+
+        let analysis = ws.execute("stats.analysis", json!({}));
+        assert!(analysis.ok && analysis.data["words"].as_u64().unwrap() > 100);
+        assert!(!ws.execute("stats.analysis", json!({"id": "nope"})).ok);
+
+        let updated = ws.execute("project.update", json!({"goals": {"daily_words": 750, "weekly_minutes": 90, "encouragement": false}}));
+        assert!(updated.ok);
+        assert_eq!(ws.project.goals.daily_words, 750);
+        assert_eq!(ws.project.goals.weekly_minutes, 90);
+        assert!(!ws.project.goals.encouragement);
+    }
+
+    #[test]
+    fn reading_time_alone_does_not_mark_the_project_unsaved() {
+        let mut ws = Workspace::demo();
+        ws.dirty = false;
+        let hour = format!("{}T10", portmanteau_core::today());
+        ws.execute("stats.record", json!({"hour": hour, "reading_secs": 30}));
+        assert!(!ws.dirty);
+        ws.execute("stats.record", json!({"hour": hour, "added": 5}));
+        assert!(ws.dirty);
     }
 
     #[test]

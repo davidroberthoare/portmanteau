@@ -111,15 +111,14 @@ fn snapshot_count(app: &PortmanteauApp) -> usize {
 }
 
 fn session_chart(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
-    let entries: Vec<(String, u32)> = app
-        .ws
-        .project
-        .session_log
-        .iter()
+    let days = portmanteau_core::activity::per_day(&app.ws.project.activity);
+    let entries: Vec<(String, u32)> = (0..14)
         .rev()
-        .take(14)
-        .rev()
-        .map(|s| (s.date.clone(), s.words))
+        .map(|back| {
+            let key = (chrono::Local::now().date_naive() - chrono::Duration::days(back)).format("%Y-%m-%d").to_string();
+            let words = days.get(&key).map_or(0, |t| t.added);
+            (key, words)
+        })
         .collect();
     Frame::new()
         .fill(PANEL)

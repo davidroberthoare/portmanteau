@@ -284,6 +284,9 @@ When you add a command, update **all** of these:
 | `search.find` | Find text (plain/whole word/regex; groups Manuscript, Matter, Research, Database) | `{"query":"…","regex":false,"groups":["Research"]}` |
 | `search.replace` | Replace matches, optionally in one document/item; snapshots first | `{"query":"…","replacement":"…","id":"doc-…","field":"Text","start":12}` (`field` alone: every match in that field; `start` picks one) |
 | `stats` | Words, pages, scenes, log | `{}` |
+| `stats.activity` | Writing activity: typing and reading time, words added/edited/deleted by day, week, hour of day and document; goal progress, streaks, badges | `{}` |
+| `stats.analysis` | How the prose reads (sentence length, readability, dialogue share, -ly words, top and echoed words) for a document or the manuscript | `{"id":"doc-…"}` |
+| `stats.record` | Note work done in an hour (the app calls this as the writer works; reading time alone does not mark the project unsaved) | `{"hour":"2026-11-26T14","doc":"doc-…","typing_secs":120,"added":80}` |
 | `script.parse` | Loose text → typed blocks + Fountain | `{"text":"INT. …"}` |
 | `export.preview` | What a compile would contain: included and skipped documents for one manuscript type | `{"compile_type":"screenplay","scope":"draft"}` |
 | `export.formats` | Supported formats | `{}` |

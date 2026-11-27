@@ -5,15 +5,19 @@
 //! file-system dependencies, so it can be reused by the API, MCP server and
 //! the desktop app.
 
+pub mod activity;
+pub mod analysis;
 pub mod compile;
 pub mod find;
 pub mod model;
+pub mod progress;
 pub mod rich_text;
 pub mod sample;
 pub mod script;
 pub mod spell;
 pub mod text;
 
+pub use activity::{ActivityRecord, ActivityTotals};
 pub use compile::*;
 pub use find::{FindHit, FindOptions, FindQuery, FindSource, Finder, HitField, ReplaceScope, SearchGroup};
 pub use model::*;

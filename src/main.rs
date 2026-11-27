@@ -8,6 +8,7 @@
 // A Windows release build is a window app, so no black terminal opens behind it.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod activity;
 mod app;
 mod history;
 mod icons;

@@ -515,10 +515,35 @@ impl Default for ResearchMeta {
 /// The categories a research note can have, in the order they are offered.
 pub const RESEARCH_KINDS: [&str; 6] = ["Note", "Interview", "Data", "Archive", "Image", "Place"];
 
+/// What the writer is aiming for. A zero means "no goal of that kind".
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct SessionEntry {
-    pub date: String,
-    pub words: u32,
+#[serde(default)]
+pub struct WritingGoals {
+    /// Words added per day.
+    pub daily_words: u32,
+    /// Words added per week (Monday to Sunday).
+    pub weekly_words: u32,
+    /// Minutes of typing per day.
+    pub daily_minutes: u32,
+    /// Minutes of typing per week.
+    pub weekly_minutes: u32,
+    /// Show the progress meter in the top bar.
+    pub show_meter: bool,
+    /// Show gentle messages and badges.
+    pub encouragement: bool,
+}
+
+impl Default for WritingGoals {
+    fn default() -> Self {
+        Self {
+            daily_words: 500,
+            weekly_words: 0,
+            daily_minutes: 0,
+            weekly_minutes: 0,
+            show_meter: true,
+            encouragement: true,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -1604,8 +1629,11 @@ pub struct Project {
     #[serde(default)]
     pub items: Vec<DatabaseItem>,
     pub checkpoints: Vec<Checkpoint>,
-    pub session_log: Vec<SessionEntry>,
-    pub daily_target: u32,
+    /// Typing and reading time and words added, in hourly buckets (`activity.rs`).
+    #[serde(default)]
+    pub activity: Vec<crate::activity::ActivityRecord>,
+    #[serde(default)]
+    pub goals: WritingGoals,
     /// The book's cover picture: a path inside the project (`assets/images/…`)
     /// or an absolute path. Formats that carry a cover use it unless their own
     /// settings name another picture.
@@ -1651,8 +1679,8 @@ impl Project {
             documents: Vec::new(),
             items: Vec::new(),
             checkpoints: Vec::new(),
-            session_log: Vec::new(),
-            daily_target: 1200,
+            activity: Vec::new(),
+            goals: WritingGoals { daily_words: 1200, ..WritingGoals::default() },
             cover_image: String::new(),
             asset_root: None,
             export,
@@ -2110,21 +2138,16 @@ impl Project {
             .sum()
     }
 
+    /// Words added today.
     pub fn today_words(&self) -> u32 {
-        self.session_log
-            .iter()
-            .find(|s| s.date == today())
-            .map(|s| s.words)
-            .unwrap_or(0)
+        let day = today();
+        crate::activity::total(&self.activity, |r| r.hour.starts_with(&day)).added
     }
 
-    pub fn log_words(&mut self, words: u32) {
-        let day = today();
-        if let Some(entry) = self.session_log.iter_mut().find(|s| s.date == day) {
-            entry.words = entry.words.saturating_add(words);
-        } else {
-            self.session_log.push(SessionEntry { date: day, words });
-        }
+    /// Note work done: typing and reading time, words added, edited, deleted.
+    /// `hour` is the local `YYYY-MM-DDTHH` it happened in.
+    pub fn record_activity(&mut self, hour: &str, doc: &str, delta: crate::activity::ActivityTotals) {
+        crate::activity::record(&mut self.activity, hour, doc, delta);
     }
 
     pub fn locations(&self) -> Vec<String> {

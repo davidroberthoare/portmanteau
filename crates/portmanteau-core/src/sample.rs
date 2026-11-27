@@ -8,7 +8,7 @@ pub fn demo() -> Project {
     p.author = "Ada Marlowe".into();
     p.genre = "Literary mystery".into();
     p.logline = "A mapmaker returns to a drowned harbour town to finish her father's survey and finds the coastline — and her family — was never where the charts said.".into();
-    p.daily_target = 1200;
+    p.goals.daily_words = 1200;
 
     // Folder order: Draft, Research, Front Matter, Back Matter.
     let manuscript = p.folder_id("Draft").unwrap();
@@ -313,15 +313,29 @@ pub fn demo() -> Project {
         .unwrap()
         .set_plain_text("Ada Marlowe is a writer and former coastal surveyor. She lives within sight of the sea, which is not always a comfort.");
 
-    // ---- Session history --------------------------------------------------
+    // ---- Activity history -------------------------------------------------
+    // Two weeks of made-up work, so the statistics screens have something to show.
     let words = [820, 1140, 420, 1360, 980, 0, 0, 1180, 1510, 640, 1220, 890, 1440, 760];
     let today = chrono::Local::now();
     for (i, w) in words.iter().enumerate() {
+        if *w == 0 {
+            continue;
+        }
         let date = today - chrono::Duration::days((words.len() - 1 - i) as i64);
-        p.session_log.push(SessionEntry {
-            date: date.format("%Y-%m-%d").to_string(),
-            words: *w,
-        });
+        let day = date.format("%Y-%m-%d").to_string();
+        let doc = p.documents.iter().find(|d| d.kind == DocKind::Chapter).map(|d| d.id.clone()).unwrap_or_default();
+        let hour = if i % 3 == 0 { 21 } else { 9 + (i % 4) };
+        p.record_activity(
+            &format!("{day}T{hour:02}"),
+            &doc,
+            ActivityTotals {
+                typing_secs: (*w as f32 / 22.0 * 60.0) as u32,
+                reading_secs: 600 + (*w as u32 % 7) * 120,
+                added: (*w as f32 * 0.8) as u32,
+                edited: (*w as f32 * 0.2) as u32,
+                deleted: (*w as f32 * 0.1) as u32,
+            },
+        );
     }
 
     // ---- Per-format compile settings -------------------------------------
@@ -361,7 +375,7 @@ pub fn welcome() -> Project {
     p.subtitle = "A sample project. Explore it, change it, delete it.".into();
     p.author = "You".into();
     p.logline = "A tour of Portmanteau in one small project.".into();
-    p.daily_target = 500;
+    p.goals.daily_words = 500;
 
     let draft = p.folder_id("Draft").unwrap();
 

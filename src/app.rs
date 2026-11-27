@@ -434,6 +434,10 @@ pub struct PortmanteauApp {
     pub history: crate::history::History,
     /// A burst of typing is open and needs a repaint to close on a pause.
     history_pending: bool,
+    /// Typing and reading time, noted as the writer works (see `activity.rs`).
+    activity: crate::activity::ActivityTracker,
+    /// The detailed statistics window.
+    pub stats: crate::ui::stats_window::StatsState,
     pub collapsed: HashSet<String>,
     pub search: String,
     pub focus_search: bool,
@@ -591,6 +595,8 @@ impl PortmanteauApp {
             inspector_tab: InspectorTab::Document,
             history: crate::history::History::default(),
             history_pending: false,
+            activity: crate::activity::ActivityTracker::default(),
+            stats: Default::default(),
             collapsed,
             search: String::new(),
             focus_search: false,
@@ -652,6 +658,19 @@ impl PortmanteauApp {
             spell,
             show_spelling: false,
         };
+        // Development aid: PORTMANTEAU_STATS=overview|charts|documents|style|goals
+        // opens the statistics window on that tab.
+        if let Ok(tab) = std::env::var("PORTMANTEAU_STATS") {
+            use crate::ui::stats_window::StatsTab;
+            app.stats.open = true;
+            app.stats.tab = match tab.as_str() {
+                "charts" => StatsTab::Charts,
+                "documents" => StatsTab::Documents,
+                "style" => StatsTab::Style,
+                "goals" => StatsTab::Goals,
+                _ => StatsTab::Overview,
+            };
+        }
         // Development aid: open the first available comparison so the diff
         // screen can be reviewed (and screenshotted) without clicking.
         if std::env::var("PORTMANTEAU_DIFF").is_ok() {
@@ -858,25 +877,7 @@ impl PortmanteauApp {
                         // menu; a one-click "compile with the last settings"
                         // action would be worth adding here when it can run the
                         // export itself and report the file.
-                        let today = self.ws.project.today_words();
-                        let target = self.ws.project.daily_target.max(1);
-                        ui.vertical(|ui| {
-                            ui.add_space(2.0);
-                            ui.label(
-                                RichText::new(format!("{} / {} today", today, target))
-                                    .font(ui_body())
-                                    .color(MUTED),
-                            );
-                            ui.add_space(2.0);
-                            let (r, _) = ui.allocate_exact_size(Vec2::new(88.0, 4.0), egui::Sense::hover());
-                            ui.painter().rect_filled(r, CornerRadius::same(2), PANEL_3);
-                            let f = (today as f32 / target as f32).clamp(0.0, 1.0);
-                            ui.painter().rect_filled(
-                                egui::Rect::from_min_size(r.min, Vec2::new(r.width() * f, 4.0)),
-                                CornerRadius::same(2),
-                                SAGE,
-                            );
-                        });
+                        crate::ui::stats_window::top_bar_meter(self, ui);
                         ui.add_space(10.0);
                     });
                 });
@@ -1116,6 +1117,11 @@ impl PortmanteauApp {
                     self.view = v;
                     ui.close();
                 }
+            }
+            ui.separator();
+            if ui.button("Writing statistics…").clicked() {
+                self.stats.open = true;
+                ui.close();
             }
             // The Command desk is deliberately kept out of the rail and
             // `View::all()`; it is reachable from this menu.
@@ -2349,6 +2355,9 @@ impl eframe::App for PortmanteauApp {
     /// Closing the window must not lose the last couple of seconds of work, or
     /// the preferences that were still settling.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Some((doc, typing, reading)) = self.activity.take(Instant::now(), true) {
+            self.record_activity(&doc, typing, reading, Default::default());
+        }
         if self.ws.dirty && self.ws.path.is_some() {
             let _ = self.ws.save(None);
         }
@@ -2392,6 +2401,7 @@ impl PortmanteauApp {
             self.rail(ui);
         }
         self.toast_ui(&ctx);
+        crate::ui::stats_window::show(self, &ctx);
 
         if self.view == View::Write {
             let focus = self.focus_mode;
@@ -2423,6 +2433,7 @@ impl PortmanteauApp {
         self.modals(&ctx);
         crate::ui::import_review::show(self, &ctx);
         self.track_history(&ctx);
+        self.track_activity(&ctx);
         self.persist_session(&ctx);
         self.autosave(&ctx);
         self.screenshot_tick(&ctx);
@@ -2809,6 +2820,76 @@ impl PortmanteauApp {
         if input || self.history_pending {
             self.observe_history(ctx);
         }
+    }
+
+    /// Note typing and reading time, and the words the history counted, in the
+    /// project's activity log.
+    fn track_activity(&mut self, ctx: &egui::Context) {
+        use crate::activity::FrameInput;
+        let counts = matches!(self.view, View::Write | View::Research);
+        let (focused, typed, navigated) = ctx.input(|i| {
+            let typing_keys = i.events.iter().any(|e| match e {
+                egui::Event::Text(_) | egui::Event::Paste(_) | egui::Event::Cut => true,
+                egui::Event::Key { key, pressed: true, .. } => {
+                    matches!(key, egui::Key::Backspace | egui::Key::Delete | egui::Key::Enter)
+                }
+                _ => false,
+            });
+            let moving_keys = i.events.iter().any(|e| {
+                matches!(
+                    e,
+                    egui::Event::Key {
+                        key: egui::Key::ArrowUp
+                            | egui::Key::ArrowDown
+                            | egui::Key::PageUp
+                            | egui::Key::PageDown
+                            | egui::Key::Home
+                            | egui::Key::End,
+                        pressed: true,
+                        ..
+                    }
+                )
+            });
+            let scrolled = i.smooth_scroll_delta != Vec2::ZERO;
+            (i.focused, typing_keys, moving_keys || scrolled || i.pointer.any_pressed())
+        });
+        let text_focus = ctx.memory(|m| m.focused().is_some());
+        let now = Instant::now();
+        let doc = self.selected.clone();
+        self.activity.tick(
+            now,
+            doc.as_deref(),
+            FrameInput { focused: focused && counts, typed: typed && text_focus && counts, navigated: navigated && counts },
+        );
+        if let Some(wait) = self.activity.next_check(now) {
+            ctx.request_repaint_after(wait);
+        }
+        if let Some((doc, typing, reading)) = self.activity.take(now, false) {
+            self.record_activity(&doc, typing, reading, Default::default());
+        }
+        for (id, counted) in self.history.take_counted() {
+            // A research note is reading material, not manuscript.
+            if self.ws.project.document(&id).is_some_and(|d| d.research.is_some()) {
+                continue;
+            }
+            self.record_activity(&id, 0, 0, counted);
+        }
+    }
+
+    fn record_activity(&mut self, doc: &str, typing: u32, reading: u32, counted: portmanteau_core::ActivityTotals) {
+        let hour = chrono::Local::now().format("%Y-%m-%dT%H").to_string();
+        self.ws.execute(
+            "stats.record",
+            serde_json::json!({
+                "hour": hour,
+                "doc": doc,
+                "typing_secs": typing,
+                "reading_secs": reading,
+                "added": counted.added,
+                "edited": counted.edited,
+                "deleted": counted.deleted,
+            }),
+        );
     }
 
     fn observe_history(&mut self, ctx: &egui::Context) {

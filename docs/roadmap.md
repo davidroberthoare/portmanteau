@@ -88,6 +88,19 @@ versioned: a shared project in the writer's own Git repository, a review sidecar
 for comments, merging by document and snapshot id, and no accounts or live
 editing. Ask the owner what they want before designing it.
 
+## Statistics, goals and encouragement (first version 2026-11-26)
+
+Done: activity log in hourly buckets per document (`portmanteau-core/src/activity.rs`),
+typing and reading time from input (`src/activity.rs`), added/edited/deleted
+words from the undo history's closed steps, goals (daily and weekly, words or
+minutes), streaks, badges and kind messages (`progress.rs`), prose analysis
+(`analysis.rs`), and the Writing statistics window (`src/ui/stats_window.rs`)
+with the top-bar meter. Still to do: analyse scripts (dialogue by element),
+per-document and per-chapter style comparison, a pacing view across chapters,
+restore/paste not counted as writing, rest days that keep a streak, a weekly
+summary, export of the log as CSV, and a "write today" reminder (needs no
+daemon: only when the app is open).
+
 ## Smaller items
 
 - A proper empty state for the binder when a project has no chapters.

@@ -10,4 +10,5 @@ pub mod inspector;
 pub mod mention;
 pub mod preview;
 pub mod rich_toolbar;
+pub mod stats_window;
 pub mod views;

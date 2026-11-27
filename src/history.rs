@@ -141,6 +141,9 @@ struct DocHistory {
     undo: Vec<Step>,
     redo: Vec<Step>,
     trackers: Vec<Tracker>,
+    /// Words added, edited and deleted in closed steps, not yet taken by the
+    /// statistics (`History::take_counted`).
+    counted: portmanteau_core::ActivityTotals,
 }
 
 impl DocHistory {
@@ -151,6 +154,12 @@ impl DocHistory {
             return;
         };
         if let Some((start, before, after)) = changed_window(&burst.before, seen) {
+            if field == Field::BODY {
+                let counted = portmanteau_core::activity::classify_edit(&before, &after);
+                if !counted.is_empty() {
+                    self.counted.add(&counted);
+                }
+            }
             self.undo.push(Step { field, start, before, after });
         }
         if self.undo.len() > MAX_STEPS {
@@ -288,6 +297,20 @@ impl History {
         }
     }
 
+    /// Words added, edited and deleted since the last call, per document id,
+    /// from the text steps that have closed. Only a document's body counts.
+    pub fn take_counted(&mut self) -> Vec<(String, portmanteau_core::ActivityTotals)> {
+        let mut out = Vec::new();
+        for (key, history) in self.docs.iter_mut() {
+            if let Some(id) = key.strip_prefix("doc:") {
+                if !history.counted.is_empty() {
+                    out.push((id.to_owned(), std::mem::take(&mut history.counted)));
+                }
+            }
+        }
+        out
+    }
+
     /// Forget documents that no longer exist.
     pub fn retain(&mut self, keep: impl Fn(&str) -> bool) {
         self.docs.retain(|id, _| keep(id));
@@ -393,6 +416,24 @@ mod tests {
         let shrunk = vec![para("a")];
         let (start, before, after) = changed_window(&old, &shrunk).unwrap();
         assert_eq!((start, before.len(), after.len()), (1, 1, 0));
+    }
+
+    #[test]
+    fn a_burst_of_typing_counts_its_words_once_when_it_closes() {
+        let t0 = Instant::now();
+        let mut history = History::default();
+        let mut d = doc(&["The cat sat."]);
+        history.observe(&d, t0);
+        // One word typed letter by letter, then a pause long enough to close the step.
+        for (i, text) in ["The cat sat. A", "The cat sat. A d", "The cat sat. A do", "The cat sat. A dog"].iter().enumerate() {
+            edit(&mut history, &mut d, &[text], at(t0, 100 * (i as u64 + 1)));
+        }
+        assert!(history.take_counted().is_empty(), "still typing: nothing counted yet");
+        history.observe(&d, at(t0, 3000));
+        let counted = history.take_counted();
+        assert_eq!(counted.len(), 1);
+        assert_eq!((counted[0].1.added, counted[0].1.edited, counted[0].1.deleted), (2, 0, 0), "A and dog, added at the end");
+        assert!(history.take_counted().is_empty(), "taken once");
     }
 
     #[test]

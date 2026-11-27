@@ -140,6 +140,7 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     );
 
     let mut cover_command: Option<String> = None;
+    let mut open_statistics = false;
     card(
         ui,
         "Cover",
@@ -174,22 +175,29 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
     card(
         ui,
-        "Writing goal",
-        "Words per day, shown in the top bar.",
+        "Writing goals",
+        "Words each day, shown in the top bar. Weekly and time goals are in the statistics.",
         |ui| {
-            let mut target = project.daily_target;
+            let mut target = project.goals.daily_words;
             ui.horizontal(|ui| {
                 label_cell(ui, "Daily words");
-                ui.add(egui::DragValue::new(&mut target).range(1..=100_000).speed(10));
+                ui.add(egui::DragValue::new(&mut target).range(0..=200_000).speed(10));
+                if quiet_button(ui, "More goals and statistics…").clicked() {
+                    open_statistics = true;
+                }
             });
-            if target != project.daily_target {
-                changes.insert("daily_target".into(), json!(target));
+            if target != project.goals.daily_words {
+                changes.insert("goals".into(), json!({"daily_words": target}));
             }
         },
     );
 
     if !changes.is_empty() {
         app.ws.execute("project.update", serde_json::Value::Object(changes));
+    }
+    if open_statistics {
+        app.stats.tab = crate::ui::stats_window::StatsTab::Goals;
+        app.stats.open = true;
     }
     if let Some(path) = cover_command {
         let response = app.ws.execute("project.set_cover", json!({ "path": path }));
