@@ -90,11 +90,13 @@ pub fn top_bar_meter(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     } else {
         (format!("{} words today", p.today.added), None)
     };
+    // A fixed box, so it neither stretches across the bar nor rides high: the
+    // text and the bar are centred as a pair in the bar's height.
     let response = ui
-        .vertical(|ui| {
-            ui.add_space(2.0);
+        .allocate_ui_with_layout(Vec2::new(120.0, 34.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+            ui.add_space(3.0);
             ui.label(RichText::new(text).font(ui_body()).color(MUTED));
-            ui.add_space(2.0);
+            ui.add_space(1.0);
             let (r, _) = ui.allocate_exact_size(Vec2::new(88.0, 4.0), Sense::hover());
             ui.painter().rect_filled(r, CornerRadius::same(2), PANEL_3);
             if let Some(share) = share {

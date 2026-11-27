@@ -8,7 +8,8 @@ with a line `## vX.Y.Z` (matching `version` in the top-level `Cargo.toml`).
 - **Writing statistics.** A new Writing statistics window (inspector, View menu, or click the progress meter) shows time spent typing and reading, words added, edited and deleted, by day, week, hour of day and document, plus how your prose reads (sentence length, reading ease, dialogue share, repeated words).
 - **Goals and encouragement.** Set daily and weekly goals for words or minutes of typing. The top-bar meter follows them, and there are streaks, badges and kind messages (all optional).
 - Each document's word target now shows progress ("328 / 2500" with a bar).
-- A **Compile** button in the top bar compiles again with the last settings.
+- A **Compile** button in the top bar compiles again with the last settings; the notice that follows names the file, and clicking it opens it.
+- The top-bar search field is gone. Ctrl+F's find bar has a **Search whole project** link that carries your search to the full Search page.
 - Paragraphs now have a little space after them by default, and the sample projects no longer use blank lines between paragraphs.
 - Pictures: a small anchor marks where each is tied to the text, they can be removed from the right-click window or the Document tab, and the right-click window can be moved.
 - A friendly "create the first chapter" prompt in an empty binder.

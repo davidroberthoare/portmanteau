@@ -327,6 +327,8 @@ pub struct Toast {
     pub detail: String,
     pub at: Instant,
     pub kind: ToastKind,
+    /// A file the notice names; clicking the notice opens it.
+    pub link: Option<std::path::PathBuf>,
 }
 
 /// A prepared revision comparison, owned by the shell so the modal can be
@@ -437,8 +439,6 @@ pub struct PortmanteauApp {
     /// The detailed statistics window.
     pub stats: crate::ui::stats_window::StatsState,
     pub collapsed: HashSet<String>,
-    pub search: String,
-    pub focus_search: bool,
     pub search_page: ui::views::search::SearchPage,
     pub find_bar: ui::find_bar::FindBar,
     pub focus_mode: bool,
@@ -596,8 +596,6 @@ impl PortmanteauApp {
             activity: crate::activity::ActivityTracker::default(),
             stats: Default::default(),
             collapsed,
-            search: String::new(),
-            focus_search: false,
             // Development aid: PORTMANTEAU_FIND=text opens the editor's find bar with that text.
             find_bar: {
                 let mut bar = ui::find_bar::FindBar::default();
@@ -695,7 +693,16 @@ impl PortmanteauApp {
             detail: detail.into(),
             at: Instant::now(),
             kind,
+            link: None,
         });
+    }
+
+    /// A notice that names a file and opens it when clicked.
+    pub fn toast_with_file(&mut self, message: impl Into<String>, path: std::path::PathBuf, kind: ToastKind) {
+        self.toast(message, short_path(&path), kind);
+        if let Some(toast) = self.toast.as_mut() {
+            toast.link = Some(path);
+        }
     }
 
     /// Switch the spelling dictionary and remember the choice as a global
@@ -864,17 +871,10 @@ impl PortmanteauApp {
                     ui.add_space(10.0);
 
                     self.menus(ui);
-                    ui.add_space(8.0);
-                    self.search_field(ui);
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         self.updater.badge(ui, &self.settings.updates);
                         ui.add_space(8.0);
-                        // Removed: a "Compile ▸" button that only switched to the
-                        // Compile screen. Navigation is the rail and the View
-                        // menu; a one-click "compile with the last settings"
-                        // action would be worth adding here when it can run the
-                        // export itself and report the file.
                         let CompileTab::Format(kind) = self.compile_tab;
                         if ui::views::quiet_button(ui, "Compile")
                             .on_hover_text(format!("Compile {} again with its last settings", kind.label()))
@@ -1211,45 +1211,6 @@ impl PortmanteauApp {
         });
     }
 
-    fn search_field(&mut self, ui: &mut egui::Ui) {
-        Frame::new()
-            .fill(PANEL_2)
-            .stroke(Stroke::new(1.0, BORDER_SOFT))
-            .corner_radius(CornerRadius::same(6))
-            .inner_margin(Margin::symmetric(9, 4))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.set_min_height(24.0);
-                    let (icon, _) =
-                        ui.allocate_exact_size(Vec2::new(13.0, 13.0), egui::Sense::hover());
-                    let c = icon.center();
-                    ui.painter()
-                        .circle_stroke(c - Vec2::new(1.0, 1.0), 3.6, Stroke::new(1.2, FAINT));
-                    ui.painter().line_segment(
-                        [c + Vec2::new(1.8, 1.8), c + Vec2::new(5.0, 5.0)],
-                        Stroke::new(1.2, FAINT),
-                    );
-                    let resp = ui.add(
-                        TextEdit::singleline(&mut self.search)
-                            .hint_text(RichText::new("Search manuscript…").font(ui_body()).color(FAINT))
-                            .desired_width(190.0)
-                            .align(egui::Align2::LEFT_CENTER)
-                            .frame(Frame::NONE)
-                            .font(ui_body()),
-                    );
-                    if self.focus_search {
-                        resp.request_focus();
-                        self.focus_search = false;
-                    }
-                    // Enter hands what was typed to the Search page.
-                    if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !self.search.trim().is_empty() {
-                        let text = std::mem::take(&mut self.search);
-                        self.open_search(Some(text));
-                    }
-                });
-            });
-    }
-
     fn rail(&mut self, ui: &mut egui::Ui) {
         egui::Panel::left("rail")
             .exact_size(62.0)
@@ -1356,7 +1317,9 @@ impl PortmanteauApp {
 
     fn toast_ui(&mut self, ctx: &egui::Context) {
         let Some(toast) = &self.toast else { return };
-        if toast.at.elapsed() > Duration::from_secs(5) {
+        // A notice with a file in it stays longer, and while the pointer is on it.
+        let life = if toast.link.is_some() { Duration::from_secs(12) } else { Duration::from_secs(5) };
+        if toast.at.elapsed() > life {
             self.toast = None;
             return;
         }
@@ -1365,10 +1328,12 @@ impl PortmanteauApp {
             ToastKind::Error => RED,
             ToastKind::Info => BLUE,
         };
+        let mut open: Option<std::path::PathBuf> = None;
+        let mut hovered = false;
         egui::Area::new(Id::unique("toast"))
             .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-22.0, -42.0))
             .show(ctx, |ui| {
-                Frame::new()
+                let shown = Frame::new()
                     .fill(PANEL_2)
                     .stroke(Stroke::new(1.0, accent.gamma_multiply(0.6)))
                     .corner_radius(CornerRadius::same(9))
@@ -1380,11 +1345,34 @@ impl PortmanteauApp {
                             ui.painter().circle_filled(r.center(), 4.0, accent);
                             ui.vertical(|ui| {
                                 ui.label(RichText::new(&toast.message).font(ui_body()).color(TEXT));
-                                ui.label(RichText::new(&toast.detail).font(ui_body()).color(MUTED));
+                                match &toast.link {
+                                    Some(path) => {
+                                        let link = ui
+                                            .link(RichText::new(&toast.detail).font(ui_body()).color(ACCENT))
+                                            .on_hover_text("Open the file");
+                                        if link.clicked() {
+                                            open = Some(path.clone());
+                                        }
+                                    }
+                                    None => {
+                                        ui.label(RichText::new(&toast.detail).font(ui_body()).color(MUTED));
+                                    }
+                                }
                             });
                         });
                     });
+                hovered = shown.response.hovered();
             });
+        if let Some(path) = open {
+            open_path(&path);
+            self.toast = None;
+            return;
+        }
+        if hovered {
+            if let Some(toast) = self.toast.as_mut() {
+                toast.at = Instant::now();
+            }
+        }
         ctx.request_repaint_after(Duration::from_millis(200));
     }
 
@@ -3608,6 +3596,34 @@ mod shell_probe {
 
         press(&mut harness, egui::Modifiers::NONE, Key::Escape);
         assert!(!app.borrow().find_bar.open, "Esc closes the bar");
+    }
+
+    /// The find bar's "Search whole project" link hands the text and options to
+    /// the Search page, which opens and runs it.
+    #[test]
+    fn the_find_bar_can_pass_its_search_to_the_whole_project_page() {
+        let app = PortmanteauApp::new(None);
+        let (mut harness, app) = app_harness(app);
+        press(&mut harness, egui::Modifiers::COMMAND, Key::F);
+        harness.input_mut().events.push(Event::Text("harbour".into()));
+        harness.run_steps(4);
+        harness.get_by_label("Search whole project").click();
+        harness.run_steps(4);
+        let app = app.borrow();
+        assert_eq!(app.view, View::Search);
+        assert_eq!(app.search_page.query, "harbour");
+        assert!(!app.find_bar.open, "the bar closes");
+    }
+
+    /// Clicking the file named in a notice is how the writer opens it; the
+    /// notice also stays while the pointer is on it.
+    #[test]
+    fn a_notice_that_names_a_file_keeps_the_path_to_open() {
+        let mut app = PortmanteauApp::new(None);
+        app.toast_with_file("PDF compiled", std::path::PathBuf::from("/tmp/x/book.pdf"), ToastKind::Ok);
+        let toast = app.toast.as_ref().unwrap();
+        assert_eq!(toast.link.as_deref(), Some(std::path::Path::new("/tmp/x/book.pdf")));
+        assert!(toast.detail.contains("book.pdf"));
     }
 
     /// The whole feature through the real window: typing in the prose editor,

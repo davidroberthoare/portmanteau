@@ -69,6 +69,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut replace_one = false;
     let mut replace_all = false;
     let mut close = false;
+    let mut whole_project = false;
 
     // Work out the matches first so the label is right this frame.
     let content = app.ws.project.document(doc_id).map(|doc| doc.content.clone());
@@ -145,6 +146,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 if ui.add_enabled(any, egui::Button::new("↓").frame(false)).on_hover_text("Next match (Enter)").clicked() {
                     step(bar, false, &mut goto);
                 }
+                if ui
+                    .link(RichText::new("Search whole project").font(ui_small()).color(ACCENT))
+                    .on_hover_text("Look for this in every document, notes and the database")
+                    .clicked()
+                {
+                    whole_project = true;
+                }
                 if ui.add(egui::Button::new("×").frame(false)).on_hover_text("Close (Esc)").clicked() {
                     close = true;
                 }
@@ -176,6 +184,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
 
     // Esc closes the bar wherever the focus is (the @ list takes its own Esc first).
     if ui.input(|i| i.key_pressed(Key::Escape)) {
+        close = true;
+    }
+    if whole_project {
+        // Hand the search, with its options, to the Search page, which runs it.
+        let query = app.find_bar.query.clone();
+        app.search_page.options = app.find_bar.options;
+        app.open_search(Some(query));
         close = true;
     }
     if close {

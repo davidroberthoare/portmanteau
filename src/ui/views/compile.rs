@@ -1415,13 +1415,16 @@ fn page_estimate(ctx: &egui::Context, project: &Project, settings: &ExportSettin
 pub(crate) fn compile_with_last_settings(app: &mut PortmanteauApp) {
     let CompileTab::Format(kind) = app.compile_tab;
     let settings = app.ws.project.settings_for(kind);
-    if run_export(app, &settings) {
-        let message = app.ws.last_message.clone();
-        app.toast(format!("{} compiled", kind.label()), message, ToastKind::Ok);
+    if let Some(path) = run_export(app, &settings) {
+        // In the browser the file was downloaded; there is nothing to open.
+        #[cfg(not(target_arch = "wasm32"))]
+        app.toast_with_file(format!("{} compiled", kind.label()), path, ToastKind::Ok);
+        #[cfg(target_arch = "wasm32")]
+        app.toast(format!("{} compiled", kind.label()), path.display().to_string(), ToastKind::Ok);
     }
 }
 
-fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) -> bool {
+fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) -> Option<PathBuf> {
     let target = resolved_export_path(&app.ws.project, settings);
     let payload = serde_json::json!({
         "format": settings.kind.label(),
@@ -1480,10 +1483,10 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) -> bool {
         // opens it, so a compile that wrote somewhere unexpected is still
         // findable without a second, vanishing notice.
         app.ws.last_message = format!("{} → {}", res.message, path.display());
-        true
+        Some(path)
     } else {
         app.toast("Compile failed", res.message, ToastKind::Error);
-        false
+        None
     }
 }
 
