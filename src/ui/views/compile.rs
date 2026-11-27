@@ -159,7 +159,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         app.ws.dirty = true;
     }
     if compile {
-        run_export(app, &effective);
+        let _ = run_export(app, &effective);
     }
 }
 
@@ -1409,7 +1409,19 @@ fn page_estimate(ctx: &egui::Context, project: &Project, settings: &ExportSettin
     })
 }
 
-fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
+/// Compile again with the settings the Compile screen last used for the
+/// format that is selected there, without opening the screen. Says where the
+/// file went; a failure is reported by `run_export`.
+pub(crate) fn compile_with_last_settings(app: &mut PortmanteauApp) {
+    let CompileTab::Format(kind) = app.compile_tab;
+    let settings = app.ws.project.settings_for(kind);
+    if run_export(app, &settings) {
+        let message = app.ws.last_message.clone();
+        app.toast(format!("{} compiled", kind.label()), message, ToastKind::Ok);
+    }
+}
+
+fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) -> bool {
     let target = resolved_export_path(&app.ws.project, settings);
     let payload = serde_json::json!({
         "format": settings.kind.label(),
@@ -1468,8 +1480,10 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) {
         // opens it, so a compile that wrote somewhere unexpected is still
         // findable without a second, vanishing notice.
         app.ws.last_message = format!("{} → {}", res.message, path.display());
+        true
     } else {
         app.toast("Compile failed", res.message, ToastKind::Error);
+        false
     }
 }
 
@@ -1485,6 +1499,22 @@ mod tests {
     /// The button in the Compile panel must actually write the file, not just
     /// switch screens: this drives the real view with a pointer click and then
     /// looks on disk.
+    #[test]
+    fn compile_with_last_settings_writes_the_selected_format_without_the_screen() {
+        let dir = std::env::temp_dir().join(format!("pm-quick-compile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = PortmanteauApp::new(None);
+        app.compile_tab = CompileTab::Format(ExportKind::Markdown);
+        let mut settings = app.ws.project.settings_for(ExportKind::Markdown);
+        settings.output_path = dir.display().to_string();
+        settings.output_filename = "quick.md".into();
+        app.ws.project.set_settings(settings);
+        compile_with_last_settings(&mut app);
+        let written = std::fs::read_to_string(dir.join("quick.md")).expect("the file is written");
+        assert!(written.contains("Salt Road") || written.len() > 200, "{written}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn tilde_paths_expand_instead_of_creating_a_literal_tilde_folder() {
         let app = PortmanteauApp::new(None);

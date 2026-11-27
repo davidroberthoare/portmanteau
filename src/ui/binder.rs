@@ -305,6 +305,25 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 });
             }
 
+            // A project with nothing written yet: say what to do, kindly.
+            if app.ws.project.documents.iter().all(|d| d.kind.is_folder()) {
+                ui.add_space(14.0);
+                ui.label(
+                    RichText::new("Nothing here yet.")
+                        .font(serif(15.0))
+                        .color(MUTED),
+                );
+                ui.label(
+                    RichText::new("A chapter or scene is a page in your book. Start with one; you can rearrange them later.")
+                        .font(ui_small())
+                        .color(FAINT),
+                );
+                ui.add_space(8.0);
+                if crate::ui::views::primary_button(ui, "Create the first chapter").clicked() {
+                    action = Some(Action::NewUnder(None));
+                }
+            }
+
             ui.add_space(10.0);
             section_label(ui, "Collections");
             ui.add_space(3.0);

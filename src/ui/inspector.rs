@@ -6,7 +6,7 @@ use eframe::egui::{
 };
 use portmanteau_core::Medium;
 
-use crate::app::{ImageInsertState, InspectorTab, PortmanteauApp, RichTextTarget, ToastKind};
+use crate::app::{InspectorTab, PortmanteauApp, ToastKind};
 use crate::theme::*;
 use crate::ui::editor::{
     inline_format_toolbar, load_rich_image_textures, paint_rich_images, script_flow_layout_job,
@@ -182,18 +182,6 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         if toolbar.changed {
             doc.touch();
             app.ws.dirty = true;
-        }
-        if let Some(range) = toolbar.insert_image {
-            app.image_insert = Some(ImageInsertState {
-                target: RichTextTarget::DocumentSynopsis(doc_id.to_owned()),
-                range,
-                path: String::new(),
-                alt_text: String::new(),
-                caption: String::new(),
-                standalone: false,
-                width: crate::app::DEFAULT_PICTURE_WIDTH,
-                error: String::new(),
-            });
         }
         let mut synopsis = doc.synopsis.editor_text();
         let synopsis_content = doc.synopsis.clone();
@@ -547,18 +535,6 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         if toolbar.changed {
             doc.touch();
             app.ws.dirty = true;
-        }
-        if let Some(range) = toolbar.insert_image {
-            app.image_insert = Some(ImageInsertState {
-                target: RichTextTarget::DocumentNotes(doc_id.to_owned()),
-                range,
-                path: String::new(),
-                alt_text: String::new(),
-                caption: String::new(),
-                standalone: false,
-                width: crate::app::DEFAULT_PICTURE_WIDTH,
-                error: String::new(),
-            });
         }
         let mut notes = doc.notes.editor_text();
         let notes_content = doc.notes.clone();

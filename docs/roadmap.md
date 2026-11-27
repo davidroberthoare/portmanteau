@@ -35,8 +35,8 @@ Still to do, roughly in order:
    contact line on prose title pages.
 3. Print extras: bleed and crop marks, mirrored margins and a gutter for
    two-sided print, a cover wrap sized from the page count.
-4. Per-document compile overrides (font, spacing) for mixed manuscripts, and a
-   "compile with the last settings" action in the top bar.
+4. Per-document compile overrides (font, spacing) for mixed manuscripts. (The
+   top bar's Compile button, which compiles with the last settings, is done.)
 5. A 60,000-word novel compiles to a PDF with consistent chapter openers, page
    numbers and margins on A5 and trade paperback, and opens cleanly in Calibre.
 
@@ -103,7 +103,6 @@ daemon: only when the app is open).
 
 ## Smaller items
 
-- A proper empty state for the binder when a project has no chapters.
 - Keyboard navigation in the binder (arrows, collapse and expand, rename); rename
   documents inline, not only in the inspector.
 - Search filters (title only, current part) and search inside the Paged view.
@@ -112,8 +111,6 @@ daemon: only when the app is open).
   (scenes per part, dialogue versus action, reading time).
 - An optional dark theme on the same colour tokens (`src/theme.rs`).
 - Remember editor zoom, write mode and inspector tab per project.
-- Remove the unused `insert_image` field on `InlineToolbarResult`
-  (`src/ui/editor.rs`).
 
 ## Decision: one editor, pages come to it
 

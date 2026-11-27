@@ -1,7 +1,6 @@
 //! The writing surface: a paper-like prose editor and a typed screenplay editor.
 
 use std::collections::HashMap;
-use std::ops::Range;
 
 use eframe::egui::{
     self, Align, Color32, ComboBox, CornerRadius, FontId, Frame, Id, Key, Layout, Margin,
@@ -11,7 +10,7 @@ use portmanteau_core::spell::{byte_offset, word_at, SpellChecker};
 use portmanteau_core::{DocKind, ElementKind, ItemKind, Medium};
 
 use crate::app::{
-    ImageInsertState, NewCharacterState, PortmanteauApp, RichTextTarget, WriteMode,
+    NewCharacterState, PortmanteauApp, WriteMode,
 };
 use crate::theme::*;
 use crate::ui::views::{content_frame, page_head};
@@ -1242,18 +1241,6 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             doc.touch();
             dirty = true;
         }
-        if let Some(range) = toolbar.insert_image {
-            app.image_insert = Some(ImageInsertState {
-                target: RichTextTarget::DocumentBody(doc_id.to_owned()),
-                range,
-                path: String::new(),
-                alt_text: String::new(),
-                caption: String::new(),
-                standalone: false,
-                width: crate::app::DEFAULT_PICTURE_WIDTH,
-                error: String::new(),
-            });
-        }
 
         let mut edit_text = doc.content.editor_text();
         let rows = ((edit_text.chars().count() as f32) / 72.0).ceil().max(18.0) as usize;
@@ -1548,18 +1535,6 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         if toolbar.changed {
             doc.touch();
             dirty = true;
-        }
-        if let Some(range) = toolbar.insert_image {
-            app.image_insert = Some(ImageInsertState {
-                target: RichTextTarget::DocumentBody(doc_id.to_owned()),
-                range,
-                path: String::new(),
-                alt_text: String::new(),
-                caption: String::new(),
-                standalone: false,
-                width: crate::app::DEFAULT_PICTURE_WIDTH,
-                error: String::new(),
-            });
         }
         ui.add_space(4.0);
         let before = doc.content.editor_text();
@@ -2669,7 +2644,6 @@ pub(crate) fn rich_paragraph_start(content: &portmanteau_core::RichDocument, ind
 
 pub(crate) struct InlineToolbarResult {
     pub changed: bool,
-    pub insert_image: Option<Range<usize>>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -2874,7 +2848,7 @@ pub(crate) fn inline_format_toolbar(
     let (Some(rect), true) = (anchor.rect, visible) else {
         anchor.popup_hovered = false;
         ctx.data_mut(|data| data.insert_temp(key, anchor));
-        return InlineToolbarResult { changed, insert_image: None };
+        return InlineToolbarResult { changed };
     };
     let screen = ctx.content_rect();
     let width = 4.0 * 30.0 + 58.0;
@@ -2944,7 +2918,7 @@ pub(crate) fn inline_format_toolbar(
     if let Some(range) = start_link {
         ctx.data_mut(|data| data.insert_temp(link_key, LinkEdit::for_range(content, range)));
     }
-    InlineToolbarResult { changed, insert_image: None }
+    InlineToolbarResult { changed }
 }
 
 /// Everything about links that belongs to a field rather than to one kind of

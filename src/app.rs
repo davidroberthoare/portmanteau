@@ -365,8 +365,6 @@ pub struct NewCharacterState {
 #[derive(Clone, Debug)]
 pub enum RichTextTarget {
     DocumentBody(String),
-    DocumentSynopsis(String),
-    DocumentNotes(String),
 }
 
 /// The picture the writer right-clicked: where its small settings window opens.
@@ -877,6 +875,14 @@ impl PortmanteauApp {
                         // menu; a one-click "compile with the last settings"
                         // action would be worth adding here when it can run the
                         // export itself and report the file.
+                        let CompileTab::Format(kind) = self.compile_tab;
+                        if ui::views::quiet_button(ui, "Compile")
+                            .on_hover_text(format!("Compile {} again with its last settings", kind.label()))
+                            .clicked()
+                        {
+                            ui::views::compile::compile_with_last_settings(self);
+                        }
+                        ui.add_space(8.0);
                         crate::ui::stats_window::top_bar_meter(self, ui);
                         ui.add_space(10.0);
                     });
@@ -1810,9 +1816,7 @@ impl PortmanteauApp {
             error: String::new(),
         };
         let sheet = match &state.target {
-            RichTextTarget::DocumentBody(doc_id)
-            | RichTextTarget::DocumentSynopsis(doc_id)
-            | RichTextTarget::DocumentNotes(doc_id) => self
+            RichTextTarget::DocumentBody(doc_id) => self
                 .ws
                 .project
                 .document(doc_id)
@@ -1842,34 +1846,6 @@ impl PortmanteauApp {
                     );
                     doc.touch();
                     &mut doc.content
-                }),
-            RichTextTarget::DocumentSynopsis(doc_id) => self
-                .ws
-                .project
-                .document_mut(doc_id)
-                .map(|doc| {
-                    doc.synopsis.insert_image(
-                        state.range.clone(),
-                        image,
-                        state.standalone,
-                        &sheet,
-                    );
-                    doc.touch();
-                    &mut doc.synopsis
-                }),
-            RichTextTarget::DocumentNotes(doc_id) => self
-                .ws
-                .project
-                .document_mut(doc_id)
-                .map(|doc| {
-                    doc.notes.insert_image(
-                        state.range.clone(),
-                        image,
-                        state.standalone,
-                        &sheet,
-                    );
-                    doc.touch();
-                    &mut doc.notes
                 }),
         };
         if content.is_none() {

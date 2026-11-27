@@ -3,6 +3,18 @@
 The newest section is used as the body of the GitHub release. Start each release
 with a line `## vX.Y.Z` (matching `version` in the top-level `Cargo.toml`).
 
+## v0.2.1
+
+- **Writing statistics.** A new Writing statistics window (inspector, View menu, or click the progress meter) shows time spent typing and reading, words added, edited and deleted, by day, week, hour of day and document, plus how your prose reads (sentence length, reading ease, dialogue share, repeated words).
+- **Goals and encouragement.** Set daily and weekly goals for words or minutes of typing. The top-bar meter follows them, and there are streaks, badges and kind messages (all optional).
+- Each document's word target now shows progress ("328 / 2500" with a bar).
+- A **Compile** button in the top bar compiles again with the last settings.
+- Paragraphs now have a little space after them by default, and the sample projects no longer use blank lines between paragraphs.
+- Pictures: a small anchor marks where each is tied to the text, they can be removed from the right-click window or the Document tab, and the right-click window can be moved.
+- A friendly "create the first chapter" prompt in an empty binder.
+- The Compile "Font" setting is now the Global font on the Styles tab.
+- The status bar says the word total is for the whole project.
+
 ## v0.2.0
 
 - **Pictures in your writing.** Insert an image (or drop or paste one in) and
