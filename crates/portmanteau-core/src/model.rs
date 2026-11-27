@@ -846,6 +846,8 @@ impl Default for ElementStyles {
             },
             body: ElementStyle {
                 first_line_indent: 14.0,
+                // A little air between paragraphs, so Enter alone shows a break.
+                after: 6.0,
                 ..base_element(serif, 11.0, 1.4)
             },
             // US Letter, 12 pt Courier, 6 lines per inch, 1.5" left / 1" right

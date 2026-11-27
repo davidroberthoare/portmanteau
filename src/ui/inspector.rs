@@ -393,6 +393,26 @@ pub(crate) fn picture_controls(
                 .font(ui_small())
                 .color(FAINT),
         );
+    ui.add_space(6.0);
+    // Pictures are not in undo, so removing asks twice.
+    let confirm_id = egui::Id::unique(("picture_remove", doc_id, paragraph));
+    let armed = ui.data(|d| d.get_temp::<bool>(confirm_id)).unwrap_or(false);
+    ui.horizontal(|ui| {
+        if armed {
+            if ui
+                .add(egui::Button::new(RichText::new("Click again to remove").color(egui::Color32::WHITE)).fill(egui::Color32::from_rgb(168, 64, 56)))
+                .clicked()
+            {
+                edits.push(serde_json::json!({"id": doc_id, "paragraph": paragraph, "remove": true}));
+                ui.data_mut(|d| d.insert_temp(confirm_id, false));
+            }
+            if crate::ui::views::quiet_button(ui, "Keep it").clicked() {
+                ui.data_mut(|d| d.insert_temp(confirm_id, false));
+            }
+        } else if crate::ui::views::quiet_button(ui, "Remove picture").clicked() {
+            ui.data_mut(|d| d.insert_temp(confirm_id, true));
+        }
+    });
     edits
 }
 

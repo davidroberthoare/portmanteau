@@ -22,7 +22,7 @@ pub fn demo() -> Project {
         .unwrap()
         .set_synopsis_text("Mara returns to finish the survey and learns the town has been quietly erased from the charts.");
 
-    let chapter_one_text = "The tide went out that morning and did not come back.\n\nMara Venn stood at the end of the harbour wall with her father's brass compass in her fist and watched the sea withdraw past the last black rock. It moved like something embarrassed, sliding away from a mess it had made. Where there had been water at dawn there was now a wide, shining plain of mud, and in it the ribs of boats she had only ever seen as shapes under the surface.\n\nShe had come home to finish his survey. That was the story she told the woman at the ferry office, and the woman had looked at her licence photograph for a long time, as if comparing it with a face she remembered.\n\nThe town had not changed. That was the first lie. The houses still leaned into the wind, the church still kept its one bell, and the Salt Road still ran from the square to the water in a straight line that no one could explain. But the doors had new locks, and the noticeboard carried a planning application in a font that did not belong here.\n\nAt the end of the wall, the compass needle swung once and settled on the east. Mara turned it over. Her father had scratched a date inside the lid: 14 August 1987. The day the harbour drowned, people said, though the water had been leaving for years by then.\n\nA boy was standing on the mud below her, barefoot, holding a red bucket.\n\n“You're the map girl,” he said.\n\n“I'm a surveyor.”\n\n“That's what I said.”\n\nHe pointed at a dark line in the mud, a hundred yards out. It ran straight toward the open sea, and then turned, very slightly, north.\n\n“That's the old road,” he said. “It goes to the other harbour.”\n\nMara looked at her father's chart, still furled under her arm. The other harbour was not on it.\n\nShe climbed down.";
+    let chapter_one_text = "The tide went out that morning and did not come back.\nMara Venn stood at the end of the harbour wall with her father's brass compass in her fist and watched the sea withdraw past the last black rock. It moved like something embarrassed, sliding away from a mess it had made. Where there had been water at dawn there was now a wide, shining plain of mud, and in it the ribs of boats she had only ever seen as shapes under the surface.\nShe had come home to finish his survey. That was the story she told the woman at the ferry office, and the woman had looked at her licence photograph for a long time, as if comparing it with a face she remembered.\nThe town had not changed. That was the first lie. The houses still leaned into the wind, the church still kept its one bell, and the Salt Road still ran from the square to the water in a straight line that no one could explain. But the doors had new locks, and the noticeboard carried a planning application in a font that did not belong here.\nAt the end of the wall, the compass needle swung once and settled on the east. Mara turned it over. Her father had scratched a date inside the lid: 14 August 1987. The day the harbour drowned, people said, though the water had been leaving for years by then.\nA boy was standing on the mud below her, barefoot, holding a red bucket.\n“You're the map girl,” he said.\n“I'm a surveyor.”\n“That's what I said.”\nHe pointed at a dark line in the mud, a hundred yards out. It ran straight toward the open sea, and then turned, very slightly, north.\n“That's the old road,” he said. “It goes to the other harbour.”\nMara looked at her father's chart, still furled under her arm. The other harbour was not on it.\nShe climbed down.";
 
     let chapter_one = p.add_document(
         Some(part_one.clone()),
@@ -40,10 +40,10 @@ pub fn demo() -> Project {
         doc.word_target = 2500;
         doc.pinned = true;
         // Two earlier drafts in the version history.
-        let first_draft = "The tide was out when Mara arrived.\n\nShe had not been back to the harbour in eleven years, and the first thing she noticed was the smell: salt, diesel, and something older underneath, like a cellar opened after rain. Her father's compass was in her pocket. She did not take it out.\n\nThe ferry office was closed. A notice taped to the glass said the service would resume when the water did.";
+        let first_draft = "The tide was out when Mara arrived.\nShe had not been back to the harbour in eleven years, and the first thing she noticed was the smell: salt, diesel, and something older underneath, like a cellar opened after rain. Her father's compass was in her pocket. She did not take it out.\nThe ferry office was closed. A notice taped to the glass said the service would resume when the water did.";
         doc.set_plain_text(first_draft);
         doc.snapshot("First pass · arrival", "Original opening, too much weather.");
-        doc.set_plain_text("The tide went out that morning and did not come back.\n\nMara Venn stood at the end of the harbour wall with her father's compass in her fist. The town had not changed. That was the first lie.");
+        doc.set_plain_text("The tide went out that morning and did not come back.\nMara Venn stood at the end of the harbour wall with her father's compass in her fist. The town had not changed. That was the first lie.");
         doc.snapshot("Second pass · the boy", "Cut the ferry office; brought the boy in earlier.");
         doc.set_plain_text(chapter_one_text);
     }
@@ -56,7 +56,7 @@ pub fn demo() -> Project {
     );
     {
         let doc = p.document_mut(&chapter_two).unwrap();
-        doc.set_plain_text("By noon the mud had begun to steam.\n\nMara walked the old road with the boy behind her, keeping a distance that was not quite respect and not quite fear. He carried the red bucket. It held a knife, a length of string, and a brass key the size of her thumb.\n\nThe road was made of ballast and crushed shell. It held her weight. Out here, where the chart showed twelve fathoms of water, she could see the walls of gardens, a doorstep, a boot.\n\n“What happened here?” she asked.\n\n“It went out,” the boy said.\n\n“The sea doesn't just go out.”\n\nHe considered this with the patience of someone who had been told otherwise all his life.\n\n“This one did.”\n\nAt the turn, where the road bent north, Mara stopped. A line of iron posts marked the edge of something. She knelt and brushed the mud away with her thumb. Underneath was a plate, riveted to the post, and on the plate was a number: 14.\n\nHer father's chart had a plate 14. It was three miles away, on the other side of the headland.\n\nShe took out her phone. No signal, of course. She took out the compass instead. The needle found east and stayed there, steady as an accusation.");
+        doc.set_plain_text("By noon the mud had begun to steam.\nMara walked the old road with the boy behind her, keeping a distance that was not quite respect and not quite fear. He carried the red bucket. It held a knife, a length of string, and a brass key the size of her thumb.\nThe road was made of ballast and crushed shell. It held her weight. Out here, where the chart showed twelve fathoms of water, she could see the walls of gardens, a doorstep, a boot.\n“What happened here?” she asked.\n“It went out,” the boy said.\n“The sea doesn't just go out.”\nHe considered this with the patience of someone who had been told otherwise all his life.\n“This one did.”\nAt the turn, where the road bent north, Mara stopped. A line of iron posts marked the edge of something. She knelt and brushed the mud away with her thumb. Underneath was a plate, riveted to the post, and on the plate was a number: 14.\nHer father's chart had a plate 14. It was three miles away, on the other side of the headland.\nShe took out her phone. No signal, of course. She took out the compass instead. The needle found east and stayed there, steady as an accusation.");
         doc.set_synopsis_text("The old road leads somewhere the chart insists cannot exist; a numbered plate puts the whole survey in question.");
         doc.set_notes_text("The key should not be explained until Part Two. Every object the boy carries must return.");
         doc.label = "Development".into();
@@ -83,7 +83,7 @@ pub fn demo() -> Project {
     );
     {
         let doc = p.document_mut(&chapter_three).unwrap();
-        doc.set_plain_text("The other harbour had no name on any chart she owned.\n\nIt had a name on the sign above the customs house, but the sign had been painted over twice, and the last coat was the colour of wet slate. Mara could read the older letters only by the shadows they cast in the paint.\n\nShe read: VENN.\n\nHer father had signed every chart in the survey office with his full name, in ink that faded to brown. Here the name was a place.\n\nAn old woman was sitting on the customs steps, shelling peas into a bowl.\n\n“You'll want the key,” the woman said, without looking up.\n\n“I don't have a key.”\n\n“Then you'll want the one the boy has.”\n\nThe woman held out a pea pod, split it with her thumbnail, and let the peas fall.\n\n“Tell him the tide is coming back,” she said. “It always comes back when the map is finished.”");
+        doc.set_plain_text("The other harbour had no name on any chart she owned.\nIt had a name on the sign above the customs house, but the sign had been painted over twice, and the last coat was the colour of wet slate. Mara could read the older letters only by the shadows they cast in the paint.\nShe read: VENN.\nHer father had signed every chart in the survey office with his full name, in ink that faded to brown. Here the name was a place.\nAn old woman was sitting on the customs steps, shelling peas into a bowl.\n“You'll want the key,” the woman said, without looking up.\n“I don't have a key.”\n“Then you'll want the one the boy has.”\nThe woman held out a pea pod, split it with her thumbnail, and let the peas fall.\n“Tell him the tide is coming back,” she said. “It always comes back when the map is finished.”");
         doc.set_synopsis_text("The town on the other side of the headland carries Mara's family name, and an old woman knows about the boy's key.");
         doc.label = "Reveal".into();
         doc.status = "Draft".into();
@@ -202,35 +202,35 @@ pub fn demo() -> Project {
         "Tide tables, 1987–present",
         "Data",
         "Harbour authority archive",
-        "Mean low water has fallen 1.4 metres since the survey of 1987. The 1987 chart records a channel of twelve fathoms where the modern soundings show mud and ballast. Two entries in the tide ledger are missing: 13 and 14 August 1987.\n\nNote for chapter two: a surveyor would check the instrument before suspecting the world. Mara checks the world first because she already suspects her father.",
+        "Mean low water has fallen 1.4 metres since the survey of 1987. The 1987 chart records a channel of twelve fathoms where the modern soundings show mud and ballast. Two entries in the tide ledger are missing: 13 and 14 August 1987.\nNote for chapter two: a surveyor would check the instrument before suspecting the world. Mara checks the world first because she already suspects her father.",
     );
     add_research(
         &mut p,
         "Interview · harbour master",
         "Interview",
         "Recorded at the Salt Road café, 12 March",
-        "“The harbour didn't drown. It was taken off the list.” He said this without drama, the way a man says the ferry is late.\n\nHe remembers the boy. He would not say which boy. He remembers a survey party in 1987 with three men and a fourth who did not sign the sheet.\n\nHe asked me not to use his name. I have used it anyway, because the town is small and the archive is smaller.",
+        "“The harbour didn't drown. It was taken off the list.” He said this without drama, the way a man says the ferry is late.\nHe remembers the boy. He would not say which boy. He remembers a survey party in 1987 with three men and a fourth who did not sign the sheet.\nHe asked me not to use his name. I have used it anyway, because the town is small and the archive is smaller.",
     );
     add_research(
         &mut p,
         "Wreck of the Anna Rose",
         "Archive",
         "County records, box 41",
-        "A coastal trader, lost on the night of 14 August 1987 with a crew of six. The wreck was never formally located. The insurers paid on the presumption of sinking, not on evidence.\n\nAttached: a photograph of the vessel at the quay, and a hand-drawn scrap of chart showing a channel that does not appear on the printed edition.",
+        "A coastal trader, lost on the night of 14 August 1987 with a crew of six. The wreck was never formally located. The insurers paid on the presumption of sinking, not on evidence.\nAttached: a photograph of the vessel at the quay, and a hand-drawn scrap of chart showing a channel that does not appear on the printed edition.",
     );
     add_research(
         &mut p,
         "Coastal survey notes",
         "Note",
         "Mara's field notebook",
-        "Surveyors do not believe in ghosts. They believe in benchmarks: fixed points that tell you where you are when everything else moves.\n\nPlate 14 is a benchmark. If plate 14 is in the wrong place, either the plate moved or the map did. Both are possible. Neither is comfortable.\n\nCheck theodolite calibration before chapter three.",
+        "Surveyors do not believe in ghosts. They believe in benchmarks: fixed points that tell you where you are when everything else moves.\nPlate 14 is a benchmark. If plate 14 is in the wrong place, either the plate moved or the map did. Both are possible. Neither is comfortable.\nCheck theodolite calibration before chapter three.",
     );
 
     // ---- Story database ---------------------------------------------------
     let mut add_item = |title: &str, role: &str, description: &str, want: &str, need: &str, flaw: &str, arc: &str, color: u8| {
         let mut item = DatabaseItem::new(ItemKind::Character, title);
         item.notes.set_plain_text(format!(
-            "Role: {role}\n\nDescription: {description}\n\nWant: {want}\n\nNeed: {need}\n\nFlaw: {flaw}\n\nArc: {arc}"
+            "Role: {role}\nDescription: {description}\nWant: {want}\nNeed: {need}\nFlaw: {flaw}\nArc: {arc}"
         ), "body");
         item.color = color;
         p.items.push(item);
@@ -292,7 +292,7 @@ pub fn demo() -> Project {
     let front = p.folder_id("Front Matter").unwrap();
     let copyright = p.add_document(Some(front.clone()), "Copyright", DocKind::FrontMatter, Medium::Prose);
     p.document_mut(&copyright).unwrap().set_plain_text(
-        "Copyright © 2026 Ada Marlowe\n\nAll rights reserved. No part of this book may be reproduced without written permission, except brief quotations in a review.\n\nThis is a work of fiction. Names, characters, places and incidents are products of the author's imagination.",
+        "Copyright © 2026 Ada Marlowe\nAll rights reserved. No part of this book may be reproduced without written permission, except brief quotations in a review.\nThis is a work of fiction. Names, characters, places and incidents are products of the author's imagination.",
     );
     let dedication = p.add_document(Some(front.clone()), "Dedication", DocKind::FrontMatter, Medium::Prose);
     p.document_mut(&dedication)
@@ -383,19 +383,12 @@ pub fn welcome() -> Project {
             )
         };
         let text = "Welcome to Portmanteau. This is a sample project: every part of the app has a small example in it, so you can see how things fit together. {SAVED}\n\
-             \n\
              {BEGIN}\n\
-             \n\
              Looking around. The icons down the left side switch between the main pages. Write is where you are now: the Binder on the left lists everything in the project, the page is in the middle, and the Inspector on the right shows the status, synopsis, notes and version history of the document you have open. Corkboard and Outline show the same documents as cards and as a list. Research keeps notes and files. Database holds characters, places and other things you want to track. Versions compares and restores earlier drafts. Search finds and replaces across the whole project. Project holds the title and author details. Compile turns your writing into a PDF, EPUB, Word file, Final Draft file and more.\n\
-             \n\
              Writing. Click into any document and type. Select some words to bold, italicise or underline them, or use Ctrl+B, Ctrl+I and Ctrl+U (Cmd on a Mac). Ctrl+K adds a link. Type @ to link to a character, place or note. Ctrl+F finds in the document; Ctrl+Shift+F searches the whole project. The Paged / Continuous switch above the page shows the page as it will print.\n\
-             \n\
              Structure. Use the + button in the Binder to add a chapter, scene or folder. Give each document a one-line synopsis in the Inspector and it appears as a card on the Corkboard.\n\
-             \n\
              Safety. Save checkpoints from File › Save checkpoint, or take a snapshot of one document on the Versions tab, before trying something bold. You can always go back.\n\
-             \n\
              Getting your work out. File › Compile & export… makes the finished file. Documents marked as not included in the compile, like this one, are left out, so this welcome page will never end up in your manuscript.\n\
-             \n\
              Have a look at the other samples in the Binder: a prose chapter, a screenplay scene, front and back matter, a research note, and two database entries. Then start something of your own."
             .replace("{SAVED}", saved)
             .replace("{BEGIN}", begin);
@@ -411,14 +404,14 @@ pub fn welcome() -> Project {
     let chapter = p.add_document(Some(draft.clone()), "Sample chapter · Prose", DocKind::Chapter, Medium::Prose);
     {
         let doc = p.document_mut(&chapter).unwrap();
-        doc.set_plain_text("This is a sample chapter. Replace these words with your own, or delete the document from the Binder.\n\nProse is stored as paragraphs with styles, so the chapter heading, the body text and block quotes all look the way they will in the compiled book. Change the look of any style under Settings, and every document follows.\n\nSelect this sentence to see the formatting toolbar, and try making a few words bold.");
+        doc.set_plain_text("This is a sample chapter. Replace these words with your own, or delete the document from the Binder.\nProse is stored as paragraphs with styles, so the chapter heading, the body text and block quotes all look the way they will in the compiled book. Change the look of any style under Settings, and every document follows.\nSelect this sentence to see the formatting toolbar, and try making a few words bold.");
         doc.set_synopsis_text("A sample prose chapter. Its synopsis is what shows on the Corkboard card.");
         doc.set_notes_text("Notes stay with the document and never print. Use them for reminders to yourself.");
         doc.label = "Sample".into();
         doc.status = "First draft".into();
         doc.word_target = 1000;
         doc.snapshot("Sample snapshot", "A saved copy you can compare with or restore on the Versions tab.");
-        doc.set_plain_text("This is a sample chapter, now with a few more words than the snapshot above. Open Versions to compare the two.\n\nProse is stored as paragraphs with styles, so the chapter heading, the body text and block quotes all look the way they will in the compiled book.\n\nSelect this sentence to see the formatting toolbar, and try making a few words bold.");
+        doc.set_plain_text("This is a sample chapter, now with a few more words than the snapshot above. Open Versions to compare the two.\nProse is stored as paragraphs with styles, so the chapter heading, the body text and block quotes all look the way they will in the compiled book.\nSelect this sentence to see the formatting toolbar, and try making a few words bold.");
     }
 
     let scene = p.add_document(Some(draft.clone()), "Sample scene · Screenplay", DocKind::Scene, Medium::Screenplay);

@@ -632,6 +632,30 @@ impl Workspace {
                 let Some(doc) = self.project.document_mut(&id) else {
                     return ApiResponse::err(command, "Document not found");
                 };
+                if payload.get("remove").and_then(|v| v.as_bool()) == Some(true) {
+                    // Take the picture out. A paragraph left holding nothing else
+                    // goes with it (unless it is the document's only one).
+                    let at = index as usize;
+                    let Some(paragraph) = doc.content.paragraphs.get_mut(at) else {
+                        return ApiResponse::err(command, "That paragraph holds no picture");
+                    };
+                    let before = paragraph.content.len();
+                    paragraph.content.retain(|item| !matches!(item, portmanteau_core::InlineContent::Image(_)));
+                    if paragraph.content.len() == before {
+                        return ApiResponse::err(command, "That paragraph holds no picture");
+                    }
+                    let empty = paragraph.content.iter().all(|item| match item {
+                        portmanteau_core::InlineContent::Text(run) => run.text.trim().is_empty(),
+                        portmanteau_core::InlineContent::HardBreak => true,
+                        _ => false,
+                    });
+                    if empty && doc.content.paragraphs.len() > 1 {
+                        doc.content.paragraphs.remove(at);
+                    }
+                    doc.touch();
+                    self.dirty = true;
+                    return ApiResponse::ok(command, "Picture removed", json!({"id": id, "paragraph": index}));
+                }
                 let Some(image) = doc
                     .content
                     .paragraphs
@@ -2089,7 +2113,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("snapshot.diff", "Compare a snapshot with the current document", r#"{"document_id":"...","id":"snap-..."}"#),
         ("item.add", "Add a story-database item", r#"{"kind":"Character","title":"...","notes":"...","tags":["..."]}"#),
         ("item.update", "Change a story-database item", r#"{"id":"item-...","title":"...","tags":["..."]}"#),
-        ("document.picture", "Change a picture's size, alignment (left/center/right), text wrapping, padding, caption or description", r#"{"id":"doc-...","paragraph":3,"width":200,"align":"right","wrap":true,"padding":12,"caption":"..."}"#),
+        ("document.picture", "Change a picture's size, alignment (left/center/right), text wrapping, padding, caption or description, or remove it (\"remove\":true)", r#"{"id":"doc-...","paragraph":3,"width":200,"align":"right","wrap":true,"padding":12,"caption":"..."}"#),
         ("research.add", "Add a research note", r#"{"title":"...","body":"...","kind":"Interview","source":"..."}"#),
         ("research.list", "List research notes with their kind, source and attachments", "{}"),
         ("research.update", "Change a research note's title, body, kind or source", r#"{"id":"doc-...","kind":"Data","source":"..."}"#),
@@ -2589,6 +2613,26 @@ mod tests {
         assert!(!ws.execute("document.picture", json!({"id": id, "paragraph": at, "width": 99999})).ok);
         assert!(!ws.execute("document.picture", json!({"id": id, "paragraph": 0, "align": "left"})).ok);
         assert!(!ws.execute("document.picture", json!({"id": id, "paragraph": at, "align": "sideways"})).ok);
+    }
+
+    #[test]
+    fn document_picture_remove_takes_the_picture_and_its_empty_paragraph_out() {
+        let mut ws = Workspace::demo();
+        let id = ws.project.documents.iter().find(|d| d.kind == DocKind::Chapter).map(|d| d.id.clone()).unwrap();
+        let doc = ws.project.document_mut(&id).unwrap();
+        let before = doc.content.paragraphs.len();
+        doc.content.paragraphs.push(portmanteau_core::RichParagraph {
+            style_id: "image".into(),
+            content: vec![portmanteau_core::InlineContent::Image(portmanteau_core::ImageObject {
+                asset_id: "images/a.png".into(),
+                ..Default::default()
+            })],
+        });
+        let result = ws.execute("document.picture", json!({"id": id, "paragraph": before, "remove": true}));
+        assert!(result.ok, "{}", result.message);
+        assert_eq!(ws.project.document(&id).unwrap().content.paragraphs.len(), before);
+        let again = ws.execute("document.picture", json!({"id": id, "paragraph": before, "remove": true}));
+        assert!(!again.ok, "nothing left to remove");
     }
 
     #[test]

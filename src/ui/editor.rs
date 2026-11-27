@@ -2442,6 +2442,28 @@ pub(crate) fn load_rich_image_textures(
     loaded
 }
 
+/// A tiny anchor: a ring, a stem, a crossbar and two curved flukes.
+fn paint_anchor(painter: &egui::Painter, center: egui::Pos2, size: f32, color: Color32) {
+    let stroke = Stroke::new(1.3, color);
+    let top = center - Vec2::new(0.0, size);
+    let bottom = center + Vec2::new(0.0, size);
+    painter.circle_stroke(top + Vec2::new(0.0, size * 0.25), size * 0.25, stroke);
+    painter.line_segment([top + Vec2::new(0.0, size * 0.5), bottom], stroke);
+    painter.line_segment(
+        [center - Vec2::new(size * 0.4, size * 0.4), center + Vec2::new(size * 0.4, -size * 0.4)],
+        stroke,
+    );
+    let fluke = |sign: f32| {
+        [
+            bottom,
+            bottom + Vec2::new(sign * size * 0.35, -size * 0.15),
+            bottom + Vec2::new(sign * size * 0.6, -size * 0.5),
+        ]
+    };
+    painter.add(egui::Shape::line(fluke(-1.0).to_vec(), stroke));
+    painter.add(egui::Shape::line(fluke(1.0).to_vec(), stroke));
+}
+
 /// Height kept under a picture for its caption line, in points before zoom.
 const CAPTION_ROOM: f32 = 26.0;
 
@@ -2499,6 +2521,16 @@ pub(crate) fn paint_rich_images(
                     let rect = egui::Rect::from_center_size(center, Vec2::new(width, height));
                     if standalone {
                         hits.push((paragraph_index, rect));
+                        // A small anchor in the margin shows where the picture is
+                        // tied to the text; delete that spot and the picture goes.
+                        let size = 7.0 * zoom;
+                        let at = egui::pos2(galley_pos.x - 12.0 * zoom, rect.top() + 9.0 * zoom);
+                        let spot = egui::Rect::from_center_size(at, Vec2::splat(size * 2.4));
+                        let response = ui
+                            .interact(spot, egui::Id::unique(("picture_anchor", paragraph_index)), egui::Sense::hover())
+                            .on_hover_text("This picture is anchored to the text here. Right-click the picture for its settings.");
+                        let color = if response.hovered() { Color32::from_rgb(70, 120, 110) } else { PAPER_MUTED };
+                        paint_anchor(ui.painter(), at, size, color);
                     }
                     if has_caption {
                         ui.painter().text(
