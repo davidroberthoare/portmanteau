@@ -130,6 +130,30 @@ impl Workspace {
         archive::pack_zip(&self.project, assets)
     }
 
+    /// A safety copy of the unsaved state as zip bytes. A project that has a
+    /// folder leaves its pictures and attachments there (they are written when
+    /// added), so the copy is just the project's own files; one with no folder
+    /// carries what it holds in memory.
+    pub fn recovery_bytes(&self) -> Result<Vec<u8>, String> {
+        let assets = if self.path.is_some() { Vec::new() } else { self.memory_assets.clone() };
+        archive::pack_zip(&self.project, assets)
+    }
+
+    /// A project from a safety copy. With `original` (the folder it was open
+    /// from) it carries on as that project, so saving writes back to the folder
+    /// and its pictures are found there; otherwise it is held in memory.
+    pub fn from_recovery(bytes: &[u8], original: Option<PathBuf>) -> Result<Self, String> {
+        let mut ws = Self::from_zip_bytes(bytes)?;
+        if let Some(folder) = original.filter(|p| p.is_dir()) {
+            ws.project.asset_root = Some(folder.clone());
+            ws.path = Some(folder);
+            ws.memory_assets.clear();
+        }
+        ws.dirty = true;
+        ws.log.push("Recovered unsaved changes".into());
+        Ok(ws)
+    }
+
     /// A project held entirely in memory, from the bytes of a project `.zip`.
     pub fn from_zip_bytes(bytes: &[u8]) -> Result<Self, String> {
         let unpacked = archive::unpack_zip(bytes)?;
@@ -337,12 +361,8 @@ impl Workspace {
                 ApiResponse::ok(command, "Cover set", json!({"cover_image": stored}))
             }
             "project.checkpoint" => {
-                let id = if payload.get("auto").and_then(|v| v.as_bool()) == Some(true) {
-                    self.project.auto_backup()
-                } else {
-                    let label = str_arg(&payload, "label").unwrap_or_else(|| "Manual checkpoint".into());
-                    self.project.checkpoint(label, "manual")
-                };
+                let label = str_arg(&payload, "label").unwrap_or_else(|| "Manual checkpoint".into());
+                let id = self.project.checkpoint(label, "manual");
                 self.dirty = true;
                 ApiResponse::ok(command, "Checkpoint saved", json!({"id": id}))
             }
@@ -2201,7 +2221,7 @@ pub fn command_catalogue() -> Vec<Value> {
         ("project.pack", "Write the project (and its attachments) to one .zip file, for a backup or to send to someone", r#"{"path":"My Novel.portmanteau.zip"}"#),
         ("project.open_zip", "Unpack a project .zip into a new folder and open it", r#"{"path":"My Novel.portmanteau.zip","folder":"My Novel.portmanteau"}"#),
         ("project.set_cover", "Set the book's cover picture (a .png or .jpg; a saved project keeps its own copy) or clear it with an empty path. EPUB uses it unless that format names its own cover_image", r#"{"path":"/path/to/cover.jpg"}"#),
-        ("project.checkpoint", "Save a full version checkpoint (or, with auto:true, an automatic backup: only the newest ten are kept)", r#"{"label":"..."}"#),
+        ("project.checkpoint", "Save a full version checkpoint", r#"{"label":"..."}"#),
         ("project.restore_checkpoint", "Restore a checkpoint", r#"{"id":"cp-..."}"#),
         ("project.snapshots", "List document snapshots", "{}"),
         ("document.list", "List every binder document", "{}"),

@@ -444,10 +444,6 @@ pub struct PortmanteauApp {
     allow_close: bool,
     /// Close once the Save As the quit prompt started has succeeded.
     quit_after_save: bool,
-    /// The last autosave failed, so the folder may be behind the screen.
-    save_failed: bool,
-    /// When the last automatic backup was taken (or the app started).
-    last_backup: Instant,
     /// A safety copy of this unsaved project is on disk (`recovery.rs`).
     recovery_written: bool,
     last_recovery: Option<Instant>,
@@ -503,8 +499,6 @@ pub struct PortmanteauApp {
     /// What the config file last held, so changes can be saved once they settle.
     settings_saved: portmanteau_core::AppSettings,
     settings_changed_at: Option<Instant>,
-    /// When the writer last touched the keyboard or mouse (for autosave).
-    last_input: Instant,
     pub spell: portmanteau_core::spell::SpellChecker,
     pub show_spelling: bool,
 }
@@ -583,7 +577,6 @@ impl PortmanteauApp {
             settings,
             settings_saved,
             settings_changed_at: None,
-            last_input: Instant::now(),
             view: initial_view(),
             compile_tab,
             // Development aid: PORTMANTEAU_COMPILE_SECTION=layout|styles.
@@ -615,8 +608,6 @@ impl PortmanteauApp {
             quit_prompt: std::env::var("PORTMANTEAU_QUIT_PROMPT").is_ok(),
             allow_close: false,
             quit_after_save: false,
-            save_failed: false,
-            last_backup: Instant::now(),
             recovery_written: false,
             last_recovery: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -1019,9 +1010,15 @@ impl PortmanteauApp {
     /// and say so rather than risk the writer's work.
     fn restart_after_update(&mut self, ctx: &egui::Context) {
         let Some(program) = self.updater.restart.take() else { return };
-        let saved = !self.ws.dirty || self.ws.path.is_none() || self.ws.save(None).is_ok();
+        // Unsaved changes are kept in the safety copy and offered back when the
+        // new version starts; the project's folder is not written here.
+        #[cfg(not(target_arch = "wasm32"))]
+        let saved = !self.ws.dirty || crate::recovery::write(&crate::recovery::folder(), &self.ws).is_ok();
+        #[cfg(target_arch = "wasm32")]
+        let saved = !self.ws.dirty;
         let _ = crate::settings::save_settings(&self.settings);
         if saved && std::process::Command::new(&program).spawn().is_ok() {
+            self.allow_close = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         } else {
             self.updater.install = crate::update::InstallState::Installed { restart_blocked: true };
@@ -2360,8 +2357,12 @@ impl eframe::App for PortmanteauApp {
         if let Some((doc, typing, reading)) = self.activity.take(Instant::now(), true) {
             self.record_activity(&doc, typing, reading, Default::default());
         }
-        if self.ws.dirty && self.ws.path.is_some() {
-            let _ = self.ws.save(None);
+        // Unsaved changes are never written over the project's folder here; the
+        // safety copy keeps them for the next start (the quit question has
+        // already removed it if the writer chose not to keep them).
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.ws.dirty && self.screenshot.is_none() && !cfg!(test) {
+            let _ = crate::recovery::write(&crate::recovery::folder(), &self.ws);
         }
         let _ = crate::settings::save_settings(&self.settings);
     }
@@ -2437,7 +2438,6 @@ impl PortmanteauApp {
         self.track_history(&ctx);
         self.track_activity(&ctx);
         self.persist_session(&ctx);
-        self.autosave(&ctx);
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.close_guard(&ctx);
@@ -2451,10 +2451,6 @@ impl PortmanteauApp {
     }
 }
 
-/// How long the writer must be idle before a saved project is saved again.
-const AUTOSAVE_IDLE: Duration = Duration::from_millis(2500);
-/// How often, while the writer is working, a dated backup is taken.
-const BACKUP_EVERY: Duration = Duration::from_secs(15 * 60);
 /// How long a preference must hold still before it is written to the config.
 const SETTINGS_SETTLE: Duration = Duration::from_millis(500);
 
@@ -2496,45 +2492,9 @@ impl PortmanteauApp {
         }
     }
 
-    /// Save a project that already has a home once the writer pauses, so
-    /// changes (text, Compile settings, details) survive without pressing
-    /// Save. A project that has never been saved is left alone: choosing where
-    /// it lives is the writer's decision.
-    fn autosave(&mut self, ctx: &egui::Context) {
-        if ctx.input(|i| !i.events.is_empty() || i.pointer.any_down()) {
-            self.last_input = Instant::now();
-        }
-        if !self.ws.dirty || self.ws.path.is_none() {
-            return;
-        }
-        let idle = self.last_input.elapsed();
-        if idle < AUTOSAVE_IDLE {
-            ctx.request_repaint_after(AUTOSAVE_IDLE - idle);
-            return;
-        }
-        match self.ws.save(None) {
-            Ok(_) => {
-                self.save_failed = false;
-                // Every so often, while the writer is working, keep a dated
-                // copy to go back to. It is saved by the next autosave.
-                if self.last_backup.elapsed() >= BACKUP_EVERY {
-                    self.last_backup = Instant::now();
-                    self.ws.execute("project.checkpoint", serde_json::json!({"auto": true}));
-                }
-            }
-            Err(error) => {
-                // Say so once, then wait for the next change rather than retry
-                // (and complain) every frame. Quitting still asks, though.
-                self.ws.dirty = false;
-                self.save_failed = true;
-                self.toast("Autosave failed", error, ToastKind::Error);
-            }
-        }
-    }
-
     /// Whether closing the window now would lose work.
     fn has_unsaved_work(&self) -> bool {
-        (self.ws.dirty && self.ws.path.is_none()) || self.save_failed
+        self.ws.dirty
     }
 
     /// Stop the window closing while there is work that has no home, and ask.
@@ -2565,7 +2525,7 @@ impl PortmanteauApp {
         let mut save = false;
         let mut quit = false;
         let mut cancel = false;
-        egui::Window::new("Save your work?")
+        egui::Window::new("Save your changes?")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
@@ -2573,18 +2533,17 @@ impl PortmanteauApp {
             .show(ctx, |ui| {
                 ui.add_space(4.0);
                 let message = if homeless {
-                    format!("“{title}” has changes that have not been saved anywhere yet. If you quit now they will be lost.")
+                    format!("“{title}” has not been saved anywhere yet. If you quit without saving, its changes will be lost.")
                 } else {
-                    format!("Portmanteau could not save “{title}” to its folder, so the latest changes may be missing from it.")
+                    format!("“{title}” has changes that have not been saved to its folder. Quit without saving and they are discarded.")
                 };
                 ui.label(RichText::new(message).font(ui_body()).color(TEXT));
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
-                    let label = if homeless { "Save…" } else { "Try saving again" };
-                    if ui::views::primary_button(ui, label).clicked() {
+                    if ui::views::primary_button(ui, if homeless { "Save…" } else { "Save" }).clicked() {
                         save = true;
                     }
-                    if ui::views::quiet_button(ui, "Quit without saving").clicked() {
+                    if ui::views::quiet_button(ui, "Don't save").clicked() {
                         quit = true;
                     }
                     if ui::views::quiet_button(ui, "Cancel").clicked() {
@@ -2599,6 +2558,7 @@ impl PortmanteauApp {
             self.quit_prompt = false;
         } else if quit {
             crate::recovery::remove(&crate::recovery::folder(), &self.ws.project.id);
+            self.recovery_written = false;
             self.quit_prompt = false;
             self.close_now(ctx);
         } else if save {
@@ -2611,7 +2571,7 @@ impl PortmanteauApp {
             } else {
                 match self.ws.save(None) {
                     Ok(_) => {
-                        self.save_failed = false;
+                        crate::recovery::remove(&crate::recovery::folder(), &self.ws.project.id);
                         self.close_now(ctx);
                     }
                     Err(e) => {
@@ -2623,11 +2583,12 @@ impl PortmanteauApp {
         }
     }
 
-    /// While a project has changes and no home, keep a safety copy of it on
-    /// disk; once it has a home (or no changes) remove the copy.
+    /// While a project has unsaved changes, keep a safety copy of it on disk,
+    /// refreshed every couple of minutes. The project's own folder is only ever
+    /// written by Save. Once it is saved (or has no changes) the copy is removed.
     #[cfg(not(target_arch = "wasm32"))]
     fn keep_recovery_copy(&mut self, ctx: &egui::Context, dir: &Path) {
-        if self.ws.dirty && self.ws.path.is_none() {
+        if self.ws.dirty {
             let due = self.last_recovery.is_none_or(|t| t.elapsed() >= crate::recovery::EVERY);
             if due {
                 self.last_recovery = Some(Instant::now());
@@ -2647,6 +2608,7 @@ impl PortmanteauApp {
         let Some(found) = self.recovery_offer.as_ref() else { return };
         let title = found.workspace.project.title.clone();
         let saved = found.saved.clone();
+        let has_folder = found.original.is_some();
         let (mut recover, mut discard, mut later) = (false, false, false);
         egui::Window::new("Bring back unsaved work?")
             .collapsible(false)
@@ -2656,9 +2618,18 @@ impl PortmanteauApp {
             .show(ctx, |ui| {
                 ui.add_space(4.0);
                 ui.label(
-                    RichText::new(format!("Portmanteau closed with “{title}” still unsaved. A safety copy from {saved} was kept."))
+                    RichText::new(format!("Portmanteau closed with unsaved changes to “{title}”. A safety copy from {saved} was kept."))
                         .font(ui_body())
                         .color(TEXT),
+                );
+                ui.label(
+                    RichText::new(if has_folder {
+                        "Bringing it back opens it with those changes, still unsaved; its folder is untouched until you save."
+                    } else {
+                        "Bringing it back opens it with those changes; use File › Save project as… to keep it."
+                    })
+                    .font(ui_small())
+                    .color(FAINT),
                 );
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
@@ -2677,11 +2648,11 @@ impl PortmanteauApp {
             if let Some(found) = self.recovery_offer.take() {
                 let found = *found;
                 if recover {
-                    let _ = std::fs::remove_file(&found.path);
+                    crate::recovery::remove(&crate::recovery::folder(), &found.project_id);
                     self.install_workspace(found.workspace);
-                    self.toast("Work restored", "Save it somewhere (File › Save project as…) to keep it.", ToastKind::Ok);
+                    self.toast("Changes restored", "They are still unsaved: Save to keep them.", ToastKind::Ok);
                 } else if discard {
-                    let _ = std::fs::remove_file(&found.path);
+                    crate::recovery::remove(&crate::recovery::folder(), &found.project_id);
                 }
             }
         }
@@ -2859,6 +2830,14 @@ impl PortmanteauApp {
     /// Make `ws` the current project: select something to show and clear
     /// per-project state.
     fn install_workspace(&mut self, ws: Workspace) {
+        // Unsaved changes in the project being replaced stay in its safety copy,
+        // to be offered back at the next start.
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.ws.dirty && self.screenshot.is_none() && !cfg!(test) {
+            let _ = crate::recovery::write(&crate::recovery::folder(), &self.ws);
+        }
+        self.recovery_written = false;
+        self.last_recovery = None;
         self.ws = ws;
         self.selected = self
             .ws
@@ -3909,6 +3888,7 @@ mod shell_probe {
         assert!(app.borrow().quit_prompt, "unsaved work with no home asks");
         harness.run_steps(2);
         assert!(harness.query_by_label("Save…").is_some());
+        assert!(harness.query_by_label("Don't save").is_some());
         harness.get_by_label("Cancel").click();
         harness.run_steps(2);
         assert!(!app.borrow().quit_prompt, "Cancel keeps the writer in the app");
@@ -3920,42 +3900,70 @@ mod shell_probe {
         assert!(app.borrow().quit_after_save && app.borrow().path_dialog.is_some(), "Save… opens Save As, and quits after");
     }
 
-    /// A saved project autosaves in place and keeps dated backups, at most
-    /// ten, without disturbing the writer's own checkpoints.
+    /// A project that already has a folder asks too, and Save writes the folder.
     #[test]
-    fn autosave_takes_a_backup_now_and_then_and_a_failure_is_remembered() {
+    fn closing_a_saved_project_with_changes_asks_and_save_writes_it() {
         let mut app = PortmanteauApp::new(None);
-        let dir = std::env::temp_dir().join(portmanteau_core::new_id("backup"));
-        app.ws.save(Some(dir.clone())).expect("save");
-        let ctx = egui::Context::default();
-        ctx.run_ui(egui::RawInput::default(), |_ui| {}).drop_without_applying_deltas();
-        app.ws.project.checkpoint("mine", "manual");
-        app.ws.dirty = true;
-        app.last_input = Instant::now() - Duration::from_secs(10);
-        app.last_backup = Instant::now() - BACKUP_EVERY - Duration::from_secs(1);
-        app.autosave(&ctx);
-        assert_eq!(app.ws.project.checkpoints.iter().filter(|c| c.kind == "auto").count(), 1);
-        assert!(app.ws.project.checkpoints.iter().any(|c| c.label == "mine"));
-        assert!(!app.save_failed);
-        let _ = std::fs::remove_dir_all(dir);
+        let home = std::env::temp_dir().join(portmanteau_core::new_id("quit-saved"));
+        app.ws.save(Some(home.clone())).expect("save");
+        let before = std::fs::read_to_string(home.join("project.json")).unwrap();
+        let (mut harness, app) = app_harness(app);
+        app.borrow_mut().ws.project.title = "Quit test title".into();
+        app.borrow_mut().ws.dirty = true;
+        harness.run_steps(3);
+        assert_eq!(
+            std::fs::read_to_string(home.join("project.json")).unwrap(),
+            before,
+            "nothing writes the folder behind the writer's back"
+        );
+        harness
+            .input_mut()
+            .viewports
+            .entry(egui::ViewportId::ROOT)
+            .or_default()
+            .events
+            .push(egui::ViewportEvent::Close);
+        harness.run_steps(3);
+        assert!(app.borrow().quit_prompt);
+        harness.get_by_label("Save").click();
+        harness.run_steps(3);
+        assert!(!app.borrow().ws.dirty);
+        assert!(std::fs::read_to_string(home.join("project.json")).unwrap().contains("Quit test title"));
+        let _ = std::fs::remove_dir_all(home);
     }
 
-    /// An unsaved project gets a safety copy on disk; saving it removes the
-    /// copy; and the copy can be found again.
+    /// Changes are never written over a project's folder by themselves: a safety
+    /// copy is kept elsewhere, and only Save writes the folder (and removes it).
     #[test]
-    fn an_unsaved_project_keeps_a_recovery_copy_until_it_is_saved() {
+    fn unsaved_changes_go_to_a_safety_copy_and_only_save_writes_the_folder() {
         let mut app = PortmanteauApp::new(None);
         let ctx = egui::Context::default();
         ctx.run_ui(egui::RawInput::default(), |_ui| {}).drop_without_applying_deltas();
         let recovery = std::env::temp_dir().join(portmanteau_core::new_id("rec"));
+        let home = std::env::temp_dir().join(portmanteau_core::new_id("rec-home"));
+
+        // Never saved: the copy appears while it has changes.
         app.ws.dirty = true;
         app.keep_recovery_copy(&ctx, &recovery);
         assert!(crate::recovery::find(&recovery).is_some(), "a copy is written while it is unsaved");
 
-        let home = std::env::temp_dir().join(portmanteau_core::new_id("rec-home"));
+        // Saved once; then changed: the folder keeps what was saved.
         app.ws.save(Some(home.clone())).expect("save");
         app.keep_recovery_copy(&ctx, &recovery);
-        assert!(crate::recovery::find(&recovery).is_none(), "saving it removes the copy");
+        assert!(crate::recovery::find(&recovery).is_none(), "saving removes the copy");
+        let saved = std::fs::read_to_string(home.join("project.json")).unwrap();
+        app.ws.project.title = "Edited, not saved".into();
+        app.ws.dirty = true;
+        app.keep_recovery_copy(&ctx, &recovery);
+        assert_eq!(std::fs::read_to_string(home.join("project.json")).unwrap(), saved, "the folder is not touched");
+        let found = crate::recovery::find(&recovery).expect("the changes are in the copy");
+        assert_eq!(found.workspace.project.title, "Edited, not saved");
+        assert_eq!(found.workspace.path.as_deref(), Some(home.as_path()));
+
+        app.ws.save(None).expect("save");
+        app.keep_recovery_copy(&ctx, &recovery);
+        assert!(crate::recovery::find(&recovery).is_none());
+        assert!(std::fs::read_to_string(home.join("project.json")).unwrap().contains("Edited, not saved"));
         let _ = std::fs::remove_dir_all(recovery);
         let _ = std::fs::remove_dir_all(home);
     }
@@ -4004,35 +4012,6 @@ mod shell_probe {
 
     /// A saved project is saved again once the writer pauses; a project that
     /// has never been saved is left alone.
-    #[test]
-    fn autosave_writes_a_saved_project_after_a_pause_and_leaves_an_unsaved_one_alone() {
-        let ctx = egui::Context::default();
-        ctx.run_ui(egui::RawInput::default(), |_ui| {}).drop_without_applying_deltas();
-
-        let mut unsaved = PortmanteauApp::new(None);
-        unsaved.ws.dirty = true;
-        unsaved.last_input = Instant::now() - Duration::from_secs(30);
-        unsaved.autosave(&ctx);
-        assert!(unsaved.ws.dirty && unsaved.ws.path.is_none(), "no home yet, so no autosave");
-
-        let mut app = PortmanteauApp::new(None);
-        let dir = std::env::temp_dir().join(portmanteau_core::new_id("autosave"));
-        app.ws.save(Some(dir.clone())).expect("save");
-        app.ws.execute("project.update", serde_json::json!({"author": "Changed Author"}));
-        assert!(app.ws.dirty);
-        app.last_input = Instant::now();
-        app.autosave(&ctx);
-        assert!(app.ws.dirty, "still typing: not yet");
-        app.last_input = Instant::now() - Duration::from_secs(30);
-        app.autosave(&ctx);
-        assert!(!app.ws.dirty, "idle: saved");
-        let reopened = Workspace::open(&dir).expect("open");
-        assert_eq!(reopened.project.author, "Changed Author");
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    /// Undo and Redo follow the workspace: in Research they act on the open
-    /// research item's text, in Database on the open item's notes.
     #[test]
     fn undo_redo_cover_research_and_database_text() {
         let ctx = egui::Context::default();

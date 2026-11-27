@@ -103,13 +103,16 @@ daemon: only when the app is open).
 
 ## Saving and safety (2026-11-26)
 
-Done: a saved project autosaves in place after a pause; automatic dated backups
-(every 15 minutes while working, newest ten kept, kind "auto"); a quit/close
-question when work has no home or the last autosave failed; a recovery copy of
-an unsaved project in `<config>/recovery/` offered back on the next start
-(`src/recovery.rs`). Not done: the same question when New or Open would replace
-an unsaved project (its recovery copy is kept, so it can be brought back), and
-tidying the large nested checkpoints that older projects already contain.
+Policy (owner): like a word processor, a project's folder is written only when
+the writer saves (Save, or Save in the quit question). Nothing autosaves over it.
+Done: while a project has unsaved changes a safety copy is refreshed every two
+minutes in `<config>/recovery/` (`src/recovery.rs`; a saved project's copy is
+just its own files and remembers its folder); a quit/close question for any
+project with unsaved changes (Save, Don't save, Cancel); the copy is offered
+back at the next start if the app stopped some other way, and is kept when New or
+Open replaces an unsaved project or an update restarts the app. Not done: the
+same question when New or Open replaces an unsaved project (its copy is kept
+instead), and tidying the large nested checkpoints older projects contain.
 
 ## Smaller items
 

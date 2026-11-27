@@ -5,10 +5,9 @@ with a line `## vX.Y.Z` (matching `version` in the top-level `Cargo.toml`).
 
 ## v0.2.2
 
-- **Quitting no longer loses unsaved work.** If a project has changes that have not been saved anywhere (a new or sample project), closing the window now asks: Save…, Quit without saving, or Cancel. Projects that already live in a folder are still saved automatically, and quitting stays instant.
-- **Safety copy for unsaved projects.** While such a project has changes, a copy is kept every few seconds. If Portmanteau stops unexpectedly, the next start offers to bring the work back.
-- **Automatic backups.** While you work in a saved project, a dated backup is taken about every 15 minutes (the newest ten are kept) and shows in Versions as an automatic backup, ready to restore. Your own checkpoints are never pushed out by them.
-- If an autosave fails, quitting now warns you instead of closing quietly.
+- **Nothing is saved over your project unless you say so.** A project's folder is now written only by Save (Ctrl+S), or by Save in the question described below. The old behaviour of saving over it every few seconds is gone, so changes you decide you don't want never reach the file.
+- **Quitting asks.** Closing the window (or File › Quit) with unsaved changes asks: Save, Don't save, or Cancel. A project that was never saved gets Save… (to choose where it lives). With nothing unsaved, quitting is instant.
+- **Safety copy, like a word processor's autorecover.** While a project has unsaved changes, Portmanteau keeps a copy of it, refreshed every two minutes, off to the side (never in your project's folder). If the app stops unexpectedly, the next start offers to bring the changes back, still unsaved. Saving, or choosing Don't save, removes the copy. The copy is also kept if you open another project or install an update with unsaved changes.
 - Fixed: project checkpoints were getting larger and larger (each one held a copy of all the earlier ones). They are now just the project.
 
 ## v0.2.1
