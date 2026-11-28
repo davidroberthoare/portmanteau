@@ -738,7 +738,8 @@ impl PortmanteauApp {
             database_tags_id: None,
             database_tags_text: String::new(),
             toast: None,
-            show_about: false,
+            // Development aid: PORTMANTEAU_ABOUT=1 opens the About window in a screenshot.
+            show_about: screenshot.is_some() && std::env::var("PORTMANTEAU_ABOUT").is_ok(),
             updater: crate::update::Updater::default(),
             show_new_project: false,
             show_language_picker: ask_language,
@@ -1691,14 +1692,44 @@ impl PortmanteauApp {
                         });
                     }
                     ui.add_space(10.0);
+                    // "{support}" and "{github}" in the sentence become links, so a
+                    // translation can put them wherever its grammar needs.
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        let sentence = tr("If you find this project useful, please {support} its development, or join us on {github}.");
+                        let mut rest = sentence;
+                        while !rest.is_empty() {
+                            let next = [("{support}", tr("support"), "https://github.com/sponsors/davidroberthoare"), ("{github}", "GitHub", "https://github.com/davidroberthoare/portmanteau")]
+                                .into_iter()
+                                .filter_map(|(marker, label, url)| rest.find(marker).map(|at| (at, marker, label, url)))
+                                .min_by_key(|(at, ..)| *at);
+                            match next {
+                                Some((at, marker, label, url)) => {
+                                    ui.label(RichText::new(&rest[..at]).font(ui_body()).color(TEXT()));
+                                    // Bold, underlined and in the accent colour, so it reads as a link without hovering.
+                                    let word = RichText::new(label)
+                                        .font(egui::FontId::new(14.0, egui::FontFamily::Name("portmanteau-sans-bold".into())))
+                                        .underline()
+                                        .color(ACCENT());
+                                    let response = ui.add(egui::Label::new(word).sense(egui::Sense::click()));
+                                    if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                        open_url(url);
+                                    }
+                                    rest = &rest[at + marker.len()..];
+                                }
+                                None => {
+                                    ui.label(RichText::new(rest).font(ui_body()).color(TEXT()));
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                    ui.add_space(10.0);
                     ui.label(
                         RichText::new(format!("Version {} · GPL-3.0-or-later", env!("CARGO_PKG_VERSION")))
                             .font(mono(10.0))
                             .color(MUTED()),
                     );
-                    if ui.link(env!("CARGO_PKG_REPOSITORY")).clicked() {
-                        open_url(env!("CARGO_PKG_REPOSITORY"));
-                    }
                 });
             if !open {
                 self.show_about = false;

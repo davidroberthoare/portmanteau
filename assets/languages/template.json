@@ -1297,6 +1297,10 @@
       "translation": "",
       "used_in": "import_review.rs"
     },
+    "If you find this project useful, please {support} its development, or join us on {github}.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
     "Ignore for this session": {
       "translation": "",
       "used_in": "editor.rs"
@@ -3565,6 +3569,11 @@
     "something that no longer exists": {
       "translation": "",
       "used_in": "editor.rs"
+    },
+    "support": {
+      "context": "A link word inside the About window sentence ('please support its development'): sponsoring the project. It is a verb in the imperative, linked to the sponsors page.",
+      "translation": "",
+      "used_in": "app.rs"
     },
     "very easy": {
       "translation": "",

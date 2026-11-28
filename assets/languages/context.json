@@ -398,6 +398,7 @@
   "props": "Lower-case plural in the database summary line.",
   "read": "Inspector statistic caption beneath the reading time, e.g. '2m read'.",
   "size": "Compile header/footer: label before the font size in points.",
+  "support": "A link word inside the About window sentence ('please support its development'): sponsoring the project. It is a verb in the imperative, linked to the sponsors page.",
   "words": "Unit: number of words (lower case caption under a number).",
   "{count} cards": "Corkboard count. Keep {count}.",
   "{count} words": "Word count. Keep {count}.",
