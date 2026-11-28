@@ -3,6 +3,14 @@
 The newest section is used as the body of the GitHub release. Start each release
 with a line `## vX.Y.Z` (matching `version` in the top-level `Cargo.toml`).
 
+## v0.3.0
+
+- **Themes for the whole app.** Settings now has an **Appearance** tab. Pick a look from the dropdown: Light, Dark, Colourful, Monochrome, Cobalt, Solarized Light, Solarized Dark, Nord, Dracula, One Dark or Monokai. The change applies everywhere at once and is remembered.
+- **Make your own.** Press Duplicate to copy any theme, then recolour it. Every colour has a plain-words description of where it is used, and a live preview beside the list shows the result as you go. The Global sliders (hue, saturation, lightness) shift all the colours together.
+- **Share themes as files.** Export saves a theme as a small `.json` file; Import adds one someone sent you. Your themes live in a `themes` folder beside the app's settings, so you can also drop files in by hand.
+- **Colours in the writing itself.** Themes can colour chapter headings, scene headings, character names, links, spelling underlines and find matches, and set the page and page-text colours (a dark theme gets a dark page).
+- The interface now uses a smaller, more consistent set of colours throughout. Compile and exports, and the printed-page previews, are not affected: they keep their own styles and a white page.
+
 ## v0.2.2
 
 - **Nothing is saved over your project unless you say so.** A project's folder is now written only by Save (Ctrl+S), or by Save in the question described below. The old behaviour of saving over it every few seconds is gone, so changes you decide you don't want never reach the file.
