@@ -9,7 +9,7 @@
 
 use std::ops::Range;
 
-use eframe::egui::{self, Color32, CornerRadius, Frame, Key, Margin, Rect, RichText, Stroke, TextEdit};
+use eframe::egui::{self, CornerRadius, Frame, Key, Margin, Rect, RichText, Stroke, TextEdit};
 use portmanteau_core::{FindOptions, Finder};
 use serde_json::json;
 
@@ -95,15 +95,15 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     bar.current = bar.current.min(bar.matches.len().saturating_sub(1));
 
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(6))
         .inner_margin(Margin::symmetric(10, 6))
         .outer_margin(Margin::symmetric(14, 4))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 let arrow = if bar.show_replace { "▾" } else { "▸" };
-                if ui.add(egui::Button::new(RichText::new(arrow).color(MUTED)).frame(false)).on_hover_text("Show or hide Replace").clicked() {
+                if ui.add(egui::Button::new(RichText::new(arrow).color(MUTED())).frame(false)).on_hover_text("Show or hide Replace").clicked() {
                     bar.show_replace = !bar.show_replace;
                 }
                 let find = ui.add(
@@ -130,13 +130,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 }
                 find_ui::option_toggles(ui, &mut bar.options);
                 let label = if let Some(error) = &bar.error {
-                    RichText::new(error).font(ui_small()).color(RED_INK)
+                    RichText::new(error).font(ui_small()).color(DANGER())
                 } else if bar.query.is_empty() {
                     RichText::new("").font(ui_small())
                 } else if bar.matches.is_empty() {
-                    RichText::new("No results").font(ui_small()).color(FAINT)
+                    RichText::new("No results").font(ui_small()).color(MUTED())
                 } else {
-                    RichText::new(format!("{} of {}", bar.current + 1, bar.matches.len())).font(ui_small()).color(MUTED)
+                    RichText::new(format!("{} of {}", bar.current + 1, bar.matches.len())).font(ui_small()).color(MUTED())
                 };
                 ui.add(egui::Label::new(label).truncate());
                 let any = !bar.matches.is_empty();
@@ -147,7 +147,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     step(bar, false, &mut goto);
                 }
                 if ui
-                    .link(RichText::new("Search whole project").font(ui_small()).color(ACCENT))
+                    .link(RichText::new("Search whole project").font(ui_small()).color(ACCENT()))
                     .on_hover_text("Look for this in every document, notes and the database")
                     .clicked()
                 {
@@ -270,8 +270,8 @@ pub fn paint_matches(ui: &egui::Ui, bar: &FindBar, galley: &egui::Galley, galley
         return;
     }
     let clip = ui.clip_rect();
-    let others = Color32::from_rgba_unmultiplied(250, 214, 70, 110);
-    let current = Color32::from_rgba_unmultiplied(240, 150, 40, 150);
+    let others = FIND_MATCH();
+    let current = FIND_CURRENT();
     for (index, range) in bar.matches.iter().enumerate().take(4000) {
         let from = galley.pos_from_cursor(egui::text::CCursor::new(range.start)).translate(galley_pos.to_vec2());
         let to = galley.pos_from_cursor(egui::text::CCursor::new(range.end)).translate(galley_pos.to_vec2());

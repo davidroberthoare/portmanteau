@@ -68,7 +68,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         section_label(ui, "Binder");
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let hide = egui::Button::new(
-                RichText::new("‹").font(ui_strong()).color(FAINT),
+                RichText::new("‹").font(ui_strong()).color(MUTED()),
             )
             .frame(false);
             if ui
@@ -79,8 +79,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 action = Some(Action::HideBinder);
             }
             ui.add_space(2.0);
-            let add = egui::Button::new(RichText::new("+").font(ui_strong()).color(TEXT))
-                .fill(PANEL_2)
+            let add = egui::Button::new(RichText::new("+").font(ui_strong()).color(TEXT()))
+                .fill(RAISED())
                 .corner_radius(CornerRadius::same(5))
                 .min_size(Vec2::new(24.0, 22.0));
             let add = ui.add(add).on_hover_text("Add to the binder");
@@ -115,30 +115,30 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.add_space(4.0);
 
     Frame::new()
-        .fill(PANEL_2)
+        .fill(RAISED())
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(10, 8))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 let (cover, _) = ui.allocate_exact_size(Vec2::new(30.0, 38.0), Sense::hover());
-                ui.painter().rect_filled(cover, CornerRadius::same(3), PAPER_EDGE);
+                ui.painter().rect_filled(cover, CornerRadius::same(3), BORDER());
                 ui.painter().rect_filled(
                     egui::Rect::from_min_size(cover.min + Vec2::new(4.0, 4.0), Vec2::new(3.0, 30.0)),
                     CornerRadius::same(1),
-                    ACCENT.gamma_multiply(0.6),
+                    ACCENT().gamma_multiply(0.6),
                 );
                 ui.painter().text(
                     cover.center() + Vec2::new(5.0, 0.0),
                     egui::Align2::CENTER_CENTER,
                     "S",
                     serif(13.0),
-                    ACCENT_INK,
+                    ACCENT(),
                 );
                 ui.vertical(|ui| {
                     ui.label(
                         RichText::new(&app.ws.project.title)
                             .font(serif(15.0))
-                            .color(TEXT),
+                            .color(TEXT()),
                     );
                     ui.label(
                         RichText::new(format!(
@@ -147,7 +147,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             app.ws.project.words()
                         ))
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                     );
                 });
             });
@@ -172,14 +172,14 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     Sense::click(),
                 );
                 if selected {
-                    ui.painter().rect_filled(rect, CornerRadius::same(5), ACCENT_SOFT);
+                    ui.painter().rect_filled(rect, CornerRadius::same(5), ACCENT_SOFT());
                     let bar = egui::Rect::from_min_size(
                         egui::pos2(rect.left(), rect.top() + 4.0),
                         Vec2::new(2.0, 17.0),
                     );
-                    ui.painter().rect_filled(bar, CornerRadius::same(1), ACCENT);
+                    ui.painter().rect_filled(bar, CornerRadius::same(1), ACCENT());
                 } else if resp.hovered() {
-                    ui.painter().rect_filled(rect, CornerRadius::same(5), PANEL_2);
+                    ui.painter().rect_filled(rect, CornerRadius::same(5), RAISED());
                 }
 
                 let chevron = row.has_children;
@@ -202,7 +202,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     };
                     let chev_rect = egui::Rect::from_center_size(c, Vec2::splat(14.0));
                     let chev_resp = ui.interact(chev_rect, egui::Id::unique(("chev", &row.id)), Sense::click());
-                    let color = if chev_resp.hovered() { TEXT } else { FAINT };
+                    let color = if chev_resp.hovered() { TEXT() } else { MUTED() };
                     ui.painter().add(egui::Shape::convex_polygon(pts, color, Stroke::NONE));
                     if chev_resp.clicked() {
                         action = Some(Action::Toggle(row.id.clone()));
@@ -226,7 +226,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     egui::pos2(rect.right() - right_space, rect.bottom()),
                 );
                 let painter = ui.painter().with_clip_rect(title_rect);
-                let title_color = if row.include { TEXT } else { FAINT };
+                let title_color = if row.include { TEXT() } else { MUTED() };
                 let mut title = row.title.clone();
                 if !row.include {
                     title.push_str("  (excluded)");
@@ -254,7 +254,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::Align2::RIGHT_CENTER,
                         row.words.to_string(),
                         ui_small(),
-                        FAINT,
+                        MUTED(),
                     );
                 }
 
@@ -311,12 +311,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.label(
                     RichText::new("Nothing here yet.")
                         .font(serif(15.0))
-                        .color(MUTED),
+                        .color(MUTED()),
                 );
                 ui.label(
                     RichText::new("A chapter or scene is a page in your book. Start with one; you can rearrange them later.")
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                 );
                 ui.add_space(8.0);
                 if crate::ui::views::primary_button(ui, "Create the first chapter").clicked() {
@@ -342,21 +342,21 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 let (rect, resp) =
                     ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());
                 if resp.hovered() {
-                    ui.painter().rect_filled(rect, CornerRadius::same(5), PANEL_2);
+                    ui.painter().rect_filled(rect, CornerRadius::same(5), RAISED());
                 }
                 ui.painter().text(
                     rect.left_center() + Vec2::new(2.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     label,
                     ui_body(),
-                    MUTED,
+                    MUTED(),
                 );
                 ui.painter().text(
                     rect.right_center() - Vec2::new(4.0, 0.0),
                     egui::Align2::RIGHT_CENTER,
                     count.to_string(),
                     ui_small(),
-                    FAINT,
+                    MUTED(),
                 );
                 if resp.clicked() {
                     action = Some(Action::View(target_view));
@@ -467,7 +467,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 fn paint_doc_icon(painter: &egui::Painter, center: egui::Pos2, kind: DocKind, script: bool) {
     use egui::{pos2, Rect, Shape};
     if kind == DocKind::Folder {
-        let color = egui::Color32::from_rgb(196, 158, 92);
+        let color = FOLDER();
         let body = Rect::from_center_size(center + Vec2::new(0.0, 1.0), Vec2::new(14.0, 10.0));
         let tab = Rect::from_min_size(
             pos2(body.left(), body.top() - 2.5),
@@ -481,18 +481,18 @@ fn paint_doc_icon(painter: &egui::Painter, center: egui::Pos2, kind: DocKind, sc
                 pos2(body.right(), body.bottom()),
             ),
             CornerRadius::same(2),
-            egui::Color32::from_rgb(214, 180, 118),
+            FOLDER().lerp_to_gamma(PANEL(), 0.3),
         );
         return;
     }
     let tint = match kind {
-        DocKind::Chapter => ACCENT_INK,
-        DocKind::Scene if script => PURPLE,
-        DocKind::Scene => SAGE_INK,
-        DocKind::Research => BLUE,
-        DocKind::Character => PURPLE,
-        DocKind::FrontMatter | DocKind::BackMatter => egui::Color32::from_rgb(150, 140, 126),
-        _ => FAINT,
+        DocKind::Chapter => ACCENT(),
+        DocKind::Scene if script => SPECIAL(),
+        DocKind::Scene => SUCCESS(),
+        DocKind::Research => INFO(),
+        DocKind::Character => SPECIAL(),
+        DocKind::FrontMatter | DocKind::BackMatter => MUTED(),
+        _ => MUTED(),
     };
     let page = Rect::from_center_size(center, Vec2::new(11.0, 14.0));
     let fold = 3.5;

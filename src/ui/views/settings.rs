@@ -40,6 +40,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         ui.add_space(12.0);
         match app.settings_tab {
             1 => display_tab(app, ui),
+            2 => super::appearance::show(app, ui),
             _ => {
                 ScrollArea::vertical()
                     .id_salt("settings_content")
@@ -65,6 +66,10 @@ fn tab_row(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         if settings_tab_button(ui, "Display", app.settings_tab == 1) {
             app.settings_tab = 1;
         }
+        ui.add_space(4.0);
+        if settings_tab_button(ui, "Appearance", app.settings_tab == 2) {
+            app.settings_tab = 2;
+        }
     });
 }
 
@@ -72,15 +77,15 @@ fn settings_tab_button(ui: &mut egui::Ui, text: &str, selected: bool) -> bool {
     let button = egui::Button::new(
         RichText::new(text)
             .font(ui_body())
-            .color(if selected { TEXT } else { MUTED }),
+            .color(if selected { TEXT() } else { MUTED() }),
     )
-    .fill(if selected { ACCENT_SOFT } else { PANEL_2 })
+    .fill(if selected { ACCENT_SOFT() } else { RAISED() })
     .stroke(Stroke::new(
         1.0,
         if selected {
-            ACCENT.gamma_multiply(0.75)
+            ACCENT().gamma_multiply(0.75)
         } else {
-            BORDER_SOFT
+            BORDER()
         },
     ))
     .corner_radius(CornerRadius::same(6))
@@ -92,8 +97,8 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut changed = false;
     let width = ui.available_width().min(704.0);
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
@@ -105,7 +110,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     &mut app.settings.spellcheck,
                     RichText::new("Spell-checking in editors")
                         .font(ui_body())
-                        .color(MUTED),
+                        .color(MUTED()),
                 )
                 .changed();
             ui.add_space(2.0);
@@ -114,7 +119,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     "The Write toolbar shows a Spelling panel with suggestions. Changes here are saved automatically.",
                 )
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
             );
             ui.add_space(10.0);
             hairline(ui);
@@ -126,7 +131,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     &mut app.settings.updates.auto_check,
                     RichText::new("Check for updates automatically")
                         .font(ui_body())
-                        .color(MUTED),
+                        .color(MUTED()),
                 )
                 .changed();
             ui.add_space(2.0);
@@ -142,7 +147,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     "At most once a day, at startup. It only asks GitHub for the newest release number; nothing about you or your projects is sent. Last checked: {last}."
                 ))
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
             );
             ui.add_space(4.0);
             if ui.button("Check now").clicked() {
@@ -179,7 +184,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     .unwrap_or("English (US)");
                 let mut change: Option<&'static str> = None;
                 egui::ComboBox::from_id_salt("spelling_language")
-                    .selected_text(RichText::new(selected_label).font(ui_body()).color(TEXT))
+                    .selected_text(RichText::new(selected_label).font(ui_body()).color(TEXT()))
                     .width(180.0)
                     .show_ui(ui, |ui| {
                         for (code, label) in crate::spellcheck::LANGUAGES {
@@ -194,7 +199,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.label(
                     RichText::new("Applies to every editor and new projects.")
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                 );
             });
             ui.add_space(10.0);
@@ -207,7 +212,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     &mut app.settings.show_binder,
                     RichText::new("Show the binder in Write")
                         .font(ui_body())
-                        .color(MUTED),
+                        .color(MUTED()),
                 )
                 .changed();
             changed |= ui
@@ -215,7 +220,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     &mut app.settings.show_inspector,
                     RichText::new("Show the inspector in Write")
                         .font(ui_body())
-                        .color(MUTED),
+                        .color(MUTED()),
                 )
                 .changed();
             ui.add_space(2.0);
@@ -224,7 +229,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     "The sidebar layout is remembered between launches. Focus mode (F11) hides both panels without changing this preference.",
                 )
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
             );
         });
     if changed {
@@ -248,13 +253,13 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            ui.label(RichText::new("Display").font(serif(21.0)).color(TEXT));
+            ui.label(RichText::new("Display").font(serif(21.0)).color(TEXT()));
             ui.label(
                 RichText::new(
                     "The house style new projects start from — and the same type the editors use.",
                 )
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
             );
         });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -265,8 +270,8 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     BUILTIN_ELEMENTS.len(),
                     app.settings.styles.custom.len()
                 ),
-                MUTED,
-                PANEL_2,
+                MUTED(),
+                RAISED(),
             );
         });
     });
@@ -286,8 +291,8 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         Frame::new()
-                            .fill(PANEL)
-                            .stroke(Stroke::new(1.0, BORDER_SOFT))
+                            .fill(PANEL())
+                            .stroke(Stroke::new(1.0, BORDER()))
                             .corner_radius(CornerRadius::same(8))
                             .inner_margin(Margin::symmetric(14, 11))
                             .show(ui, |ui| {
@@ -299,7 +304,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                         "Type defaults for every manuscript element. The preview uses them; apply them to a project, then each output tab refines per format.",
                                     )
                                     .font(ui_small())
-                                    .color(FAINT),
+                                    .color(MUTED()),
                                 );
                                 ui.label(
                                     RichText::new(format!(
@@ -307,7 +312,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                         crate::settings::config_path().display()
                                     ))
                                     .font(mono(8.5))
-                                    .color(FAINT),
+                                    .color(MUTED()),
                                 );
                                 ui.add_space(8.0);
                                 ui.horizontal(|ui| {

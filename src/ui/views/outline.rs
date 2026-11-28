@@ -1,7 +1,7 @@
 //! Outline: a compact, sortable table of the whole manuscript.
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense,
+    self, Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Sense,
     Stroke, Vec2,
 };
 use portmanteau_core::{DocKind, Medium};
@@ -41,9 +41,9 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::Button::new(
                             RichText::new(label)
                                 .font(ui_small())
-                                .color(if active { Color32::WHITE } else { MUTED }),
+                                .color(if active { ON_ACCENT() } else { MUTED() }),
                         )
-                        .fill(if active { ACCENT } else { PANEL_2 })
+                        .fill(if active { ACCENT() } else { RAISED() })
                         .corner_radius(CornerRadius::same(12))
                         .min_size(Vec2::new(0.0, 22.0)),
                     )
@@ -87,10 +87,10 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         Vec2::new(ui.available_width(), height),
                         Sense::click(),
                     );
-                    let fill = if i % 2 == 0 { PANEL } else { BG };
+                    let fill = if i % 2 == 0 { PANEL() } else { BG() };
                     ui.painter().rect_filled(rect, CornerRadius::same(4), fill);
                     if resp.hovered() {
-                        ui.painter().rect_filled(rect, CornerRadius::same(4), PANEL_2);
+                        ui.painter().rect_filled(rect, CornerRadius::same(4), RAISED());
                     }
                     let painter = ui.painter();
 
@@ -107,7 +107,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::Align2::LEFT_CENTER,
                         glyph,
                         ui_small(),
-                        if row.medium.is_script() { PURPLE_INK } else { ACCENT_INK },
+                        if row.medium.is_script() { SPECIAL() } else { ACCENT() },
                     );
                     let title_rect = egui::Rect::from_min_max(
                         egui::pos2(title_x + 17.0, rect.top()),
@@ -123,7 +123,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         } else {
                             ui_body()
                         },
-                        if row.include { TEXT } else { FAINT },
+                        if row.include { TEXT() } else { MUTED() },
                     );
 
                     let label_x = rect.left() + rect.width() * 0.47;
@@ -158,7 +158,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::Align2::RIGHT_CENTER,
                         format!("{} w", row.words),
                         mono(9.0),
-                        MUTED,
+                        MUTED(),
                     );
 
                     // Target progress bar.
@@ -167,12 +167,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             egui::pos2(rect.right() - 184.0, rect.center().y - 2.0),
                             Vec2::new(86.0, 4.0),
                         );
-                        ui.painter().rect_filled(bar, CornerRadius::same(2), PANEL_3);
+                        ui.painter().rect_filled(bar, CornerRadius::same(2), HOVER());
                         let fraction = (row.words as f32 / row.target as f32).clamp(0.0, 1.0);
                         ui.painter().rect_filled(
                             egui::Rect::from_min_size(bar.min, Vec2::new(bar.width() * fraction, 4.0)),
                             CornerRadius::same(2),
-                            SAGE,
+                            SUCCESS(),
                         );
                     }
 
@@ -218,7 +218,7 @@ fn header_row(ui: &mut egui::Ui) {
         egui::Align2::LEFT_CENTER,
         "SECTION",
         ui_small(),
-        FAINT,
+        MUTED(),
     );
     for (fraction, label) in [
         (0.47, "LABEL"),
@@ -230,7 +230,7 @@ fn header_row(ui: &mut egui::Ui) {
             egui::Align2::LEFT_CENTER,
             label,
             ui_small(),
-            FAINT,
+            MUTED(),
         );
     }
     painter.text(
@@ -238,14 +238,14 @@ fn header_row(ui: &mut egui::Ui) {
         egui::Align2::RIGHT_CENTER,
         "COMPILE",
         ui_small(),
-        FAINT,
+        MUTED(),
     );
     painter.line_segment(
         [
             egui::pos2(rect.left(), rect.bottom() - 1.0),
             egui::pos2(rect.right(), rect.bottom() - 1.0),
         ],
-        Stroke::new(1.0, BORDER_SOFT),
+        Stroke::new(1.0, BORDER()),
     );
 }
 

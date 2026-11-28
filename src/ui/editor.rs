@@ -104,8 +104,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.vertical_centered(|ui| {
                 ui.set_max_width(page_w);
                 Frame::new()
-                    .fill(PAPER)
-                    .stroke(Stroke::new(1.0, PAPER_EDGE))
+                    .fill(PAPER())
+                    .stroke(Stroke::new(1.0, BORDER()))
                     .corner_radius(CornerRadius::same(3))
                     .shadow(egui::epaint::Shadow {
                         offset: [0, 10],
@@ -205,7 +205,7 @@ fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 ui.add(
                     TextEdit::singleline(&mut title)
                         .font(serif(22.0))
-                        .text_color(TEXT)
+                        .text_color(TEXT())
                         .desired_width(f32::INFINITY),
                 );
                 ui.add_space(16.0);
@@ -218,12 +218,12 @@ fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     spell_on,
                     Id::unique(("folder_synopsis", doc_id)),
                     serif(13.0),
-                    TEXT,
+                    TEXT(),
                     |edit| {
                         edit.desired_width(f32::INFINITY).desired_rows(3).hint_text(
                             RichText::new("What belongs in this folder?")
                                 .font(serif(13.0))
-                                .color(FAINT),
+                                .color(MUTED()),
                         )
                     },
                 );
@@ -235,7 +235,7 @@ fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     ui.label(
                         RichText::new("This folder is empty.")
                             .font(ui_body())
-                            .color(FAINT),
+                            .color(MUTED()),
                     );
                 } else {
                     for (child_id, child_title, kind, medium, words) in &children {
@@ -250,7 +250,7 @@ fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                         "Folders group documents. Add content with the + button in the binder.",
                     )
                     .font(ui_small())
-                    .color(FAINT),
+                    .color(MUTED()),
                 );
             });
         });
@@ -285,17 +285,17 @@ fn folder_child_row(
     let (rect, resp) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
     if resp.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(5), PANEL_2);
+        ui.painter().rect_filled(rect, CornerRadius::same(5), RAISED());
     }
     let (glyph, color) = match kind {
-        DocKind::Folder => ("▣", MUTED),
-        DocKind::Chapter => ("¶", ACCENT_INK),
-        DocKind::Scene if medium.is_script() => ("▶", PURPLE),
-        DocKind::Scene => ("◆", SAGE),
-        DocKind::Research => ("✎", BLUE),
-        DocKind::Character => ("☺", PURPLE),
-        DocKind::FrontMatter | DocKind::BackMatter => ("▤", FAINT),
-        DocKind::Text => ("◆", FAINT),
+        DocKind::Folder => ("▣", MUTED()),
+        DocKind::Chapter => ("¶", ACCENT()),
+        DocKind::Scene if medium.is_script() => ("▶", SPECIAL()),
+        DocKind::Scene => ("◆", SUCCESS()),
+        DocKind::Research => ("✎", INFO()),
+        DocKind::Character => ("☺", SPECIAL()),
+        DocKind::FrontMatter | DocKind::BackMatter => ("▤", MUTED()),
+        DocKind::Text => ("◆", MUTED()),
     };
     ui.painter().text(
         egui::pos2(rect.left() + 10.0, rect.center().y),
@@ -314,7 +314,7 @@ fn folder_child_row(
         egui::Align2::LEFT_CENTER,
         title,
         ui_body(),
-        TEXT,
+        TEXT(),
     );
     if !kind.is_folder() {
         ui.painter().text(
@@ -322,7 +322,7 @@ fn folder_child_row(
             egui::Align2::RIGHT_CENTER,
             format!("{words} w"),
             mono(9.0),
-            FAINT,
+            MUTED(),
         );
     }
     resp.clicked()
@@ -335,8 +335,8 @@ fn toolbar(
     miss_count: usize,
 ) {
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .inner_margin(Margin::symmetric(16, 7))
         .show(ui, |ui| {
             let row_width = ui.available_width();
@@ -387,7 +387,7 @@ fn toolbar(
                         egui::Label::new(
                             RichText::new(crumb)
                                 .font(ui_body())
-                                .color(MUTED),
+                                .color(MUTED()),
                         )
                         .truncate(),
                     );
@@ -406,23 +406,23 @@ fn toolbar(
                             "Spelling".to_string()
                         };
                         let color = if app.show_spelling {
-                            ACCENT_INK
+                            ACCENT()
                         } else if miss_count > 0 {
-                            MUTED
+                            MUTED()
                         } else {
-                            FAINT
+                            MUTED()
                         };
                         let galley = ui.fonts_mut(|fonts| {
                             fonts.layout_no_wrap(label, ui_body(), color)
                         });
                         let size = Vec2::new(galley.size().x + 20.0, TOOLBAR_ROW_H);
                         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-                        let fill = if app.show_spelling { ACCENT_SOFT } else { PANEL_2 };
+                        let fill = if app.show_spelling { ACCENT_SOFT() } else { RAISED() };
                         ui.painter().rect_filled(rect, CornerRadius::same(5), fill);
                         ui.painter().rect_stroke(
                             rect,
                             CornerRadius::same(5),
-                            Stroke::new(1.0, BORDER_SOFT),
+                            Stroke::new(1.0, BORDER()),
                             egui::StrokeKind::Inside,
                         );
                         ui.painter().galley(
@@ -448,11 +448,11 @@ fn toolbar(
                             // from this document: page 12 here is page 12 in
                             // the exported PDF.
                             let current = first - 1 + app.paged_page.clamp(1, count.max(1));
-                            pill(ui, &format!("Page {current} of {total}"), FAINT, PANEL_2);
+                            pill(ui, &format!("Page {current} of {total}"), MUTED(), RAISED());
                         }
                     }
                     Frame::new()
-                        .fill(PANEL_2)
+                        .fill(RAISED())
                         .corner_radius(CornerRadius::same(5))
                         .inner_margin(Margin::symmetric(2, 2))
                         .show(ui, |ui| {
@@ -464,9 +464,9 @@ fn toolbar(
                                     let btn = egui::Button::new(
                                         RichText::new(mode.label())
                                             .font(ui_small())
-                                            .color(if active { ACCENT_INK } else { MUTED }),
+                                            .color(if active { ACCENT() } else { MUTED() }),
                                     )
-                                    .fill(if active { ACCENT_SOFT } else { PANEL_2 })
+                                    .fill(if active { ACCENT_SOFT() } else { RAISED() })
                                     .corner_radius(CornerRadius::same(4))
                                     .min_size(Vec2::new(0.0, TOOLBAR_GROUP_H));
                                     if ui
@@ -486,9 +486,9 @@ fn toolbar(
                     let focus = egui::Button::new(
                         RichText::new(if app.focus_mode { "Exit focus" } else { "Focus" })
                             .font(ui_body())
-                            .color(if app.focus_mode { ACCENT_INK } else { MUTED }),
+                            .color(if app.focus_mode { ACCENT() } else { MUTED() }),
                     )
-                    .fill(PANEL_2)
+                    .fill(RAISED())
                     .corner_radius(CornerRadius::same(5))
                     .min_size(Vec2::new(0.0, TOOLBAR_CONTROL_H));
                     if ui
@@ -533,7 +533,7 @@ fn script_style_dropdown(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &s
         .unwrap_or_else(|| "Style".to_owned());
     let mut chosen: Option<String> = None;
     ComboBox::from_id_salt("script_paragraph_style")
-        .selected_text(RichText::new(current_name).font(ui_body()).color(TEXT))
+        .selected_text(RichText::new(current_name).font(ui_body()).color(TEXT()))
         .width(150.0)
         .show_ui(ui, |ui| {
             for style in &sheet.styles {
@@ -572,7 +572,7 @@ fn editor_zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         Layout::left_to_right(Align::Center),
         |ui| {
             Frame::new()
-                .fill(PANEL_2)
+                .fill(RAISED())
                 .corner_radius(CornerRadius::same(5))
                 .inner_margin(Margin::symmetric(2, 2))
                 .show(ui, |ui| {
@@ -586,7 +586,7 @@ fn editor_zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::Label::new(
                             RichText::new(format!("{}%", (zoom * 100.0).round() as i32))
                                 .font(ui_small())
-                                .color(MUTED),
+                                .color(MUTED()),
                         )
                         .selectable(false),
                     )
@@ -602,9 +602,9 @@ fn editor_zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
 fn zoom_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
     ui.add(
-        egui::Button::new(RichText::new(glyph).font(ui_body()).color(MUTED))
-            .fill(PANEL_2)
-            .stroke(Stroke::new(1.0, BORDER_SOFT))
+        egui::Button::new(RichText::new(glyph).font(ui_body()).color(MUTED()))
+            .fill(RAISED())
+            .stroke(Stroke::new(1.0, BORDER()))
             .corner_radius(CornerRadius::same(4))
             .min_size(Vec2::new(22.0, TOOLBAR_GROUP_H)),
     )
@@ -621,8 +621,8 @@ fn step_zoom(zoom: f32, direction: i32) -> f32 {
 fn spelling_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, miss: &[String]) {
     let mut action: Option<(String, String)> = None;
     Frame::new()
-        .fill(PANEL_2)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(RAISED())
+        .stroke(Stroke::new(1.0, BORDER()))
         .inner_margin(Margin::symmetric(16, 8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -630,11 +630,11 @@ fn spelling_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, mis
                 ui.label(
                     RichText::new(format!("Spelling · {}", miss.len()))
                         .font(ui_body())
-                        .color(if miss.is_empty() { FAINT } else { MUTED }),
+                        .color(if miss.is_empty() { MUTED() } else { MUTED() }),
                 );
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let close = egui::Button::new(
-                        RichText::new("Close").font(ui_small()).color(FAINT),
+                        RichText::new("Close").font(ui_small()).color(MUTED()),
                     )
                     .frame(false);
                     if ui.add(close).clicked() {
@@ -646,7 +646,7 @@ fn spelling_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, mis
                 ui.label(
                     RichText::new("No misspellings found in this document.")
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                 );
             } else {
                 ScrollArea::vertical()
@@ -658,7 +658,7 @@ fn spelling_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, mis
                         for word in miss {
                             let suggestions = app.spell.suggest(word, 3);
                             egui::CollapsingHeader::new(
-                                RichText::new(word).font(mono(10.0)).color(MUTED),
+                                RichText::new(word).font(mono(10.0)).color(MUTED()),
                             )
                             .id_salt(("spelling_word", word.as_str()))
                             .default_open(true)
@@ -668,16 +668,16 @@ fn spelling_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, mis
                                         ui.label(
                                             RichText::new("(no suggestions)")
                                                 .font(ui_small())
-                                                .color(FAINT),
+                                                .color(MUTED()),
                                         );
                                     } else {
                                         for suggestion in &suggestions {
                                             let button = egui::Button::new(
                                                 RichText::new(suggestion)
                                                     .font(ui_small())
-                                                    .color(ACCENT_INK),
+                                                    .color(ACCENT()),
                                             )
-                                            .fill(PANEL_2)
+                                            .fill(RAISED())
                                             .corner_radius(CornerRadius::same(4))
                                             .min_size(Vec2::new(0.0, 18.0));
                                             if ui.add(button).clicked() {
@@ -769,9 +769,6 @@ fn match_initial_case(original: &str, replacement: &str) -> String {
     }
 }
 
-/// Colour of the squiggle under a misspelled word. Deliberately softer than
-/// pure red so it reads on the warm paper background.
-const SPELL_UNDERLINE: Color32 = Color32::from_rgb(196, 64, 64);
 
 /// Build the text layout for an editor surface, underlining the misspelled
 /// byte ranges.
@@ -792,7 +789,7 @@ fn spell_layout_job(
         return job;
     }
     let underline = egui::TextFormat {
-        underline: Stroke::new(1.4, SPELL_UNDERLINE),
+        underline: Stroke::new(1.4, DANGER()),
         ..base.clone()
     };
     let mut cursor = 0usize;
@@ -854,26 +851,26 @@ fn spell_menu_ui(
         return None;
     }
     let Some((range, word)) = word_at(text, byte) else {
-        ui.label(RichText::new("No word here").font(ui_small()).color(FAINT));
+        ui.label(RichText::new("No word here").font(ui_small()).color(MUTED()));
         return None;
     };
     if checker.is_correct(&word) {
         ui.label(
             RichText::new(format!("“{word}” is spelled correctly"))
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
         );
         return None;
     }
     ui.label(
         RichText::new(format!("Correct “{word}”"))
             .font(ui_small())
-            .color(MUTED)
+            .color(MUTED())
             .strong(),
     );
     let suggestions = checker.suggest(&word, 6);
     if suggestions.is_empty() {
-        ui.label(RichText::new("(no suggestions)").font(ui_small()).color(FAINT));
+        ui.label(RichText::new("(no suggestions)").font(ui_small()).color(MUTED()));
     } else {
         for suggestion in suggestions {
             let label = match_initial_case(&word, &suggestion);
@@ -1222,7 +1219,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             .add(
                 TextEdit::singleline(&mut doc.title)
                     .font(serif(29.0))
-                    .text_color(PAPER_TEXT)
+                    .text_color(HEADING())
                     .frame(Frame::NONE)
                     .desired_width(f32::INFINITY),
             )
@@ -1270,7 +1267,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             .id(prose_id)
             .font(FontId::new(text_size, family.clone()))
             .layouter(&mut layouter)
-            .text_color(PAPER_TEXT)
+            .text_color(PAPER_TEXT())
             .frame(Frame::NONE)
             .desired_width(f32::INFINITY)
             .desired_rows(rows.min(120))
@@ -1278,7 +1275,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             .hint_text(
                 RichText::new("Begin at the beginning…")
                     .font(FontId::new(text_size, family.clone()))
-                    .color(PAPER_MUTED),
+                    .color(MUTED()),
             );
         let output = edit.show(ui);
         reveal_caret(ui, &output, reveal);
@@ -1349,10 +1346,10 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
             ui.label(
                 RichText::new(format!("{} words  ·  {} min read", words, portmanteau_core::reading_minutes(words)))
                     .font(ui_small())
-                    .color(PAPER_MUTED),
+                    .color(MUTED()),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new(pages.as_str()).font(serif(9.0)).color(PAPER_MUTED));
+                ui.label(RichText::new(pages.as_str()).font(serif(9.0)).color(MUTED()));
             });
         });
         let _ = take_snapshot;
@@ -1437,13 +1434,13 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             ui.label(
                 RichText::new(doc.title.to_uppercase())
                     .font(mono(10.0))
-                    .color(PAPER_MUTED),
+                    .color(MUTED()),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(
                     RichText::new(format!("{} paragraphs", doc.content.paragraphs.len()))
                         .font(mono(8.5))
-                        .color(PAPER_MUTED),
+                        .color(MUTED()),
                 );
             });
         });
@@ -1564,7 +1561,7 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             .id(flow_id)
             .font(mono(12.0 * zoom))
             .layouter(&mut layouter)
-            .text_color(PAPER_TEXT)
+            .text_color(PAPER_TEXT())
             .frame(Frame::NONE)
             .desired_width(f32::INFINITY)
             .desired_rows(desired_rows)
@@ -1578,7 +1575,7 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             .hint_text(
                 RichText::new("Action")
                     .font(mono(12.0 * zoom))
-                    .color(PAPER_MUTED),
+                    .color(MUTED()),
             );
 
         // ---- Character cue popup -------------------------------------
@@ -1826,7 +1823,7 @@ fn script_flow_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 doc.words()
             ))
             .font(ui_small())
-            .color(PAPER_MUTED),
+            .color(MUTED()),
         );
     }
 
@@ -2152,11 +2149,7 @@ fn append_script_paragraph(
     let font_size = element_style.size.max(6.0) * zoom;
     let format = egui::TextFormat {
         font_id: FontId::new(font_size, family),
-        color: if kind.is_uppercase() {
-            Color32::from_rgb(44, 40, 33)
-        } else {
-            PAPER_TEXT
-        },
+        color: element_ink(kind),
         line_height: Some(font_size * element_style.leading.max(0.85)),
         italics: element_style.italic,
         ..Default::default()
@@ -2209,6 +2202,9 @@ fn append_script_paragraph(
         if heading && !marks.contains(&portmanteau_core::InlineMark::Bold) {
             marks.push(portmanteau_core::InlineMark::Bold);
         }
+        if heading {
+            run_format.color = HEADING();
+        }
         apply_inline_marks(&mut run_format, &marks);
         if end_char == start_char + 1 {
             if let Some(image) = paragraph
@@ -2230,11 +2226,11 @@ fn append_script_paragraph(
         }
         if key.2 {
             // A link reads as one: blue and underlined.
-            run_format.color = LINK_COLOR;
-            run_format.underline = Stroke::new(1.0, LINK_COLOR);
+            run_format.color = INFO();
+            run_format.underline = Stroke::new(1.0, INFO());
         }
         if key.1 {
-            run_format.underline = Stroke::new(1.4, Color32::from_rgb(196, 64, 64));
+            run_format.underline = Stroke::new(1.4, DANGER());
         }
         job.append(
             &display_line[start_byte..end_byte],
@@ -2292,8 +2288,16 @@ fn inline_marks_at(
     Vec::new()
 }
 
-/// The colour links are drawn in, in every rich-text field.
-const LINK_COLOR: Color32 = Color32::from_rgb(40, 96, 168);
+/// The ink a script element is typed in: the theme's scene-heading and
+/// character colours, otherwise the page text.
+pub(crate) fn element_ink(kind: ElementKind) -> Color32 {
+    match kind {
+        ElementKind::SceneHeading => SCENE_HEADING(),
+        ElementKind::Character => CHARACTER(),
+        _ => PAPER_TEXT(),
+    }
+}
+
 
 fn inline_linked_at(content: &[portmanteau_core::InlineContent], char_index: usize) -> bool {
     let mut offset = 0usize;
@@ -2504,7 +2508,7 @@ pub(crate) fn paint_rich_images(
                         let response = ui
                             .interact(spot, egui::Id::unique(("picture_anchor", paragraph_index)), egui::Sense::hover())
                             .on_hover_text("This picture is anchored to the text here. Right-click the picture for its settings.");
-                        let color = if response.hovered() { Color32::from_rgb(70, 120, 110) } else { PAPER_MUTED };
+                        let color = if response.hovered() { ACCENT() } else { MUTED() };
                         paint_anchor(ui.painter(), at, size, color);
                     }
                     if has_caption {
@@ -2513,7 +2517,7 @@ pub(crate) fn paint_rich_images(
                             egui::Align2::CENTER_TOP,
                             image.caption.trim(),
                             serif(12.0 * zoom),
-                            PAPER_MUTED,
+                            MUTED(),
                         );
                     }
                     if let Some(texture) = textures.get(&image.asset_id) {
@@ -2527,7 +2531,7 @@ pub(crate) fn paint_rich_images(
                         ui.painter().rect_filled(
                             rect,
                             CornerRadius::same(3),
-                            Color32::from_rgb(227, 223, 214),
+                            BORDER(),
                         );
                         let label = if image.alt_text.is_empty() {
                             "Image"
@@ -2539,7 +2543,7 @@ pub(crate) fn paint_rich_images(
                             egui::Align2::CENTER_CENTER,
                             label,
                             ui_small(),
-                            PAPER_MUTED,
+                            MUTED(),
                         );
                     }
                     char_offset += 1;
@@ -2742,7 +2746,7 @@ fn request_link_edit(ctx: &egui::Context, range: std::ops::Range<usize>, url: St
 fn link_actions_ui(ui: &mut egui::Ui, range: std::ops::Range<usize>, link: &str) -> bool {
     ui.set_min_width(150.0);
     let shown: String = link.chars().take(38).collect();
-    ui.label(RichText::new(if shown.len() < link.len() { format!("{shown}…") } else { shown }).font(ui_small()).color(FAINT));
+    ui.label(RichText::new(if shown.len() < link.len() { format!("{shown}…") } else { shown }).font(ui_small()).color(MUTED()));
     let mut chosen = false;
     if ui.button("Edit link…").clicked() {
         request_link_edit(ui.ctx(), range, link.to_string());
@@ -2863,8 +2867,8 @@ pub(crate) fn inline_format_toolbar(
         .fixed_pos(egui::pos2(x, y))
         .show(ctx, |ui| {
             Frame::new()
-                .fill(Color32::WHITE)
-                .stroke(Stroke::new(1.0, BORDER))
+                .fill(PANEL())
+                .stroke(Stroke::new(1.0, BORDER()))
                 .corner_radius(CornerRadius::same(8))
                 .shadow(egui::epaint::Shadow {
                     offset: [0, 4],
@@ -2882,7 +2886,7 @@ pub(crate) fn inline_format_toolbar(
                             ("U", portmanteau_core::InlineMark::Underline, "Underline"),
                             ("S", portmanteau_core::InlineMark::Strikethrough, "Strikethrough"),
                         ] {
-                            let mut text = RichText::new(label).font(ui_strong()).color(TEXT);
+                            let mut text = RichText::new(label).font(ui_strong()).color(TEXT());
                             text = match mark {
                                 portmanteau_core::InlineMark::Bold => text.strong(),
                                 portmanteau_core::InlineMark::Italic => text.italics(),
@@ -2900,7 +2904,7 @@ pub(crate) fn inline_format_toolbar(
                                 }
                             }
                         }
-                        let link_button = egui::Button::new(RichText::new("Link").font(ui_small()).color(LINK_COLOR))
+                        let link_button = egui::Button::new(RichText::new("Link").font(ui_small()).color(INFO()))
                             .fill(Color32::TRANSPARENT)
                             .stroke(Stroke::NONE)
                             .corner_radius(CornerRadius::same(5))
@@ -3055,14 +3059,14 @@ fn link_editor_window(
                     .iter()
                     .find(|t| t.link == edit.url)
                     .map_or("something that no longer exists".to_string(), |t| format!("{} ({})", t.title, t.group));
-                ui.label(RichText::new(format!("Links to {what}")).font(ui_body()).color(TEXT));
-                ui.label(RichText::new("Type @ in the text to link to anything in the project.").font(ui_small()).color(FAINT));
+                ui.label(RichText::new(format!("Links to {what}")).font(ui_body()).color(TEXT()));
+                ui.label(RichText::new("Type @ in the text to link to anything in the project.").font(ui_small()).color(MUTED()));
                 if ui.button("Use a web address instead").clicked() {
                     edit.url.clear();
                     edit.first_frame = true;
                 }
             } else {
-                ui.label(RichText::new("Address").font(ui_small()).color(FAINT));
+                ui.label(RichText::new("Address").font(ui_small()).color(MUTED()));
                 let response = ui.add(
                     TextEdit::singleline(&mut edit.url)
                         .hint_text("https://…  (type @ in the text to link to something in the project)")
@@ -3082,7 +3086,7 @@ fn link_editor_window(
                 ui.label(
                     RichText::new("Use a web address (https://…).")
                         .font(ui_small())
-                        .color(RED_INK),
+                        .color(DANGER()),
                 );
             }
             ui.add_space(8.0);
@@ -3171,7 +3175,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
             ui.label(
                 RichText::new(doc.title.to_uppercase())
                     .font(mono(10.0))
-                    .color(PAPER_MUTED),
+                    .color(MUTED()),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let synopsis = doc.synopsis.plain_text();
@@ -3184,7 +3188,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                 ui.label(
                     RichText::new(meta)
                         .font(mono(8.5))
-                        .color(PAPER_MUTED),
+                        .color(MUTED()),
                 );
             });
         });
@@ -3203,9 +3207,9 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                 let btn = egui::Button::new(
                     RichText::new(kind.short())
                         .font(ui_small())
-                        .color(if active { Color32::WHITE } else { PAPER_MUTED }),
+                        .color(if active { ON_ACCENT() } else { MUTED() }),
                 )
-                .fill(if active { ACCENT } else { PAPER_EDGE })
+                .fill(if active { ACCENT() } else { BORDER() })
                 .corner_radius(CornerRadius::same(10))
                 .min_size(Vec2::new(0.0, 19.0));
                 if ui
@@ -3221,7 +3225,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
             }
             ui.add_space(6.0);
             let add = egui::Button::new(
-                RichText::new("+ block").font(ui_small()).color(PAPER_MUTED),
+                RichText::new("+ block").font(ui_small()).color(MUTED()),
             )
             .frame(false);
             if ui.add(add).clicked() {
@@ -3314,7 +3318,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                 // Element gutter: scene numbers only.
                 let (grect, gresp) = ui.allocate_exact_size(Vec2::new(40.0, 18.0), Sense::hover());
                 if gresp.hovered() {
-                    ui.painter().rect_filled(grect, CornerRadius::same(3), Color32::from_rgb(236, 230, 217));
+                    ui.painter().rect_filled(grect, CornerRadius::same(3), BORDER().gamma_multiply(0.6));
                 }
                 if !scene_label.is_empty() {
                     ui.painter().text(
@@ -3322,7 +3326,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                         egui::Align2::RIGHT_BOTTOM,
                         scene_label,
                         mono(7.5 * zoom),
-                        PAPER_MUTED,
+                        MUTED(),
                     );
                 }
 
@@ -3338,16 +3342,8 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                     / width.max(80.0))
                 .ceil()
                 .clamp(1.0, 8.0) as usize;
-                let mut text_color = if kind == ElementKind::SceneHeading {
-                    PAPER_TEXT
-                } else {
-                    PAPER_TEXT
-                };
-                // Uppercase elements (scene headings, transitions, action cues)
-                // get the darker ink; the layouter must use the same colour.
-                if kind.is_uppercase() && kind != ElementKind::Character {
-                    text_color = PAPER_TEXT;
-                }
+                // The layouter must use the same colour (`element_ink`).
+                let text_color = element_ink(kind);
                 let base_format = egui::TextFormat {
                     font_id: FontId::new(font_size, family.clone()),
                     color: text_color,
@@ -3389,7 +3385,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                     .hint_text(
                         RichText::new(kind.label())
                             .font(FontId::new(font_size, family))
-                            .color(PAPER_MUTED),
+                            .color(MUTED()),
                     );
                 if kind == ElementKind::Transition {
                     edit = edit.align(egui::Align2::RIGHT_TOP);
@@ -3563,7 +3559,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
         ui.add_space(18.0);
         ui.horizontal(|ui| {
             let add = egui::Button::new(
-                RichText::new("+ Add element").font(ui_small()).color(PAPER_MUTED),
+                RichText::new("+ Add element").font(ui_small()).color(MUTED()),
             )
             .frame(false);
             if ui.add(add).clicked() {
@@ -3577,7 +3573,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                 ui.label(
                     RichText::new(format!("{pages} pages"))
                         .font(ui_small())
-                        .color(PAPER_MUTED),
+                        .color(MUTED()),
                 );
             });
         });
@@ -3874,21 +3870,21 @@ fn paper_header(
         ui.label(
             RichText::new(project_title.to_uppercase())
                 .font(ui_small())
-                .color(PAPER_MUTED)
+                .color(MUTED())
                 .extra_letter_spacing(1.4),
         );
-        ui.label(RichText::new("·").font(ui_small()).color(PAPER_MUTED));
+        ui.label(RichText::new("·").font(ui_small()).color(MUTED()));
         ui.label(
             RichText::new(medium.label().to_uppercase())
                 .font(ui_small())
-                .color(PAPER_MUTED)
+                .color(MUTED())
                 .extra_letter_spacing(1.0),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(
                 RichText::new(format!("{status} · {words} words · {pages} pp"))
                     .font(ui_small())
-                    .color(PAPER_MUTED),
+                    .color(MUTED()),
             );
         });
     });
@@ -3899,25 +3895,25 @@ fn paper_rule(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 1.0), Sense::hover());
     ui.painter().line_segment(
         [rect.left_center(), rect.right_center()],
-        Stroke::new(1.0, PAPER_EDGE),
+        Stroke::new(1.0, BORDER()),
     );
 }
 
 fn empty_state(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.vertical_centered(|ui| {
         ui.add_space(120.0);
-        ui.label(RichText::new("Nothing open").font(serif(30.0)).color(MUTED));
+        ui.label(RichText::new("Nothing open").font(serif(30.0)).color(MUTED()));
         ui.add_space(8.0);
         ui.label(
             RichText::new("Choose a document in the binder, or start a new chapter.")
                 .font(ui_body())
-                .color(FAINT),
+                .color(MUTED()),
         );
         ui.add_space(16.0);
         let btn = egui::Button::new(
-            RichText::new("New chapter").font(ui_body()).color(Color32::WHITE),
+            RichText::new("New chapter").font(ui_body()).color(ON_ACCENT()),
         )
-        .fill(ACCENT)
+        .fill(ACCENT())
         .corner_radius(CornerRadius::same(6))
         .min_size(Vec2::new(120.0, 32.0));
         if ui.add(btn).clicked() {
@@ -3984,7 +3980,7 @@ mod link_tests {
         let underlined: Vec<&str> = job
             .sections
             .iter()
-            .filter(|s| s.format.underline.color == Color32::from_rgb(196, 64, 64))
+            .filter(|s| s.format.underline.color == DANGER())
             .map(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0])
             .collect();
         assert_eq!(underlined, ["wrrodd"]);
@@ -4117,7 +4113,7 @@ mod link_tests {
         let sheet = portmanteau_core::StyleSheet::novel_prose(&styles);
         let text = content.editor_text();
         let job = script_flow_layout_job(&text, &content, &sheet, &styles, 1.0, 400.0, &[]);
-        let linked: Vec<_> = job.sections.iter().filter(|s| s.format.color == LINK_COLOR).collect();
+        let linked: Vec<_> = job.sections.iter().filter(|s| s.format.color == INFO()).collect();
         assert_eq!(linked.len(), 1, "exactly the linked words are link-coloured");
         assert_eq!(&job.text[linked[0].byte_range.start.0..linked[0].byte_range.end.0], "the chart");
         // The layout remembered where the link is, for click handling.

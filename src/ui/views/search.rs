@@ -95,7 +95,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         if app.search_page.query.is_empty() {
             meta_line(ui, &["Type to search"]);
         } else if let Some(error) = app.search_page.error() {
-            ui.label(RichText::new(error).font(ui_small()).color(RED_INK));
+            ui.label(RichText::new(error).font(ui_small()).color(DANGER()));
         } else {
             meta_line(ui, &[&format!("{total} result{} in {documents} place{}", plural(total), plural(documents))]);
         }
@@ -106,15 +106,15 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         let page = &mut app.search_page;
         let mut changed = false;
         Frame::new()
-            .fill(PANEL)
-            .stroke(Stroke::new(1.0, BORDER_SOFT))
+            .fill(PANEL())
+            .stroke(Stroke::new(1.0, BORDER()))
             .corner_radius(CornerRadius::same(8))
             .inner_margin(Margin::symmetric(12, 10))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     let arrow = if page.show_replace { "▾" } else { "▸" };
-                    if ui.add(egui::Button::new(RichText::new(arrow).font(ui_body()).color(MUTED)).frame(false)).on_hover_text("Show or hide Replace").clicked() {
+                    if ui.add(egui::Button::new(RichText::new(arrow).font(ui_body()).color(MUTED())).frame(false)).on_hover_text("Show or hide Replace").clicked() {
                         page.show_replace = !page.show_replace;
                     }
                     let find = ui.add(
@@ -148,7 +148,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.add_space(6.0);
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(5.0, 4.0);
-                    ui.label(RichText::new("Look in").font(ui_small()).color(FAINT));
+                    ui.label(RichText::new("Look in").font(ui_small()).color(MUTED()));
                     for group in SearchGroup::all() {
                         let on = page.groups.contains(&group);
                         if chip(ui, group.label(), on, "Show only this kind of result (choose several, or none for everything)") {
@@ -160,7 +160,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             changed = true;
                         }
                     }
-                    ui.label(RichText::new("in").font(ui_small()).color(FAINT));
+                    ui.label(RichText::new("in").font(ui_small()).color(MUTED()));
                     for field in [HitField::Body, HitField::Synopsis, HitField::Notes] {
                         let on = page.fields.contains(&field);
                         if chip(ui, field.label(), on, "Search only this part (choose several, or none for all parts)") {
@@ -186,7 +186,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 return;
             }
             if page.hits.is_empty() && page.error.is_none() {
-                ui.label(RichText::new("No results.").font(ui_body()).color(FAINT));
+                ui.label(RichText::new("No results.").font(ui_body()).color(MUTED()));
                 return;
             }
             let replacing = page.show_replace;
@@ -199,7 +199,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 let folded = page.folded.contains(&id);
                 ui.horizontal(|ui| {
                     let arrow = if folded { "▸" } else { "▾" };
-                    let head = ui.add(egui::Button::new(RichText::new(format!("{arrow}  {}", group_hits[0].title)).font(ui_body()).color(TEXT)).frame(false));
+                    let head = ui.add(egui::Button::new(RichText::new(format!("{arrow}  {}", group_hits[0].title)).font(ui_body()).color(TEXT())).frame(false));
                     if head.clicked() {
                         if folded {
                             page.folded.remove(&id);
@@ -207,12 +207,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             page.folded.insert(id.clone());
                         }
                     }
-                    ui.label(RichText::new(group_hits[0].group.label()).font(ui_small()).color(FAINT));
+                    ui.label(RichText::new(group_hits[0].group.label()).font(ui_small()).color(MUTED()));
                     ui.label(
                         RichText::new(format!(" {} ", group_hits.len()))
                             .font(ui_small())
-                            .color(ACCENT_INK)
-                            .background_color(ACCENT_SOFT),
+                            .color(ACCENT())
+                            .background_color(ACCENT_SOFT()),
                     );
                     if replacing && ui.small_button("Replace in this one").on_hover_text("Replace every result in this document").clicked() {
                         act = Some(Act::ReplaceIn(source.clone()));
@@ -304,9 +304,9 @@ fn replace(app: &mut PortmanteauApp, mut extra: serde_json::Value) {
 }
 
 fn chip(ui: &mut egui::Ui, text: &str, on: bool, hover: &str) -> bool {
-    let button = egui::Button::new(RichText::new(text).font(ui_small()).color(if on { TEXT } else { MUTED }))
-        .fill(if on { ACCENT_SOFT } else { PANEL_2 })
-        .stroke(Stroke::new(1.0, if on { ACCENT } else { BORDER_SOFT }))
+    let button = egui::Button::new(RichText::new(text).font(ui_small()).color(if on { TEXT() } else { MUTED() }))
+        .fill(if on { ACCENT_SOFT() } else { RAISED() })
+        .stroke(Stroke::new(1.0, if on { ACCENT() } else { BORDER() }))
         .corner_radius(CornerRadius::same(10))
         .min_size(Vec2::new(0.0, 20.0));
     ui.add(button).on_hover_text(hover).clicked()
@@ -316,9 +316,9 @@ fn chip(ui: &mut egui::Ui, text: &str, on: bool, hover: &str) -> bool {
 /// and the line with the match highlighted.
 fn hit_line(hit: &FindHit) -> LayoutJob {
     let mut job = LayoutJob::default();
-    let plain = TextFormat { font_id: ui_body(), color: MUTED, ..Default::default() };
+    let plain = TextFormat { font_id: ui_body(), color: MUTED(), ..Default::default() };
     if hit.field != HitField::Body {
-        job.append(&format!("{} · ", hit.field.label()), 0.0, TextFormat { font_id: ui_small(), color: FAINT, ..Default::default() });
+        job.append(&format!("{} · ", hit.field.label()), 0.0, TextFormat { font_id: ui_small(), color: MUTED(), ..Default::default() });
     }
     let chars: Vec<char> = hit.excerpt.chars().collect();
     let take = |range: std::ops::Range<usize>| chars[range.start.min(chars.len())..range.end.min(chars.len())].iter().collect::<String>();
@@ -326,7 +326,7 @@ fn hit_line(hit: &FindHit) -> LayoutJob {
     job.append(
         &take(hit.mark.clone()),
         0.0,
-        TextFormat { font_id: ui_body(), color: TEXT, background: Color32::from_rgb(250, 226, 140), ..Default::default() },
+        TextFormat { font_id: ui_body(), color: TEXT(), background: FIND_MATCH(), ..Default::default() },
     );
     job.append(&take(hit.mark.end..chars.len()), 0.0, plain);
     job

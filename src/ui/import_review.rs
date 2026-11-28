@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Stroke, TextEdit, Vec2,
+    self, Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Stroke, TextEdit, Vec2,
 };
 use portmanteau_api::Workspace;
 use portmanteau_core::{ImportPrefs, Medium, StyleSheet};
@@ -308,8 +308,8 @@ pub fn show(app: &mut PortmanteauApp, ctx: &egui::Context) {
                     n => format!("Import {n} documents"),
                 };
                 let ready = review.preview.is_some() && count > 0;
-                let button = egui::Button::new(RichText::new(label).font(ui_body()).color(Color32::WHITE))
-                    .fill(if ready { ACCENT } else { FAINT })
+                let button = egui::Button::new(RichText::new(label).font(ui_body()).color(ON_ACCENT()))
+                    .fill(if ready { ACCENT() } else { MUTED() })
                     .corner_radius(CornerRadius::same(6))
                     .min_size(Vec2::new(150.0, 30.0));
                 if ui.add_enabled(ready, button).clicked() {
@@ -354,8 +354,8 @@ enum Action {
 
 fn card(ui: &mut egui::Ui, heading: &str, body: impl FnOnce(&mut egui::Ui)) {
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(12, 9))
         .show(ui, |ui| {
@@ -392,13 +392,13 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
         });
         if let Some(error) = &review.error {
             ui.add_space(4.0);
-            ui.label(RichText::new(error).font(ui_small()).color(RED_INK));
+            ui.label(RichText::new(error).font(ui_small()).color(DANGER()));
         } else if review.preview.is_none() {
             ui.add_space(4.0);
             ui.label(
                 RichText::new("Fountain and Final Draft become screenplays; Word and text become prose. Nothing is added until you press Import.")
                     .font(ui_small())
-                    .color(FAINT),
+                    .color(MUTED()),
             );
         }
     });
@@ -407,11 +407,11 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
     // ---- How to read it ----------------------------------------------
     card(ui, "How to read it", |ui| {
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new(preview_summary(&preview)).font(ui_small()).color(MUTED));
+            ui.label(RichText::new(preview_summary(&preview)).font(ui_small()).color(MUTED()));
         });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("As").font(ui_small()).color(FAINT));
+            ui.label(RichText::new("As").font(ui_small()).color(MUTED()));
             let before = review.medium.clone();
             egui::ComboBox::from_id_salt("import_medium")
                 .selected_text(if review.medium == "auto" { "Automatic".to_string() } else { review.medium.clone() })
@@ -428,7 +428,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
             let before = review.split;
             ui.checkbox(
                 &mut review.split,
-                RichText::new("Split into several documents at headings").font(ui_small()).color(MUTED),
+                RichText::new("Split into several documents at headings").font(ui_small()).color(MUTED()),
             );
             if review.split != before {
                 review.mark_stale();
@@ -436,7 +436,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
         });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Add to").font(ui_small()).color(FAINT));
+            ui.label(RichText::new("Add to").font(ui_small()).color(MUTED()));
             let folders: Vec<(String, String)> = app
                 .ws
                 .project
@@ -467,7 +467,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
             ui.label(
                 RichText::new("Ticked details are set on the project, replacing what it has. Edit them first if the file got one wrong.")
                     .font(ui_small())
-                    .color(FAINT),
+                    .color(MUTED()),
             );
             ui.add_space(4.0);
             for detail in &mut review.details {
@@ -475,7 +475,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
                     ui.checkbox(&mut detail.apply, "");
                     ui.allocate_ui_with_layout(Vec2::new(86.0, 22.0), Layout::left_to_right(Align::Center), |ui| {
                         ui.set_min_width(86.0);
-                        ui.label(RichText::new(detail.label).font(ui_small()).color(FAINT));
+                        ui.label(RichText::new(detail.label).font(ui_small()).color(MUTED()));
                     });
                     let multi = detail.key == "contact";
                     let edit = if multi {
@@ -500,7 +500,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
             ui.label(
                 RichText::new("What each style in the file becomes. Your choices are remembered for the next file from the same program.")
                     .font(ui_small())
-                    .color(FAINT),
+                    .color(MUTED()),
             );
             ui.add_space(4.0);
             egui::Grid::new("import_styles").num_columns(3).spacing([14.0, 5.0]).show(ui, |ui| {
@@ -508,8 +508,8 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
                     let name = style["name"].as_str().unwrap_or_default();
                     let default = style["default"].as_str().unwrap_or("auto");
                     let current = style["target"].as_str().unwrap_or(default).to_string();
-                    ui.label(RichText::new(name).font(ui_body()).color(TEXT));
-                    ui.label(RichText::new(format!("{}", style["count"].as_u64().unwrap_or(0))).font(mono(10.0)).color(FAINT));
+                    ui.label(RichText::new(name).font(ui_body()).color(TEXT()));
+                    ui.label(RichText::new(format!("{}", style["count"].as_u64().unwrap_or(0))).font(mono(10.0)).color(MUTED()));
                     let mut chosen = current.clone();
                     egui::ComboBox::from_id_salt(("import_style", name))
                         .width(260.0)
@@ -557,7 +557,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
                             ui.selectable_value(&mut edit.kind, kind.to_string(), kind);
                         }
                     });
-                ui.label(RichText::new(format!("{words} words")).font(mono(10.0)).color(FAINT));
+                ui.label(RichText::new(format!("{words} words")).font(mono(10.0)).color(MUTED()));
                 ui.end_row();
             }
         });
@@ -568,7 +568,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
     if !warnings.is_empty() {
         card(ui, "Not carried across", |ui| {
             for warning in warnings {
-                ui.label(RichText::new(format!("• {}", warning.as_str().unwrap_or_default())).font(ui_small()).color(MUTED));
+                ui.label(RichText::new(format!("• {}", warning.as_str().unwrap_or_default())).font(ui_small()).color(MUTED()));
             }
         });
     }

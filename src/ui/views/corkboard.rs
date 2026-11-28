@@ -72,13 +72,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         ui.label(
                             RichText::new("The board is empty")
                                 .font(serif(20.0))
-                                .color(MUTED),
+                                .color(MUTED()),
                         );
                         ui.add_space(4.0);
                         ui.label(
                             RichText::new("Create a chapter to see it pinned here.")
                                 .font(ui_body())
-                                .color(FAINT),
+                                .color(MUTED()),
                         );
                     });
                     return;
@@ -99,7 +99,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         ui.label(
                             RichText::new(group.to_uppercase())
                                 .font(ui_small())
-                                .color(FAINT)
+                                .color(MUTED())
                                 .extra_letter_spacing(1.2),
                         );
                         let (line, _) = ui.allocate_exact_size(
@@ -108,7 +108,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         );
                         ui.painter().line_segment(
                             [line.left_center(), line.right_center()],
-                            Stroke::new(1.0, BORDER_SOFT),
+                            Stroke::new(1.0, BORDER()),
                         );
                     });
                     ui.add_space(7.0);
@@ -206,7 +206,7 @@ fn zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             egui::Label::new(
                 RichText::new(format!("{}%", (zoom * 100.0).round() as i32))
                     .font(ui_body())
-                    .color(MUTED),
+                    .color(MUTED()),
             )
             .selectable(false),
         )
@@ -220,9 +220,9 @@ fn zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
 fn zoom_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
     ui.add(
-        egui::Button::new(RichText::new(glyph).font(ui_strong()).color(MUTED))
-            .fill(PANEL_2)
-            .stroke(Stroke::new(1.0, BORDER_SOFT))
+        egui::Button::new(RichText::new(glyph).font(ui_strong()).color(MUTED()))
+            .fill(RAISED())
+            .stroke(Stroke::new(1.0, BORDER()))
             .corner_radius(CornerRadius::same(5))
             .min_size(Vec2::new(24.0, 26.0)),
     )
@@ -371,18 +371,18 @@ fn card_ui(
             .is_some_and(|payload| payload.as_str() == card.id.as_str());
 
     let fill = if is_selected || pointer_over || is_drop_target {
-        PANEL_3
+        HOVER()
     } else {
-        PANEL_2
+        RAISED()
     };
     let (stroke_width, stroke_color) = if is_drop_target {
-        (3.0, ACCENT)
+        (3.0, ACCENT())
     } else if is_selected {
-        (1.4, ACCENT)
+        (1.4, ACCENT())
     } else if pointer_over {
-        (1.0, BORDER)
+        (1.0, BORDER())
     } else {
-        (1.0, BORDER_SOFT)
+        (1.0, BORDER())
     };
 
     // Frame supplies the rounded panel; interactions were registered first so
@@ -409,7 +409,7 @@ fn card_ui(
                 // it never depends on a symbol being present in the bundle.
                 let (handle_rect, handle_resp) =
                     ui.allocate_exact_size(Vec2::new(14.0, 12.0), Sense::hover());
-                let handle_color = if is_selected { accent } else { FAINT };
+                let handle_color = if is_selected { accent } else { MUTED() };
                 for i in 0..3 {
                     let y = handle_rect.top() + 2.0 + i as f32 * 3.5;
                     ui.painter().line_segment(
@@ -449,7 +449,7 @@ fn card_ui(
                 TextEdit::singleline(&mut card.title)
                     .id(title_id)
                     .font(serif(15.0))
-                    .text_color(TEXT)
+                    .text_color(TEXT())
                     .frame(Frame::NONE)
                     .hint_text("Untitled")
                     .desired_width(f32::INFINITY),
@@ -476,7 +476,7 @@ fn card_ui(
                         spell_on,
                         synopsis_edit_id(&card.id),
                         ui_small(),
-                        MUTED,
+                        MUTED(),
                         |edit| {
                             edit.frame(Frame::NONE)
                                 .hint_text("Add a synopsis…")
@@ -519,14 +519,14 @@ fn card_ui(
             egui::pos2(rect.left() + 13.0, rect.bottom() - 34.0),
             egui::pos2(rect.right() - 13.0, rect.bottom() - 34.0),
         ],
-        Stroke::new(1.0, BORDER_SOFT),
+        Stroke::new(1.0, BORDER()),
     );
     overlay.text(
         rect.left_bottom() + Vec2::new(13.0, -19.0),
         egui::Align2::LEFT_CENTER,
         format!("{} words", card.words),
         ui_small(),
-        FAINT,
+        MUTED(),
     );
     overlay.circle_filled(
         egui::pos2(rect.right() - 62.0, rect.bottom() - 19.0),
@@ -549,7 +549,7 @@ fn card_ui(
             egui::pos2(rect.right() - 3.5, rect.top() + 14.0),
             Vec2::new(3.5, (rect.height() - 28.0).max(20.0)),
         );
-        overlay.rect_filled(bar, CornerRadius::same(2), ACCENT);
+        overlay.rect_filled(bar, CornerRadius::same(2), ACCENT());
     }
 
     // Drag-and-drop: this card is both a source and a drop target.

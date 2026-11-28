@@ -7,7 +7,7 @@ use std::time::Duration;
 use web_time::Instant;
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, Frame, Id, Key, Layout, Margin, RichText,
+    self, Align, CornerRadius, Frame, Id, Key, Layout, Margin, RichText,
     ScrollArea, Stroke, TextEdit, Vec2,
 };
 
@@ -98,20 +98,20 @@ fn rail_view_button(ui: &mut egui::Ui, view: View, active: bool) -> bool {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(46.0, 44.0), egui::Sense::click());
     let painter = ui.painter();
     if active {
-        painter.rect_filled(rect, CornerRadius::same(8), ACCENT_SOFT);
+        painter.rect_filled(rect, CornerRadius::same(8), ACCENT_SOFT());
         let bar = egui::Rect::from_min_size(
             egui::pos2(rect.left() - 8.0, rect.top() + 11.0),
             Vec2::new(2.5, 22.0),
         );
-        painter.rect_filled(bar, CornerRadius::same(2), ACCENT);
+        painter.rect_filled(bar, CornerRadius::same(2), ACCENT());
     } else if resp.hovered() {
-        painter.rect_filled(rect, CornerRadius::same(8), PANEL_2);
+        painter.rect_filled(rect, CornerRadius::same(8), RAISED());
     }
     icons::draw(
         painter,
         rect.shrink(12.0),
         view.icon(),
-        if active { ACCENT_INK } else { MUTED },
+        if active { ACCENT() } else { MUTED() },
     );
     resp.on_hover_text(view.label()).clicked()
 }
@@ -414,6 +414,12 @@ pub struct PortmanteauApp {
     pub compile_section: CompileSection,
     /// Selected tab on the Settings screen: 0 = Preferences, 1 = Display.
     pub settings_tab: usize,
+    /// Every theme on offer: the built-ins, then the themes folder's files.
+    pub themes: Vec<crate::theme::Theme>,
+    /// One line per theme file that could not be read.
+    pub theme_problems: Vec<String>,
+    /// The Global sliders of the theme being edited (temporary, never saved).
+    pub theme_adjust: Option<crate::ui::views::appearance::ThemeAdjust>,
     pub write_mode: WriteMode,
     /// The page currently at the top of the Paged preview, for the toolbar
     /// readout. Updated after the pages are drawn.
@@ -521,7 +527,26 @@ fn startup_workspace(wanted: Option<&str>, repeatable: bool) -> Workspace {
 
 impl PortmanteauApp {
     pub fn new(screenshot: Option<PathBuf>) -> Self {
-        let settings = crate::settings::load_settings();
+        let mut settings = crate::settings::load_settings();
+        // Themes: tests and screenshots see only the built-ins, so they stay
+        // repeatable whatever is in this machine's themes folder.
+        #[cfg(not(target_arch = "wasm32"))]
+        let (themes, theme_problems) = if cfg!(test) || screenshot.is_some() {
+            (crate::theme::builtin_themes(), Vec::new())
+        } else {
+            crate::theme::files::load_all(&crate::theme::files::themes_dir())
+        };
+        #[cfg(target_arch = "wasm32")]
+        let (themes, theme_problems) = (crate::theme::builtin_themes(), Vec::<String>::new());
+        // PORTMANTEAU_THEME picks a theme for a screenshot (a development aid).
+        let wanted_theme = std::env::var("PORTMANTEAU_THEME").ok().filter(|_| screenshot.is_some());
+        let wanted_theme = wanted_theme.as_deref().unwrap_or(&settings.theme);
+        // A theme that no longer exists (its file was deleted) falls back to Light.
+        let wanted_theme = if themes.iter().any(|t| t.id == wanted_theme) { wanted_theme.to_string() } else { "light".to_string() };
+        if let Some(theme) = themes.iter().find(|t| t.id == wanted_theme) {
+            crate::theme::activate(theme);
+        }
+        settings.theme = wanted_theme;
         // Reopen the project the writer left open. A first launch, or a last
         // project that can no longer be found, opens the welcome project
         // (instructions and a small sample of everything, held in memory).
@@ -585,7 +610,10 @@ impl PortmanteauApp {
                 Ok("styles") => CompileSection::Styles,
                 _ => CompileSection::Contents,
             },
-            settings_tab: 0,
+            settings_tab: std::env::var("PORTMANTEAU_SETTINGS_TAB").ok().and_then(|v| v.parse().ok()).filter(|_| screenshot.is_some()).unwrap_or(0),
+            themes,
+            theme_problems,
+            theme_adjust: None,
             // Development aid, like PORTMANTEAU_VIEW: open Write in Paged mode.
             write_mode: if std::env::var("PORTMANTEAU_PAGED").is_ok() || start_paged {
                 WriteMode::Paged
@@ -706,6 +734,15 @@ impl PortmanteauApp {
         self.selected
             .as_ref()
             .and_then(|id| self.ws.project.document(id))
+    }
+
+    /// Switch the interface theme and remember the choice.
+    pub fn choose_theme(&mut self, ctx: &egui::Context, id: &str) {
+        let Some(theme) = self.themes.iter().find(|t| t.id == id) else { return };
+        crate::theme::activate(theme);
+        crate::theme::apply_style(ctx);
+        self.settings.theme = id.to_string();
+        let _ = crate::settings::save_settings(&self.settings);
     }
 
     pub fn toast(&mut self, message: impl Into<String>, detail: impl Into<String>, kind: ToastKind) {
@@ -872,23 +909,23 @@ impl PortmanteauApp {
             .exact_size(54.0)
             .frame(
                 Frame::new()
-                    .fill(PANEL)
-                    .stroke(Stroke::new(1.0, BORDER_SOFT))
+                    .fill(PANEL())
+                    .stroke(Stroke::new(1.0, BORDER()))
                     .inner_margin(Margin::symmetric(14, 9)),
             )
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     let (rect, _) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), egui::Sense::hover());
-                    ui.painter().rect_filled(rect, CornerRadius::same(7), ACCENT);
+                    ui.painter().rect_filled(rect, CornerRadius::same(7), ACCENT());
                     ui.painter().text(
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
                         "S",
                         serif(18.0),
-                        Color32::WHITE,
+                        ON_ACCENT(),
                     );
                     ui.add_space(3.0);
-                    ui.label(RichText::new("Portmanteau").font(serif(19.0)).color(TEXT));
+                    ui.label(RichText::new("Portmanteau").font(serif(19.0)).color(TEXT()));
                     ui.add_space(10.0);
 
                     self.menus(ui);
@@ -919,8 +956,8 @@ impl PortmanteauApp {
             .exact_size(38.0)
             .frame(
                 Frame::new()
-                    .fill(PANEL)
-                    .stroke(Stroke::new(1.0, BORDER_SOFT))
+                    .fill(PANEL())
+                    .stroke(Stroke::new(1.0, BORDER()))
                     .inner_margin(Margin::symmetric(14, 4)),
             )
             .show(ui, |ui| {
@@ -928,13 +965,13 @@ impl PortmanteauApp {
                     ui.label(
                         RichText::new(&self.ws.project.title)
                             .font(serif(13.0))
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let exit = egui::Button::new(
-                            RichText::new("Exit focus").font(ui_body()).color(MUTED),
+                            RichText::new("Exit focus").font(ui_body()).color(MUTED()),
                         )
-                        .fill(PANEL_2)
+                        .fill(RAISED())
                         .corner_radius(CornerRadius::same(5));
                         if ui
                             .add(exit)
@@ -948,7 +985,7 @@ impl PortmanteauApp {
                             ui.label(
                                 RichText::new(format!("{} · {} words", doc.title, doc.words()))
                                     .font(ui_body())
-                                    .color(FAINT),
+                                    .color(MUTED()),
                             );
                         }
                     });
@@ -1026,7 +1063,7 @@ impl PortmanteauApp {
     }
 
     fn menus(&mut self, ui: &mut egui::Ui) {
-        let menu_text = |s: &str| RichText::new(s).font(ui_body()).color(MUTED);
+        let menu_text = |s: &str| RichText::new(s).font(ui_body()).color(MUTED());
         ui.menu_button(menu_text("File"), |ui| {
             if ui.button("New project…").clicked() {
                 self.new_project_title.clear();
@@ -1244,7 +1281,7 @@ impl PortmanteauApp {
             .resizable(false)
             .frame(
                 Frame::new()
-                    .fill(RAIL)
+                    .fill(BG())
                     .inner_margin(Margin::symmetric(8, 12)),
             )
             .show(ui, |ui| {
@@ -1283,7 +1320,7 @@ impl PortmanteauApp {
                         egui::Align2::CENTER_CENTER,
                         "?",
                         serif(17.0),
-                        if hr.hovered() { TEXT } else { FAINT },
+                        if hr.hovered() { TEXT() } else { MUTED() },
                     );
                     if hr.clicked() {
                         self.show_about = true;
@@ -1297,20 +1334,20 @@ impl PortmanteauApp {
             .exact_size(27.0)
             .frame(
                 Frame::new()
-                    .fill(PANEL)
-                    .stroke(Stroke::new(1.0, BORDER_SOFT))
+                    .fill(PANEL())
+                    .stroke(Stroke::new(1.0, BORDER()))
                     .inner_margin(Margin::symmetric(14, 4)),
             )
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let color = if self.ws.dirty { ACCENT } else { SAGE };
+                    let color = if self.ws.dirty { ACCENT() } else { SUCCESS() };
                     let (dot_rect, _) =
                         ui.allocate_exact_size(Vec2::new(7.0, 7.0), egui::Sense::hover());
                     ui.painter().circle_filled(dot_rect.center(), 3.0, color);
                     ui.label(
                         RichText::new(if self.ws.dirty { "Unsaved changes" } else { "All changes saved" })
                             .font(ui_body())
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                     ui.add_space(8.0);
                     let path = self
@@ -1327,7 +1364,7 @@ impl PortmanteauApp {
                         "Demonstration project · in memory".into()
                     }
                 });
-                    ui.label(RichText::new(path).font(mono(10.0)).color(FAINT));
+                    ui.label(RichText::new(path).font(mono(10.0)).color(MUTED()));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         // Words only. This bar used to add a page estimate and the
                         // open document's name; the estimate disagreed with the
@@ -1335,7 +1372,7 @@ impl PortmanteauApp {
                         ui.label(
                             RichText::new(format!("{} words in the project", self.ws.project.words()))
                                 .font(ui_body())
-                                .color(MUTED),
+                                .color(MUTED()),
                         );
                     });
                 });
@@ -1351,9 +1388,9 @@ impl PortmanteauApp {
             return;
         }
         let accent = match toast.kind {
-            ToastKind::Ok => SAGE,
-            ToastKind::Error => RED,
-            ToastKind::Info => BLUE,
+            ToastKind::Ok => SUCCESS(),
+            ToastKind::Error => DANGER(),
+            ToastKind::Info => INFO(),
         };
         let mut open: Option<std::path::PathBuf> = None;
         let mut hovered = false;
@@ -1361,7 +1398,7 @@ impl PortmanteauApp {
             .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-22.0, -42.0))
             .show(ctx, |ui| {
                 let shown = Frame::new()
-                    .fill(PANEL_2)
+                    .fill(RAISED())
                     .stroke(Stroke::new(1.0, accent.gamma_multiply(0.6)))
                     .corner_radius(CornerRadius::same(9))
                     .inner_margin(Margin::same(13))
@@ -1371,18 +1408,18 @@ impl PortmanteauApp {
                             let (r, _) = ui.allocate_exact_size(Vec2::new(8.0, 8.0), egui::Sense::hover());
                             ui.painter().circle_filled(r.center(), 4.0, accent);
                             ui.vertical(|ui| {
-                                ui.label(RichText::new(&toast.message).font(ui_body()).color(TEXT));
+                                ui.label(RichText::new(&toast.message).font(ui_body()).color(TEXT()));
                                 match &toast.link {
                                     Some(path) => {
                                         let link = ui
-                                            .link(RichText::new(&toast.detail).font(ui_body()).color(ACCENT))
+                                            .link(RichText::new(&toast.detail).font(ui_body()).color(ACCENT()))
                                             .on_hover_text("Open the file");
                                         if link.clicked() {
                                             open = Some(path.clone());
                                         }
                                     }
                                     None => {
-                                        ui.label(RichText::new(&toast.detail).font(ui_body()).color(MUTED));
+                                        ui.label(RichText::new(&toast.detail).font(ui_body()).color(MUTED()));
                                     }
                                 }
                             });
@@ -1428,9 +1465,9 @@ impl PortmanteauApp {
                             let selected = self.new_project_kind == kind;
                             let btn = egui::Button::new(
                                 RichText::new(kind.label()).font(ui_body())
-                                    .color(if selected { Color32::WHITE } else { TEXT }),
+                                    .color(if selected { ON_ACCENT() } else { TEXT() }),
                             )
-                            .fill(if selected { ACCENT } else { PANEL_2 })
+                            .fill(if selected { ACCENT() } else { RAISED() })
                             .corner_radius(CornerRadius::same(20));
                             if ui.add(btn).clicked() {
                                 self.new_project_kind = kind;
@@ -1441,9 +1478,9 @@ impl PortmanteauApp {
                     let ready = !self.new_project_title.trim().is_empty();
                     let btn = egui::Button::new(
                         RichText::new("Create project").font(ui_body())
-                            .color(if ready { Color32::WHITE } else { MUTED }),
+                            .color(if ready { ON_ACCENT() } else { MUTED() }),
                     )
-                    .fill(if ready { ACCENT } else { PANEL_3 })
+                    .fill(if ready { ACCENT() } else { HOVER() })
                     .corner_radius(CornerRadius::same(6))
                     .min_size(Vec2::new(140.0, 32.0));
                     if ui.add_enabled(ready, btn).clicked() {
@@ -1483,11 +1520,11 @@ impl PortmanteauApp {
                 .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
                 .min_width(400.0)
                 .show(ctx, |ui| {
-                    ui.label(RichText::new("Portmanteau").font(serif(26.0)).color(TEXT));
+                    ui.label(RichText::new("Portmanteau").font(serif(26.0)).color(TEXT()));
                     ui.label(
                         RichText::new("A native writing studio for novels, film, television and theatre.")
                             .font(ui_body())
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                     ui.add_space(10.0);
                     hairline(ui);
@@ -1502,15 +1539,15 @@ impl PortmanteauApp {
                     ] {
                         ui.horizontal(|ui| {
                             let (r, _) = ui.allocate_exact_size(Vec2::new(5.0, 5.0), egui::Sense::hover());
-                            ui.painter().circle_filled(r.center(), 2.5, ACCENT);
-                            ui.label(RichText::new(line).font(ui_body()).color(TEXT));
+                            ui.painter().circle_filled(r.center(), 2.5, ACCENT());
+                            ui.label(RichText::new(line).font(ui_body()).color(TEXT()));
                         });
                     }
                     ui.add_space(10.0);
                     ui.label(
                         RichText::new(format!("Version {} · GPL-3.0-or-later", env!("CARGO_PKG_VERSION")))
                             .font(mono(10.0))
-                            .color(FAINT),
+                            .color(MUTED()),
                     );
                     if ui.link(env!("CARGO_PKG_REPOSITORY")).clicked() {
                         open_url(env!("CARGO_PKG_REPOSITORY"));
@@ -1564,9 +1601,9 @@ impl PortmanteauApp {
                 let ready = !state.name.trim().is_empty();
                 let btn = egui::Button::new(
                     RichText::new("Create").font(ui_body())
-                        .color(if ready { Color32::WHITE } else { MUTED }),
+                        .color(if ready { ON_ACCENT() } else { MUTED() }),
                 )
-                .fill(if ready { ACCENT } else { PANEL_3 })
+                .fill(if ready { ACCENT() } else { HOVER() })
                 .corner_radius(CornerRadius::same(6))
                 .min_size(Vec2::new(110.0, 30.0));
                 if ui.add_enabled(ready, btn).clicked() {
@@ -1723,7 +1760,7 @@ impl PortmanteauApp {
                 );
                 if !state.error.is_empty() {
                     ui.add_space(4.0);
-                    ui.label(RichText::new(&state.error).font(ui_small()).color(RED));
+                    ui.label(RichText::new(&state.error).font(ui_small()).color(DANGER()));
                 }
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
@@ -1890,7 +1927,7 @@ impl PortmanteauApp {
                         ui.label(
                             RichText::new(&state.doc_title)
                                 .font(serif(20.0))
-                                .color(TEXT),
+                                .color(TEXT()),
                         );
                         ui.label(
                             RichText::new(format!(
@@ -1901,7 +1938,7 @@ impl PortmanteauApp {
                                 state.words_after
                             ))
                             .font(ui_small())
-                            .color(FAINT),
+                            .color(MUTED()),
                         );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -1909,22 +1946,22 @@ impl PortmanteauApp {
                             close = true;
                         }
                         if matches!(state.added + state.removed, 0) {
-                            pill(ui, "No changes", SAGE, SAGE_SOFT);
+                            pill(ui, "No changes", SUCCESS(), ACCENT_SOFT());
                         } else {
                             if state.removed > 0 {
                                 pill(
                                     ui,
                                     &format!("−{} removed", state.removed),
-                                    RED,
-                                    Color32::from_rgb(244, 225, 222),
+                                    DANGER(),
+                                    ACCENT_SOFT(),
                                 );
                             }
                             if state.added > 0 {
                                 pill(
                                     ui,
                                     &format!("+{} added", state.added),
-                                    SAGE,
-                                    SAGE_SOFT,
+                                    SUCCESS(),
+                                    ACCENT_SOFT(),
                                 );
                             }
                         }
@@ -1935,8 +1972,8 @@ impl PortmanteauApp {
                 ui.add_space(4.0);
 
                 Frame::new()
-                    .fill(PAPER)
-                    .stroke(Stroke::new(1.0, PAPER_EDGE))
+                    .fill(PAPER())
+                    .stroke(Stroke::new(1.0, BORDER()))
                     .corner_radius(CornerRadius::same(4))
                     .inner_margin(Margin::symmetric(8, 6))
                     .show(ui, |ui| {
@@ -1950,32 +1987,32 @@ impl PortmanteauApp {
                                     ui.label(
                                         RichText::new("Both versions are empty.")
                                             .font(mono(10.0))
-                                            .color(PAPER_MUTED),
+                                            .color(MUTED()),
                                     );
                                 }
                                 for line in &state.lines {
                                     let (sigil, sigil_color, fill, text_color) = match line.kind {
                                         portmanteau_core::DiffKind::Same => (
                                             " ",
-                                            PAPER_MUTED,
-                                            PAPER,
+                                            MUTED(),
+                                            PAPER(),
                                             if line.text.trim().is_empty() {
-                                                PAPER_MUTED
+                                                MUTED()
                                             } else {
-                                                PAPER_TEXT
+                                                PAPER_TEXT()
                                             },
                                         ),
                                         portmanteau_core::DiffKind::Add => (
                                             "+",
-                                            Color32::from_rgb(72, 118, 86),
-                                            Color32::from_rgb(225, 238, 227),
-                                            Color32::from_rgb(32, 55, 39),
+                                            SUCCESS(),
+                                            SUCCESS().lerp_to_gamma(PANEL(), 0.85),
+                                            TEXT(),
                                         ),
                                         portmanteau_core::DiffKind::Remove => (
                                             "−",
-                                            Color32::from_rgb(158, 75, 66),
-                                            Color32::from_rgb(245, 225, 220),
-                                            Color32::from_rgb(66, 34, 30),
+                                            DANGER(),
+                                            DANGER().lerp_to_gamma(PANEL(), 0.85),
+                                            TEXT(),
                                         ),
                                     };
                                     Frame::new()
@@ -2001,7 +2038,7 @@ impl PortmanteauApp {
                                                             .color(if line.kind
                                                                 == portmanteau_core::DiffKind::Same
                                                             {
-                                                                PAPER_MUTED
+                                                                MUTED()
                                                             } else {
                                                                 sigil_color
                                                             }),
@@ -2036,7 +2073,7 @@ impl PortmanteauApp {
                     ui.label(
                         RichText::new("Restoring replaces the current text with this saved version.")
                             .font(ui_small())
-                            .color(FAINT),
+                            .color(MUTED()),
                     );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button("Restore this version").clicked() {
@@ -2121,16 +2158,16 @@ impl PortmanteauApp {
                         PathDialog::SaveAs => "A new copy is written; the open project switches to it.",
                     })
                     .font(ui_small())
-                    .color(FAINT),
+                    .color(MUTED()),
                 );
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     let btn = egui::Button::new(
                         RichText::new(verb)
                             .font(ui_body())
-                            .color(Color32::WHITE),
+                            .color(ON_ACCENT()),
                     )
-                    .fill(ACCENT)
+                    .fill(ACCENT())
                     .corner_radius(CornerRadius::same(6))
                     .min_size(Vec2::new(100.0, 30.0));
                     if ui
@@ -2421,13 +2458,13 @@ impl PortmanteauApp {
                 }
             }
             egui::CentralPanel::default()
-                .frame(Frame::new().fill(BG))
+                .frame(Frame::new().fill(BG()))
                 .show(ui, |ui| {
                     ui::editor::show(self, ui);
                 });
         } else {
             egui::CentralPanel::default()
-                .frame(Frame::new().fill(BG))
+                .frame(Frame::new().fill(BG()))
                 .show(ui, |ui| {
                     ui::views::show(self, ui);
                 });
@@ -2537,7 +2574,7 @@ impl PortmanteauApp {
                 } else {
                     format!("“{title}” has changes that have not been saved to its folder. Quit without saving and they are discarded.")
                 };
-                ui.label(RichText::new(message).font(ui_body()).color(TEXT));
+                ui.label(RichText::new(message).font(ui_body()).color(TEXT()));
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     if ui::views::primary_button(ui, if homeless { "Save…" } else { "Save" }).clicked() {
@@ -2620,7 +2657,7 @@ impl PortmanteauApp {
                 ui.label(
                     RichText::new(format!("Portmanteau closed with unsaved changes to “{title}”. A safety copy from {saved} was kept."))
                         .font(ui_body())
-                        .color(TEXT),
+                        .color(TEXT()),
                 );
                 ui.label(
                     RichText::new(if has_folder {
@@ -2629,7 +2666,7 @@ impl PortmanteauApp {
                         "Bringing it back opens it with those changes; use File › Save project as… to keep it."
                     })
                     .font(ui_small())
-                    .color(FAINT),
+                    .color(MUTED()),
                 );
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
@@ -3094,7 +3131,7 @@ impl PortmanteauApp {
             .resizable(false)
             .frame(
                 Frame::new()
-                    .fill(PANEL)
+                    .fill(PANEL())
                     .inner_margin(Margin::symmetric(12, 10)),
             )
             .show(ui, |ui| {
@@ -3108,7 +3145,7 @@ impl PortmanteauApp {
             .resizable(false)
             .frame(
                 Frame::new()
-                    .fill(PANEL)
+                    .fill(PANEL())
                     .inner_margin(Margin::symmetric(14, 10)),
             )
             .show(ui, |ui| {
@@ -3124,14 +3161,14 @@ impl PortmanteauApp {
             .resizable(false)
             .frame(
                 Frame::new()
-                    .fill(BG)
+                    .fill(BG())
                     .inner_margin(Margin::symmetric(1, 6)),
             )
             .show(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(10.0);
                     let show = egui::Button::new(
-                        RichText::new("›").font(ui_body()).color(FAINT),
+                        RichText::new("›").font(ui_body()).color(MUTED()),
                     )
                     .frame(false)
                     .min_size(Vec2::new(16.0, 28.0));
@@ -3152,14 +3189,14 @@ impl PortmanteauApp {
             .resizable(false)
             .frame(
                 Frame::new()
-                    .fill(BG)
+                    .fill(BG())
                     .inner_margin(Margin::symmetric(1, 6)),
             )
             .show(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(10.0);
                     let show = egui::Button::new(
-                        RichText::new("‹").font(ui_body()).color(FAINT),
+                        RichText::new("‹").font(ui_body()).color(MUTED()),
                     )
                     .frame(false)
                     .min_size(Vec2::new(16.0, 28.0));
@@ -3319,7 +3356,7 @@ mod shell_probe {
                         app.inspector(ui);
                     }
                     egui::CentralPanel::default()
-                        .frame(Frame::new().fill(BG))
+                        .frame(Frame::new().fill(BG()))
                         .show(ui, |ui| {
                             crate::ui::editor::show(&mut app, ui);
                         });
@@ -3327,6 +3364,52 @@ mod shell_probe {
             });
         harness.run_steps(6);
         (harness, app)
+    }
+
+    #[test]
+    fn appearance_tab_offers_theme_actions_colour_rows_and_a_preview() {
+        let app = Rc::new(RefCell::new(PortmanteauApp::new(None)));
+        let ui_app = Rc::clone(&app);
+        let mut harness = Harness::builder()
+            .with_size(SHELL)
+            .with_accessibility_check(false)
+            .allow_missing_glyphs()
+            .build_ui(move |ui| {
+                crate::ui::views::appearance::show(&mut ui_app.borrow_mut(), ui);
+            });
+        harness.run_steps(4);
+        for label in ["Duplicate", "Import…", "Export…", "Delete", "PREVIEW", "Window"] {
+            assert!(harness.query_by_label(label).is_some(), "missing {label:?}");
+        }
+        // Built-in themes are listed; the dropdown shows the active one.
+        assert!(app.borrow().themes.iter().any(|t| t.id == app.borrow().settings.theme));
+    }
+
+    #[test]
+    fn editing_a_custom_theme_shows_the_global_hsl_sliders() {
+        let mut app = PortmanteauApp::new(None);
+        app.themes.push(crate::theme::Theme {
+            id: "mine".into(),
+            name: "Mine".into(),
+            palette: crate::theme::Palette::LIGHT,
+            builtin: false,
+        });
+        app.settings.theme = "mine".into();
+        let app = Rc::new(RefCell::new(app));
+        let ui_app = Rc::clone(&app);
+        let mut harness = Harness::builder()
+            .with_size(SHELL)
+            .with_accessibility_check(false)
+            .allow_missing_glyphs()
+            .build_ui(move |ui| {
+                crate::ui::views::appearance::show(&mut ui_app.borrow_mut(), ui);
+            });
+        harness.run_steps(4);
+        for label in ["GLOBAL", "Hue", "Saturation", "Lightness", "Reset sliders"] {
+            assert!(harness.query_by_label(label).is_some(), "missing {label:?}");
+        }
+        // Looking at the sliders changes nothing.
+        assert_eq!(app.borrow().themes.last().unwrap().palette, crate::theme::Palette::LIGHT);
     }
 
     #[test]

@@ -28,12 +28,12 @@ use crate::ui::views::{content_frame, meta_line, page_head, primary_button, quie
 /// The colour a kind is drawn in, in the list and the editor.
 pub fn kind_color(kind: &str) -> Color32 {
     match kind {
-        "Interview" => PURPLE,
-        "Data" => BLUE,
-        "Archive" => ACCENT,
-        "Image" => RED,
-        "Place" => Color32::from_rgb(166, 124, 52),
-        _ => SAGE,
+        "Interview" => SPECIAL(),
+        "Data" => INFO(),
+        "Archive" => ACCENT(),
+        "Image" => DANGER(),
+        "Place" => WARNING(),
+        _ => SUCCESS(),
     }
 }
 
@@ -193,12 +193,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         if all_ids.is_empty() {
             ui.add_space(24.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("No research yet").font(serif(20.0)).color(TEXT));
+                ui.label(RichText::new("No research yet").font(serif(20.0)).color(TEXT()));
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new("A folder of small, useful things. Start with one note, or paste a clipping.")
                         .font(ui_body())
-                        .color(MUTED),
+                        .color(MUTED()),
                 );
                 ui.add_space(12.0);
                 if primary_button(ui, "Add the first note").clicked() {
@@ -311,8 +311,8 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
         .collect();
 
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::same(8))
         .show(ui, |ui| {
@@ -338,7 +338,7 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
-                if chip(ui, &format!("All {total}"), state.kind.is_none(), TEXT) {
+                if chip(ui, &format!("All {total}"), state.kind.is_none(), TEXT()) {
                     state.kind = None;
                 }
                 for (kind, count) in counts.iter().filter(|(_, n)| *n > 0) {
@@ -350,9 +350,9 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
             });
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Sort").font(ui_small()).color(FAINT));
+                ui.label(RichText::new("Sort").font(ui_small()).color(MUTED()));
                 egui::ComboBox::from_id_salt("research_sort")
-                    .selected_text(RichText::new(state.sort.label()).font(ui_small()).color(MUTED))
+                    .selected_text(RichText::new(state.sort.label()).font(ui_small()).color(MUTED()))
                     .width(140.0)
                     .show_ui(ui, |ui| {
                         for sort in [Sort::Binder, Sort::Title, Sort::Kind, Sort::Recent] {
@@ -363,7 +363,7 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
             ui.add_space(6.0);
             if shown.is_empty() {
                 ui.add_space(10.0);
-                ui.label(RichText::new("Nothing matches. Clear the search or the kind filter.").font(ui_small()).color(FAINT));
+                ui.label(RichText::new("Nothing matches. Clear the search or the kind filter.").font(ui_small()).color(MUTED()));
             }
             ScrollArea::vertical()
                 .id_salt("research_list")
@@ -383,9 +383,9 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
                             )
                         });
                         if selected {
-                            ui.painter().rect_filled(rect, CornerRadius::same(5), ACCENT_SOFT);
+                            ui.painter().rect_filled(rect, CornerRadius::same(5), ACCENT_SOFT());
                         } else if resp.hovered() {
-                            ui.painter().rect_filled(rect, CornerRadius::same(5), PANEL_2);
+                            ui.painter().rect_filled(rect, CornerRadius::same(5), RAISED());
                         }
                         let color = kind_color(kind);
                         ui.painter().rect_filled(
@@ -403,13 +403,13 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
                             egui::Align2::LEFT_TOP,
                             title,
                             ui_body(),
-                            if selected { TEXT } else { MUTED },
+                            if selected { TEXT() } else { MUTED() },
                         );
                         let mut detail = kind.clone();
                         if !source.is_empty() {
                             detail.push_str(&format!(" · {source}"));
                         }
-                        clip.text(text_rect.left_top() + Vec2::new(0.0, 25.0), egui::Align2::LEFT_TOP, detail, ui_small(), FAINT);
+                        clip.text(text_rect.left_top() + Vec2::new(0.0, 25.0), egui::Align2::LEFT_TOP, detail, ui_small(), MUTED());
                         let mut badges = format!("{words} w");
                         if *files > 0 {
                             badges = format!("📎{files}  {badges}");
@@ -419,7 +419,7 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
                             egui::Align2::RIGHT_TOP,
                             badges,
                             mono(8.5),
-                            FAINT,
+                            MUTED(),
                         );
                         if resp.clicked() {
                             app.selected_research = Some(id.clone());
@@ -431,9 +431,9 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
 }
 
 fn chip(ui: &mut egui::Ui, text: &str, active: bool, color: Color32) -> bool {
-    let button = egui::Button::new(RichText::new(text).font(ui_small()).color(if active { TEXT } else { MUTED }))
-        .fill(if active { color.gamma_multiply(0.22) } else { PANEL_2 })
-        .stroke(Stroke::new(1.0, if active { color } else { BORDER_SOFT }))
+    let button = egui::Button::new(RichText::new(text).font(ui_small()).color(if active { TEXT() } else { MUTED() }))
+        .fill(if active { color.gamma_multiply(0.22) } else { RAISED() })
+        .stroke(Stroke::new(1.0, if active { color } else { BORDER() }))
         .corner_radius(CornerRadius::same(10))
         .min_size(Vec2::new(0.0, 22.0));
     ui.add(button).clicked()
@@ -485,8 +485,8 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
     let hovering_files = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
 
     Frame::new()
-        .fill(BG)
-        .stroke(Stroke::new(if hovering_files { 2.0 } else { 1.0 }, if hovering_files { ACCENT } else { BORDER_SOFT }))
+        .fill(BG())
+        .stroke(Stroke::new(if hovering_files { 2.0 } else { 1.0 }, if hovering_files { ACCENT() } else { BORDER() }))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::same(18))
         .show(ui, |ui| {
@@ -522,7 +522,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                     ui.add_space(6.0);
                     let (source_name, source_hint) = source_label(&kind);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Kind").font(ui_small()).color(FAINT));
+                        ui.label(RichText::new("Kind").font(ui_small()).color(MUTED()));
                         egui::ComboBox::from_id_salt("research_kind")
                             .selected_text(RichText::new(&kind).font(ui_small()).color(kind_color(&kind)))
                             .width(118.0)
@@ -537,7 +537,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                                 }
                             });
                         ui.add_space(8.0);
-                        ui.label(RichText::new(source_name).font(ui_small()).color(FAINT));
+                        ui.label(RichText::new(source_name).font(ui_small()).color(MUTED()));
                         if ui
                             .add(
                                 TextEdit::singleline(&mut source)
@@ -655,13 +655,13 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                         ui.label(
                             RichText::new("Save the project to attach files: they are copied into its folder.")
                                 .font(ui_small())
-                                .color(FAINT),
+                                .color(MUTED()),
                         );
                     } else if meta.attachments.is_empty() {
                         ui.label(
                             RichText::new("Add files with the button, or drop them on this window. They are copied into the project; nothing leaves this machine.")
                                 .font(ui_small())
-                                .color(FAINT),
+                                .color(MUTED()),
                         );
                     }
                     if !meta.attachments.is_empty() {
@@ -683,7 +683,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                         ui.horizontal_wrapped(|ui| {
                             for (doc_id, doc_title) in &used_in {
                                 if ui
-                                    .add(egui::Button::new(RichText::new(doc_title).font(ui_small()).color(BLUE)).frame(false))
+                                    .add(egui::Button::new(RichText::new(doc_title).font(ui_small()).color(INFO())).frame(false))
                                     .on_hover_text("Open this document")
                                     .clicked()
                                 {
@@ -699,7 +699,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         if state.confirm_delete.as_deref() == Some(id) {
-                            ui.label(RichText::new("Delete this note and its files?").font(ui_small()).color(RED_INK));
+                            ui.label(RichText::new("Delete this note and its files?").font(ui_small()).color(DANGER()));
                             if ui.button("Delete").clicked() {
                                 actions.push(Action::Delete);
                             }
@@ -778,8 +778,8 @@ fn file_card(ui: &mut egui::Ui, id: &str, name: &str, path: Option<&std::path::P
     let path = path.map(std::path::Path::to_path_buf);
     let size = path.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len());
     Frame::new()
-        .fill(PANEL_2)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(RAISED())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(6))
         .inner_margin(Margin::same(6))
         // The cards sit in a wrapping row, so each one lays itself out top-down.
@@ -802,36 +802,36 @@ fn file_card(ui: &mut egui::Ui, id: &str, name: &str, path: Option<&std::path::P
                             .paint_at(ui, area);
                     }
                     _ => {
-                        ui.painter().rect_filled(area, CornerRadius::same(4), BG);
+                        ui.painter().rect_filled(area, CornerRadius::same(4), BG());
                         let ext = std::path::Path::new(name)
                             .extension()
                             .and_then(|e| e.to_str())
                             .unwrap_or("file")
                             .to_uppercase();
-                        ui.painter().text(area.center(), egui::Align2::CENTER_CENTER, ext, serif(22.0), MUTED);
+                        ui.painter().text(area.center(), egui::Align2::CENTER_CENTER, ext, serif(22.0), MUTED());
                     }
                 }
                 ui.add_space(3.0);
-                ui.add(egui::Label::new(RichText::new(name).font(ui_small()).color(TEXT)).truncate());
+                ui.add(egui::Label::new(RichText::new(name).font(ui_small()).color(TEXT())).truncate());
                 let detail = match size {
                     Some(bytes) => format!("{kind} · {}", human_size(bytes)),
                     None => format!("{kind} · missing from the project folder"),
                 };
-                ui.add(egui::Label::new(RichText::new(detail).font(mono(8.5)).color(FAINT)).truncate());
+                ui.add(egui::Label::new(RichText::new(detail).font(mono(8.5)).color(MUTED())).truncate());
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
                     let link = |text: &str, color: Color32| {
                         egui::Button::new(RichText::new(text).font(ui_small()).color(color)).frame(false)
                     };
                     if let (Some(path), Some(_)) = (&path, size) {
-                        if ui.add(link("Open", BLUE)).clicked() {
+                        if ui.add(link("Open", INFO())).clicked() {
                             actions.push(Action::Open(path.clone()));
                         }
-                        if ui.add(link("Show", BLUE)).on_hover_text("Show in the file manager").clicked() {
+                        if ui.add(link("Show", INFO())).on_hover_text("Show in the file manager").clicked() {
                             actions.push(Action::Reveal(path.clone()));
                         }
                     }
-                    if ui.add(link("Remove", MUTED)).clicked() {
+                    if ui.add(link("Remove", MUTED())).clicked() {
                         actions.push(Action::Remove(name.to_string()));
                     }
                 });

@@ -55,12 +55,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         if app.ws.project.items.is_empty() {
             ui.add_space(24.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Nothing catalogued yet").font(serif(20.0)).color(TEXT));
+                ui.label(RichText::new("Nothing catalogued yet").font(serif(20.0)).color(TEXT()));
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new("Keep the people, places and things your story needs.")
                         .font(ui_body())
-                        .color(MUTED),
+                        .color(MUTED()),
                 );
                 ui.add_space(12.0);
                 if primary_button(ui, "Create a character").clicked() {
@@ -80,8 +80,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 Layout::top_down(Align::Min),
                 |ui| {
                     Frame::new()
-                        .fill(PANEL)
-                        .stroke(Stroke::new(1.0, BORDER_SOFT))
+                        .fill(PANEL())
+                        .stroke(Stroke::new(1.0, BORDER()))
                         .corner_radius(CornerRadius::same(8))
                         .inner_margin(Margin::same(9))
                         .show(ui, |ui| {
@@ -109,7 +109,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                                     count
                                                 ))
                                                 .font(ui_small())
-                                                .color(FAINT)
+                                                .color(MUTED())
                                                 .extra_letter_spacing(1.0),
                                             );
                                             ui.with_layout(
@@ -120,7 +120,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                                             egui::Button::new(
                                                                 RichText::new("+")
                                                                     .font(ui_strong())
-                                                                    .color(ACCENT_INK),
+                                                                    .color(ACCENT()),
                                                             )
                                                             .frame(false),
                                                         )
@@ -198,10 +198,10 @@ fn item_row(ui: &mut egui::Ui, item: &DatabaseItem, selected: bool) -> bool {
     });
     if selected {
         ui.painter()
-            .rect_filled(rect, CornerRadius::same(6), ACCENT_SOFT);
+            .rect_filled(rect, CornerRadius::same(6), ACCENT_SOFT());
     } else if resp.hovered() {
         ui.painter()
-            .rect_filled(rect, CornerRadius::same(6), PANEL_2);
+            .rect_filled(rect, CornerRadius::same(6), RAISED());
     }
     let color = FACE_COLORS[item.color as usize % FACE_COLORS.len()];
     let top = if item.tags.is_empty() { rect.center().y } else { rect.top() + 16.0 };
@@ -211,7 +211,7 @@ fn item_row(ui: &mut egui::Ui, item: &DatabaseItem, selected: bool) -> bool {
         egui::Align2::LEFT_CENTER,
         &item.title,
         ui_body(),
-        if selected { TEXT } else { MUTED },
+        if selected { TEXT() } else { MUTED() },
     );
     if !item.tags.is_empty() {
         let clip = ui.painter().with_clip_rect(rect.shrink2(Vec2::new(6.0, 0.0)));
@@ -220,7 +220,7 @@ fn item_row(ui: &mut egui::Ui, item: &DatabaseItem, selected: bool) -> bool {
             egui::Align2::LEFT_CENTER,
             item.tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join("  "),
             ui_small(),
-            FAINT,
+            MUTED(),
         );
     }
     resp.clicked()
@@ -279,9 +279,9 @@ fn filter_ui(ui: &mut egui::Ui, items: &[DatabaseItem], filter: &mut ListFilter)
         ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
         for (tag, count) in tags {
             let active = filter.tag.as_deref() == Some(tag.as_str());
-            let button = egui::Button::new(RichText::new(format!("#{tag} {count}")).font(ui_small()).color(if active { TEXT } else { MUTED }))
-                .fill(if active { ACCENT_SOFT } else { PANEL_2 })
-                .stroke(Stroke::new(1.0, if active { ACCENT } else { BORDER_SOFT }))
+            let button = egui::Button::new(RichText::new(format!("#{tag} {count}")).font(ui_small()).color(if active { TEXT() } else { MUTED() }))
+                .fill(if active { ACCENT_SOFT() } else { RAISED() })
+                .stroke(Stroke::new(1.0, if active { ACCENT() } else { BORDER() }))
                 .corner_radius(CornerRadius::same(10))
                 .min_size(Vec2::new(0.0, 20.0));
             if ui.add(button).on_hover_text("Show only items with this tag").clicked() {
@@ -346,8 +346,8 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
     let color = FACE_COLORS[item.color as usize % FACE_COLORS.len()];
 
     Frame::new()
-        .fill(BG)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(BG())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::same(18))
         .show(ui, |ui| {
@@ -407,7 +407,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("Delete").font(ui_small()).color(RED),
+                                        RichText::new("Delete").font(ui_small()).color(DANGER()),
                                     )
                                     .frame(false),
                                 )
@@ -431,7 +431,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                 ui.painter().circle_stroke(
                                     rect.center(),
                                     8.5,
-                                    Stroke::new(1.5, TEXT),
+                                    Stroke::new(1.5, TEXT()),
                                 );
                             }
                             ui.painter().circle_filled(rect.center(), 6.5, *swatch);
@@ -460,13 +460,13 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         ui.add_space(3.0);
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
-                            ui.label(RichText::new("Used elsewhere:").font(ui_small()).color(FAINT));
+                            ui.label(RichText::new("Used elsewhere:").font(ui_small()).color(MUTED()));
                             for tag in &tag_suggestions {
                                 if ui
                                     .add(
-                                        egui::Button::new(RichText::new(format!("+ #{tag}")).font(ui_small()).color(MUTED))
-                                            .fill(PANEL_2)
-                                            .stroke(Stroke::new(1.0, BORDER_SOFT))
+                                        egui::Button::new(RichText::new(format!("+ #{tag}")).font(ui_small()).color(MUTED()))
+                                            .fill(RAISED())
+                                            .stroke(Stroke::new(1.0, BORDER()))
                                             .corner_radius(CornerRadius::same(10))
                                             .min_size(Vec2::new(0.0, 20.0)),
                                     )
@@ -578,16 +578,16 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         ui.label(
                             RichText::new("No other item links here. Type @ in another item's notes to link to this one.")
                                 .font(ui_small())
-                                .color(FAINT),
+                                .color(MUTED()),
                         );
                     }
                     ui.horizontal_wrapped(|ui| {
                         for (oid, title) in &linked_from {
                             if ui
                                 .add(
-                                    egui::Button::new(RichText::new(title).font(ui_body()).color(TEXT))
-                                        .fill(PANEL_2)
-                                        .stroke(Stroke::new(1.0, BORDER_SOFT))
+                                    egui::Button::new(RichText::new(title).font(ui_body()).color(TEXT()))
+                                        .fill(RAISED())
+                                        .stroke(Stroke::new(1.0, BORDER()))
                                         .corner_radius(CornerRadius::same(20))
                                         .min_size(Vec2::new(0.0, 24.0)),
                                 )
@@ -608,7 +608,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         ui.label(
                             RichText::new("Not yet named or linked in your writing.")
                                 .font(ui_small())
-                                .color(FAINT),
+                                .color(MUTED()),
                         );
                     } else {
                         ui.label(
@@ -618,7 +618,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                 if appearances.len() == 1 { "" } else { "s" }
                             ))
                             .font(ui_small())
-                            .color(MUTED),
+                            .color(MUTED()),
                         );
                         ui.add_space(2.0);
                         for appearance in appearances.iter().take(30) {
@@ -626,13 +626,13 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                 dot(ui, color);
                                 let title = if appearance.by_link { format!("{}  @", appearance.title) } else { appearance.title.clone() };
                                 if ui
-                                    .add(egui::Button::new(RichText::new(title).font(ui_body()).color(BLUE)).frame(false))
+                                    .add(egui::Button::new(RichText::new(title).font(ui_body()).color(INFO())).frame(false))
                                     .on_hover_text(if appearance.place.is_some() { "Open at the first appearance" } else { "Open (named in its notes or synopsis)" })
                                     .clicked()
                                 {
                                     open_appearance = Some(appearance.clone());
                                 }
-                                ui.label(RichText::new(&appearance.excerpt).font(ui_small()).color(FAINT));
+                                ui.label(RichText::new(&appearance.excerpt).font(ui_small()).color(MUTED()));
                             });
                         }
                     }

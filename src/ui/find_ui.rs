@@ -8,9 +8,9 @@ use crate::theme::*;
 
 /// A little toggle button that shows whether it is on. Returns true when clicked.
 pub fn toggle(ui: &mut egui::Ui, text: &str, on: bool, hover: &str) -> bool {
-    let button = egui::Button::new(RichText::new(text).font(mono(12.0)).color(if on { ACCENT_INK } else { MUTED }))
-        .fill(if on { ACCENT_SOFT } else { egui::Color32::TRANSPARENT })
-        .stroke(Stroke::new(1.0, if on { ACCENT } else { egui::Color32::TRANSPARENT }))
+    let button = egui::Button::new(RichText::new(text).font(mono(12.0)).color(if on { ACCENT() } else { MUTED() }))
+        .fill(if on { ACCENT_SOFT() } else { egui::Color32::TRANSPARENT })
+        .stroke(Stroke::new(1.0, if on { ACCENT() } else { egui::Color32::TRANSPARENT }))
         .corner_radius(CornerRadius::same(4))
         .min_size(Vec2::new(26.0, 22.0));
     ui.add(button).on_hover_text(hover).clicked()

@@ -153,8 +153,8 @@ pub fn show(ui: &mut egui::Ui, field: Id, content: &mut RichDocument, options: &
     let active = active_marks(content, &range, pending.as_ref());
 
     Frame::new()
-        .fill(PANEL_2)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(RAISED())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(6))
         .inner_margin(Margin::symmetric(6, 3))
         .show(ui, |ui| {
@@ -168,7 +168,7 @@ pub fn show(ui: &mut egui::Ui, field: Id, content: &mut RichDocument, options: &
                 }
                 for (label, mark, tip) in MARKS {
                     let on = active.contains(&mark);
-                    let mut text = RichText::new(label).font(ui_strong()).color(if on { ACCENT_INK } else { TEXT });
+                    let mut text = RichText::new(label).font(ui_strong()).color(if on { ACCENT() } else { TEXT() });
                     text = match mark {
                         InlineMark::Bold => text.strong(),
                         InlineMark::Italic => text.italics(),
@@ -176,7 +176,7 @@ pub fn show(ui: &mut egui::Ui, field: Id, content: &mut RichDocument, options: &
                         InlineMark::Strikethrough => text.strikethrough(),
                     };
                     let button = egui::Button::new(text)
-                        .fill(if on { ACCENT_SOFT } else { Color32::TRANSPARENT })
+                        .fill(if on { ACCENT_SOFT() } else { Color32::TRANSPARENT })
                         .stroke(Stroke::NONE)
                         .corner_radius(CornerRadius::same(5))
                         .min_size(Vec2::new(28.0, 26.0));
@@ -191,8 +191,8 @@ pub fn show(ui: &mut egui::Ui, field: Id, content: &mut RichDocument, options: &
                 let existing = content.link_at(range.start, true);
                 let can_link = !range.is_empty() || existing.is_some();
                 let linked = existing.is_some() && range.is_empty() || content.link_at(range.start, false).is_some();
-                let button = egui::Button::new(RichText::new("Link").font(ui_small()).color(if linked { ACCENT_INK } else { BLUE }))
-                    .fill(if linked { ACCENT_SOFT } else { Color32::TRANSPARENT })
+                let button = egui::Button::new(RichText::new("Link").font(ui_small()).color(if linked { ACCENT() } else { INFO() }))
+                    .fill(if linked { ACCENT_SOFT() } else { Color32::TRANSPARENT })
                     .stroke(Stroke::NONE)
                     .corner_radius(CornerRadius::same(5))
                     .min_size(Vec2::new(40.0, 26.0));
@@ -220,7 +220,7 @@ fn style_menu(ui: &mut egui::Ui, field: Id, content: &mut RichDocument, range: &
         .map_or(current.clone(), |style| style.name.clone());
     let mut chosen = None;
     egui::ComboBox::from_id_salt(("rich-toolbar-style", field))
-        .selected_text(RichText::new(label).font(ui_small()).color(MUTED))
+        .selected_text(RichText::new(label).font(ui_small()).color(MUTED()))
         .width(120.0)
         .show_ui(ui, |ui| {
             for style in &sheet.styles {

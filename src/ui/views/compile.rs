@@ -183,15 +183,15 @@ fn tab_button(ui: &mut egui::Ui, label: &str, color: Color32, selected: bool) ->
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
     if selected {
         ui.painter()
-            .rect_filled(rect, CornerRadius::same(7), ACCENT_SOFT);
+            .rect_filled(rect, CornerRadius::same(7), ACCENT_SOFT());
         ui.painter().rect_stroke(
             rect,
             CornerRadius::same(7),
-            Stroke::new(1.0, ACCENT.gamma_multiply(0.75)),
+            Stroke::new(1.0, ACCENT().gamma_multiply(0.75)),
             egui::StrokeKind::Inside,
         );
     } else if resp.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(7), PANEL_2);
+        ui.painter().rect_filled(rect, CornerRadius::same(7), RAISED());
     }
     let dot = egui::pos2(rect.left() + 14.0, rect.center().y);
     ui.painter().circle_filled(
@@ -204,22 +204,22 @@ fn tab_button(ui: &mut egui::Ui, label: &str, color: Color32, selected: bool) ->
         egui::Align2::LEFT_CENTER,
         label,
         ui_body(),
-        if selected { TEXT } else { MUTED },
+        if selected { TEXT() } else { MUTED() },
     );
     resp.clicked()
 }
 
 fn format_color(kind: ExportKind) -> Color32 {
     match kind {
-        ExportKind::Pdf => ACCENT,
-        ExportKind::Epub => SAGE,
-        ExportKind::Docx => BLUE,
-        ExportKind::Fdx => PURPLE,
-        ExportKind::Fountain => Color32::from_rgb(122, 176, 186),
-        ExportKind::Html => Color32::from_rgb(190, 148, 120),
-        ExportKind::Markdown => Color32::from_rgb(158, 166, 150),
-        ExportKind::Txt => MUTED,
-        ExportKind::Bundle => Color32::from_rgb(186, 146, 104),
+        ExportKind::Pdf => ACCENT(),
+        ExportKind::Epub => SUCCESS(),
+        ExportKind::Docx => INFO(),
+        ExportKind::Fdx => SPECIAL(),
+        ExportKind::Fountain => SPECIAL(),
+        ExportKind::Html => WARNING(),
+        ExportKind::Markdown => MUTED(),
+        ExportKind::Txt => MUTED(),
+        ExportKind::Bundle => MUTED(),
     }
 }
 
@@ -262,11 +262,11 @@ fn output_tab(
     // Compile button, so none of them scroll away while settings are edited.
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            ui.label(RichText::new(kind.label()).font(serif(21.0)).color(TEXT));
+            ui.label(RichText::new(kind.label()).font(serif(21.0)).color(TEXT()));
             ui.label(
                 RichText::new(kind.description())
                     .font(ui_small())
-                    .color(FAINT),
+                    .color(MUTED()),
             );
         });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -274,7 +274,7 @@ fn output_tab(
                 ui,
                 &format!(".{}", kind.extension()),
                 format_color(kind),
-                PANEL_2,
+                RAISED(),
             );
         });
     });
@@ -337,13 +337,13 @@ fn section_tabs(ui: &mut egui::Ui, current: &mut CompileSection) {
         ] {
             let selected = *current == section;
             let text = RichText::new(label).font(ui_body()).color(if selected {
-                Color32::WHITE
+                ON_ACCENT()
             } else {
-                MUTED
+                MUTED()
             });
             let button = egui::Button::new(text)
-                .fill(if selected { ACCENT } else { PANEL })
-                .stroke(Stroke::new(1.0, if selected { ACCENT } else { BORDER_SOFT }))
+                .fill(if selected { ACCENT() } else { PANEL() })
+                .stroke(Stroke::new(1.0, if selected { ACCENT() } else { BORDER() }))
                 .corner_radius(CornerRadius::same(6))
                 .min_size(Vec2::new(86.0, 28.0));
             if ui.add(button).clicked() {
@@ -361,15 +361,15 @@ fn reset_row(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSetti
         ui.label(
             RichText::new("Seeds from the project-wide element styles.")
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
         );
     });
 }
 
 fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSettings) {
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
@@ -385,7 +385,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                     // In the browser there is no folder: the file downloads.
                     #[cfg(not(target_arch = "wasm32"))]
                     {
-                        ui.label(RichText::new("Folder").font(ui_small()).color(FAINT));
+                        ui.label(RichText::new("Folder").font(ui_small()).color(MUTED()));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             // The button keeps its own width at the right; the
                             // field takes the rest.
@@ -408,7 +408,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
 
                     }
 
-                    ui.label(RichText::new("Filename").font(ui_small()).color(FAINT));
+                    ui.label(RichText::new("Filename").font(ui_small()).color(MUTED()));
                     output_field(ui, &mut settings.output_filename, &default_name);
                     ui.end_row();
                 });
@@ -419,7 +419,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                 ui.label(
                     RichText::new("The compiled file downloads through your browser.")
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                 );
             }
         });
@@ -428,8 +428,8 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
 /// One path field in the "Where it goes" panel, framed like a form input.
 fn output_field(ui: &mut egui::Ui, value: &mut String, hint: &str) {
     Frame::new()
-        .fill(BG)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(BG())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(5))
         .inner_margin(Margin::symmetric(8, 3))
         .show(ui, |ui| {
@@ -508,8 +508,8 @@ fn action_panel(
     compile: &mut bool,
 ) {
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(16, 13))
         .show(ui, |ui| {
@@ -519,9 +519,9 @@ fn action_panel(
                 let btn = egui::Button::new(
                     RichText::new(label)
                         .font(ui_body())
-                        .color(Color32::WHITE),
+                        .color(ON_ACCENT()),
                 )
-                .fill(ACCENT)
+                .fill(ACCENT())
                 .corner_radius(CornerRadius::same(6))
                 .min_size(Vec2::new(190.0, 34.0));
                 if ui.add(btn).clicked() {
@@ -545,7 +545,7 @@ fn action_panel(
                             )
                         })
                         .font(ui_small())
-                        .color(MUTED),
+                        .color(MUTED()),
                     );
                     ui.label(
                         RichText::new({
@@ -566,7 +566,7 @@ fn action_panel(
                             )
                         })
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                     );
                 });
             });
@@ -578,7 +578,7 @@ fn action_panel(
                     let (dot_rect, _) =
                         ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
                     ui.painter()
-                        .circle_filled(dot_rect.center(), 3.5, SAGE);
+                        .circle_filled(dot_rect.center(), 3.5, SUCCESS());
                     ui.vertical(|ui| {
                         ui.label(
                             RichText::new(format!(
@@ -587,7 +587,7 @@ fn action_panel(
                                 info.bytes as f32 / 1024.0
                             ))
                             .font(ui_small())
-                            .color(SAGE),
+                            .color(SUCCESS()),
                         );
                         // The one place the output path is shown: a live link
                         // that opens the file.
@@ -595,7 +595,7 @@ fn action_panel(
                         let link = ui.link(
                             RichText::new(crate::app::short_path(path))
                                 .font(mono(9.0))
-                                .color(ACCENT),
+                                .color(ACCENT()),
                         );
                         if link.on_hover_text("Open the file").clicked() {
                             crate::app::open_path(path);
@@ -608,19 +608,19 @@ fn action_panel(
 
 fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, global_font: &mut String, compile_type: CompileType) {
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             section_label(ui, "Global font");
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Font").font(ui_small()).color(MUTED));
+                ui.label(RichText::new("Font").font(ui_small()).color(MUTED()));
                 if compile_type.is_script() {
                     // A script's face comes from its own styles below, so a
                     // format-wide font choice would silently do nothing.
-                    ui.label(RichText::new("Scripts set their font in each style below").font(ui_small()).color(FAINT));
+                    ui.label(RichText::new("Scripts set their font in each style below").font(ui_small()).color(MUTED()));
                 } else {
                     font_picker(ui, global_font);
                 }
@@ -628,7 +628,7 @@ fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, global_font: &mut 
             ui.label(
                 RichText::new("Used by every style whose font is left on (inherit).")
                     .font(ui_small())
-                    .color(FAINT),
+                    .color(MUTED()),
             );
             ui.add_space(10.0);
             section_label(ui, "Type styles for this format");
@@ -637,7 +637,7 @@ fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, global_font: &mut 
                     "Pick a type of manuscript and a style, then set its font and paragraph. The global defaults live in Settings → Display.",
                 )
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
             );
             ui.add_space(8.0);
             style_editor(ui, styles, "compile", compile_type);
@@ -653,8 +653,8 @@ fn type_panel(
     ws: &portmanteau_api::Workspace,
 ) {
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
@@ -667,7 +667,7 @@ fn type_panel(
                 ExportKind::Pdf | ExportKind::Docx
             ) {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Paper").font(ui_small()).color(MUTED));
+                    ui.label(RichText::new("Paper").font(ui_small()).color(MUTED()));
                     egui::ComboBox::from_id_salt("paper_pick")
                         .selected_text(
                             RichText::new(settings.paper.label()).font(ui_small()),
@@ -686,7 +686,7 @@ fn type_panel(
                             ("Width", &mut settings.custom_paper_mm.0),
                             ("Height", &mut settings.custom_paper_mm.1),
                         ] {
-                            ui.label(RichText::new(label).font(ui_small()).color(MUTED));
+                            ui.label(RichText::new(label).font(ui_small()).color(MUTED()));
                             ui.add(
                                 egui::DragValue::new(value)
                                     .speed(0.5)
@@ -718,7 +718,7 @@ fn type_panel(
                             ui.label(
                                 RichText::new(format!("This format uses {}", file_name(&own)))
                                     .font(ui_small())
-                                    .color(MUTED),
+                                    .color(MUTED()),
                             );
                             if quiet_button(ui, "Use the project cover").clicked() {
                                 settings.cover_image.clear();
@@ -727,13 +727,13 @@ fn type_panel(
                             ui.label(
                                 RichText::new("No cover yet. Add one on the Project page, or pick one for this format.")
                                     .font(ui_small())
-                                    .color(FAINT),
+                                    .color(MUTED()),
                             );
                         } else {
                             ui.label(
                                 RichText::new(format!("Using the project cover, {}", file_name(project_cover)))
                                     .font(ui_small())
-                                    .color(MUTED),
+                                    .color(MUTED()),
                             );
                         }
                         if quiet_button(ui, "Choose another…").clicked() {
@@ -837,7 +837,7 @@ fn margins_row(
 /// One margin edge: a label and a field in inches, stored as points.
 fn margin_field(ui: &mut egui::Ui, label: &str, points: &mut f32) {
     let mut inches = *points / 72.0;
-    ui.label(RichText::new(label).font(ui_small()).color(MUTED));
+    ui.label(RichText::new(label).font(ui_small()).color(MUTED()));
     let field = egui::DragValue::new(&mut inches)
         .speed(0.02)
         .range(0.0..=3.0)
@@ -889,8 +889,8 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
         .unwrap_or((HfRegion::Body, HfVariant::Odd, None));
 
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
@@ -903,7 +903,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
                 if hf.page_numbers {
                     ui.add_space(6.0);
                     number_format_combo(ui, "hf_number_format", &mut hf.number_format);
-                    ui.label(RichText::new("first page is").font(ui_small()).color(MUTED));
+                    ui.label(RichText::new("first page is").font(ui_small()).color(MUTED()));
                     ui.add(egui::DragValue::new(&mut hf.start_number).speed(1.0).range(1..=9999));
                 }
             });
@@ -912,7 +912,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
                 ui.label(
                     RichText::new("A script prints its page number at the top right, from page 2.")
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                 );
                 return;
             }
@@ -929,7 +929,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
             hairline(ui);
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Edit").font(ui_small()).color(MUTED));
+                ui.label(RichText::new("Edit").font(ui_small()).color(MUTED()));
                 for (r, label) in [
                     (HfRegion::Front, "Front matter"),
                     (HfRegion::Body, "Body"),
@@ -964,7 +964,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
                             _ => "Uses the body's headers and footers.",
                         })
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                     );
                 }
             }
@@ -1006,7 +1006,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
                     .show(ui, |ui| {
                         ui.label("");
                         for label in ["Left", "Centre", "Right"] {
-                            ui.label(RichText::new(label).font(ui_small()).color(FAINT));
+                            ui.label(RichText::new(label).font(ui_small()).color(MUTED()));
                         }
                         ui.end_row();
                         for (row, (label, texts)) in
@@ -1014,7 +1014,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
                                 .into_iter()
                                 .enumerate()
                         {
-                            ui.label(RichText::new(label).font(ui_small()).color(MUTED));
+                            ui.label(RichText::new(label).font(ui_small()).color(MUTED()));
                             for (column, text) in texts.iter_mut().enumerate() {
                                 let response = ui.add(
                                     TextEdit::singleline(text)
@@ -1048,18 +1048,18 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
                     ui.label(
                         RichText::new("adds to the box you last clicked")
                             .font(ui_small())
-                            .color(FAINT),
+                            .color(MUTED()),
                     );
                 });
             }
 
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Header from top").font(ui_small()).color(MUTED));
+                ui.label(RichText::new("Header from top").font(ui_small()).color(MUTED()));
                 ui.add(egui::DragValue::new(&mut hf.header_spacing).speed(0.5).range(6.0..=120.0).suffix(" pt"));
-                ui.label(RichText::new("footer from bottom").font(ui_small()).color(MUTED));
+                ui.label(RichText::new("footer from bottom").font(ui_small()).color(MUTED()));
                 ui.add(egui::DragValue::new(&mut hf.footer_spacing).speed(0.5).range(6.0..=120.0).suffix(" pt"));
-                ui.label(RichText::new("size").font(ui_small()).color(MUTED));
+                ui.label(RichText::new("size").font(ui_small()).color(MUTED()));
                 ui.add(egui::DragValue::new(&mut hf.size).speed(0.1).range(5.0..=24.0).suffix(" pt"));
             });
         });
@@ -1075,7 +1075,7 @@ fn font_picker(ui: &mut egui::Ui, font: &mut String) {
         font.clone()
     };
     egui::ComboBox::from_id_salt("compile_font")
-        .selected_text(RichText::new(selected).font(ui_small()).color(TEXT))
+        .selected_text(RichText::new(selected).font(ui_small()).color(TEXT()))
         .width(170.0)
         .show_ui(ui, |ui| {
             ui.selectable_value(font, String::new(), "(program default)");
@@ -1098,8 +1098,8 @@ fn script_panel(
     compile_type: CompileType,
 ) {
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
@@ -1136,7 +1136,7 @@ fn script_panel(
                     compile_type.label().to_lowercase()
                 ))
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
             );
         });
 }
@@ -1156,8 +1156,8 @@ fn contents_panel(
     let title_of = |id: &str| project.document(id).map(|d| d.title.clone());
     let auto_kind = project.compile_plan_for(settings, selected_id).kind;
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
@@ -1170,7 +1170,7 @@ fn contents_panel(
             let types = project.compile_types_in(&settings.scope);
             if types.len() > 1 {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Compile as").font(ui_small()).color(MUTED));
+                    ui.label(RichText::new("Compile as").font(ui_small()).color(MUTED()));
                     let shown = settings.compile_type.unwrap_or(auto_kind).label();
                     egui::ComboBox::from_id_salt("compile_type")
                         .selected_text(RichText::new(shown).font(ui_small()))
@@ -1184,7 +1184,7 @@ fn contents_panel(
                 ui.label(
                     RichText::new("This project has more than one kind of document; each export is one kind.")
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                 );
                 ui.add_space(4.0);
             } else {
@@ -1280,7 +1280,7 @@ fn document_list(
                     let mut value = doc.include_in_export;
                     let text = RichText::new(&doc.title)
                         .font(ui_small())
-                        .color(if in_plan { TEXT } else { FAINT });
+                        .color(if in_plan { TEXT() } else { MUTED() });
                     if ui
                         .add_enabled(can_toggle, egui::Checkbox::new(&mut value, text))
                         .changed()
@@ -1293,7 +1293,7 @@ fn document_list(
                         } else {
                             reason.unwrap_or_default().to_owned()
                         };
-                        ui.label(RichText::new(note).font(mono(8.5)).color(FAINT));
+                        ui.label(RichText::new(note).font(mono(8.5)).color(MUTED()));
                     });
                 });
             }
@@ -1301,7 +1301,7 @@ fn document_list(
                 ui.label(
                     RichText::new("Nothing of this kind is in the chosen part of the book.")
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                 );
             }
         });
@@ -1310,8 +1310,8 @@ fn document_list(
 /// The switches for a prose compile.
 fn include_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, kind: ExportKind) {
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
@@ -1328,7 +1328,7 @@ fn include_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, kind: ExportK
                 if settings.include_toc {
                     ui.horizontal(|ui| {
                         ui.add_space(22.0);
-                        ui.label(RichText::new("Heading").font(ui_small()).color(MUTED));
+                        ui.label(RichText::new("Heading").font(ui_small()).color(MUTED()));
                         let mut title = settings.toc_title.clone();
                         if ui
                             .add(

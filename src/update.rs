@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 
-use eframe::egui::{self, Align2, Color32, Pos2, RichText, Sense, Stroke, Vec2};
+use eframe::egui::{self, Align2, Pos2, RichText, Sense, Stroke, Vec2};
 use portmanteau_core::UpdatePrefs;
 use portmanteau_update::install::{self, InstallError, Installed};
 use portmanteau_update::{CheckError, Outcome, Release};
@@ -218,11 +218,11 @@ impl Updater {
         let tip = format!("Portmanteau {} is available", release.version);
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::click());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Update available"));
-        let fill = if response.hovered() { ACCENT.gamma_multiply(0.85) } else { ACCENT };
+        let fill = if response.hovered() { ACCENT().gamma_multiply(0.85) } else { ACCENT() };
         ui.painter().circle_filled(rect.center(), 11.0, fill);
         // An arrow pointing up out of a tray: "something new to fetch".
         let c = rect.center();
-        let stroke = Stroke::new(1.8, Color32::WHITE);
+        let stroke = Stroke::new(1.8, ON_ACCENT());
         ui.painter().line_segment([Pos2::new(c.x, c.y + 4.0), Pos2::new(c.x, c.y - 4.5)], stroke);
         ui.painter().line_segment([Pos2::new(c.x - 3.5, c.y - 1.0), Pos2::new(c.x, c.y - 4.5)], stroke);
         ui.painter().line_segment([Pos2::new(c.x + 3.5, c.y - 1.0), Pos2::new(c.x, c.y - 4.5)], stroke);
@@ -253,23 +253,23 @@ impl Updater {
                 UpdateState::Idle | UpdateState::Checking => {
                     ui.horizontal(|ui| {
                         ui.spinner();
-                        ui.label(RichText::new("Checking for updates…").font(ui_body()).color(TEXT));
+                        ui.label(RichText::new("Checking for updates…").font(ui_body()).color(TEXT()));
                     });
                 }
                 UpdateState::UpToDate | UpdateState::NoReleasesYet => {
-                    ui.label(RichText::new("You're up to date").font(serif(20.0)).color(TEXT));
+                    ui.label(RichText::new("You're up to date").font(serif(20.0)).color(TEXT()));
                     ui.add_space(4.0);
                     let line = if self.state == UpdateState::NoReleasesYet {
                         format!("Portmanteau {} is the newest version. No releases have been published yet.", portmanteau_update::CURRENT_VERSION)
                     } else {
                         format!("Portmanteau {} is the newest version.", portmanteau_update::CURRENT_VERSION)
                     };
-                    ui.label(RichText::new(line).font(ui_body()).color(MUTED));
+                    ui.label(RichText::new(line).font(ui_body()).color(MUTED()));
                 }
                 UpdateState::Failed(why) => {
-                    ui.label(RichText::new("Couldn't check for updates").font(serif(20.0)).color(TEXT));
+                    ui.label(RichText::new("Couldn't check for updates").font(serif(20.0)).color(TEXT()));
                     ui.add_space(4.0);
-                    ui.label(RichText::new(why).font(ui_body()).color(MUTED));
+                    ui.label(RichText::new(why).font(ui_body()).color(MUTED()));
                     ui.add_space(8.0);
                     if ui.button("Try again").clicked() {
                         retry = true;
@@ -279,12 +279,12 @@ impl Updater {
                     ui.label(
                         RichText::new(format!("Portmanteau {} is available", release.version))
                             .font(serif(20.0))
-                            .color(TEXT),
+                            .color(TEXT()),
                     );
                     ui.label(
                         RichText::new(format!("You have {}.", portmanteau_update::CURRENT_VERSION))
                             .font(ui_body())
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                     if !release.notes.trim().is_empty() {
                         ui.add_space(8.0);
@@ -292,7 +292,7 @@ impl Updater {
                         ui.add_space(6.0);
                         egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
                             for line in release_note_lines(&release.notes) {
-                                ui.label(RichText::new(line).font(ui_body()).color(TEXT));
+                                ui.label(RichText::new(line).font(ui_body()).color(TEXT()));
                             }
                         });
                     }
@@ -301,7 +301,7 @@ impl Updater {
                     match &self.install {
                         InstallState::Running => {
                             let stage = self.progress.stage.lock().map(|s| s.clone()).unwrap_or_default();
-                            ui.label(RichText::new(stage).font(ui_body()).color(MUTED));
+                            ui.label(RichText::new(stage).font(ui_body()).color(MUTED()));
                             let (done, total) = (self.progress.done.load(Ordering::Relaxed), self.progress.total.load(Ordering::Relaxed));
                             if total > 0 {
                                 ui.add(egui::ProgressBar::new((done as f32 / total as f32).clamp(0.0, 1.0)).desired_width(380.0));
@@ -319,18 +319,18 @@ impl Updater {
                             } else {
                                 "The update is installed. Restarting…"
                             };
-                            ui.label(RichText::new(text).font(ui_body()).color(TEXT));
+                            ui.label(RichText::new(text).font(ui_body()).color(TEXT()));
                         }
                         idle_or_failed => {
                             if let InstallState::Failed(why) = idle_or_failed {
-                                ui.label(RichText::new(why).font(ui_body()).color(MUTED));
+                                ui.label(RichText::new(why).font(ui_body()).color(MUTED()));
                                 ui.add_space(6.0);
                             }
                             if installable && project_unsaved {
                                 ui.label(
                                     RichText::new("Save your project first (File › Save project as…), then install.")
                                         .font(ui_small())
-                                        .color(FAINT),
+                                        .color(MUTED()),
                                 );
                                 ui.add_space(4.0);
                             }

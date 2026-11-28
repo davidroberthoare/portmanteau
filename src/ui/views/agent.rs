@@ -20,7 +20,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.label(
                 RichText::new("API · MCP · CLI")
                     .font(ui_small())
-                    .color(SAGE),
+                    .color(SUCCESS()),
             );
         },
     );
@@ -34,8 +34,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 Layout::top_down(Align::Min),
                 |ui| {
                     Frame::new()
-                        .fill(PANEL)
-                        .stroke(Stroke::new(1.0, BORDER_SOFT))
+                        .fill(PANEL())
+                        .stroke(Stroke::new(1.0, BORDER()))
                         .corner_radius(CornerRadius::same(8))
                         .inner_margin(Margin::same(9))
                         .show(ui, |ui| {
@@ -64,13 +64,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                             ui.painter().rect_filled(
                                                 rect,
                                                 CornerRadius::same(5),
-                                                ACCENT_SOFT,
+                                                ACCENT_SOFT(),
                                             );
                                         } else if resp.hovered() {
                                             ui.painter().rect_filled(
                                                 rect,
                                                 CornerRadius::same(5),
-                                                PANEL_2,
+                                                RAISED(),
                                             );
                                         }
                                         ui.painter().text(
@@ -78,7 +78,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                             egui::Align2::LEFT_TOP,
                                             name,
                                             mono(9.5),
-                                            if selected { ACCENT_INK } else { MUTED },
+                                            if selected { ACCENT() } else { MUTED() },
                                         );
                                         let short: String = desc.chars().take(40).collect();
                                         ui.painter().text(
@@ -86,7 +86,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                             egui::Align2::LEFT_TOP,
                                             short,
                                             ui_small(),
-                                            FAINT,
+                                            MUTED(),
                                         );
                                         if resp.clicked() {
                                             app.cmd_selected = i;
@@ -106,8 +106,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.set_width(ui.available_width());
                 // Runner.
                 Frame::new()
-                    .fill(BG)
-                    .stroke(Stroke::new(1.0, BORDER_SOFT))
+                    .fill(BG())
+                    .stroke(Stroke::new(1.0, BORDER()))
                     .corner_radius(CornerRadius::same(8))
                     .inner_margin(Margin::same(14))
                     .show(ui, |ui| {
@@ -125,7 +125,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                     .font(mono(11.0))
                                     .desired_width(220.0),
                             );
-                            ui.label(RichText::new("payload").font(ui_small()).color(FAINT));
+                            ui.label(RichText::new("payload").font(ui_small()).color(MUTED()));
                         });
                         ui.add_space(4.0);
                         ui.add(
@@ -143,7 +143,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("Fill example").font(ui_small()).color(MUTED),
+                                        RichText::new("Fill example").font(ui_small()).color(MUTED()),
                                     )
                                     .frame(false),
                                 )
@@ -160,15 +160,15 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             }
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 if app.ws.last_export.is_some() {
-                                    pill(ui, "export ready", SAGE, SAGE_SOFT);
+                                    pill(ui, "export ready", SUCCESS(), ACCENT_SOFT());
                                 }
                             });
                         });
                     });
                 ui.add_space(10.0);
                 Frame::new()
-                    .fill(PANEL_2)
-                    .stroke(Stroke::new(1.0, BORDER_SOFT))
+                    .fill(RAISED())
+                    .stroke(Stroke::new(1.0, BORDER()))
                     .corner_radius(CornerRadius::same(8))
                     .inner_margin(Margin::same(14))
                     .show(ui, |ui| {
@@ -199,7 +199,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                     egui::Label::new(
                                         RichText::new(output)
                                             .font(mono(9.5))
-                                            .color(if app.cmd_output.is_empty() { FAINT } else { TEXT }),
+                                            .color(if app.cmd_output.is_empty() { MUTED() } else { TEXT() }),
                                     )
                                     .wrap(),
                                 );

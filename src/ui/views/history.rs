@@ -39,8 +39,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
                 // Checkpoint composer.
                 Frame::new()
-                    .fill(PANEL)
-                    .stroke(Stroke::new(1.0, BORDER_SOFT))
+                    .fill(PANEL())
+                    .stroke(Stroke::new(1.0, BORDER()))
                     .corner_radius(CornerRadius::same(8))
                     .inner_margin(Margin::symmetric(14, 11))
                     .show(ui, |ui| {
@@ -54,7 +54,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                         "A full copy of the project at this moment, including every document and note.",
                                     )
                                     .font(ui_small())
-                                    .color(FAINT),
+                                    .color(MUTED()),
                                 );
                             });
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -121,8 +121,8 @@ fn session_chart(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         })
         .collect();
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(16, 12))
         .show(ui, |ui| {
@@ -154,11 +154,11 @@ fn session_chart(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     bar,
                     CornerRadius::same(3),
                     if *words == 0 {
-                        PANEL_3
+                        HOVER()
                     } else if i + 1 == count {
-                        ACCENT
+                        ACCENT()
                     } else {
-                        ACCENT.gamma_multiply(0.55)
+                        ACCENT().gamma_multiply(0.55)
                     },
                 );
                 let day: String = date.chars().skip(8).collect();
@@ -167,7 +167,7 @@ fn session_chart(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     egui::Align2::CENTER_BOTTOM,
                     day,
                     ui_small(),
-                    FAINT,
+                    MUTED(),
                 );
                 if *words > 0 {
                     ui.painter().text(
@@ -175,7 +175,7 @@ fn session_chart(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::Align2::CENTER_BOTTOM,
                         words.to_string(),
                         ui_small(),
-                        MUTED,
+                        MUTED(),
                     );
                 }
             }
@@ -184,8 +184,8 @@ fn session_chart(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
 fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
@@ -207,13 +207,13 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                         ui.label(
                             RichText::new("No checkpoints yet.")
                                 .font(ui_small())
-                                .color(FAINT),
+                                .color(MUTED()),
                         );
                     }
                     let mut restore: Option<String> = None;
                     for cp in &checkpoints {
                         Frame::new()
-                            .fill(PANEL_2)
+                            .fill(RAISED())
                             .corner_radius(CornerRadius::same(6))
                             .inner_margin(Margin::same(9))
                             .show(ui, |ui| {
@@ -222,14 +222,14 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                     let (dot_rect, _) =
                                         ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
                                     let color = match cp.kind.as_str() {
-                                        "milestone" => ACCENT,
-                                        "export" => BLUE,
-                                        _ => SAGE,
+                                        "milestone" => ACCENT(),
+                                        "export" => INFO(),
+                                        _ => SUCCESS(),
                                     };
                                     ui.painter().circle_filled(dot_rect.center(), 3.5, color);
                                     ui.vertical(|ui| {
                                         ui.label(
-                                            RichText::new(&cp.label).font(ui_body()).color(TEXT),
+                                            RichText::new(&cp.label).font(ui_body()).color(TEXT()),
                                         );
                                         ui.label(
                                             RichText::new(format!(
@@ -237,7 +237,7 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                                 cp.created, cp.words, cp.kind
                                             ))
                                             .font(ui_small())
-                                            .color(FAINT),
+                                            .color(MUTED()),
                                         );
                                     });
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -279,8 +279,8 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
 
 fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
     Frame::new()
-        .fill(BG)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(BG())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
@@ -304,7 +304,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                         ui.label(
                             RichText::new("No document snapshots yet. Use Snapshot in the editor toolbar before a big cut.")
                                 .font(ui_small())
-                                .color(FAINT),
+                                .color(MUTED()),
                         );
                     }
                     let mut restore: Option<(String, String)> = None;
@@ -312,7 +312,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                     for (doc_id, title, snaps) in &docs {
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new(title).font(ui_body()).color(TEXT));
+                            ui.label(RichText::new(title).font(ui_body()).color(TEXT()));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 meta_line(
                                     ui,
@@ -326,7 +326,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                         });
                         for (i, snap) in snaps.iter().take(5).enumerate() {
                             Frame::new()
-                                .fill(PANEL_2)
+                                .fill(RAISED())
                                 .corner_radius(CornerRadius::same(5))
                                 .inner_margin(Margin::symmetric(8, 6))
                                 .show(ui, |ui| {
@@ -336,7 +336,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                             ui.label(
                                                 RichText::new(&snap.name)
                                                     .font(ui_small())
-                                                    .color(if i == 0 { TEXT } else { MUTED }),
+                                                    .color(if i == 0 { TEXT() } else { MUTED() }),
                                             );
                                             ui.label(
                                                 RichText::new(format!(
@@ -344,7 +344,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                                     snap.created, snap.words
                                                 ))
                                                 .font(ui_small())
-                                                .color(FAINT),
+                                                .color(MUTED()),
                                             );
                                         });
                                         ui.with_layout(
@@ -363,7 +363,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                                     ));
                                                 }
                                                 if i == 0 {
-                                                    pill(ui, "latest", SAGE, SAGE_SOFT);
+                                                    pill(ui, "latest", SUCCESS(), ACCENT_SOFT());
                                                 }
                                             },
                                         );

@@ -1304,3 +1304,15 @@ what is next. Things worth knowing:
 - `chapters_start_right` (prose PDF): `Flow::page_break_to_right`, with `parity_shift` accounting for the contents page inserted afterwards. Picture loader hardened after review: no links anywhere under `assets/`, max 12,000 px a side / 60 MP, preview textures downscaled to 2048.
 - Pictures round 2: captions print under standalone pictures in all writers (`ProseParagraph.captioned`, caption paragraph generated in `content::prose_paragraphs`; PDF reserves room so it stays with the picture). Insert image gains a size choice (`ImageInsertState.width`; default `DEFAULT_PICTURE_WIDTH` 324 pt, was 240 on the long side). Markdown/Fountain/FDX deliberately keep placeholders: a single text file has no assets folder to point at.
 - Pictures round 3 (wrap/align/padding): see roadmap. PDF float = `FloatBox` on `Flow` (one at a time, per page; later lines narrower via `wrap_chars_with`, a following full-width picture starts below it). Caption of a wrapped picture is generated as a `float_caption` paragraph that PDF/web skip (they set it under the picture) and DOCX/RTF print normally. Picture edits through `document.picture` are not in the editor's text undo (use Versions).
+
+## UI themes (branch feature/ui-themes)
+
+- `src/theme/palette.rs`: the single list of 22 named colours (`palette!`), the four built-ins
+  (Light, Dark, Colourful, Monochrome), `Theme` JSON (`name` + `colors` as `#rrggbb[aa]`; missing
+  keys take Light's value; dark is derived from the window colour). Widgets read `theme::TEXT()` etc.
+- `src/theme/files.rs`: themes folder (`<config>/portmanteau/themes`), load/import/save/delete.
+- Settings > Appearance (`views/appearance.rs`, `appearance_preview.rs`): dropdown, Duplicate/Import/
+  Export/Delete, colour editor with descriptions, live preview. Built-ins are read-only.
+- Deliberately NOT themed: compile/export output, the print preview pages (`ui/preview.rs`), and the
+  database item colour swatches (user-chosen data).
+- Dev aids: `PORTMANTEAU_THEME=<id>` and `PORTMANTEAU_SETTINGS_TAB=2` with `--screenshot`.

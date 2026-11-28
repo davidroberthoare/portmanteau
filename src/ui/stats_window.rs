@@ -95,16 +95,16 @@ pub fn top_bar_meter(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let response = ui
         .allocate_ui_with_layout(Vec2::new(120.0, 34.0), egui::Layout::top_down(egui::Align::Min), |ui| {
             ui.add_space(3.0);
-            ui.label(RichText::new(text).font(ui_body()).color(MUTED));
+            ui.label(RichText::new(text).font(ui_body()).color(MUTED()));
             ui.add_space(1.0);
             let (r, _) = ui.allocate_exact_size(Vec2::new(88.0, 4.0), Sense::hover());
-            ui.painter().rect_filled(r, CornerRadius::same(2), PANEL_3);
+            ui.painter().rect_filled(r, CornerRadius::same(2), HOVER());
             if let Some(share) = share {
                 let f = share.clamp(0.0, 1.0);
                 ui.painter().rect_filled(
                     egui::Rect::from_min_size(r.min, Vec2::new(r.width() * f, 4.0)),
                     CornerRadius::same(2),
-                    if share >= 1.0 { ACCENT } else { SAGE },
+                    if share >= 1.0 { ACCENT() } else { SUCCESS() },
                 );
             }
         })
@@ -164,8 +164,8 @@ pub fn show(app: &mut PortmanteauApp, ctx: &egui::Context) {
 
 fn card(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
@@ -176,7 +176,7 @@ fn card(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 }
 
 fn note(ui: &mut egui::Ui, text: &str) {
-    ui.label(RichText::new(text).font(ui_small()).color(FAINT));
+    ui.label(RichText::new(text).font(ui_small()).color(MUTED()));
 }
 
 // ---- Overview --------------------------------------------------------------
@@ -192,7 +192,7 @@ fn overview(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
     if project.goals.encouragement {
         card(ui, |ui| {
-            ui.label(RichText::new(progress::encouragement(&p, &project.goals)).font(serif(16.0)).color(TEXT));
+            ui.label(RichText::new(progress::encouragement(&p, &project.goals)).font(serif(16.0)).color(TEXT()));
             if p.streak > 0 || p.longest_streak > 1 {
                 note(ui, &format!("Current run: {} day{} · Longest run: {} day{}", p.streak, plural(p.streak), p.longest_streak, plural(p.longest_streak)));
             }
@@ -204,7 +204,7 @@ fn overview(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         ui.add_space(4.0);
         egui::Grid::new("stats_overview").num_columns(7).spacing([16.0, 6.0]).striped(true).show(ui, |ui| {
             for h in ["", "Typing", "Reading", "Added", "Edited", "Deleted", "Words / hour"] {
-                ui.label(RichText::new(h).font(ui_small()).color(FAINT));
+                ui.label(RichText::new(h).font(ui_small()).color(MUTED()));
             }
             ui.end_row();
             for (label, t) in [("Today", p.today), ("This week", p.week), ("Last 30 days", month), ("All time", all)] {
@@ -220,14 +220,14 @@ fn overview(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         card(ui, |ui| {
             section_label(ui, "Habits");
             ui.add_space(4.0);
-            ui.label(RichText::new(format!("Your most productive hour is {}:00 to {}:00, with {} words added there.", best, best + 1, thousands(t.added))).font(ui_body()).color(TEXT));
+            ui.label(RichText::new(format!("Your most productive hour is {}:00 to {}:00, with {} words added there.", best, best + 1, thousands(t.added))).font(ui_body()).color(TEXT()));
             let days = activity::per_day(log);
             let active = days.values().filter(|t| t.added > 0).count() as u32;
             if active > 0 {
-                ui.label(RichText::new(format!("On the {} days you wrote, you averaged {} words added and {} of typing.", active, thousands(all.added / active), duration(all.typing_secs / active))).font(ui_body()).color(TEXT));
+                ui.label(RichText::new(format!("On the {} days you wrote, you averaged {} words added and {} of typing.", active, thousands(all.added / active), duration(all.typing_secs / active))).font(ui_body()).color(TEXT()));
             }
             if let Some((day, t)) = days.iter().max_by_key(|(_, t)| t.added).filter(|(_, t)| t.added > 0) {
-                ui.label(RichText::new(format!("Your best day was {} with {} words added.", day, thousands(t.added))).font(ui_body()).color(TEXT));
+                ui.label(RichText::new(format!("Your best day was {} with {} words added.", day, thousands(t.added))).font(ui_body()).color(TEXT()));
             }
         });
     }
@@ -242,7 +242,7 @@ fn plural(n: u32) -> &'static str {
 }
 
 fn row(ui: &mut egui::Ui, label: &str, t: &ActivityTotals) {
-    ui.label(RichText::new(label).font(ui_body()).color(TEXT));
+    ui.label(RichText::new(label).font(ui_body()).color(TEXT()));
     for text in [
         duration(t.typing_secs),
         duration(t.reading_secs),
@@ -251,7 +251,7 @@ fn row(ui: &mut egui::Ui, label: &str, t: &ActivityTotals) {
         thousands(t.deleted),
         t.words_per_typing_hour().map_or("–".into(), thousands),
     ] {
-        ui.label(RichText::new(text).font(ui_body()).color(MUTED));
+        ui.label(RichText::new(text).font(ui_body()).color(MUTED()));
     }
     ui.end_row();
 }
@@ -329,8 +329,8 @@ fn charts(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     Period::HourOfDay => "By hour of the day, all time",
                 },
             );
-            ui.label(RichText::new(format!("■ {first_name}")).font(ui_small()).color(ACCENT));
-            ui.label(RichText::new(format!("■ {second_name}")).font(ui_small()).color(ACCENT.gamma_multiply(0.45)));
+            ui.label(RichText::new(format!("■ {first_name}")).font(ui_small()).color(ACCENT()));
+            ui.label(RichText::new(format!("■ {second_name}")).font(ui_small()).color(ACCENT().gamma_multiply(0.45)));
             note(ui, &format!("({unit})"));
         });
         ui.add_space(6.0);
@@ -360,18 +360,18 @@ fn bar_chart(ui: &mut egui::Ui, bars: &[Bar], height: f32) {
             ui.painter().rect_filled(
                 egui::Rect::from_min_max(egui::pos2(x, base - 2.0), egui::pos2(x + width, base)),
                 CornerRadius::same(1),
-                PANEL_3,
+                HOVER(),
             );
         }
-        ui.painter().rect_filled(first, CornerRadius::same(2), ACCENT);
-        ui.painter().rect_filled(second, CornerRadius::same(2), ACCENT.gamma_multiply(0.45));
+        ui.painter().rect_filled(first, CornerRadius::same(2), ACCENT());
+        ui.painter().rect_filled(second, CornerRadius::same(2), ACCENT().gamma_multiply(0.45));
         if count <= 31 && (count <= 16 || i % 2 == 0 || i + 1 == count) {
             ui.painter().text(
                 egui::pos2(x + width * 0.5, rect.bottom() - 3.0),
                 egui::Align2::CENTER_BOTTOM,
                 &bar.label,
                 ui_small(),
-                FAINT,
+                MUTED(),
             );
         }
         let whole = egui::Rect::from_min_max(egui::pos2(x, rect.top()), egui::pos2(x + width, rect.bottom()));
@@ -382,7 +382,7 @@ fn bar_chart(ui: &mut egui::Ui, bars: &[Bar], height: f32) {
                 egui::Align2::CENTER_BOTTOM,
                 format!("{}", total.round() as i64),
                 ui_small(),
-                TEXT,
+                TEXT(),
             );
         }
     }
@@ -406,15 +406,15 @@ fn documents(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         ui.add_space(4.0);
         egui::Grid::new("stats_documents").num_columns(7).spacing([14.0, 6.0]).striped(true).show(ui, |ui| {
             for h in ["Document", "Words", "Typing", "Reading", "Added", "Edited", "Deleted"] {
-                ui.label(RichText::new(h).font(ui_small()).color(FAINT));
+                ui.label(RichText::new(h).font(ui_small()).color(MUTED()));
             }
             ui.end_row();
             for (id, title, words, t) in &rows {
-                if ui.add(egui::Label::new(RichText::new(title).font(ui_body()).color(ACCENT)).sense(Sense::click())).on_hover_text("Open this document").clicked() {
+                if ui.add(egui::Label::new(RichText::new(title).font(ui_body()).color(ACCENT())).sense(Sense::click())).on_hover_text("Open this document").clicked() {
                     open = Some(id.clone());
                 }
                 for text in [thousands(*words), duration(t.typing_secs), duration(t.reading_secs), thousands(t.added), thousands(t.edited), thousands(t.deleted)] {
-                    ui.label(RichText::new(text).font(ui_body()).color(MUTED));
+                    ui.label(RichText::new(text).font(ui_body()).color(MUTED()));
                 }
                 ui.end_row();
             }
@@ -467,8 +467,8 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         ui.add_space(4.0);
         egui::Grid::new("stats_style").num_columns(2).spacing([24.0, 5.0]).show(ui, |ui| {
             let mut line = |name: &str, value: String, hint: &str| {
-                ui.label(RichText::new(name).font(ui_body()).color(MUTED));
-                ui.label(RichText::new(value).font(ui_body()).color(TEXT)).on_hover_text(hint);
+                ui.label(RichText::new(name).font(ui_body()).color(MUTED()));
+                ui.label(RichText::new(value).font(ui_body()).color(TEXT())).on_hover_text(hint);
                 ui.end_row();
             };
             line("Words", thousands(a.words), "Words in this text");
@@ -501,7 +501,7 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
                 for (word, n) in &a.top_words {
-                    ui.label(RichText::new(format!("{word} ({n})")).font(ui_body()).color(TEXT));
+                    ui.label(RichText::new(format!("{word} ({n})")).font(ui_body()).color(TEXT()));
                     ui.add_space(8.0);
                 }
             });
@@ -514,7 +514,7 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
                 for (word, n) in &a.echoes {
-                    ui.label(RichText::new(format!("{word} (×{n})")).font(ui_body()).color(TEXT));
+                    ui.label(RichText::new(format!("{word} (×{n})")).font(ui_body()).color(TEXT()));
                     ui.add_space(8.0);
                 }
             });
@@ -548,18 +548,18 @@ fn goals(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         ui.add_space(6.0);
         egui::Grid::new("stats_goals").num_columns(3).spacing([16.0, 8.0]).show(ui, |ui| {
             let goal_row = |ui: &mut egui::Ui, label: &str, value: &mut u32, max: u32, unit: &str, done: Option<f32>| {
-                ui.label(RichText::new(label).font(ui_body()).color(MUTED));
+                ui.label(RichText::new(label).font(ui_body()).color(MUTED()));
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(value).range(0..=max).speed(10.0).suffix(format!(" {unit}")));
                 });
                 match done {
                     Some(share) => {
                         let (r, _) = ui.allocate_exact_size(Vec2::new(160.0, 8.0), Sense::hover());
-                        ui.painter().rect_filled(r, CornerRadius::same(4), PANEL_3);
+                        ui.painter().rect_filled(r, CornerRadius::same(4), HOVER());
                         ui.painter().rect_filled(
                             egui::Rect::from_min_size(r.min, Vec2::new(r.width() * share.clamp(0.0, 1.0), 8.0)),
                             CornerRadius::same(4),
-                            if share >= 1.0 { ACCENT } else { SAGE },
+                            if share >= 1.0 { ACCENT() } else { SUCCESS() },
                         );
                     }
                     None => {
@@ -596,8 +596,8 @@ fn goals(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             egui::Grid::new("stats_badges").num_columns(columns).spacing([8.0, 8.0]).show(ui, |ui| {
                 for (i, badge) in badges.iter().enumerate() {
                     Frame::new()
-                        .fill(if badge.earned { ACCENT.gamma_multiply(0.14) } else { PANEL_2 })
-                        .stroke(Stroke::new(1.0, if badge.earned { ACCENT.gamma_multiply(0.6) } else { BORDER_SOFT }))
+                        .fill(if badge.earned { ACCENT().gamma_multiply(0.14) } else { RAISED() })
+                        .stroke(Stroke::new(1.0, if badge.earned { ACCENT().gamma_multiply(0.6) } else { BORDER() }))
                         .corner_radius(CornerRadius::same(8))
                         .inner_margin(Margin::symmetric(10, 7))
                         .show(ui, |ui| {
@@ -605,8 +605,8 @@ fn goals(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             ui.set_min_height(46.0);
                             ui.vertical(|ui| {
                                 let name = if badge.earned { format!("★ {}", badge.name) } else { badge.name.to_owned() };
-                                ui.label(RichText::new(name).font(ui_body()).color(if badge.earned { TEXT } else { FAINT }));
-                                ui.label(RichText::new(badge.description).font(ui_small()).color(FAINT));
+                                ui.label(RichText::new(name).font(ui_body()).color(if badge.earned { TEXT() } else { MUTED() }));
+                                ui.label(RichText::new(badge.description).font(ui_small()).color(MUTED()));
                             });
                         });
                     if (i + 1) % columns == 0 {

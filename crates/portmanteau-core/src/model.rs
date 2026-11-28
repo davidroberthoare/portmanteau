@@ -12,6 +12,10 @@ pub fn new_id(prefix: &str) -> String {
     format!("{}-{}", prefix, &Uuid::new_v4().simple().to_string()[..8])
 }
 
+fn default_theme() -> String {
+    "light".into()
+}
+
 fn default_ui_scale() -> f32 {
     1.0
 }
@@ -1093,6 +1097,9 @@ pub struct AppSettings {
     /// Interface text scale (1.0 = default). Affects chrome, not manuscripts.
     #[serde(default = "default_ui_scale")]
     pub ui_scale: f32,
+    /// Id of the interface theme (a built-in's name or a themes-folder file name).
+    #[serde(default = "default_theme")]
+    pub theme: String,
     /// Update notices (the one use the program makes of the network).
     #[serde(default)]
     pub updates: UpdatePrefs,
@@ -1159,6 +1166,7 @@ impl Default for AppSettings {
             show_binder: true,
             show_inspector: true,
             ui_scale: default_ui_scale(),
+            theme: default_theme(),
             updates: UpdatePrefs::default(),
             last_project: None,
             recent_projects: Vec::new(),

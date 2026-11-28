@@ -39,15 +39,15 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 fn card(ui: &mut egui::Ui, heading: &str, note: &str, body: impl FnOnce(&mut egui::Ui)) {
     let width = ui.available_width().min(704.0);
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER_SOFT))
+        .fill(PANEL())
+        .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(width);
             section_label(ui, heading);
             ui.add_space(2.0);
-            ui.label(RichText::new(note).font(ui_small()).color(FAINT));
+            ui.label(RichText::new(note).font(ui_small()).color(MUTED()));
             ui.add_space(8.0);
             body(ui);
         });
@@ -62,7 +62,7 @@ fn label_cell(ui: &mut egui::Ui, text: &str) {
         |ui| {
             // The allocation only sets a maximum; the minimum holds the column.
             ui.set_min_size(Vec2::new(96.0, 24.0));
-            ui.label(RichText::new(text).font(ui_small()).color(FAINT));
+            ui.label(RichText::new(text).font(ui_small()).color(MUTED()));
         },
     );
 }

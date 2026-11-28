@@ -15,7 +15,13 @@ use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Pos2, RichTe
 use portmanteau_core::{CompileScope, CompileType, ExportKind, ExportSettings, Project};
 use portmanteau_export::{pdf_layout, text_width, Face, Family, PageCounts, PdfLayout};
 
-use crate::theme::{serif, ui_body, ui_small, FAINT, MUTED, PAPER, PAPER_EDGE, PAPER_TEXT};
+use crate::theme::{serif, ui_body, ui_small, BORDER, MUTED};
+
+/// Manuscript pages here show the printed result, so they keep paper white and
+/// black ink whatever the interface theme (the writing page in the editor is
+/// the themed one).
+const PRINT_PAPER: egui::Color32 = egui::Color32::from_rgb(251, 250, 247);
+const PRINT_INK: egui::Color32 = egui::Color32::from_rgb(44, 42, 38);
 
 /// The egui family registered by `theme::install` for one exporter face.
 pub fn family_for_face(face: Face) -> FontFamily {
@@ -138,8 +144,8 @@ pub fn paint_page(ui: &mut egui::Ui, layout: &PdfLayout, index: usize, scale: f3
     painter.rect(
         rect,
         CornerRadius::same(2),
-        PAPER,
-        Stroke::new(1.0, PAPER_EDGE),
+        PRINT_PAPER,
+        Stroke::new(1.0, BORDER()),
         egui::StrokeKind::Inside,
     );
     let Some(page) = layout.pages.get(index) else {
@@ -160,7 +166,7 @@ pub fn paint_page(ui: &mut egui::Ui, layout: &PdfLayout, index: usize, scale: f3
                 );
             }
             None => {
-                painter.rect_filled(image_rect, 0.0, PAPER_EDGE);
+                painter.rect_filled(image_rect, 0.0, BORDER());
             }
         }
     }
@@ -172,7 +178,7 @@ pub fn paint_page(ui: &mut egui::Ui, layout: &PdfLayout, index: usize, scale: f3
                 let galley = painter.layout_no_wrap(
                     segment.text.clone(),
                     FontId::new(item.size * scale, family_for_face(segment.face)),
-                    PAPER_TEXT,
+                    PRINT_INK,
                 );
                 // Glyph positions are relative to the row, with y on the
                 // baseline; shift the galley so that baseline lands where the
@@ -183,7 +189,7 @@ pub fn paint_page(ui: &mut egui::Ui, layout: &PdfLayout, index: usize, scale: f3
                     .and_then(|row| row.glyphs.first())
                     .map(|glyph| glyph.pos.y)
                     .unwrap_or(item.size * scale * 0.8);
-                painter.galley(Pos2::new(x, baseline - ascent), galley, PAPER_TEXT);
+                painter.galley(Pos2::new(x, baseline - ascent), galley, PRINT_INK);
             }
             x += text_width(&segment.text, segment.face, item.size) * scale;
         }
@@ -285,14 +291,14 @@ pub fn paged_view(
         Err(reason) => {
             ui.vertical_centered(|ui| {
                 ui.add_space(120.0);
-                ui.label(RichText::new("Nothing to page").font(serif(26.0)).color(MUTED));
+                ui.label(RichText::new("Nothing to page").font(serif(26.0)).color(MUTED()));
                 ui.add_space(8.0);
-                ui.label(RichText::new(reason).font(ui_body()).color(FAINT));
+                ui.label(RichText::new(reason).font(ui_body()).color(MUTED()));
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new("Switch to Continuous to keep writing.")
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                 );
             });
             return;
@@ -315,7 +321,7 @@ pub fn paged_view(
                 ui.label(
                     RichText::new("Read-only page preview — click a paragraph to edit it")
                         .font(ui_small())
-                        .color(FAINT),
+                        .color(MUTED()),
                 );
                 ui.add_space(10.0);
                 for page in paged.first..paged.first + paged.count {

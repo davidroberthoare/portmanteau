@@ -24,7 +24,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 egui::Button::new(
                     RichText::new(label)
                         .font(ui_body())
-                        .color(if active { TEXT } else { FAINT }),
+                        .color(if active { TEXT() } else { MUTED() }),
                 )
                 .frame(false)
                 .min_size(Vec2::new(55.0, 24.0)),
@@ -39,13 +39,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         egui::pos2(r.left() + 8.0, r.bottom() + 1.0),
                         egui::pos2(r.right() - 8.0, r.bottom() + 1.0),
                     ],
-                    Stroke::new(1.5, ACCENT),
+                    Stroke::new(1.5, ACCENT()),
                 );
             }
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let hide = egui::Button::new(
-                RichText::new("›").font(ui_body()).color(FAINT),
+                RichText::new("›").font(ui_body()).color(MUTED()),
             )
             .frame(false);
             if ui
@@ -61,11 +61,11 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.add_space(8.0);
 
     let Some(doc_id) = app.selected.clone() else {
-        ui.label(RichText::new("Select a document in the binder.").font(ui_body()).color(FAINT));
+        ui.label(RichText::new("Select a document in the binder.").font(ui_body()).color(MUTED()));
         return;
     };
     if app.ws.project.document(&doc_id).is_none() {
-        ui.label(RichText::new("This document no longer exists.").font(ui_body()).color(FAINT));
+        ui.label(RichText::new("This document no longer exists.").font(ui_body()).color(MUTED()));
         return;
     }
 
@@ -117,9 +117,9 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         }
         ui.add_space(2.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(doc.kind.label()).font(ui_small()).color(FAINT));
-            ui.label(RichText::new("·").font(ui_small()).color(FAINT));
-            ui.label(RichText::new(doc.medium.label()).font(ui_small()).color(FAINT));
+            ui.label(RichText::new(doc.kind.label()).font(ui_small()).color(MUTED()));
+            ui.label(RichText::new("·").font(ui_small()).color(MUTED()));
+            ui.label(RichText::new(doc.medium.label()).font(ui_small()).color(MUTED()));
         });
         ui.add_space(10.0);
 
@@ -251,10 +251,10 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Word target").font(ui_body()).color(MUTED));
+            ui.label(RichText::new("Word target").font(ui_body()).color(MUTED()));
             let mut target = doc.word_target;
             // "words so far / target", so progress is visible at a glance.
-            ui.label(RichText::new(format!("{} /", doc.words())).font(ui_body()).color(TEXT));
+            ui.label(RichText::new(format!("{} /", doc.words())).font(ui_body()).color(TEXT()));
             if ui
                 .add(egui::DragValue::new(&mut target).speed(50.0).range(0..=500_000))
                 .changed()
@@ -266,11 +266,11 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         if doc.word_target > 0 {
             let share = doc.words() as f32 / doc.word_target as f32;
             let (bar, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 5.0), egui::Sense::hover());
-            ui.painter().rect_filled(bar, CornerRadius::same(2), PANEL_3);
+            ui.painter().rect_filled(bar, CornerRadius::same(2), HOVER());
             ui.painter().rect_filled(
                 egui::Rect::from_min_size(bar.min, Vec2::new(bar.width() * share.clamp(0.0, 1.0), 5.0)),
                 CornerRadius::same(2),
-                if share >= 1.0 { ACCENT } else { SAGE },
+                if share >= 1.0 { ACCENT() } else { SUCCESS() },
             );
         }
 
@@ -289,12 +289,12 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         ui.label(
             RichText::new(format!("Created {}", doc.created))
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
         );
         ui.label(
             RichText::new(format!("Edited {}", doc.updated))
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
         );
 
         ui.add_space(6.0);
@@ -331,7 +331,7 @@ pub(crate) fn picture_controls(
             value
         };
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Width").font(ui_small()).color(FAINT));
+            ui.label(RichText::new("Width").font(ui_small()).color(MUTED()));
             let mut width = image.width.unwrap_or(240.0);
             if ui
                 .add(egui::DragValue::new(&mut width).speed(2.0).range(24.0..=468.0).suffix(" pt"))
@@ -345,7 +345,7 @@ pub(crate) fn picture_controls(
         });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Position").font(ui_small()).color(FAINT));
+            ui.label(RichText::new("Position").font(ui_small()).color(MUTED()));
             for (label, value, key) in [
                 ("Left", PictureAlign::Left, "left"),
                 ("Center", PictureAlign::Center, "center"),
@@ -367,7 +367,7 @@ pub(crate) fn picture_controls(
         }
         ui.add_enabled_ui(wrap, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Space around").font(ui_small()).color(FAINT));
+                ui.label(RichText::new("Space around").font(ui_small()).color(MUTED()));
                 let mut padding = image.padding;
                 if ui
                     .add(egui::DragValue::new(&mut padding).speed(0.5).range(0.0..=72.0).suffix(" pt"))
@@ -378,7 +378,7 @@ pub(crate) fn picture_controls(
             });
         });
         ui.add_space(4.0);
-        ui.label(RichText::new("Caption").font(ui_small()).color(FAINT));
+        ui.label(RichText::new("Caption").font(ui_small()).color(MUTED()));
         let mut caption = image.caption.clone();
         if ui
             .add(TextEdit::singleline(&mut caption).desired_width(f32::INFINITY))
@@ -386,7 +386,7 @@ pub(crate) fn picture_controls(
         {
             edits.push(edit(serde_json::json!({"caption": caption})));
         }
-        ui.label(RichText::new("Description (for screen readers)").font(ui_small()).color(FAINT));
+        ui.label(RichText::new("Description (for screen readers)").font(ui_small()).color(MUTED()));
         let mut alt = image.alt_text.clone();
         if ui
             .add(TextEdit::singleline(&mut alt).desired_width(f32::INFINITY))
@@ -397,7 +397,7 @@ pub(crate) fn picture_controls(
         ui.label(
             RichText::new("Text wraps in exports and the Compile preview; the editor shows the picture on its own line.")
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
         );
     ui.add_space(6.0);
     // Pictures are not in undo, so removing asks twice.
@@ -406,7 +406,7 @@ pub(crate) fn picture_controls(
     ui.horizontal(|ui| {
         if armed {
             if ui
-                .add(egui::Button::new(RichText::new("Click again to remove").color(egui::Color32::WHITE)).fill(egui::Color32::from_rgb(168, 64, 56)))
+                .add(egui::Button::new(RichText::new("Click again to remove").color(ON_ACCENT())).fill(DANGER()))
                 .clicked()
             {
                 edits.push(serde_json::json!({"id": doc_id, "paragraph": paragraph, "remove": true}));
@@ -458,7 +458,7 @@ fn pictures_section(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     hairline(ui);
     ui.add_space(10.0);
     section_label(ui, "Pictures in this document");
-    ui.label(RichText::new("Tip: right-click a picture in the text for these controls.").font(ui_small()).color(FAINT));
+    ui.label(RichText::new("Tip: right-click a picture in the text for these controls.").font(ui_small()).color(MUTED()));
     ui.add_space(4.0);
     let mut edits: Vec<serde_json::Value> = Vec::new();
     for (number, (paragraph, image)) in pictures.iter().enumerate() {
@@ -599,7 +599,7 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     ui.add_space(10.0);
     section_label(ui, "Project compass");
     ui.add_space(4.0);
-    ui.label(RichText::new(&project_notes).font(serif(12.0)).color(MUTED));
+    ui.label(RichText::new(&project_notes).font(serif(12.0)).color(MUTED()));
     ui.add_space(12.0);
     section_label(ui, "Research mentioned here");
     ui.add_space(3.0);
@@ -607,7 +607,7 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         ui.label(
             RichText::new("No research note is named in this document.")
                 .font(ui_small())
-                .color(FAINT),
+                .color(MUTED()),
         );
     }
     for (id, title, kind) in research.iter().take(6) {
@@ -616,14 +616,14 @@ fn notes_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             ui.painter()
                 .circle_filled(r.center(), 2.5, crate::ui::views::research::kind_color(kind));
             if ui
-                .add(egui::Button::new(RichText::new(title).font(ui_body()).color(BLUE)).frame(false))
+                .add(egui::Button::new(RichText::new(title).font(ui_body()).color(INFO())).frame(false))
                 .on_hover_text("Open in Research")
                 .clicked()
             {
                 open_note = Some(id.clone());
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new(kind).font(ui_small()).color(FAINT));
+                ui.label(RichText::new(kind).font(ui_small()).color(MUTED()));
             });
         });
     }
@@ -645,8 +645,8 @@ fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             .font(ui_body()),
     );
     ui.add_space(4.0);
-    let button = egui::Button::new(RichText::new("Take snapshot").font(ui_body()).color(TEXT))
-        .fill(PANEL_3)
+    let button = egui::Button::new(RichText::new("Take snapshot").font(ui_body()).color(TEXT()))
+        .fill(HOVER())
         .corner_radius(CornerRadius::same(5))
         .min_size(Vec2::new(ui.available_width(), 27.0));
     if ui.add(button).clicked() {
@@ -668,14 +668,14 @@ fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
             if app.ws.project.checkpoints.is_empty() { "none" } else { "available" }
         ))
         .font(ui_small())
-        .color(FAINT),
+        .color(MUTED()),
     );
     ui.add_space(8.0);
     if doc.snapshots.is_empty() {
         ui.label(
             RichText::new("No snapshots yet. Take one before a big revision.")
                 .font(ui_body())
-                .color(FAINT),
+                .color(MUTED()),
         );
     }
     let snapshots: Vec<_> = doc.snapshots.iter().take(6).cloned().collect();
@@ -683,20 +683,20 @@ fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut compare: Option<String> = None;
     for (i, snap) in snapshots.iter().enumerate() {
         Frame::new()
-            .fill(PANEL_2)
+            .fill(RAISED())
             .corner_radius(CornerRadius::same(6))
             .inner_margin(Margin::same(8))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
-                        ui.label(RichText::new(&snap.name).font(ui_body()).color(TEXT));
+                        ui.label(RichText::new(&snap.name).font(ui_body()).color(TEXT()));
                         ui.label(
                             RichText::new(format!("{} · {} words", snap.created, snap.words))
                                 .font(ui_small())
-                                .color(FAINT),
+                                .color(MUTED()),
                         );
                         if !snap.note.is_empty() {
-                            ui.label(RichText::new(&snap.note).font(ui_small()).color(FAINT));
+                            ui.label(RichText::new(&snap.note).font(ui_small()).color(MUTED()));
                         }
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -707,7 +707,7 @@ fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                             compare = Some(snap.id.clone());
                         }
                         if i == 0 {
-                            pill(ui, "latest", SAGE, SAGE_SOFT);
+                            pill(ui, "latest", SUCCESS(), ACCENT_SOFT());
                         }
                     });
                 });
@@ -730,13 +730,13 @@ fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
 
 fn stat_cell(ui: &mut egui::Ui, value: &str, label: &str) {
     Frame::new()
-        .fill(PANEL_2)
+        .fill(RAISED())
         .corner_radius(CornerRadius::same(6))
         .inner_margin(Margin::symmetric(8, 5))
         .show(ui, |ui| {
             ui.vertical(|ui| {
-                ui.label(RichText::new(value).font(serif(15.0)).color(TEXT));
-                ui.label(RichText::new(label).font(ui_small()).color(FAINT));
+                ui.label(RichText::new(value).font(serif(15.0)).color(TEXT()));
+                ui.label(RichText::new(label).font(ui_small()).color(MUTED()));
             });
         });
 }

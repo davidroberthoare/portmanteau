@@ -272,8 +272,8 @@ fn list_ui(ctx: &egui::Context, field: Id, pos: egui::Pos2, state: &State) -> Op
         .fixed_pos(pos)
         .show(ctx, |ui| {
             Frame::new()
-                .fill(Color32::WHITE)
-                .stroke(Stroke::new(1.0, BORDER))
+                .fill(PANEL())
+                .stroke(Stroke::new(1.0, BORDER()))
                 .corner_radius(CornerRadius::same(8))
                 .shadow(egui::epaint::Shadow { offset: [0, 4], blur: 14, spread: 0, color: Color32::from_black_alpha(36) })
                 .inner_margin(Margin::symmetric(4, 4))
@@ -283,9 +283,9 @@ fn list_ui(ctx: &egui::Context, field: Id, pos: egui::Pos2, state: &State) -> Op
                         let selected = index == state.selected;
                         let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::click());
                         if selected {
-                            ui.painter().rect_filled(rect, CornerRadius::same(5), ACCENT_SOFT);
+                            ui.painter().rect_filled(rect, CornerRadius::same(5), ACCENT_SOFT());
                         } else if response.hovered() {
-                            ui.painter().rect_filled(rect, CornerRadius::same(5), PANEL_2);
+                            ui.painter().rect_filled(rect, CornerRadius::same(5), RAISED());
                         }
                         response.widget_info(|| {
                             egui::WidgetInfo::selected(egui::Role::Button, true, selected, format!("{} · {}", target.title, target.group))
@@ -295,14 +295,14 @@ fn list_ui(ctx: &egui::Context, field: Id, pos: egui::Pos2, state: &State) -> Op
                             egui::Align2::LEFT_CENTER,
                             &target.title,
                             ui_body(),
-                            TEXT,
+                            TEXT(),
                         );
                         ui.painter().text(
                             rect.right_center() - Vec2::new(8.0, 0.0),
                             egui::Align2::RIGHT_CENTER,
                             &target.group,
                             ui_small(),
-                            FAINT,
+                            MUTED(),
                         );
                         if response.clicked() {
                             clicked = Some(index);
