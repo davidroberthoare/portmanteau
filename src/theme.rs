@@ -7,7 +7,6 @@ use eframe::egui::{
 
 mod palette;
 pub use palette::*;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod files;
 
 pub fn serif(size: f32) -> FontId {

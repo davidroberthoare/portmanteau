@@ -1268,10 +1268,6 @@ impl PortmanteauApp {
                 self.updater.start(ui.ctx(), true);
                 ui.close();
             }
-            if ui.button("Releases and source code").clicked() {
-                open_url(concat!(env!("CARGO_PKG_REPOSITORY"), "/releases"));
-                ui.close();
-            }
         });
     }
 
@@ -3789,7 +3785,7 @@ mod shell_probe {
         harness.run_steps(3);
         harness.get_by_label("Help").click();
         harness.run_steps(3);
-        assert!(harness.query_by_label("Releases and source code").is_some());
+        assert!(harness.query_by_label("Releases and source code").is_none());
         harness.get_by_label("About Portmanteau").click();
         harness.run_steps(3);
         assert!(app.borrow().show_about);

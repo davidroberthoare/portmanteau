@@ -3,6 +3,11 @@
 The newest section is used as the body of the GitHub release. Start each release
 with a line `## vX.Y.Z` (matching `version` in the top-level `Cargo.toml`).
 
+## v0.3.1
+
+- Fixed: the browser version of 0.3.0 did not build, so the web page was not updated. This release brings the web version up to date with the themes.
+- The Help menu no longer has the "Releases and source code" item, which did nothing useful. Check for Updates is still there.
+
 ## v0.3.0
 
 - **Themes for the whole app.** Settings now has an **Appearance** tab. Pick a look from the dropdown: Light, Dark, Colourful, Monochrome, Cobalt, Solarized Light, Solarized Dark, Nord, Dracula, One Dark or Monokai. The change applies everywhere at once and is remembered.
