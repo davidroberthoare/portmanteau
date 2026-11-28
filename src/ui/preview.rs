@@ -217,7 +217,7 @@ pub fn paged_document(
     project: &Project,
     doc_id: &str,
 ) -> Result<PagedDocument, String> {
-    let doc = project.document(doc_id).ok_or("No document is open")?;
+    let doc = project.document(doc_id).ok_or(tr("No document is open"))?;
     let mut settings = project.settings_for(ExportKind::Pdf);
     settings.compile_type = Some(CompileType::from_medium(doc.medium));
     settings.scope = CompileScope::Draft;
@@ -237,8 +237,8 @@ pub fn paged_document(
         .find(|skipped| skipped.doc.id == doc_id)
         .map(|skipped| skipped.reason.clone());
     Err(match reason {
-        Some(reason) => format!("{reason}, so it has no pages in a compile."),
-        None => "This document has no text to print yet.".to_string(),
+        Some(reason) => crate::i18n::trf("{reason}, so it has no pages in a compile.", &[("reason", crate::i18n::compile_reason(&reason))]),
+        None => tr("This document has no text to print yet.").to_string(),
     })
 }
 

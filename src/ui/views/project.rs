@@ -100,21 +100,21 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
     card(
         ui,
-        "The work",
-        "How the project is named and credited.",
+        tr("The work"),
+        tr("How the project is named and credited."),
         |ui| {
             set("title", field(ui, "Title", &project.title, "Untitled", 1));
             set("subtitle", field(ui, "Subtitle", &project.subtitle, "Optional; books only, never on a script's cover", 1));
-            set("author", field(ui, "Author", &project.author, "Your name", 1));
-            set("genre", field(ui, "Genre", &project.genre, "Printed on a book's title page", 1));
-            set("logline", field(ui, "Logline", &project.logline, "One or two sentences", 3));
+            set("author", field(ui, "Author", &project.author, tr("Your name"), 1));
+            set("genre", field(ui, "Genre", &project.genre, tr("Printed on a book's title page"), 1));
+            set("logline", field(ui, "Logline", &project.logline, tr("One or two sentences"), 3));
         },
     );
 
     card(
         ui,
         "Contact",
-        "Printed bottom-left on a script's title page. One line each: name, address, email, phone.",
+        tr("Printed bottom-left on a script's title page. One line each: name, address, email, phone."),
         |ui| {
             set("contact", field(ui, "Contact", &project.contact, "Ada Marlowe\nada@example.com", 4));
         },
@@ -123,11 +123,11 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     card(
         ui,
         "Draft",
-        "Printed bottom-right on a script's title page.",
+        tr("Printed bottom-right on a script's title page."),
         |ui| {
             set("draft_label", field(ui, "Draft", &project.draft_label, "Draft, First draft, Shooting script…", 1));
             let today = chrono::Local::now().format("%d %B %Y").to_string();
-            let new = field(ui, "Date", &project.draft_date, &format!("Blank prints today's date ({today})"), 1);
+            let new = field(ui, "Date", &project.draft_date, &crate::i18n::trf("Blank prints today's date ({today})", &[("today", today.clone())]), 1);
             set("draft_date", new);
             if !project.draft_date.is_empty() {
                 ui.horizontal(|ui| {
@@ -145,7 +145,7 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     card(
         ui,
         "Cover",
-        "The picture an ebook opens with. A saved project keeps its own copy. Each output format can use a different one in Compile.",
+        tr("The picture an ebook opens with. A saved project keeps its own copy. Each output format can use a different one in Compile."),
         |ui| {
             ui.horizontal(|ui| {
                 label_cell(ui, "Cover");
@@ -160,7 +160,7 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.label(RichText::new(shown).font(ui_body()));
                 if quiet_button(ui, tr("Choose…")).clicked() {
                     if let Some(path) = crate::platform::FileDialog::new()
-                        .set_title("Cover picture")
+                        .set_title(tr("Cover picture"))
                         .add_filter("Pictures", &["png", "jpg", "jpeg"])
                         .pick_file()
                     {
@@ -176,12 +176,12 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
     card(
         ui,
-        "Writing goals",
-        "Words each day, shown in the top bar. Weekly and time goals are in the statistics.",
+        tr("Writing goals"),
+        tr("Words each day, shown in the top bar. Weekly and time goals are in the statistics."),
         |ui| {
             let mut target = project.goals.daily_words;
             ui.horizontal(|ui| {
-                label_cell(ui, "Daily words");
+                label_cell(ui, tr("Daily words"));
                 ui.add(egui::DragValue::new(&mut target).range(0..=200_000).speed(10));
                 if quiet_button(ui, tr("More goals and statistics…")).clicked() {
                     open_statistics = true;

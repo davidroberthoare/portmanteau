@@ -254,11 +254,11 @@ pub fn style_editor(
     ui.horizontal(|ui| {
         ui.label(RichText::new(tr("Type")).font(ui_small()).color(MUTED()));
         egui::ComboBox::from_id_salt(("style_type", scope))
-            .selected_text(RichText::new(kind.label()).font(ui_small()))
+            .selected_text(RichText::new(crate::i18n::tr_dyn(kind.label())).font(ui_small()))
             .width(150.0)
             .show_ui(ui, |ui| {
                 for t in CompileType::all() {
-                    ui.selectable_value(&mut kind, t, t.label());
+                    ui.selectable_value(&mut kind, t, crate::i18n::tr_dyn(t.label()));
                 }
             });
     });
@@ -400,12 +400,12 @@ fn align_combo(ui: &mut egui::Ui, key: &str, element: &mut ElementStyle) -> bool
     let mut changed = false;
     let mut align = element.align;
     egui::ComboBox::from_id_salt(("style_align", key))
-        .selected_text(RichText::new(align.label()).font(ui_small()).color(TEXT()))
+        .selected_text(RichText::new(crate::i18n::tr_dyn(align.label())).font(ui_small()).color(TEXT()))
         .width(74.0)
         .show_ui(ui, |ui| {
             for option in Alignment::all() {
                 if ui
-                    .selectable_value(&mut align, option, option.label())
+                    .selectable_value(&mut align, option, crate::i18n::tr_dyn(option.label()))
                     .changed()
                 {
                     changed = true;
@@ -705,7 +705,7 @@ pub fn manuscript_preview_navigator(
         layout
             .sections
             .iter()
-            .map(|section| (section.label.clone(), section.start_page))
+            .map(|section| (crate::i18n::tr_dyn(&section.label), section.start_page))
             .collect()
     };
     let starts: Vec<usize> = sections.iter().map(|(_, start)| *start).collect();
@@ -748,7 +748,7 @@ pub fn manuscript_preview_navigator(
                 }
 
                 ui.label(
-                    RichText::new(format!("Page {} of {}", *page + 1, total))
+                    RichText::new(crate::i18n::trf("Page {page} of {total}", &[("page", (*page + 1).to_string()), ("total", total.to_string())]))
                         .font(ui_small())
                         .color(MUTED()),
                 );

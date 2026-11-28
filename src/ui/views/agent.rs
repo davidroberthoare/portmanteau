@@ -178,7 +178,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             section_label(ui, tr("Response"));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 if !app.cmd_output.is_empty()
-                                    && ui.small_button("Clear").clicked()
+                                    && ui.small_button(tr("Clear")).clicked()
                                 {
                                     app.cmd_output.clear();
                                 }
@@ -186,7 +186,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         });
                         ui.add_space(4.0);
                         let output = if app.cmd_output.is_empty() {
-                            "Run a command to see its JSON response. Try “stats”, “document.list” or “export.preview”."
+                            tr("Run a command to see its JSON response. Try “stats”, “document.list” or “export.preview”.")
                                 .to_string()
                         } else {
                             app.cmd_output.clone()

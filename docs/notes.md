@@ -358,7 +358,7 @@ silently falling back to the project's current kind. `export.settings.get` and
   otherwise prose).
 - **Folders are first-class in the binder.** The header has a `▣ +` button next
   to `+`, row context menus offer "New folder", and `Action::NewFolder` resolves
-  a parent the same way "New inside" does (given parent → selected folder →
+  a parent the same way "New document" does (given parent → selected folder →
   selected document's parent → root). Folders are created as `DocKind::Folder`
   with a Prose medium.
 - **Scattered navigation removed.** Buttons that only switched screens

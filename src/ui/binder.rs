@@ -240,9 +240,9 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 );
                 let painter = ui.painter().with_clip_rect(title_rect);
                 let title_color = if row.include { TEXT() } else { MUTED() };
-                let mut title = row.title.clone();
+                let mut title = if row.kind.is_folder() { crate::i18n::folder_name(&row.title) } else { row.title.clone() };
                 if !row.include {
-                    title.push_str("  (excluded)");
+                    title.push_str(&tr("  (excluded)"));
                 }
                 // The painter clips without an ellipsis, which hid the end of a
                 // long chapter name. Truncate to the available width so a writer
@@ -279,7 +279,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         action = Some(Action::Select(row.id.clone()));
                         ui.close();
                     }
-                    if ui.button(tr("New inside")).clicked() {
+                    if ui.button(tr("New document")).clicked() {
                         action = Some(Action::NewUnder(Some(row.id.clone())));
                         ui.close();
                     }
@@ -301,9 +301,9 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     }
                     if ui
                         .button(if row.include {
-                            "Exclude from compile"
+                            tr("Exclude from compile")
                         } else {
-                            "Include in compile"
+                            tr("Include in compile")
                         })
                         .clicked()
                     {
@@ -422,7 +422,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 let id = app
                     .ws
                     .project
-                    .add_document(parent, "New folder", DocKind::Folder, Medium::Prose);
+                    .add_document(parent, tr("New folder"), DocKind::Folder, Medium::Prose);
                 app.ws.dirty = true;
                 app.selected = Some(id);
                 app.selected_block = 0;

@@ -190,7 +190,7 @@ fn browse_for(mode: PathDialog, current: &str) -> Option<String> {
     let picked = match mode {
         PathDialog::Open => dialog.set_title("Open project").pick_folder(),
         PathDialog::SaveAs => dialog
-            .set_title("Save project as")
+            .set_title(tr("Save project as"))
             .set_file_name("My Project.portmanteau")
             .save_file(),
     };
@@ -477,6 +477,12 @@ pub struct PortmanteauApp {
     pub show_about: bool,
     pub updater: crate::update::Updater,
     pub show_new_project: bool,
+    /// The first-launch "choose your language" question.
+    pub show_language_picker: bool,
+    picker_choice: Option<String>,
+    /// The welcome project is open and nothing has been done to it, so a change
+    /// of language can swap it for the same project in the new language.
+    showing_welcome: bool,
     pub new_project_title: String,
     pub new_project_kind: ProjectKind,
     pub cmd_name: String,
@@ -517,15 +523,16 @@ pub struct PortmanteauApp {
 /// (if any); when there is none, or it can no longer be opened, the app opens
 /// the welcome project, or the Salt Road demonstration when `repeatable`
 /// (screenshots and tests).
-fn startup_workspace(wanted: Option<&str>, repeatable: bool) -> Workspace {
+fn startup_workspace(wanted: Option<&str>, repeatable: bool, language: &crate::i18n::Language) -> Workspace {
+    let welcome = || Workspace::welcome_with(&|english| language.welcome_text(english));
     match wanted {
         Some(path) => Workspace::open(Path::new(path)).unwrap_or_else(|_| {
-            let mut ws = Workspace::welcome();
+            let mut ws = welcome();
             ws.last_message = format!("Could not reopen {path}; opened the welcome project instead");
             ws
         }),
         None if repeatable => Workspace::demo(),
-        None => Workspace::welcome(),
+        None => welcome(),
     }
 }
 
@@ -539,6 +546,7 @@ impl PortmanteauApp {
         if cfg!(test) {
             settings.theme = "light".into();
             settings.interface_language = "en".into();
+            settings.language = "en_US".into();
             settings.paged_view = false;
             settings.show_binder = true;
             settings.show_inspector = true;
@@ -567,6 +575,27 @@ impl PortmanteauApp {
             crate::i18n::activate(language);
         }
         settings.interface_language = wanted_language;
+        // First launch: use the system's language when the app has it, else ask.
+        let mut ask_language = false;
+        if !settings.language_chosen && !cfg!(test) && screenshot.is_none() {
+            match crate::i18n::system_locale().and_then(|l| crate::i18n::match_locale(&languages, &l).map(|l| l.code.clone())) {
+                Some(code) => {
+                    if let Some(dictionary) = crate::spellcheck::for_interface(&code, &settings.language) {
+                        settings.language = dictionary.into();
+                    }
+                    settings.interface_language = code;
+                    settings.language_chosen = true;
+                }
+                None => ask_language = true,
+            }
+            if let Some(language) = languages.iter().find(|l| l.code == settings.interface_language) {
+                crate::i18n::activate(language);
+            }
+        }
+        // PORTMANTEAU_LANGUAGE_PICKER=1 shows the first-launch question (a development aid).
+        if screenshot.is_some() && std::env::var("PORTMANTEAU_LANGUAGE_PICKER").is_ok() {
+            ask_language = true;
+        }
         // PORTMANTEAU_THEME picks a theme for a screenshot (a development aid).
         let wanted_theme = std::env::var("PORTMANTEAU_THEME").ok().filter(|_| screenshot.is_some());
         let wanted_theme = wanted_theme.as_deref().unwrap_or(&settings.theme);
@@ -590,7 +619,13 @@ impl PortmanteauApp {
             .flatten()
             .filter(|path| *path != "welcome")
             .map(str::to_string);
-        let ws = startup_workspace(wanted.as_deref(), repeatable);
+        let startup_language = languages
+            .iter()
+            .find(|l| l.code == settings.interface_language)
+            .cloned()
+            .unwrap_or_else(crate::i18n::Language::english);
+        let ws = startup_workspace(wanted.as_deref(), repeatable, &startup_language);
+        let showing_welcome = ws.log.first().is_some_and(|l| l == "Opened the welcome project");
         let selected = ws
             .project
             .documents
@@ -706,6 +741,9 @@ impl PortmanteauApp {
             show_about: false,
             updater: crate::update::Updater::default(),
             show_new_project: false,
+            show_language_picker: ask_language,
+            picker_choice: None,
+            showing_welcome,
             new_project_title: String::new(),
             new_project_kind: ProjectKind::Novel,
             cmd_name: "project.info".into(),
@@ -771,8 +809,21 @@ impl PortmanteauApp {
     pub fn choose_language(&mut self, code: &str) {
         let Some(language) = self.languages.iter().find(|l| l.code == code) else { return };
         crate::i18n::activate(language);
+        let language = language.clone();
         self.settings.interface_language = code.to_string();
+        self.settings.language_chosen = true;
+        // The spelling dictionary follows the interface language when there is one.
+        if let Some(dictionary) = crate::spellcheck::for_interface(code, &self.settings.language) {
+            self.set_spell_language(dictionary);
+        }
         let _ = crate::settings::save_settings(&self.settings);
+        // An untouched welcome project is rebuilt in the new language.
+        if self.showing_welcome && !self.ws.dirty && self.ws.path.is_none() {
+            let view = self.view;
+            self.install_workspace(Workspace::welcome_with(&|english| language.welcome_text(english)));
+            self.view = view;
+            self.showing_welcome = true;
+        }
     }
 
     /// Switch the interface theme and remember the choice.
@@ -1039,9 +1090,9 @@ impl PortmanteauApp {
     fn export_project_zip(&mut self) {
         let name = format!("{}.portmanteau.zip", portmanteau_api::storage::slugify(&self.ws.project.title));
         let Some(path) = crate::platform::FileDialog::new()
-            .set_title("Export project as zip")
+            .set_title(tr("Export project as zip"))
             .set_file_name(name)
-            .add_filter("Zip file", &["zip"])
+            .add_filter(tr("Zip file"), &["zip"])
             .save_file()
         else {
             return;
@@ -1058,8 +1109,8 @@ impl PortmanteauApp {
     #[cfg(not(target_arch = "wasm32"))]
     fn open_project_zip(&mut self) {
         let Some(zip) = crate::platform::FileDialog::new()
-            .set_title("Open project zip")
-            .add_filter("Zip file", &["zip"])
+            .set_title(tr("Open project zip"))
+            .add_filter(tr("Zip file"), &["zip"])
             .pick_file()
         else {
             return;
@@ -1072,7 +1123,7 @@ impl PortmanteauApp {
             .trim_end_matches(".portmanteau")
             .to_string();
         let mut dialog = crate::platform::FileDialog::new()
-            .set_title("Unpack into a new project folder")
+            .set_title(tr("Unpack into a new project folder"))
             .set_file_name(format!("{stem}.portmanteau"));
         if let Some(dir) = zip.parent() {
             dialog = dialog.set_directory(dir);
@@ -1151,7 +1202,7 @@ impl PortmanteauApp {
             {
                 let recent = self.settings.recent_projects.clone();
                 ui.add_enabled_ui(!recent.is_empty(), |ui| {
-                    ui.menu_button("Open recent", |ui| {
+                    ui.menu_button(tr("Open recent"), |ui| {
                         for path in &recent {
                             if ui.button(short_path(Path::new(path))).clicked() {
                                 self.open_project_path(Path::new(path));
@@ -1243,13 +1294,13 @@ impl PortmanteauApp {
             }
             ui.separator();
             if ui
-                .checkbox(&mut self.settings.show_binder, "Show binder")
+                .checkbox(&mut self.settings.show_binder, tr("Show binder"))
                 .changed()
             {
                 let _ = crate::settings::save_settings(&self.settings);
             }
             if ui
-                .checkbox(&mut self.settings.show_inspector, "Show inspector")
+                .checkbox(&mut self.settings.show_inspector, tr("Show inspector"))
                 .changed()
             {
                 let _ = crate::settings::save_settings(&self.settings);
@@ -1354,18 +1405,6 @@ impl PortmanteauApp {
                     if rail_view_button(ui, View::Settings, active) {
                         self.view = View::Settings;
                     }
-                    ui.add_space(6.0);
-                    let (help, hr) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), egui::Sense::click());
-                    ui.painter().text(
-                        help.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "?",
-                        serif(17.0),
-                        if hr.hovered() { TEXT() } else { MUTED() },
-                    );
-                    if hr.clicked() {
-                        self.show_about = true;
-                    }
                 });
             });
     }
@@ -1398,11 +1437,11 @@ impl PortmanteauApp {
                         .map(|p| p.display().to_string())
                         .unwrap_or_else(|| {
                     if cfg!(target_arch = "wasm32") {
-                        "Saved in this browser · File › Export project as zip… to back up".into()
+                        tr("Saved in this browser · File › Export project as zip… to back up").into()
                     } else if self.ws.project.title == "Welcome to Portmanteau" {
-                        "Welcome project · in memory, not saved yet".into()
+                        tr("Welcome project · in memory, not saved yet").into()
                     } else {
-                        "Demonstration project · in memory".into()
+                        tr("Demonstration project · in memory").into()
                     }
                 });
                     ui.label(RichText::new(path).font(mono(10.0)).color(MUTED()));
@@ -1484,7 +1523,7 @@ impl PortmanteauApp {
     fn modals(&mut self, ctx: &egui::Context) {
         if self.show_new_project {
             let mut open = self.show_new_project;
-            egui::Window::new("New project")
+            egui::Window::new(tr("New project"))
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
@@ -1552,9 +1591,76 @@ impl PortmanteauApp {
             }
         }
 
+        if self.show_language_picker {
+            let mut chosen: Option<String> = None;
+            let mut picker_choice = self.picker_choice.clone().unwrap_or_else(|| self.settings.interface_language.clone());
+            egui::Window::new(tr("Choose your language"))
+                .collapsible(false)
+                .resizable(false)
+                .title_bar(true)
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .min_width(340.0)
+                .show(ctx, |ui| {
+                    ui.label(
+                        RichText::new(tr("Portmanteau can show its menus and the welcome project in other languages. You can change this at any time in Settings."))
+                            .font(ui_body())
+                            .color(MUTED()),
+                    );
+                    ui.add_space(10.0);
+                    let selected = self
+                        .languages
+                        .iter()
+                        .find(|l| l.code == picker_choice)
+                        .map(|l| l.name.clone())
+                        .unwrap_or_default();
+                    egui::ComboBox::from_id_salt("first_launch_language")
+                        .selected_text(RichText::new(selected).font(ui_body()).color(TEXT()))
+                        .width(ui.available_width())
+                        .show_ui(ui, |ui| {
+                            for language in &self.languages {
+                                if ui.selectable_label(language.code == picker_choice, &language.name).clicked() {
+                                    picker_choice = language.code.clone();
+                                }
+                            }
+                        });
+                    ui.add_space(10.0);
+                    if ui
+                        .add(
+                            egui::Button::new(RichText::new(tr("Continue")).font(ui_body()).color(ON_ACCENT()))
+                                .fill(ACCENT())
+                                .min_size(Vec2::new(ui.available_width(), 30.0)),
+                        )
+                        .clicked()
+                    {
+                        chosen = Some(picker_choice.clone());
+                    }
+                    ui.add_space(8.0);
+                    ui.label(
+                        RichText::new(tr("Your language is missing? Translations are plain files anyone can add; see the project page for how."))
+                            .font(ui_small())
+                            .color(MUTED()),
+                    );
+                    if ui.link(env!("CARGO_PKG_REPOSITORY")).clicked() {
+                        open_url(env!("CARGO_PKG_REPOSITORY"));
+                    }
+                });
+            // Picking in the list changes the language at once, so the rest of
+            // the window can be read in it; Continue closes the window.
+            if self.picker_choice.is_none() {
+                self.picker_choice = Some(picker_choice.clone());
+            } else if self.picker_choice.as_deref() != Some(&picker_choice) {
+                self.picker_choice = Some(picker_choice.clone());
+                self.choose_language(&picker_choice);
+            }
+            if let Some(code) = chosen {
+                self.choose_language(&code);
+                self.show_language_picker = false;
+            }
+        }
+
         if self.show_about {
             let mut open = self.show_about;
-            egui::Window::new("About Portmanteau")
+            egui::Window::new(tr("About Portmanteau"))
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
@@ -1572,7 +1678,7 @@ impl PortmanteauApp {
                     ui.add_space(10.0);
                     for line in [
                         "Binder, corkboard and outline for long-form structure",
-                        "Prose and screenplay editors with typed elements",
+                        tr("Prose and screenplay editors with typed elements"),
                         "Research, a story database and structured planning",
                         "Snapshots, checkpoints, version comparison and restore",
                         "PDF, EPUB, DOCX, Final Draft, Fountain, HTML, Markdown and text",
@@ -1615,7 +1721,7 @@ impl PortmanteauApp {
         };
         let mut open = true;
         let mut create = false;
-        egui::Window::new("New character")
+        egui::Window::new(tr("New character"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -1745,7 +1851,7 @@ impl PortmanteauApp {
         let mut open = true;
         let mut insert = false;
         let mut cancel = false;
-        egui::Window::new("Insert image")
+        egui::Window::new(tr("Insert image"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -1761,7 +1867,7 @@ impl PortmanteauApp {
                     );
                     if ui.button(tr("Browse…")).clicked() {
                         if let Some(file) = crate::platform::FileDialog::new()
-                            .set_title("Choose an image")
+                            .set_title(tr("Choose an image"))
                             .add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp"])
                             .pick_file()
                         {
@@ -1785,7 +1891,7 @@ impl PortmanteauApp {
                             ("Small", 144.0),
                             ("Medium", DEFAULT_PICTURE_WIDTH),
                             ("Large", 432.0),
-                            ("Full width", 468.0),
+                            (tr("Full width"), 468.0),
                         ] {
                             ui.selectable_value(&mut state.width, width, label);
                         }
@@ -1839,23 +1945,23 @@ impl PortmanteauApp {
             .ws
             .path
             .clone()
-            .ok_or_else(|| "Save the project before inserting images.".to_string())?;
+            .ok_or_else(|| tr("Save the project before inserting images.").to_string())?;
         if !source.is_file() {
-            return Err("Choose an existing image file.".into());
+            return Err(tr("Choose an existing image file.").into());
         }
         let (pixel_width, pixel_height) = image::image_dimensions(source)
-            .map_err(|error| format!("Could not read image dimensions: {error}"))?;
+            .map_err(|error| crate::i18n::trf("Could not read image dimensions: {error}", &[("error", error.to_string())]))?;
         let extension = source
             .extension()
             .and_then(|extension| extension.to_str())
             .filter(|extension| extension.chars().all(|ch| ch.is_ascii_alphanumeric()))
-            .ok_or_else(|| "The image file needs a normal filename extension.".to_string())?;
+            .ok_or_else(|| tr("The image file needs a normal filename extension.").to_string())?;
         let file_name = format!("{}.{}", portmanteau_core::new_id("img"), extension);
         let image_dir = root.join("assets").join("images");
         std::fs::create_dir_all(&image_dir)
-            .map_err(|error| format!("Could not create the project image folder: {error}"))?;
+            .map_err(|error| crate::i18n::trf("Could not create the project image folder: {error}", &[("error", error.to_string())]))?;
         std::fs::copy(source, image_dir.join(&file_name))
-            .map_err(|error| format!("Could not copy the image into the project: {error}"))?;
+            .map_err(|error| crate::i18n::trf("Could not copy the image into the project: {error}", &[("error", error.to_string())]))?;
         Ok(image_object(&file_name, pixel_width, pixel_height, standalone, alt, caption, width))
     }
 
@@ -1865,16 +1971,16 @@ impl PortmanteauApp {
             .ws
             .path
             .clone()
-            .ok_or_else(|| "Save the project before pasting images: they are kept in its folder.".to_string())?;
+            .ok_or_else(|| tr("Save the project before pasting images: they are kept in its folder.").to_string())?;
         let buffer = image::RgbaImage::from_raw(width, height, rgba)
-            .ok_or_else(|| "The clipboard image did not have the expected size.".to_string())?;
+            .ok_or_else(|| tr("The clipboard image did not have the expected size.").to_string())?;
         let file_name = format!("{}.png", portmanteau_core::new_id("img"));
         let image_dir = root.join("assets").join("images");
         std::fs::create_dir_all(&image_dir)
-            .map_err(|error| format!("Could not create the project image folder: {error}"))?;
+            .map_err(|error| crate::i18n::trf("Could not create the project image folder: {error}", &[("error", error.to_string())]))?;
         image::DynamicImage::ImageRgba8(buffer)
             .save(image_dir.join(&file_name))
-            .map_err(|error| format!("Could not store the image: {error}"))?;
+            .map_err(|error| crate::i18n::trf("Could not store the image: {error}", &[("error", error.to_string())]))?;
         Ok(image_object(&file_name, width, height, standalone, "", "", DEFAULT_PICTURE_WIDTH))
     }
 
@@ -1942,7 +2048,7 @@ impl PortmanteauApp {
                 }),
         };
         if content.is_none() {
-            return Err("The target text field no longer exists.".into());
+            return Err(tr("The target text field no longer exists.").into());
         }
         self.ws.project.touch();
         self.ws.dirty = true;
@@ -1955,7 +2061,7 @@ impl PortmanteauApp {
         let mut open = true;
         let mut close = false;
         let mut restore = false;
-        egui::Window::new("Compare version")
+        egui::Window::new(tr("Compare version"))
             .open(&mut open)
             .collapsible(false)
             .resizable(true)
@@ -1987,7 +2093,7 @@ impl PortmanteauApp {
                             close = true;
                         }
                         if matches!(state.added + state.removed, 0) {
-                            pill(ui, "No changes", SUCCESS(), ACCENT_SOFT());
+                            pill(ui, tr("No changes"), SUCCESS(), ACCENT_SOFT());
                         } else {
                             if state.removed > 0 {
                                 pill(
@@ -2132,7 +2238,7 @@ impl PortmanteauApp {
                     self.selected = Some(state.doc_id.clone());
                     self.toast(
                         tr("Version restored"),
-                        format!("Replaced with “{}”", state.snapshot_name),
+                        crate::i18n::trf("Replaced with “{name}”", &[("name", state.snapshot_name.clone())]),
                         ToastKind::Info,
                     );
                 }
@@ -2153,12 +2259,12 @@ impl PortmanteauApp {
         let mut commit = false;
         let (title, verb, hint) = match mode {
             PathDialog::Open => (
-                "Open project",
+                tr("Open project"),
                 "Open",
                 "Path to a .portmanteau project folder (or a legacy .json file)",
             ),
             PathDialog::SaveAs => (
-                "Save project as",
+                tr("Save project as"),
                 "Save",
                 "Where the project folder should live (or a legacy .json file)",
             ),
@@ -2184,7 +2290,7 @@ impl PortmanteauApp {
                 }
                 ui.add_space(4.0);
                 if ui
-                    .button("Browse…")
+                    .button(tr("Browse…"))
                     .on_hover_text(tr("Choose with the system file dialog"))
                     .clicked()
                 {
@@ -2603,7 +2709,7 @@ impl PortmanteauApp {
         let mut save = false;
         let mut quit = false;
         let mut cancel = false;
-        egui::Window::new("Save your changes?")
+        egui::Window::new(tr("Save your changes?"))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
@@ -2688,7 +2794,7 @@ impl PortmanteauApp {
         let saved = found.saved.clone();
         let has_folder = found.original.is_some();
         let (mut recover, mut discard, mut later) = (false, false, false);
-        egui::Window::new("Bring back unsaved work?")
+        egui::Window::new(tr("Bring back unsaved work?"))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
@@ -2696,15 +2802,15 @@ impl PortmanteauApp {
             .show(ctx, |ui| {
                 ui.add_space(4.0);
                 ui.label(
-                    RichText::new(format!("Portmanteau closed with unsaved changes to “{title}”. A safety copy from {saved} was kept."))
+                    RichText::new(crate::i18n::trf("Portmanteau closed with unsaved changes to “{title}”. A safety copy from {saved} was kept.", &[("title", title.to_string()), ("saved", saved.to_string())]))
                         .font(ui_body())
                         .color(TEXT()),
                 );
                 ui.label(
                     RichText::new(if has_folder {
-                        "Bringing it back opens it with those changes, still unsaved; its folder is untouched until you save."
+                        tr("Bringing it back opens it with those changes, still unsaved; its folder is untouched until you save.")
                     } else {
-                        "Bringing it back opens it with those changes; use File › Save project as… to keep it."
+                        tr("Bringing it back opens it with those changes; use File › Save project as… to keep it.")
                     })
                     .font(ui_small())
                     .color(MUTED()),
@@ -2916,6 +3022,7 @@ impl PortmanteauApp {
         }
         self.recovery_written = false;
         self.last_recovery = None;
+        self.showing_welcome = false;
         self.ws = ws;
         self.selected = self
             .ws
@@ -3713,19 +3820,19 @@ mod shell_probe {
     #[test]
     fn startup_opens_the_last_project_else_the_welcome_project() {
         // First launch: nothing remembered.
-        assert_eq!(startup_workspace(None, false).project.title, "Welcome to Portmanteau");
+        assert_eq!(startup_workspace(None, false, &crate::i18n::Language::english()).project.title, "Welcome to Portmanteau");
         // Screenshots and tests stay on the repeatable demonstration project.
-        assert_eq!(startup_workspace(None, true).project.title, "The Salt Road");
+        assert_eq!(startup_workspace(None, true, &crate::i18n::Language::english()).project.title, "The Salt Road");
         // The remembered project is gone: say so and fall back to the welcome project.
         let missing = std::env::temp_dir().join(portmanteau_core::new_id("no-such-project"));
-        let ws = startup_workspace(Some(&missing.display().to_string()), false);
+        let ws = startup_workspace(Some(&missing.display().to_string()), false, &crate::i18n::Language::english());
         assert_eq!(ws.project.title, "Welcome to Portmanteau");
         assert!(ws.last_message.contains("Could not reopen"), "{}", ws.last_message);
         // A project that is there is reopened, not replaced.
         let dir = std::env::temp_dir().join(portmanteau_core::new_id("startup-project"));
         let mut saved = Workspace::new_project("My Novel", ProjectKind::Novel);
         saved.save(Some(dir.clone())).expect("save");
-        assert_eq!(startup_workspace(Some(&dir.display().to_string()), false).project.title, "My Novel");
+        assert_eq!(startup_workspace(Some(&dir.display().to_string()), false, &crate::i18n::Language::english()).project.title, "My Novel");
         let _ = std::fs::remove_dir_all(dir);
     }
 

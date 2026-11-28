@@ -16,9 +16,9 @@ use crate::ui::editor::{
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         for (tab, label) in [
-            (InspectorTab::Document, "Document"),
-            (InspectorTab::Notes, "Notes"),
-            (InspectorTab::History, "Versions"),
+            (InspectorTab::Document, tr("Document")),
+            (InspectorTab::Notes, tr("Notes")),
+            (InspectorTab::History, tr("Versions")),
         ] {
             let active = app.inspector_tab == tab;
             let resp = ui.add(
@@ -118,9 +118,9 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         }
         ui.add_space(2.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(doc.kind.label()).font(ui_small()).color(MUTED()));
+            ui.label(RichText::new(crate::i18n::tr_dyn(doc.kind.label())).font(ui_small()).color(MUTED()));
             ui.label(RichText::new("·").font(ui_small()).color(MUTED()));
-            ui.label(RichText::new(doc.medium.label()).font(ui_small()).color(MUTED()));
+            ui.label(RichText::new(crate::i18n::tr_dyn(doc.medium.label())).font(ui_small()).color(MUTED()));
         });
         ui.add_space(10.0);
 
@@ -173,11 +173,11 @@ fn document_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         ui.add_space(2.0);
         let mut medium = doc.medium;
         ComboBox::from_id_salt("medium_pick")
-            .selected_text(medium.label())
+            .selected_text(crate::i18n::tr_dyn(medium.label()))
             .width(ui.available_width() - 8.0)
             .show_ui(ui, |ui| {
                 for m in [Medium::Prose, Medium::Screenplay, Medium::StagePlay, Medium::TvScript, Medium::Note] {
-                    ui.selectable_value(&mut medium, m, m.label());
+                    ui.selectable_value(&mut medium, m, crate::i18n::tr_dyn(m.label()));
                 }
             });
         if medium != doc.medium {
@@ -373,8 +373,8 @@ pub(crate) fn picture_controls(
         let can_wrap = image.align != PictureAlign::Center;
         let mut wrap = image.wrap && can_wrap;
         if ui
-            .add_enabled(can_wrap, egui::Checkbox::new(&mut wrap, "Text wraps around it"))
-            .on_disabled_hover_text("Put the picture on the left or the right first")
+            .add_enabled(can_wrap, egui::Checkbox::new(&mut wrap, tr("Text wraps around it")))
+            .on_disabled_hover_text(tr("Put the picture on the left or the right first"))
             .changed()
         {
             edits.push(edit(serde_json::json!({"wrap": wrap})));
@@ -714,10 +714,10 @@ fn history_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                         }
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.small_button("Restore").clicked() {
+                        if ui.small_button(tr("Restore")).clicked() {
                             restore = Some(snap.id.clone());
                         }
-                        if ui.small_button("Compare").clicked() {
+                        if ui.small_button(tr("Compare")).clicked() {
                             compare = Some(snap.id.clone());
                         }
                         if i == 0 {

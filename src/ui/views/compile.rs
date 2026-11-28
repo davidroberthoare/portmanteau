@@ -38,11 +38,11 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             let words: u32 = included.iter().map(|doc| doc.words()).sum();
             meta_line(
                 ui,
-                &[&format!(
-                    "{} document{} in this compile · {words} words",
-                    included.len(),
-                    if included.len() == 1 { "" } else { "s" },
-                )],
+                &[&if included.len() == 1 {
+                    crate::i18n::trf("1 document in this compile · {words} words", &[("words", words.to_string())])
+                } else {
+                    crate::i18n::trf("{count} documents in this compile · {words} words", &[("count", included.len().to_string()), ("words", words.to_string())])
+                }],
             );
         },
     );
@@ -265,7 +265,7 @@ fn output_tab(
         ui.vertical(|ui| {
             ui.label(RichText::new(kind.label()).font(serif(21.0)).color(TEXT()));
             ui.label(
-                RichText::new(kind.description())
+                RichText::new(crate::i18n::tr_dyn(kind.description()))
                     .font(ui_small())
                     .color(MUTED()),
             );
@@ -402,7 +402,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                             output_field(
                                 ui,
                                 &mut settings.output_path,
-                                "Folder for the export (blank = ./exports)",
+                                tr("Folder for the export (blank = ./exports)"),
                             );
                         });
                         ui.end_row();
@@ -539,10 +539,9 @@ fn action_panel(
                             let mut effective = settings.clone();
                             effective.compile_type = Some(plan.kind);
                             let pages = page_estimate(ui.ctx(), &app.ws.project, &effective);
-                            format!(
-                                "{} words · {} pages estimated",
-                                plan.included.iter().map(|d| d.words()).sum::<u32>(),
-                                pages
+                            crate::i18n::trf(
+                                "{words} words · {pages} pages estimated",
+                                &[("words", plan.included.iter().map(|d| d.words()).sum::<u32>().to_string()), ("pages", pages.to_string())],
                             )
                         })
                         .font(ui_small())
@@ -561,10 +560,11 @@ fn action_panel(
                                     DocKind::FrontMatter | DocKind::BackMatter
                                 ))
                                 .count();
-                            format!(
-                                "Includes {count} manuscript section{}",
-                                if count == 1 { "" } else { "s" }
-                            )
+                            if count == 1 {
+                                tr("Includes 1 manuscript section").to_string()
+                            } else {
+                                crate::i18n::trf("Includes {count} manuscript sections", &[("count", count.to_string())])
+                            }
                         })
                         .font(ui_small())
                         .color(MUTED()),
@@ -582,10 +582,9 @@ fn action_panel(
                         .circle_filled(dot_rect.center(), 3.5, SUCCESS());
                     ui.vertical(|ui| {
                         ui.label(
-                            RichText::new(format!(
-                                "Last export · {} · {:.1} KB",
-                                info.format,
-                                info.bytes as f32 / 1024.0
+                            RichText::new(crate::i18n::trf(
+                                "Last export · {format} · {size} KB",
+                                &[("format", info.format.to_string()), ("size", format!("{:.1}", info.bytes as f32 / 1024.0))]
                             ))
                             .font(ui_small())
                             .color(SUCCESS()),
@@ -635,7 +634,7 @@ fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, global_font: &mut 
             section_label(ui, tr("Type styles for this format"));
             ui.label(
                 RichText::new(
-                    "Pick a type of manuscript and a style, then set its font and paragraph. The global defaults live in Settings → Display.",
+                    tr("Pick a type of manuscript and a style, then set its font and paragraph. The global defaults live in Settings → Display."),
                 )
                 .font(ui_small())
                 .color(MUTED()),
@@ -705,7 +704,7 @@ fn type_panel(
 
             if kind == ExportKind::Epub || (kind == ExportKind::Pdf && !compile_type.is_script()) {
                 ui.add_space(7.0);
-                check(ui, settings, |s| &mut s.include_cover, "Include a cover");
+                check(ui, settings, |s| &mut s.include_cover, tr("Include a cover"));
                 if settings.include_cover {
                     let file_name = |path: &str| {
                         Path::new(path)
@@ -717,7 +716,7 @@ fn type_panel(
                     ui.horizontal_wrapped(|ui| {
                         if !own.is_empty() {
                             ui.label(
-                                RichText::new(format!("This format uses {}", file_name(&own)))
+                                RichText::new(crate::i18n::trf("This format uses {file}", &[("file", file_name(&own).to_string())]))
                                     .font(ui_small())
                                     .color(MUTED()),
                             );
@@ -732,14 +731,14 @@ fn type_panel(
                             );
                         } else {
                             ui.label(
-                                RichText::new(format!("Using the project cover, {}", file_name(project_cover)))
+                                RichText::new(crate::i18n::trf("Using the project cover, {file}", &[("file", file_name(project_cover).to_string())]))
                                     .font(ui_small())
                                     .color(MUTED()),
                             );
                         }
                         if quiet_button(ui, tr("Choose another…")).clicked() {
                             if let Some(path) = crate::platform::FileDialog::new()
-                                .set_title("Cover picture")
+                                .set_title(tr("Cover picture"))
                                 .add_filter("Pictures", &["png", "jpg", "jpeg"])
                                 .pick_file()
                             {
@@ -922,7 +921,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
             ui.checkbox(&mut hf.different_first_page, tr("Different first page of each part"));
             ui.checkbox(
                 &mut hf.no_header_on_chapter_openers,
-                "No header on the page where a chapter opens",
+                tr("No header on the page where a chapter opens"),
             );
             ui.checkbox(&mut hf.restart_body_numbering, tr("Start the body at page 1"));
 
@@ -961,8 +960,8 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
                 if !editable {
                     ui.label(
                         RichText::new(match r.mode {
-                            RegionMode::None => "No headers or footers here.",
-                            _ => "Uses the body's headers and footers.",
+                            RegionMode::None => tr("No headers or footers here."),
+                            _ => tr("Uses the body's headers and footers."),
                         })
                         .font(ui_small())
                         .color(MUTED()),
@@ -974,13 +973,13 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
                 // Only the variants that are switched on can be edited.
                 let mut variants = vec![(
                     HfVariant::Odd,
-                    if hf.different_odd_even { "Right-hand pages" } else { "All pages" },
+                    if hf.different_odd_even { "Right-hand pages" } else { tr("All pages") },
                 )];
                 if hf.different_odd_even {
                     variants.push((HfVariant::Even, "Left-hand pages"));
                 }
                 if hf.different_first_page {
-                    variants.push((HfVariant::First, "First page"));
+                    variants.push((HfVariant::First, tr("First page")));
                 }
                 if !variants.iter().any(|(v, _)| *v == variant) {
                     variant = HfVariant::Odd;
@@ -1111,22 +1110,22 @@ fn script_panel(
                 ui,
                 settings,
                 |s| &mut s.include_title_page,
-                "Script title page",
+                tr("Script title page"),
             );
             check(
                 ui,
                 settings,
                 |s| &mut s.include_scene_numbers,
-                "Scene numbers",
+                tr("Scene numbers"),
             );
-            check(ui, settings, |s| &mut s.include_synopsis, "Include synopses");
-            check(ui, settings, |s| &mut s.include_notes, "Include author notes");
+            check(ui, settings, |s| &mut s.include_synopsis, tr("Include synopses"));
+            check(ui, settings, |s| &mut s.include_notes, tr("Include author notes"));
             if !matches!(kind, ExportKind::Txt | ExportKind::Markdown) {
                 check(
                     ui,
                     settings,
                     |s| &mut s.each_separately,
-                    "Write each script as its own file",
+                    tr("Write each script as its own file"),
                 );
             }
             ui.add_space(6.0);
@@ -1172,13 +1171,13 @@ fn contents_panel(
             if types.len() > 1 {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(tr("Compile as")).font(ui_small()).color(MUTED()));
-                    let shown = settings.compile_type.unwrap_or(auto_kind).label();
+                    let shown = crate::i18n::tr_dyn(settings.compile_type.unwrap_or(auto_kind).label());
                     egui::ComboBox::from_id_salt("compile_type")
                         .selected_text(RichText::new(shown).font(ui_small()))
                         .width(170.0)
                         .show_ui(ui, |ui| {
                             for t in types {
-                                ui.selectable_value(&mut settings.compile_type, Some(t), t.label());
+                                ui.selectable_value(&mut settings.compile_type, Some(t), crate::i18n::tr_dyn(t.label()));
                             }
                         });
                 });
@@ -1193,7 +1192,7 @@ fn contents_panel(
             }
 
             let whole = settings.scope == CompileScope::Draft;
-            if ui.radio(whole, "Whole book").clicked() {
+            if ui.radio(whole, tr("Whole book")).clicked() {
                 settings.scope = CompileScope::Draft;
             }
             let part_id = match &settings.scope {
@@ -1203,12 +1202,12 @@ fn contents_panel(
             let part_title = part_id.as_deref().and_then(title_of);
             let part_active = matches!(settings.scope, CompileScope::Subtree(_));
             let part_label = match &part_title {
-                Some(t) => format!("Only “{t}” and what is inside it"),
-                None => "Only part of the book".to_owned(),
+                Some(t) => crate::i18n::trf("Only “{title}” and what is inside it", &[("title", t.to_string())]),
+                None => tr("Only part of the book").to_owned(),
             };
             let clicked = ui
                 .add_enabled(part_title.is_some(), egui::RadioButton::new(part_active, part_label))
-                .on_disabled_hover_text("Select an item in the binder first")
+                .on_disabled_hover_text(tr("Select an item in the binder first"))
                 .clicked();
             if clicked {
                 if let Some(id) = part_id {
@@ -1277,7 +1276,7 @@ fn document_list(
                 }
                 ui.horizontal(|ui| {
                     ui.add_space(depth.saturating_sub(1) as f32 * 14.0);
-                    let can_toggle = in_plan || reason == Some("Excluded from compile");
+                    let can_toggle = in_plan || reason == Some(tr("Excluded from compile"));
                     let mut value = doc.include_in_export;
                     let text = RichText::new(&doc.title)
                         .font(ui_small())
@@ -1292,7 +1291,7 @@ fn document_list(
                         let note = if in_plan {
                             format!("{} w · {} pp", doc.words(), counts.label(&doc.id))
                         } else {
-                            reason.unwrap_or_default().to_owned()
+                            crate::i18n::compile_reason(reason.unwrap_or_default())
                         };
                         ui.label(RichText::new(note).font(mono(8.5)).color(MUTED()));
                     });
@@ -1324,8 +1323,8 @@ fn include_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, kind: ExportK
                 ExportKind::Txt | ExportKind::Markdown
             );
             if !plain_text {
-                check(ui, settings, |s| &mut s.include_title_page, "Title page");
-                check(ui, settings, |s| &mut s.include_toc, "Table of contents");
+                check(ui, settings, |s| &mut s.include_title_page, tr("Title page"));
+                check(ui, settings, |s| &mut s.include_toc, tr("Table of contents"));
                 if settings.include_toc {
                     ui.horizontal(|ui| {
                         ui.add_space(22.0);
@@ -1350,7 +1349,7 @@ fn include_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, kind: ExportK
                         if settings.toc_page_numbers {
                             ui.horizontal(|ui| {
                                 ui.add_space(22.0);
-                                check(ui, settings, |s| &mut s.toc_leaders, "Dots between title and number");
+                                check(ui, settings, |s| &mut s.toc_leaders, tr("Dots between title and number"));
                             });
                         }
                     }
@@ -1359,13 +1358,13 @@ fn include_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, kind: ExportK
                     ui,
                     settings,
                     |s| &mut s.include_chapter_numbers,
-                    "Chapter numbers",
+                    tr("Chapter numbers"),
                 );
             }
             check(ui, settings, |s| &mut s.include_synopsis, "Synopses");
-            check(ui, settings, |s| &mut s.include_notes, "Author notes");
+            check(ui, settings, |s| &mut s.include_notes, tr("Author notes"));
             if kind.writes_hyperlinks() {
-                check(ui, settings, |s| &mut s.include_hyperlinks, "Write links as links");
+                check(ui, settings, |s| &mut s.include_hyperlinks, tr("Write links as links"));
             }
         });
 }

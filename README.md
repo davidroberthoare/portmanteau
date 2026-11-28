@@ -64,6 +64,10 @@ It's the whole app running in your browser, including the PDF and EPUB maker, sp
 - **Compile & export** works as usual and downloads the finished PDF, EPUB, Word file and so on.
 - Not there yet in the browser: pictures inside text and research attachments (the files in a project zip are carried along untouched, just not shown), importing Fountain, Final Draft or Word files, and clipboard paste of research clippings.
 
+## Translations wanted
+
+The menus, buttons and messages, and the sample welcome project, can be shown in other languages, and the first launch picks your system's language when Portmanteau has it. French is built in, but it is a machine translation and needs a native speaker's eye. **Help translating is one of the most useful contributions.** A language is a single JSON file; you don't need to program. In Settings choose *Interface language › Export template…*, fill in the translations, and either send the file as a pull request (it goes in `assets/languages/`) or open an issue and attach it. See [docs/localization.md](docs/localization.md) for the details, including how to try a file before sending it.
+
 ## Run from source
 
 ```sh

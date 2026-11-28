@@ -25,10 +25,9 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         |ui| {
             meta_line(
                 ui,
-                &[&format!(
-                    "{} built-in + {} custom element styles",
-                    BUILTIN_ELEMENTS.len(),
-                    app.settings.styles.custom.len()
+                &[&crate::i18n::trf(
+                    "{built_in} built-in + {custom} custom element styles",
+                    &[("built_in", BUILTIN_ELEMENTS.len().to_string()), ("custom", app.settings.styles.custom.len().to_string())],
                 )],
             );
         },
@@ -117,7 +116,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.add_space(2.0);
             ui.label(
                 RichText::new(
-                    "The Write toolbar shows a Spelling panel with suggestions. Changes here are saved automatically.",
+                    tr("The Write toolbar shows a Spelling panel with suggestions. Changes here are saved automatically."),
                 )
                 .font(ui_small())
                 .color(MUTED()),
@@ -144,8 +143,9 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 .map(|t| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
                 .unwrap_or_else(|| "never".into());
             ui.label(
-                RichText::new(format!(
-                    "At most once a day, at startup. It only asks GitHub for the newest release number; nothing about you or your projects is sent. Last checked: {last}."
+                RichText::new(crate::i18n::trf(
+                    "At most once a day, at startup. It only asks GitHub for the newest release number; nothing about you or your projects is sent. Last checked: {last}.",
+                    &[("last", last.to_string())],
                 ))
                 .font(ui_small())
                 .color(MUTED()),
@@ -163,7 +163,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.horizontal(|ui| {
                 for (label, value) in crate::theme::UI_SCALE_PRESETS {
                     let active = (app.settings.ui_scale - value).abs() < 0.04;
-                    if ui.selectable_label(active, label).clicked() && !active {
+                    if ui.selectable_label(active, crate::i18n::scale_name(label)).clicked() && !active {
                         app.settings.ui_scale = value;
                         crate::theme::set_ui_scale(value);
                         crate::theme::install(ui.ctx());
@@ -233,7 +233,7 @@ fn preferences_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.add_space(2.0);
             ui.label(
                 RichText::new(
-                    "The sidebar layout is remembered between launches. Focus mode (F11) hides both panels without changing this preference.",
+                    tr("The sidebar layout is remembered between launches. Focus mode (F11) hides both panels without changing this preference."),
                 )
                 .font(ui_small())
                 .color(MUTED()),
@@ -263,7 +263,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.label(RichText::new(tr("Display")).font(serif(21.0)).color(TEXT()));
             ui.label(
                 RichText::new(
-                    "The house style new projects start from — and the same type the editors use.",
+                    tr("The house style new projects start from — and the same type the editors use."),
                 )
                 .font(ui_small())
                 .color(MUTED()),
@@ -272,10 +272,9 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             pill(
                 ui,
-                &format!(
-                    "{} built-in + {} custom",
-                    BUILTIN_ELEMENTS.len(),
-                    app.settings.styles.custom.len()
+                &crate::i18n::trf(
+                    "{built_in} built-in + {custom} custom",
+                    &[("built_in", BUILTIN_ELEMENTS.len().to_string()), ("custom", app.settings.styles.custom.len().to_string())],
                 ),
                 MUTED(),
                 RAISED(),
@@ -308,7 +307,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 ui.add_space(2.0);
                                 ui.label(
                                     RichText::new(
-                                        "Type defaults for every manuscript element. The preview uses them; apply them to a project, then each output tab refines per format.",
+                                        tr("Type defaults for every manuscript element. The preview uses them; apply them to a project, then each output tab refines per format."),
                                     )
                                     .font(ui_small())
                                     .color(MUTED()),
@@ -409,7 +408,7 @@ fn display_tab(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         app.ws.dirty = true;
         app.toast(
             tr("Defaults applied"),
-            "The current project now uses the global element styles",
+            tr("The current project now uses the global element styles"),
             ToastKind::Ok,
         );
     }
@@ -438,7 +437,12 @@ fn interface_language(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             import_language(app);
         }
         if ui.button(tr("Export template…")).on_hover_text(tr("Save an empty language file to translate")).clicked() {
-            export_language_template(app);
+            export_language_template(app, None);
+        }
+        if active != "en"
+            && ui.button(tr("Export this language…")).on_hover_text(tr("Save this language with its translations filled in, to correct or finish it")).clicked()
+        {
+            export_language_template(app, Some(active.clone()));
         }
     });
     if let Some(code) = pick {
@@ -463,7 +467,7 @@ fn interface_language(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
 fn import_language(app: &mut PortmanteauApp) {
     let Some(path) = crate::platform::FileDialog::new()
-        .set_title("Import a language")
+        .set_title(tr("Import a language"))
         .add_filter("Language", &["json"])
         .pick_file()
     else {
@@ -486,15 +490,20 @@ fn import_language(app: &mut PortmanteauApp) {
     let _ = (app, path);
 }
 
-fn export_language_template(app: &mut PortmanteauApp) {
+/// Save the empty template, or (given a language code) that language with its
+/// translations filled in.
+fn export_language_template(app: &mut PortmanteauApp, code: Option<String>) {
+    let language = code.and_then(|c| app.languages.iter().find(|l| l.code == c).cloned());
+    let file_name = language.as_ref().map_or("my-language.json".to_string(), |l| format!("{}.json", l.code));
     let Some(path) = crate::platform::FileDialog::new()
-        .set_title("Save the language template")
-        .set_file_name("my-language.json")
+        .set_title(tr("Save the language template"))
+        .set_file_name(&file_name)
         .save_file()
     else {
         return;
     };
-    match std::fs::write(&path, crate::i18n::TEMPLATE) {
+    let contents = language.map_or_else(|| crate::i18n::TEMPLATE.to_string(), |l| l.to_filled_template());
+    match std::fs::write(&path, contents) {
         Ok(()) => app.toast(tr("Template saved"), path.display().to_string(), ToastKind::Info),
         Err(e) => app.toast(tr("Template not saved"), e.to_string(), ToastKind::Error),
     }

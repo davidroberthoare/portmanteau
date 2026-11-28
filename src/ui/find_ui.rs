@@ -1,6 +1,7 @@
 //! Small pieces shared by the Search page and the editor's find bar: the
 //! three option toggles (match case, whole word, regular expression).
 
+use crate::i18n::tr;
 use eframe::egui::{self, CornerRadius, RichText, Stroke, Vec2};
 use portmanteau_core::FindOptions;
 
@@ -19,15 +20,15 @@ pub fn toggle(ui: &mut egui::Ui, text: &str, on: bool, hover: &str) -> bool {
 /// Match case (Aa), whole word (ab) and regular expression (.*). True if any changed.
 pub fn option_toggles(ui: &mut egui::Ui, options: &mut FindOptions) -> bool {
     let mut changed = false;
-    if toggle(ui, "Aa", options.case_sensitive, "Match case") {
+    if toggle(ui, "Aa", options.case_sensitive, tr("Match case")) {
         options.case_sensitive = !options.case_sensitive;
         changed = true;
     }
-    if toggle(ui, "ab", options.whole_word, "Match whole word") {
+    if toggle(ui, "ab", options.whole_word, tr("Match whole word")) {
         options.whole_word = !options.whole_word;
         changed = true;
     }
-    if toggle(ui, ".*", options.regex, "Use a regular expression (replacement may use $1)") {
+    if toggle(ui, ".*", options.regex, tr("Use a regular expression (replacement may use $1)")) {
         options.regex = !options.regex;
         changed = true;
     }

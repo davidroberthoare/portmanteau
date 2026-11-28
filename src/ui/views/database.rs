@@ -106,7 +106,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                             ui.label(
                                                 RichText::new(format!(
                                                     "{} · {}",
-                                                    kind.label().to_uppercase(),
+                                                    crate::i18n::tr_dyn(kind.label()).to_uppercase(),
                                                     count
                                                 ))
                                                 .font(ui_small())
@@ -387,14 +387,14 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                 apply = true;
                             }
                             ComboBox::from_id_salt(("item_kind", draft.id.clone()))
-                                .selected_text(draft.kind.label())
+                                .selected_text(crate::i18n::tr_dyn(draft.kind.label()))
                                 .width(140.0)
                                 .show_ui(ui, |ui| {
                                     for kind in ItemKind::all() {
                                         if ui
                                             .selectable_label(
                                                 draft.kind == kind,
-                                                kind.label(),
+                                                crate::i18n::tr_dyn(kind.label()),
                                             )
                                             .clicked()
                                         {
@@ -613,11 +613,11 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         );
                     } else {
                         ui.label(
-                            RichText::new(format!(
-                                "In {} document{} · click one to go to the first place",
-                                appearances.len(),
-                                if appearances.len() == 1 { "" } else { "s" }
-                            ))
+                            RichText::new(if appearances.len() == 1 {
+                                tr("In 1 document · click one to go to the first place").to_string()
+                            } else {
+                                crate::i18n::trf("In {count} documents · click one to go to the first place", &[("count", appearances.len().to_string())])
+                            })
                             .font(ui_small())
                             .color(MUTED()),
                         );
@@ -628,7 +628,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                 let title = if appearance.by_link { format!("{}  @", appearance.title) } else { appearance.title.clone() };
                                 if ui
                                     .add(egui::Button::new(RichText::new(title).font(ui_body()).color(INFO())).frame(false))
-                                    .on_hover_text(if appearance.place.is_some() { "Open at the first appearance" } else { "Open (named in its notes or synopsis)" })
+                                    .on_hover_text(if appearance.place.is_some() { tr("Open at the first appearance") } else { "Open (named in its notes or synopsis)" })
                                     .clicked()
                                 {
                                     open_appearance = Some(appearance.clone());
@@ -705,11 +705,11 @@ fn counts_line(items: &[DatabaseItem]) -> String {
 
 fn plural(kind: ItemKind) -> &'static str {
     match kind {
-        ItemKind::Character => "characters",
-        ItemKind::Place => "places",
-        ItemKind::Event => "events",
-        ItemKind::Prop => "props",
-        ItemKind::Custom => "custom",
+        ItemKind::Character => tr("characters"),
+        ItemKind::Place => tr("places"),
+        ItemKind::Event => tr("events"),
+        ItemKind::Prop => tr("props"),
+        ItemKind::Custom => tr("custom"),
     }
 }
 

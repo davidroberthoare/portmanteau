@@ -278,7 +278,7 @@ fn collect(app: &PortmanteauApp) -> Vec<Card> {
                         _ => "Scene".into(),
                     }
                 } else {
-                    d.kind.label().to_string()
+                    crate::i18n::tr_dyn(d.kind.label())
                 },
                 group,
             }
@@ -569,7 +569,7 @@ fn card_ui(
 
     if pointer_over {
         resp.clone().on_hover_text(
-            "Click to select · Double-click to open · Drag onto another card to reorder",
+            tr("Click to select · Double-click to open · Drag onto another card to reorder"),
         );
     }
 }

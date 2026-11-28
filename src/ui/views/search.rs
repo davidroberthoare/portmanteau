@@ -152,7 +152,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     ui.label(RichText::new(tr("Look in")).font(ui_small()).color(MUTED()));
                     for group in SearchGroup::all() {
                         let on = page.groups.contains(&group);
-                        if chip(ui, group.label(), on, "Show only this kind of result (choose several, or none for everything)") {
+                        if chip(ui, &crate::i18n::tr_dyn(group.label()), on, "Show only this kind of result (choose several, or none for everything)") {
                             if on {
                                 page.groups.retain(|g| *g != group);
                             } else {
@@ -164,7 +164,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     ui.label(RichText::new(tr("in")).font(ui_small()).color(MUTED()));
                     for field in [HitField::Body, HitField::Synopsis, HitField::Notes] {
                         let on = page.fields.contains(&field);
-                        if chip(ui, field.label(), on, "Search only this part (choose several, or none for all parts)") {
+                        if chip(ui, &crate::i18n::tr_dyn(field.label()), on, "Search only this part (choose several, or none for all parts)") {
                             if on {
                                 page.fields.retain(|f| *f != field);
                             } else {
@@ -208,7 +208,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             page.folded.insert(id.clone());
                         }
                     }
-                    ui.label(RichText::new(group_hits[0].group.label()).font(ui_small()).color(MUTED()));
+                    ui.label(RichText::new(crate::i18n::tr_dyn(group_hits[0].group.label())).font(ui_small()).color(MUTED()));
                     ui.label(
                         RichText::new(format!(" {} ", group_hits.len()))
                             .font(ui_small())
@@ -319,7 +319,7 @@ fn hit_line(hit: &FindHit) -> LayoutJob {
     let mut job = LayoutJob::default();
     let plain = TextFormat { font_id: ui_body(), color: MUTED(), ..Default::default() };
     if hit.field != HitField::Body {
-        job.append(&format!("{} · ", hit.field.label()), 0.0, TextFormat { font_id: ui_small(), color: MUTED(), ..Default::default() });
+        job.append(&format!("{} · ", crate::i18n::tr_dyn(hit.field.label())), 0.0, TextFormat { font_id: ui_small(), color: MUTED(), ..Default::default() });
     }
     let chars: Vec<char> = hit.excerpt.chars().collect();
     let take = |range: std::ops::Range<usize>| chars[range.start.min(chars.len())..range.end.min(chars.len())].iter().collect::<String>();

@@ -132,7 +132,7 @@ fn session_chart(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 section_label(ui, tr("The last fourteen days"));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let total: u32 = entries.iter().map(|(_, w)| *w).sum();
-                    meta_line(ui, &[&format!("{total} words logged")]);
+                    meta_line(ui, &[&crate::i18n::trf("{total} words logged", &[("total", total.to_string())])]);
                 });
             });
             ui.add_space(8.0);
@@ -242,7 +242,7 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                         );
                                     });
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        if ui.small_button("Restore").clicked() {
+                                        if ui.small_button(tr("Restore")).clicked() {
                                             restore = Some(cp.id.clone());
                                         }
                                     });
@@ -269,7 +269,7 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                             }
                             app.toast(
                                 tr("Project restored"),
-                                "The whole project was rolled back to this checkpoint",
+                                tr("The whole project was rolled back to this checkpoint"),
                                 ToastKind::Info,
                             );
                         }
@@ -351,13 +351,13 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                         ui.with_layout(
                                             Layout::right_to_left(Align::Center),
                                             |ui| {
-                                                if ui.small_button("Restore").clicked() {
+                                                if ui.small_button(tr("Restore")).clicked() {
                                                     restore = Some((
                                                         doc_id.clone(),
                                                         snap.id.clone(),
                                                     ));
                                                 }
-                                                if ui.small_button("Compare").clicked() {
+                                                if ui.small_button(tr("Compare")).clicked() {
                                                     compare = Some((
                                                         doc_id.clone(),
                                                         snap.id.clone(),
@@ -384,7 +384,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                 app.ws.dirty = true;
                                 app.toast(
                                     tr("Snapshot restored"),
-                                    "The document was rolled back",
+                                    tr("The document was rolled back"),
                                     ToastKind::Info,
                                 );
                             }

@@ -25,12 +25,13 @@ Language files live in a `languages` folder beside the app's settings (`~/.confi
    - `code`: letters, digits, `-` or `_` (for example `fr`, `pt-BR`). It is also the file name (`fr.json`).
    - `name`: the language written in itself. It is what the picker shows.
    - `strings`: each **English text** (the key, exactly as it appears in the template) and its translation. Leave a translation as `""` (or delete the line) to keep the English.
+   - **In the template** each entry is an object, so the meaning travels with the text: `"Draft": { "translation": "", "context": "A document status…", "used_in": "inspector.rs" }`. Type your translation into `"translation"`; `context` says what the text is for (read it for short ones: "Label" or "Action" mean something specific here) and `used_in` names the source file. You may leave `context` and `used_in` in, delete them, or simplify the whole entry to `"Draft": "Borrador"`; all forms load.
    - `{placeholders}` such as `{count}` or `{title}` must be kept, exactly, in the translation. They are replaced by the program. You can move them wherever the grammar needs.
 3. Put the file in the `languages` folder (or use **Import…**) and choose it in Settings.
 
 A file whose `code` matches a built-in language (for example `fr`) **replaces** that language, which is how you correct a built-in translation without rebuilding the app. English is built in and cannot be replaced. Files that cannot be read are skipped, and the Settings page says why.
 
-To contribute a language to the program itself, add `assets/languages/<code>.json` and list it in `BUILTIN` in `src/i18n.rs`.
+To contribute a language to the program itself, add `assets/languages/<code>.json` (French and Spanish are built in; both are machine translations awaiting native review) and list it in `BUILTIN` in `src/i18n.rs`.
 
 ### Limits to know about
 
@@ -53,7 +54,11 @@ RichText::new(trf("{count} words in the project", &[("count", n.to_string())]));
 - `trf("template {name}", &[("name", value)])` translates a text with placeholders and fills them in. Never build a sentence with `format!` and translate the pieces; translate the whole sentence with placeholders.
 - `tr_dyn(&string)` is for text that is not a literal (a value from data). Prefer listing the literals with `tr(..)` next to it so the template picks them up; see the status dropdown in `src/ui/inspector.rs`.
 - The English text is the key. **Changing an English text changes its key**, so translations of the old wording stop applying until the language files are updated. Rewording is therefore a localisation decision, not just a copy edit.
-- After adding or changing texts run
+- `template.json` is **generated**: a test rebuilds it from the source (the list of texts and the files using them) plus the hand-written notes in `assets/languages/context.json`, which is the only place to edit notes. Built-in translations (`fr.json`, `es.json`) are finished plain `"English": "translation"` files and carry no notes, because notes describe the English source, not a translation. A new translator copies the template and fills in `translation`; nothing has to be removed. `template.json` is **generated**: a test rebuilds it from the source (the list of texts and the files using them) plus the hand-written notes in `assets/languages/context.json`, which is the only place to edit notes. The built-in files (`fr.json`, `es.json`) are plain `"English": "translation"` pairs and carry no notes, because notes describe the English source. A new translator copies the template and fills in `translation`; nothing has to be removed (`context` and `used_in` are ignored on loading).
+
+To correct or finish an existing language, choose it in Settings and press **Export this language…**: it saves the template with that language's current translations filled in, so the English, the translation and the notes are all in one file. Fix what is wrong and **Import…** it (same code, so it replaces the built-in); then send the file back to be added to the program.
+
+Context notes live in `assets/languages/context.json` (English text → note). A test requires a note for every single-word text, and rejects notes for texts that no longer exist; longer texts are usually self-explanatory, but add a note when they are not. After adding or changing texts run
   ```sh
   UPDATE_LANGUAGE_TEMPLATE=1 cargo test the_template
   cargo test
@@ -68,3 +73,26 @@ RichText::new(trf("{count} words in the project", &[("count", n.to_string())]));
 ## Status
 
 First pass: menus, rail, page headings, Settings, Compile, the inspector, the binder and most buttons and messages are wrapped. The built-in French translation is a first draft written by an AI assistant and needs a native speaker's review. Some dynamic messages (for example error text built from system errors) are still English-only.
+
+## The welcome project and the first launch
+
+A language file may also carry a `"welcome"` object: the English text of every
+line of the sample welcome project (see `portmanteau_core::sample::welcome_texts`)
+mapped to its translation. The exported template already lists them. Anything
+left out stays English. When the language is changed while the welcome project
+is still untouched, it is rebuilt in the new language.
+
+On the very first launch the app reads the system language (`sys-locale`; the
+browser's language on the web) and uses the closest language it has (`fr-CA`
+finds `fr`). If the system language is not available, or cannot be read, a small
+"Choose your language" window asks instead. `PORTMANTEAU_LANGUAGE_PICKER=1` shows
+that window in a screenshot.
+
+## Spelling dictionaries
+
+Choosing French or Spanish as the interface language also switches the spelling
+dictionary (`spellcheck::for_interface`); English keeps the English variant the
+writer chose. Dictionaries are Hunspell files in `assets/dict/` (en_US, en_GB,
+fr_FR, es_ES), compiled in. The Spelling language setting can still be changed
+separately afterwards. A new interface language with no dictionary leaves the
+spelling language alone.

@@ -218,7 +218,7 @@ impl Updater {
         let Some(release) = self.announced(prefs) else { return };
         let tip = format!("Portmanteau {} is available", release.version);
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::click());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Update available"));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tr("Update available")));
         let fill = if response.hovered() { ACCENT().gamma_multiply(0.85) } else { ACCENT() };
         ui.painter().circle_filled(rect.center(), 11.0, fill);
         // An arrow pointing up out of a tray: "something new to fetch".
@@ -244,7 +244,7 @@ impl Updater {
         let mut retry = false;
         let mut install_now = false;
         let mut cancel_install = false;
-        egui::Window::new("Software update")
+        egui::Window::new(tr("Software update"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -283,7 +283,7 @@ impl Updater {
                             .color(TEXT()),
                     );
                     ui.label(
-                        RichText::new(format!("You have {}.", portmanteau_update::CURRENT_VERSION))
+                        RichText::new(crate::i18n::trf("You have {version}.", &[("version", portmanteau_update::CURRENT_VERSION.to_string())]))
                             .font(ui_body())
                             .color(MUTED()),
                     );
@@ -316,9 +316,9 @@ impl Updater {
                         }
                         InstallState::Installed { restart_blocked } => {
                             let text = if *restart_blocked {
-                                "The update is installed, but your project could not be saved. Save it, then quit and start Portmanteau again."
+                                tr("The update is installed, but your project could not be saved. Save it, then quit and start Portmanteau again.")
                             } else {
-                                "The update is installed. Restarting…"
+                                tr("The update is installed. Restarting…")
                             };
                             ui.label(RichText::new(text).font(ui_body()).color(TEXT()));
                         }
@@ -337,7 +337,7 @@ impl Updater {
                             }
                             ui.horizontal(|ui| {
                                 if installable {
-                                    let label = if matches!(idle_or_failed, InstallState::Failed(_)) { "Try again" } else { "Install and restart" };
+                                    let label = if matches!(idle_or_failed, InstallState::Failed(_)) { tr("Try again") } else { "Install and restart" };
                                     if ui.add_enabled(!project_unsaved, egui::Button::new(label)).clicked() {
                                         install_now = true;
                                     }

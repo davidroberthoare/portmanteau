@@ -353,11 +353,11 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
             ui.horizontal(|ui| {
                 ui.label(RichText::new(tr("Sort")).font(ui_small()).color(MUTED()));
                 egui::ComboBox::from_id_salt("research_sort")
-                    .selected_text(RichText::new(state.sort.label()).font(ui_small()).color(MUTED()))
+                    .selected_text(RichText::new(crate::i18n::tr_dyn(state.sort.label())).font(ui_small()).color(MUTED()))
                     .width(140.0)
                     .show_ui(ui, |ui| {
                         for sort in [Sort::Binder, Sort::Title, Sort::Kind, Sort::Recent] {
-                            ui.selectable_value(&mut state.sort, sort, sort.label());
+                            ui.selectable_value(&mut state.sort, sort, crate::i18n::tr_dyn(sort.label()));
                         }
                     });
             });
@@ -711,7 +711,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                             state.confirm_delete = Some(id.to_string());
                         }
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            meta_line(ui, &["It is also in the binder, under Research"]);
+                            meta_line(ui, &[tr("It is also in the binder, under Research")]);
                         });
                     });
                 });
@@ -816,7 +816,7 @@ fn file_card(ui: &mut egui::Ui, id: &str, name: &str, path: Option<&std::path::P
                 ui.add(egui::Label::new(RichText::new(name).font(ui_small()).color(TEXT())).truncate());
                 let detail = match size {
                     Some(bytes) => format!("{kind} · {}", human_size(bytes)),
-                    None => format!("{kind} · missing from the project folder"),
+                    None => crate::i18n::trf("{kind} · missing from the project folder", &[("kind", kind.to_string())]),
                 };
                 ui.add(egui::Label::new(RichText::new(detail).font(mono(8.5)).color(MUTED())).truncate());
                 ui.horizontal(|ui| {

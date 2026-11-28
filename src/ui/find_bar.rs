@@ -219,7 +219,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         }
         let response = app.ws.execute("search.replace", payload);
         if replace_all {
-            app.toast(if response.ok { "Replaced" } else { "Nothing replaced" }, response.message, if response.ok { ToastKind::Ok } else { ToastKind::Error });
+            app.toast(if response.ok { "Replaced" } else { tr("Nothing replaced") }, response.message, if response.ok { ToastKind::Ok } else { ToastKind::Error });
         }
         // After replacing one, the next match slides into this one's place.
         app.find_bar.seen = None;

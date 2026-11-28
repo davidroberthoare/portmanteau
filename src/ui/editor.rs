@@ -190,8 +190,8 @@ fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
     let mut spelling: Vec<FieldSpell> = Vec::new();
 
     let subtitle = match children.len() {
-        1 => "1 document in this folder.".to_string(),
-        n => format!("{n} documents in this folder."),
+        1 => tr("1 document in this folder.").to_string(),
+        n => crate::i18n::trf("{n} documents in this folder.", &[("n", n.to_string())]),
     };
     page_head(ui, "Folder", &title, &subtitle, |_ui| {});
 
@@ -248,7 +248,7 @@ fn folder_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 ui.add_space(18.0);
                 ui.label(
                     RichText::new(
-                        "Folders group documents. Add content with the + button in the binder.",
+                        tr("Folders group documents. Add content with the + button in the binder."),
                     )
                     .font(ui_small())
                     .color(MUTED()),
@@ -473,7 +473,7 @@ fn toolbar(
                                     if ui
                                         .add(btn)
                                         .on_hover_text(match mode {
-                                            WriteMode::Continuous => "Edit the single paper page",
+                                            WriteMode::Continuous => tr("Edit the single paper page"),
                                             WriteMode::Paged => "Read-only page preview",
                                         })
                                         .clicked()
@@ -857,7 +857,7 @@ fn spell_menu_ui(
     };
     if checker.is_correct(&word) {
         ui.label(
-            RichText::new(format!("“{word}” is spelled correctly"))
+            RichText::new(crate::i18n::trf("“{word}” is spelled correctly", &[("word", word.to_string())]))
                 .font(ui_small())
                 .color(MUTED()),
         );
@@ -1345,7 +1345,7 @@ fn prose_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str, take_sn
         let words = doc.words();
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(format!("{} words  ·  {} min read", words, portmanteau_core::reading_minutes(words)))
+                RichText::new(crate::i18n::trf("{words} words  ·  {minutes} min read", &[("words", words.to_string()), ("minutes", portmanteau_core::reading_minutes(words).to_string())]))
                     .font(ui_small())
                     .color(MUTED()),
             );
@@ -3059,8 +3059,8 @@ fn link_editor_window(
                 let what = targets
                     .iter()
                     .find(|t| t.link == edit.url)
-                    .map_or("something that no longer exists".to_string(), |t| format!("{} ({})", t.title, t.group));
-                ui.label(RichText::new(format!("Links to {what}")).font(ui_body()).color(TEXT()));
+                    .map_or(tr("something that no longer exists").to_string(), |t| format!("{} ({})", t.title, t.group));
+                ui.label(RichText::new(crate::i18n::trf("Links to {what}", &[("what", what.clone())])).font(ui_body()).color(TEXT()));
                 ui.label(RichText::new(tr("Type @ in the text to link to anything in the project.")).font(ui_small()).color(MUTED()));
                 if ui.button(tr("Use a web address instead")).clicked() {
                     edit.url.clear();
@@ -3215,7 +3215,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                 .min_size(Vec2::new(0.0, 19.0));
                 if ui
                     .add(btn)
-                    .on_hover_text(format!("{} · Ctrl+{}", kind.label(), index + 1))
+                    .on_hover_text(format!("{} · Ctrl+{}", crate::i18n::tr_dyn(kind.label()), index + 1))
                     .clicked()
                 {
                     if let Some(block) = blocks.get_mut(app.selected_block) {
@@ -3384,7 +3384,7 @@ fn legacy_script_page(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str)
                     .desired_rows(rows)
                     .margin(Margin::symmetric(2, 1))
                     .hint_text(
-                        RichText::new(kind.label())
+                        RichText::new(crate::i18n::tr_dyn(kind.label()))
                             .font(FontId::new(font_size, family))
                             .color(MUTED()),
                     );
@@ -3876,14 +3876,14 @@ fn paper_header(
         );
         ui.label(RichText::new("·").font(ui_small()).color(MUTED()));
         ui.label(
-            RichText::new(medium.label().to_uppercase())
+            RichText::new(crate::i18n::tr_dyn(medium.label()).to_uppercase())
                 .font(ui_small())
                 .color(MUTED())
                 .extra_letter_spacing(1.0),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(
-                RichText::new(format!("{status} · {words} words · {pages} pp"))
+                RichText::new(crate::i18n::trf("{status} · {words} words · {pages} pp", &[("status", crate::i18n::tr_dyn(status)), ("words", words.to_string()), ("pages", pages.to_string())]))
                     .font(ui_small())
                     .color(MUTED()),
             );

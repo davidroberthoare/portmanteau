@@ -80,7 +80,7 @@ fn chooser(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         app.choose_theme(ui.ctx(), &id);
     }
     ui.add_space(4.0);
-    note(ui, "Colours change everywhere at once. Manuscripts and exports are not affected: they have their own styles.");
+    note(ui, tr("Colours change everywhere at once. Manuscripts and exports are not affected: they have their own styles."));
     #[cfg(not(target_arch = "wasm32"))]
     note(ui, &format!("Your themes are the .json files in {}", files::themes_dir().display()));
     for problem in &app.theme_problems {
@@ -109,7 +109,7 @@ fn save_and_add(app: &mut PortmanteauApp, theme: &theme::Theme) -> Result<String
 
 fn import(app: &mut PortmanteauApp, ctx: &egui::Context) {
     let Some(path) = crate::platform::FileDialog::new()
-        .set_title("Import a theme")
+        .set_title(tr("Import a theme"))
         .add_filter("Theme", &["json"])
         .pick_file()
     else {
@@ -132,7 +132,7 @@ fn import(app: &mut PortmanteauApp, ctx: &egui::Context) {
 fn export(app: &mut PortmanteauApp) {
     let Some(t) = app.themes.iter().find(|t| t.id == app.settings.theme).cloned() else { return };
     let Some(path) = crate::platform::FileDialog::new()
-        .set_title("Export theme")
+        .set_title(tr("Export theme"))
         .set_file_name(format!("{}.json", files::id_for_name(&t.name)))
         .save_file()
     else {
@@ -215,7 +215,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.add_space(10.0);
     section_label(ui, tr("Global"));
     ui.add_space(4.0);
-    note(ui, "Slide every colour at once. The sliders start at zero each time and only the resulting colours are kept.");
+    note(ui, tr("Slide every colour at once. The sliders start at zero each time and only the resulting colours are kept."));
     ui.add_space(4.0);
     if let Some(adjust) = app.theme_adjust.as_mut() {
         let mut moved = false;

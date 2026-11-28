@@ -74,8 +74,13 @@ impl Workspace {
 
     /// The first-launch project: instructions plus a small sample of everything.
     pub fn welcome() -> Self {
+        Self::welcome_with(&|english| english.to_string())
+    }
+
+    /// The welcome project with its text passed through `t` (a translation).
+    pub fn welcome_with(t: &dyn Fn(&str) -> String) -> Self {
         Self {
-            project: sample::welcome(),
+            project: sample::welcome_with(t),
             path: None,
             dirty: false,
             log: vec!["Opened the welcome project".into()],
