@@ -12,14 +12,15 @@ use serde_json::json;
 
 use crate::app::PortmanteauApp;
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::views::{content_frame, meta_line, page_head, quiet_button, section_label};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     page_head(
         ui,
-        "The work",
-        "Project",
-        "Details saved with this project and printed on its title page.",
+        tr("The work"),
+        tr("Project"),
+        tr("Details saved with this project and printed on its title page."),
         |ui| {
             meta_line(ui, &[&format!("{} words", app.ws.project.words())]);
         },
@@ -131,7 +132,7 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             if !project.draft_date.is_empty() {
                 ui.horizontal(|ui| {
                     ui.add_space(100.0);
-                    if quiet_button(ui, "Use today's date").clicked() {
+                    if quiet_button(ui, tr("Use today's date")).clicked() {
                         set("draft_date", Some(String::new()));
                     }
                 });
@@ -157,7 +158,7 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         .unwrap_or_else(|| project.cover_image.clone())
                 };
                 ui.label(RichText::new(shown).font(ui_body()));
-                if quiet_button(ui, "Choose…").clicked() {
+                if quiet_button(ui, tr("Choose…")).clicked() {
                     if let Some(path) = crate::platform::FileDialog::new()
                         .set_title("Cover picture")
                         .add_filter("Pictures", &["png", "jpg", "jpeg"])
@@ -166,7 +167,7 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         cover_command = Some(path.display().to_string());
                     }
                 }
-                if !project.cover_image.is_empty() && quiet_button(ui, "Remove").clicked() {
+                if !project.cover_image.is_empty() && quiet_button(ui, tr("Remove")).clicked() {
                     cover_command = Some(String::new());
                 }
             });
@@ -182,7 +183,7 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             ui.horizontal(|ui| {
                 label_cell(ui, "Daily words");
                 ui.add(egui::DragValue::new(&mut target).range(0..=200_000).speed(10));
-                if quiet_button(ui, "More goals and statistics…").clicked() {
+                if quiet_button(ui, tr("More goals and statistics…")).clicked() {
                     open_statistics = true;
                 }
             });
@@ -202,7 +203,7 @@ fn details(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     if let Some(path) = cover_command {
         let response = app.ws.execute("project.set_cover", json!({ "path": path }));
         if !response.ok {
-            app.toast("Could not set the cover", response.message, crate::app::ToastKind::Error);
+            app.toast(tr("Could not set the cover"), response.message, crate::app::ToastKind::Error);
         }
     }
 }

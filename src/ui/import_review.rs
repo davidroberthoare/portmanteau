@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 
 use crate::app::{PortmanteauApp, ToastKind, View};
 use crate::theme::*;
+use crate::i18n::tr;
 
 /// The writer's choice for one document the file would create.
 #[derive(Clone, Debug, PartialEq)]
@@ -315,7 +316,7 @@ pub fn show(app: &mut PortmanteauApp, ctx: &egui::Context) {
                 if ui.add_enabled(ready, button).clicked() {
                     action = Action::Import;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     action = Action::Cancel;
                 }
             });
@@ -336,9 +337,9 @@ pub fn show(app: &mut PortmanteauApp, ctx: &egui::Context) {
                 } else {
                     ToastKind::Ok
                 };
-                app.toast("Manuscript imported", response.message, kind);
+                app.toast(tr("Manuscript imported"), response.message, kind);
             } else {
-                app.toast("Could not import manuscript", response.message, ToastKind::Error);
+                app.toast(tr("Could not import manuscript"), response.message, ToastKind::Error);
                 app.import_review = Some(review);
             }
         }
@@ -374,7 +375,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
             let mut path = review.path.clone();
             let edit = ui.add(
                 TextEdit::singleline(&mut path)
-                    .hint_text("Path to a .fountain, .fdx, .docx or .txt file")
+                    .hint_text(tr("Path to a .fountain, .fdx, .docx or .txt file"))
                     .font(mono(10.5))
                     .desired_width(ui.available_width() - 90.0),
             );
@@ -384,7 +385,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
             } else if edit.changed() {
                 review.path = path;
             }
-            if ui.button("Browse…").clicked() {
+            if ui.button(tr("Browse…")).clicked() {
                 if let Some(chosen) = browse(app.settings.import.folder.as_deref()) {
                     review.set_path(&chosen);
                 }
@@ -396,7 +397,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
         } else if review.preview.is_none() {
             ui.add_space(4.0);
             ui.label(
-                RichText::new("Fountain and Final Draft become screenplays; Word and text become prose. Nothing is added until you press Import.")
+                RichText::new(tr("Fountain and Final Draft become screenplays; Word and text become prose. Nothing is added until you press Import."))
                     .font(ui_small())
                     .color(MUTED()),
             );
@@ -411,7 +412,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
         });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("As").font(ui_small()).color(MUTED()));
+            ui.label(RichText::new(tr("As")).font(ui_small()).color(MUTED()));
             let before = review.medium.clone();
             egui::ComboBox::from_id_salt("import_medium")
                 .selected_text(if review.medium == "auto" { "Automatic".to_string() } else { review.medium.clone() })
@@ -428,7 +429,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
             let before = review.split;
             ui.checkbox(
                 &mut review.split,
-                RichText::new("Split into several documents at headings").font(ui_small()).color(MUTED()),
+                RichText::new(tr("Split into several documents at headings")).font(ui_small()).color(MUTED()),
             );
             if review.split != before {
                 review.mark_stale();
@@ -436,7 +437,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
         });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Add to").font(ui_small()).color(MUTED()));
+            ui.label(RichText::new(tr("Add to")).font(ui_small()).color(MUTED()));
             let folders: Vec<(String, String)> = app
                 .ws
                 .project
@@ -465,7 +466,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
     if !review.details.is_empty() {
         card(ui, "Details found in the file", |ui| {
             ui.label(
-                RichText::new("Ticked details are set on the project, replacing what it has. Edit them first if the file got one wrong.")
+                RichText::new(tr("Ticked details are set on the project, replacing what it has. Edit them first if the file got one wrong."))
                     .font(ui_small())
                     .color(MUTED()),
             );
@@ -498,7 +499,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
         let choices = target_choices(&format_key, medium, &sheet);
         card(ui, "Paragraph styles", |ui| {
             ui.label(
-                RichText::new("What each style in the file becomes. Your choices are remembered for the next file from the same program.")
+                RichText::new(tr("What each style in the file becomes. Your choices are remembered for the next file from the same program."))
                     .font(ui_small())
                     .color(MUTED()),
             );

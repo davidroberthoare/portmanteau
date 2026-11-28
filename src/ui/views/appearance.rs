@@ -5,6 +5,7 @@ use eframe::egui::{self, CornerRadius, Frame, Margin, RichText, ScrollArea, Stro
 
 use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::{self, files, Palette};
+use crate::i18n::tr;
 use crate::ui::views::section_label;
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
@@ -37,7 +38,7 @@ fn note(ui: &mut egui::Ui, text: &str) {
 }
 
 fn chooser(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
-    section_label(ui, "Theme");
+    section_label(ui, tr("Theme"));
     ui.add_space(4.0);
     let active = app.settings.theme.clone();
     let mut pick = None;
@@ -53,7 +54,7 @@ fn chooser(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             for t in &app.themes {
                 if last_builtin && !t.builtin {
                     ui.separator();
-                    ui.label(RichText::new("Your themes").font(theme::ui_small()).color(theme::MUTED()));
+                    ui.label(RichText::new(tr("Your themes")).font(theme::ui_small()).color(theme::MUTED()));
                 }
                 last_builtin = t.builtin;
                 if ui.selectable_label(t.id == active, &t.name).clicked() && t.id != active {
@@ -61,17 +62,17 @@ fn chooser(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 }
             }
         });
-        if ui.button("Duplicate").on_hover_text("Make an editable copy of this theme").clicked() {
+        if ui.button(tr("Duplicate")).on_hover_text(tr("Make an editable copy of this theme")).clicked() {
             duplicate(app, ui.ctx());
         }
-        if ui.button("Import…").on_hover_text("Add a theme file someone shared with you").clicked() {
+        if ui.button(tr("Import…")).on_hover_text(tr("Add a theme file someone shared with you")).clicked() {
             import(app, ui.ctx());
         }
-        if ui.button("Export…").on_hover_text("Save this theme as a file to share").clicked() {
+        if ui.button(tr("Export…")).on_hover_text(tr("Save this theme as a file to share")).clicked() {
             export(app);
         }
         let user_theme = app.themes.iter().any(|t| t.id == active && !t.builtin);
-        if ui.add_enabled(user_theme, egui::Button::new("Delete")).clicked() {
+        if ui.add_enabled(user_theme, egui::Button::new(tr("Delete"))).clicked() {
             delete_active(app, ui.ctx());
         }
     });
@@ -92,7 +93,7 @@ fn duplicate(app: &mut PortmanteauApp, ctx: &egui::Context) {
     let copy = theme::Theme { name: format!("{} copy", source.name), ..source };
     match save_and_add(app, &copy) {
         Ok(id) => app.choose_theme(ctx, &id),
-        Err(why) => app.toast("Theme not saved", why, ToastKind::Error),
+        Err(why) => app.toast(tr("Theme not saved"), why, ToastKind::Error),
     }
 }
 
@@ -120,9 +121,9 @@ fn import(app: &mut PortmanteauApp, ctx: &egui::Context) {
             let (name, id) = (theme.name.clone(), theme.id.clone());
             app.themes.push(theme);
             app.choose_theme(ctx, &id);
-            app.toast("Theme added", name, ToastKind::Info);
+            app.toast(tr("Theme added"), name, ToastKind::Info);
         }
-        Err(why) => app.toast("That file is not a usable theme", why, ToastKind::Error),
+        Err(why) => app.toast(tr("That file is not a usable theme"), why, ToastKind::Error),
     }
     #[cfg(target_arch = "wasm32")]
     let _ = (app, ctx, path);
@@ -138,8 +139,8 @@ fn export(app: &mut PortmanteauApp) {
         return;
     };
     match std::fs::write(&path, t.to_json()) {
-        Ok(()) => app.toast("Theme exported", path.display().to_string(), ToastKind::Info),
-        Err(e) => app.toast("Theme not exported", e.to_string(), ToastKind::Error),
+        Ok(()) => app.toast(tr("Theme exported"), path.display().to_string(), ToastKind::Info),
+        Err(e) => app.toast(tr("Theme not exported"), e.to_string(), ToastKind::Error),
     }
 }
 
@@ -147,7 +148,7 @@ fn delete_active(app: &mut PortmanteauApp, ctx: &egui::Context) {
     let Some(t) = app.themes.iter().find(|t| t.id == app.settings.theme).cloned() else { return };
     #[cfg(not(target_arch = "wasm32"))]
     if let Err(why) = files::delete(&files::themes_dir(), &t) {
-        app.toast("Theme not deleted", why, ToastKind::Error);
+        app.toast(tr("Theme not deleted"), why, ToastKind::Error);
         return;
     }
     app.themes.retain(|x| x.id != t.id);
@@ -176,7 +177,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let active = app.settings.theme.clone();
     let Some(index) = app.themes.iter().position(|t| t.id == active) else { return };
     if app.themes[index].builtin {
-        section_label(ui, "Colours");
+        section_label(ui, tr("Colours"));
         ui.add_space(4.0);
         note(ui, "Built-in themes stay as they are. Press Duplicate to make a copy you can recolour.");
         ui.add_space(6.0);
@@ -203,7 +204,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         return;
     }
     let mut changed = false;
-    section_label(ui, "Name");
+    section_label(ui, tr("Name"));
     ui.add_space(4.0);
     changed |= ui.text_edit_singleline(&mut app.themes[index].name).changed();
     ui.add_space(4.0);
@@ -212,7 +213,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         app.theme_adjust = Some(ThemeAdjust::fresh(&active, app.themes[index].palette));
     }
     ui.add_space(10.0);
-    section_label(ui, "Global");
+    section_label(ui, tr("Global"));
     ui.add_space(4.0);
     note(ui, "Slide every colour at once. The sliders start at zero each time and only the resulting colours are kept.");
     ui.add_space(4.0);
@@ -229,7 +230,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             });
         }
         let at_zero = adjust.hue == 0.0 && adjust.saturation == 0.0 && adjust.lightness == 0.0;
-        if ui.add_enabled(!at_zero, egui::Button::new("Reset sliders")).on_hover_text("Back to the colours as they were before the sliders moved").clicked() {
+        if ui.add_enabled(!at_zero, egui::Button::new(tr("Reset sliders"))).on_hover_text(tr("Back to the colours as they were before the sliders moved")).clicked() {
             adjust.hue = 0.0;
             adjust.saturation = 0.0;
             adjust.lightness = 0.0;
@@ -274,7 +275,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         theme::apply_style(ui.ctx());
         #[cfg(not(target_arch = "wasm32"))]
         if let Err(why) = files::write(&files::themes_dir(), &edited) {
-            app.toast("Theme not saved", why, ToastKind::Error);
+            app.toast(tr("Theme not saved"), why, ToastKind::Error);
         }
     }
 }

@@ -16,6 +16,7 @@ use portmanteau_core::{CompileScope, CompileType, ExportKind, ExportSettings, Pr
 use portmanteau_export::{pdf_layout, text_width, Face, Family, PageCounts, PdfLayout};
 
 use crate::theme::{serif, ui_body, ui_small, BORDER, MUTED};
+use crate::i18n::tr;
 
 /// Manuscript pages here show the printed result, so they keep paper white and
 /// black ink whatever the interface theme (the writing page in the editor is
@@ -291,12 +292,12 @@ pub fn paged_view(
         Err(reason) => {
             ui.vertical_centered(|ui| {
                 ui.add_space(120.0);
-                ui.label(RichText::new("Nothing to page").font(serif(26.0)).color(MUTED()));
+                ui.label(RichText::new(tr("Nothing to page")).font(serif(26.0)).color(MUTED()));
                 ui.add_space(8.0);
                 ui.label(RichText::new(reason).font(ui_body()).color(MUTED()));
                 ui.add_space(6.0);
                 ui.label(
-                    RichText::new("Switch to Continuous to keep writing.")
+                    RichText::new(tr("Switch to Continuous to keep writing."))
                         .font(ui_small())
                         .color(MUTED()),
                 );
@@ -319,7 +320,7 @@ pub fn paged_view(
             ui.add_space(22.0);
             ui.vertical_centered(|ui| {
                 ui.label(
-                    RichText::new("Read-only page preview — click a paragraph to edit it")
+                    RichText::new(tr("Read-only page preview — click a paragraph to edit it"))
                         .font(ui_small())
                         .color(MUTED()),
                 );

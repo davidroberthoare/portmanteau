@@ -16,6 +16,7 @@ use portmanteau_update::install::{self, InstallError, Installed};
 use portmanteau_update::{CheckError, Outcome, Release};
 
 use crate::theme::*;
+use crate::i18n::tr;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum UpdateState {
@@ -253,11 +254,11 @@ impl Updater {
                 UpdateState::Idle | UpdateState::Checking => {
                     ui.horizontal(|ui| {
                         ui.spinner();
-                        ui.label(RichText::new("Checking for updates…").font(ui_body()).color(TEXT()));
+                        ui.label(RichText::new(tr("Checking for updates…")).font(ui_body()).color(TEXT()));
                     });
                 }
                 UpdateState::UpToDate | UpdateState::NoReleasesYet => {
-                    ui.label(RichText::new("You're up to date").font(serif(20.0)).color(TEXT()));
+                    ui.label(RichText::new(tr("You're up to date")).font(serif(20.0)).color(TEXT()));
                     ui.add_space(4.0);
                     let line = if self.state == UpdateState::NoReleasesYet {
                         format!("Portmanteau {} is the newest version. No releases have been published yet.", portmanteau_update::CURRENT_VERSION)
@@ -267,11 +268,11 @@ impl Updater {
                     ui.label(RichText::new(line).font(ui_body()).color(MUTED()));
                 }
                 UpdateState::Failed(why) => {
-                    ui.label(RichText::new("Couldn't check for updates").font(serif(20.0)).color(TEXT()));
+                    ui.label(RichText::new(tr("Couldn't check for updates")).font(serif(20.0)).color(TEXT()));
                     ui.add_space(4.0);
                     ui.label(RichText::new(why).font(ui_body()).color(MUTED()));
                     ui.add_space(8.0);
-                    if ui.button("Try again").clicked() {
+                    if ui.button(tr("Try again")).clicked() {
                         retry = true;
                     }
                 }
@@ -309,7 +310,7 @@ impl Updater {
                                 ui.add(egui::ProgressBar::new(0.0).animate(true).desired_width(380.0));
                             }
                             ui.add_space(6.0);
-                            if ui.button("Cancel").clicked() {
+                            if ui.button(tr("Cancel")).clicked() {
                                 cancel_install = true;
                             }
                         }
@@ -328,7 +329,7 @@ impl Updater {
                             }
                             if installable && project_unsaved {
                                 ui.label(
-                                    RichText::new("Save your project first (File › Save project as…), then install.")
+                                    RichText::new(tr("Save your project first (File › Save project as…), then install."))
                                         .font(ui_small())
                                         .color(MUTED()),
                                 );
@@ -340,16 +341,16 @@ impl Updater {
                                     if ui.add_enabled(!project_unsaved, egui::Button::new(label)).clicked() {
                                         install_now = true;
                                     }
-                                    if ui.button("Release page").clicked() {
+                                    if ui.button(tr("Release page")).clicked() {
                                         crate::app::open_release_page(&release.page_url);
                                     }
-                                } else if ui.button("Download").clicked() {
+                                } else if ui.button(tr("Download")).clicked() {
                                     crate::app::open_release_page(&release.page_url);
                                 }
-                                if ui.button("Skip this version").clicked() {
+                                if ui.button(tr("Skip this version")).clicked() {
                                     skip = true;
                                 }
-                                if ui.button("Later").clicked() {
+                                if ui.button(tr("Later")).clicked() {
                                     later = true;
                                 }
                             });

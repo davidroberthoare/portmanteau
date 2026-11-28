@@ -16,6 +16,7 @@ use serde_json::json;
 
 use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::find_ui;
 use crate::ui::views::{content_frame, meta_line, page_head};
 
@@ -91,7 +92,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         }
         seen.len()
     };
-    page_head(ui, "Find", "Search", "Look through the manuscript, research and database. Click a result to go there.", |ui| {
+    page_head(ui, tr("Find"), tr("Search"), tr("Look through the manuscript, research and database. Click a result to go there."), |ui| {
         if app.search_page.query.is_empty() {
             meta_line(ui, &["Type to search"]);
         } else if let Some(error) = app.search_page.error() {
@@ -114,12 +115,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     let arrow = if page.show_replace { "▾" } else { "▸" };
-                    if ui.add(egui::Button::new(RichText::new(arrow).font(ui_body()).color(MUTED())).frame(false)).on_hover_text("Show or hide Replace").clicked() {
+                    if ui.add(egui::Button::new(RichText::new(arrow).font(ui_body()).color(MUTED())).frame(false)).on_hover_text(tr("Show or hide Replace")).clicked() {
                         page.show_replace = !page.show_replace;
                     }
                     let find = ui.add(
                         TextEdit::singleline(&mut page.query)
-                            .hint_text("Find")
+                            .hint_text(tr("Find"))
                             .font(ui_body())
                             .desired_width((ui.available_width() - 110.0).max(120.0)),
                     );
@@ -135,12 +136,12 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         ui.add_space(24.0);
                         ui.add(
                             TextEdit::singleline(&mut page.replacement)
-                                .hint_text("Replace")
+                                .hint_text(tr("Replace"))
                                 .font(ui_body())
                                 .desired_width((ui.available_width() - 130.0).max(120.0)),
                         );
                         let ready = !page.hits.is_empty() && page.error.is_none();
-                        if ui.add_enabled(ready, egui::Button::new(RichText::new("Replace all").font(ui_body()))).on_hover_text("Replace every result below. Each changed document is snapshotted first.").clicked() {
+                        if ui.add_enabled(ready, egui::Button::new(RichText::new(tr("Replace all")).font(ui_body()))).on_hover_text(tr("Replace every result below. Each changed document is snapshotted first.")).clicked() {
                             act = Some(Act::ReplaceAll);
                         }
                     });
@@ -148,7 +149,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.add_space(6.0);
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(5.0, 4.0);
-                    ui.label(RichText::new("Look in").font(ui_small()).color(MUTED()));
+                    ui.label(RichText::new(tr("Look in")).font(ui_small()).color(MUTED()));
                     for group in SearchGroup::all() {
                         let on = page.groups.contains(&group);
                         if chip(ui, group.label(), on, "Show only this kind of result (choose several, or none for everything)") {
@@ -160,7 +161,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             changed = true;
                         }
                     }
-                    ui.label(RichText::new("in").font(ui_small()).color(MUTED()));
+                    ui.label(RichText::new(tr("in")).font(ui_small()).color(MUTED()));
                     for field in [HitField::Body, HitField::Synopsis, HitField::Notes] {
                         let on = page.fields.contains(&field);
                         if chip(ui, field.label(), on, "Search only this part (choose several, or none for all parts)") {
@@ -186,7 +187,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 return;
             }
             if page.hits.is_empty() && page.error.is_none() {
-                ui.label(RichText::new("No results.").font(ui_body()).color(MUTED()));
+                ui.label(RichText::new(tr("No results.")).font(ui_body()).color(MUTED()));
                 return;
             }
             let replacing = page.show_replace;
@@ -214,7 +215,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             .color(ACCENT())
                             .background_color(ACCENT_SOFT()),
                     );
-                    if replacing && ui.small_button("Replace in this one").on_hover_text("Replace every result in this document").clicked() {
+                    if replacing && ui.small_button("Replace in this one").on_hover_text(tr("Replace every result in this document")).clicked() {
                         act = Some(Act::ReplaceIn(source.clone()));
                     }
                 });
@@ -230,7 +231,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             if resp.clicked() {
                                 act = Some(Act::Open(hit.clone()));
                             }
-                            if replacing && ui.small_button("↳ Replace").on_hover_text("Replace just this one").clicked() {
+                            if replacing && ui.small_button("↳ Replace").on_hover_text(tr("Replace just this one")).clicked() {
                                 act = Some(Act::ReplaceHit(hit.clone()));
                             }
                         });
@@ -296,9 +297,9 @@ fn replace(app: &mut PortmanteauApp, mut extra: serde_json::Value) {
     object.insert("groups".into(), json!(query.groups.iter().map(|g| format!("{g:?}")).collect::<Vec<_>>()));
     let response = app.ws.execute("search.replace", extra);
     if response.ok {
-        app.toast("Replaced", response.message, ToastKind::Ok);
+        app.toast(tr("Replaced"), response.message, ToastKind::Ok);
     } else {
-        app.toast("Nothing replaced", response.message, ToastKind::Error);
+        app.toast(tr("Nothing replaced"), response.message, ToastKind::Error);
     }
     app.search_page.stale();
 }

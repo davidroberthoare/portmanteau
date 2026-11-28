@@ -16,6 +16,7 @@ use portmanteau_core::{
 
 use crate::app::{CompileSection, CompileTab, PortmanteauApp, ToastKind};
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::views::{
     content_frame, manuscript_preview_navigator, meta_line, page_head, quiet_button,
     style_editor, FONT_FAMILIES,
@@ -24,9 +25,9 @@ use crate::ui::views::{
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     page_head(
         ui,
-        "Finish",
-        "Compile",
-        "One manuscript, many finish lines. Pick an output format, then shape what goes in the book.",
+        tr("Finish"),
+        tr("Compile"),
+        tr("One manuscript, many finish lines. Pick an output format, then shape what goes in the book."),
         |ui| {
             let included = app
                 .ws
@@ -72,7 +73,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 Vec2::new(178.0, height),
                 Layout::top_down(Align::Min),
                 |ui| {
-                    section_label(ui, "Output");
+                    section_label(ui, tr("Output"));
                     ui.add_space(5.0);
                     ScrollArea::vertical()
                         .id_salt("compile_tab_rail")
@@ -355,11 +356,11 @@ fn section_tabs(ui: &mut egui::Ui, current: &mut CompileSection) {
 
 fn reset_row(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSettings) {
     ui.horizontal(|ui| {
-        if quiet_button(ui, "Reset this format to base style").clicked() {
+        if quiet_button(ui, tr("Reset this format to base style")).clicked() {
             *settings = seeded_settings(&app.ws.project.styles, app.ws.project.kind, settings.kind);
         }
         ui.label(
-            RichText::new("Seeds from the project-wide element styles.")
+            RichText::new(tr("Seeds from the project-wide element styles."))
                 .font(ui_small())
                 .color(MUTED()),
         );
@@ -374,7 +375,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "Where it goes");
+            section_label(ui, tr("Where it goes"));
             ui.add_space(4.0);
             let default_name = portmanteau_export::default_filename(&app.ws.project, settings.kind);
             egui::Grid::new("export_location")
@@ -385,13 +386,13 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
                     // In the browser there is no folder: the file downloads.
                     #[cfg(not(target_arch = "wasm32"))]
                     {
-                        ui.label(RichText::new("Folder").font(ui_small()).color(MUTED()));
+                        ui.label(RichText::new(tr("Folder")).font(ui_small()).color(MUTED()));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             // The button keeps its own width at the right; the
                             // field takes the rest.
                             if ui
-                                .button(RichText::new("Browse…").font(ui_small()))
-                                .on_hover_text("Choose the folder the export is written to")
+                                .button(RichText::new(tr("Browse…")).font(ui_small()))
+                                .on_hover_text(tr("Choose the folder the export is written to"))
                                 .clicked()
                             {
                                 if let Some(folder) = choose_export_folder(&settings.output_path) {
@@ -408,7 +409,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
 
                     }
 
-                    ui.label(RichText::new("Filename").font(ui_small()).color(MUTED()));
+                    ui.label(RichText::new(tr("Filename")).font(ui_small()).color(MUTED()));
                     output_field(ui, &mut settings.output_filename, &default_name);
                     ui.end_row();
                 });
@@ -417,7 +418,7 @@ fn output_panel(app: &PortmanteauApp, ui: &mut egui::Ui, settings: &mut ExportSe
             {
                 ui.add_space(5.0);
                 ui.label(
-                    RichText::new("The compiled file downloads through your browser.")
+                    RichText::new(tr("The compiled file downloads through your browser."))
                         .font(ui_small())
                         .color(MUTED()),
                 );
@@ -597,7 +598,7 @@ fn action_panel(
                                 .font(mono(9.0))
                                 .color(ACCENT()),
                         );
-                        if link.on_hover_text("Open the file").clicked() {
+                        if link.on_hover_text(tr("Open the file")).clicked() {
                             crate::app::open_path(path);
                         }
                     });
@@ -614,24 +615,24 @@ fn style_panel(ui: &mut egui::Ui, styles: &mut ElementStyles, global_font: &mut 
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "Global font");
+            section_label(ui, tr("Global font"));
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Font").font(ui_small()).color(MUTED()));
+                ui.label(RichText::new(tr("Font")).font(ui_small()).color(MUTED()));
                 if compile_type.is_script() {
                     // A script's face comes from its own styles below, so a
                     // format-wide font choice would silently do nothing.
-                    ui.label(RichText::new("Scripts set their font in each style below").font(ui_small()).color(MUTED()));
+                    ui.label(RichText::new(tr("Scripts set their font in each style below")).font(ui_small()).color(MUTED()));
                 } else {
                     font_picker(ui, global_font);
                 }
             });
             ui.label(
-                RichText::new("Used by every style whose font is left on (inherit).")
+                RichText::new(tr("Used by every style whose font is left on (inherit)."))
                     .font(ui_small())
                     .color(MUTED()),
             );
             ui.add_space(10.0);
-            section_label(ui, "Type styles for this format");
+            section_label(ui, tr("Type styles for this format"));
             ui.label(
                 RichText::new(
                     "Pick a type of manuscript and a style, then set its font and paragraph. The global defaults live in Settings → Display.",
@@ -659,7 +660,7 @@ fn type_panel(
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "Page & type");
+            section_label(ui, tr("Page & type"));
             ui.add_space(5.0);
 
             if matches!(
@@ -667,7 +668,7 @@ fn type_panel(
                 ExportKind::Pdf | ExportKind::Docx
             ) {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Paper").font(ui_small()).color(MUTED()));
+                    ui.label(RichText::new(tr("Paper")).font(ui_small()).color(MUTED()));
                     egui::ComboBox::from_id_salt("paper_pick")
                         .selected_text(
                             RichText::new(settings.paper.label()).font(ui_small()),
@@ -720,12 +721,12 @@ fn type_panel(
                                     .font(ui_small())
                                     .color(MUTED()),
                             );
-                            if quiet_button(ui, "Use the project cover").clicked() {
+                            if quiet_button(ui, tr("Use the project cover")).clicked() {
                                 settings.cover_image.clear();
                             }
                         } else if project_cover.trim().is_empty() {
                             ui.label(
-                                RichText::new("No cover yet. Add one on the Project page, or pick one for this format.")
+                                RichText::new(tr("No cover yet. Add one on the Project page, or pick one for this format."))
                                     .font(ui_small())
                                     .color(MUTED()),
                             );
@@ -736,7 +737,7 @@ fn type_panel(
                                     .color(MUTED()),
                             );
                         }
-                        if quiet_button(ui, "Choose another…").clicked() {
+                        if quiet_button(ui, tr("Choose another…")).clicked() {
                             if let Some(path) = crate::platform::FileDialog::new()
                                 .set_title("Cover picture")
                                 .add_filter("Pictures", &["png", "jpg", "jpeg"])
@@ -789,14 +790,14 @@ fn margins_row(
     let can_mirror = !compile_type.is_script()
         && matches!(kind, ExportKind::Pdf | ExportKind::Docx);
     if can_mirror {
-        ui.checkbox(&mut settings.mirror_margins, "Book margins (inside and outside)")
-            .on_hover_text("Facing pages: the inside margin sits at the spine of every page");
+        ui.checkbox(&mut settings.mirror_margins, tr("Book margins (inside and outside)"))
+            .on_hover_text(tr("Facing pages: the inside margin sits at the spine of every page"));
     } else {
         settings.mirror_margins = false;
     }
     if kind == ExportKind::Pdf && !compile_type.is_script() {
-        ui.checkbox(&mut settings.chapters_start_right, "Start chapters on right-hand pages")
-            .on_hover_text("Leaves a blank left-hand page when a chapter would otherwise open on one");
+        ui.checkbox(&mut settings.chapters_start_right, tr("Start chapters on right-hand pages"))
+            .on_hover_text(tr("Leaves a blank left-hand page when a chapter would otherwise open on one"));
     } else {
         settings.chapters_start_right = false;
     }
@@ -804,7 +805,7 @@ fn margins_row(
     let mut custom = settings.margins.is_some();
     if ui
         .checkbox(&mut custom, "Custom margins")
-        .on_hover_text("Off: book or script margins for the chosen paper")
+        .on_hover_text(tr("Off: book or script margins for the chosen paper"))
         .changed()
     {
         settings.margins = custom.then(|| automatic_margins(compile_type, mirrored));
@@ -895,41 +896,41 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "Headers & footers");
+            section_label(ui, tr("Headers & footers"));
             ui.add_space(5.0);
 
             ui.horizontal_wrapped(|ui| {
-                ui.checkbox(&mut hf.page_numbers, "Page numbers");
+                ui.checkbox(&mut hf.page_numbers, tr("Page numbers"));
                 if hf.page_numbers {
                     ui.add_space(6.0);
                     number_format_combo(ui, "hf_number_format", &mut hf.number_format);
-                    ui.label(RichText::new("first page is").font(ui_small()).color(MUTED()));
+                    ui.label(RichText::new(tr("first page is")).font(ui_small()).color(MUTED()));
                     ui.add(egui::DragValue::new(&mut hf.start_number).speed(1.0).range(1..=9999));
                 }
             });
 
             if compile_type.is_script() {
                 ui.label(
-                    RichText::new("A script prints its page number at the top right, from page 2.")
+                    RichText::new(tr("A script prints its page number at the top right, from page 2."))
                         .font(ui_small())
                         .color(MUTED()),
                 );
                 return;
             }
 
-            ui.checkbox(&mut hf.different_odd_even, "Different left-hand and right-hand pages");
-            ui.checkbox(&mut hf.different_first_page, "Different first page of each part");
+            ui.checkbox(&mut hf.different_odd_even, tr("Different left-hand and right-hand pages"));
+            ui.checkbox(&mut hf.different_first_page, tr("Different first page of each part"));
             ui.checkbox(
                 &mut hf.no_header_on_chapter_openers,
                 "No header on the page where a chapter opens",
             );
-            ui.checkbox(&mut hf.restart_body_numbering, "Start the body at page 1");
+            ui.checkbox(&mut hf.restart_body_numbering, tr("Start the body at page 1"));
 
             ui.add_space(6.0);
             hairline(ui);
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Edit").font(ui_small()).color(MUTED()));
+                ui.label(RichText::new(tr("Edit")).font(ui_small()).color(MUTED()));
                 for (r, label) in [
                     (HfRegion::Front, "Front matter"),
                     (HfRegion::Body, "Body"),
@@ -954,7 +955,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
                             }
                         });
                     number_format_combo(ui, &format!("hf_region_numbers_{}", region as u8), &mut r.number_format);
-                    ui.checkbox(&mut r.restart_numbering, "Restart at 1");
+                    ui.checkbox(&mut r.restart_numbering, tr("Restart at 1"));
                 });
                 editable = r.mode == RegionMode::Custom;
                 if !editable {
@@ -1030,7 +1031,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
                     });
                 ui.horizontal(|ui| {
                     egui::ComboBox::from_id_salt("hf_insert_field")
-                        .selected_text(RichText::new("Insert field…").font(ui_small()))
+                        .selected_text(RichText::new(tr("Insert field…")).font(ui_small()))
                         .width(130.0)
                         .show_ui(ui, |ui| {
                             for (token, what) in portmanteau_core::HEADER_FIELDS {
@@ -1046,7 +1047,7 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
                             }
                         });
                     ui.label(
-                        RichText::new("adds to the box you last clicked")
+                        RichText::new(tr("adds to the box you last clicked"))
                             .font(ui_small())
                             .color(MUTED()),
                     );
@@ -1055,11 +1056,11 @@ fn header_footer_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, compile
 
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Header from top").font(ui_small()).color(MUTED()));
+                ui.label(RichText::new(tr("Header from top")).font(ui_small()).color(MUTED()));
                 ui.add(egui::DragValue::new(&mut hf.header_spacing).speed(0.5).range(6.0..=120.0).suffix(" pt"));
-                ui.label(RichText::new("footer from bottom").font(ui_small()).color(MUTED()));
+                ui.label(RichText::new(tr("footer from bottom")).font(ui_small()).color(MUTED()));
                 ui.add(egui::DragValue::new(&mut hf.footer_spacing).speed(0.5).range(6.0..=120.0).suffix(" pt"));
-                ui.label(RichText::new("size").font(ui_small()).color(MUTED()));
+                ui.label(RichText::new(tr("size")).font(ui_small()).color(MUTED()));
                 ui.add(egui::DragValue::new(&mut hf.size).speed(0.1).range(5.0..=24.0).suffix(" pt"));
             });
         });
@@ -1104,7 +1105,7 @@ fn script_panel(
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "Script pages");
+            section_label(ui, tr("Script pages"));
             ui.add_space(5.0);
             check(
                 ui,
@@ -1162,7 +1163,7 @@ fn contents_panel(
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "What goes in");
+            section_label(ui, tr("What goes in"));
             ui.add_space(5.0);
 
             // The kind of manuscript follows the documents. Only a project
@@ -1170,7 +1171,7 @@ fn contents_panel(
             let types = project.compile_types_in(&settings.scope);
             if types.len() > 1 {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Compile as").font(ui_small()).color(MUTED()));
+                    ui.label(RichText::new(tr("Compile as")).font(ui_small()).color(MUTED()));
                     let shown = settings.compile_type.unwrap_or(auto_kind).label();
                     egui::ComboBox::from_id_salt("compile_type")
                         .selected_text(RichText::new(shown).font(ui_small()))
@@ -1182,7 +1183,7 @@ fn contents_panel(
                         });
                 });
                 ui.label(
-                    RichText::new("This project has more than one kind of document; each export is one kind.")
+                    RichText::new(tr("This project has more than one kind of document; each export is one kind."))
                         .font(ui_small())
                         .color(MUTED()),
                 );
@@ -1220,7 +1221,7 @@ fn contents_panel(
                         if let Some(title) = title_of(sel) {
                             if ui
                                 .small_button(format!("Use “{title}” instead"))
-                                .on_hover_text("Compile the item now selected in the binder")
+                                .on_hover_text(tr("Compile the item now selected in the binder"))
                                 .clicked()
                             {
                                 settings.scope = CompileScope::Subtree(sel.to_owned());
@@ -1299,7 +1300,7 @@ fn document_list(
             }
             if shown == 0 {
                 ui.label(
-                    RichText::new("Nothing of this kind is in the chosen part of the book.")
+                    RichText::new(tr("Nothing of this kind is in the chosen part of the book."))
                         .font(ui_small())
                         .color(MUTED()),
                 );
@@ -1316,7 +1317,7 @@ fn include_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, kind: ExportK
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "Also include");
+            section_label(ui, tr("Also include"));
             ui.add_space(5.0);
             let plain_text = matches!(
                 kind,
@@ -1328,12 +1329,12 @@ fn include_panel(ui: &mut egui::Ui, settings: &mut ExportSettings, kind: ExportK
                 if settings.include_toc {
                     ui.horizontal(|ui| {
                         ui.add_space(22.0);
-                        ui.label(RichText::new("Heading").font(ui_small()).color(MUTED()));
+                        ui.label(RichText::new(tr("Heading")).font(ui_small()).color(MUTED()));
                         let mut title = settings.toc_title.clone();
                         if ui
                             .add(
                                 TextEdit::singleline(&mut title)
-                                    .hint_text("Contents")
+                                    .hint_text(tr("Contents"))
                                     .desired_width(150.0),
                             )
                             .changed()
@@ -1485,7 +1486,7 @@ fn run_export(app: &mut PortmanteauApp, settings: &ExportSettings) -> Option<Pat
         app.ws.last_message = format!("{} → {}", res.message, path.display());
         Some(path)
     } else {
-        app.toast("Compile failed", res.message, ToastKind::Error);
+        app.toast(tr("Compile failed"), res.message, ToastKind::Error);
         None
     }
 }

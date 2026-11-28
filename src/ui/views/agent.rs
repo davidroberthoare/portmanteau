@@ -8,17 +8,18 @@ use eframe::egui::{
 
 use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     page_head(
         ui,
-        "Automation",
-        "Command desk",
-        "Every action in this studio is a JSON command. Agents use the same commands through MCP.",
+        tr("Automation"),
+        tr("Command desk"),
+        tr("Every action in this studio is a JSON command. Agents use the same commands through MCP."),
         |ui| {
             ui.label(
-                RichText::new("API · MCP · CLI")
+                RichText::new(tr("API · MCP · CLI"))
                     .font(ui_small())
                     .color(SUCCESS()),
             );
@@ -41,7 +42,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             ui.horizontal(|ui| {
-                                section_label(ui, "Commands");
+                                section_label(ui, tr("Commands"));
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     meta_line(ui, &[&format!("{}", catalogue.len())]);
                                 });
@@ -113,7 +114,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
-                            section_label(ui, "Call");
+                            section_label(ui, tr("Call"));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 meta_line(ui, &["portmanteau-mcp exposes these as agent tools"]);
                             });
@@ -125,7 +126,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                     .font(mono(11.0))
                                     .desired_width(220.0),
                             );
-                            ui.label(RichText::new("payload").font(ui_small()).color(MUTED()));
+                            ui.label(RichText::new(tr("payload")).font(ui_small()).color(MUTED()));
                         });
                         ui.add_space(4.0);
                         ui.add(
@@ -136,14 +137,14 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         );
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
-                            if primary_button(ui, "Run command  ▸").clicked() {
+                            if primary_button(ui, tr("Run command  ▸")).clicked() {
                                 run(app);
                             }
                             ui.add_space(6.0);
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("Fill example").font(ui_small()).color(MUTED()),
+                                        RichText::new(tr("Fill example")).font(ui_small()).color(MUTED()),
                                     )
                                     .frame(false),
                                 )
@@ -174,7 +175,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
-                            section_label(ui, "Response");
+                            section_label(ui, tr("Response"));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 if !app.cmd_output.is_empty()
                                     && ui.small_button("Clear").clicked()
@@ -223,8 +224,8 @@ fn run(app: &mut PortmanteauApp) {
     });
     app.cmd_output = serde_json::to_string_pretty(&doc).unwrap_or_default();
     if res.ok {
-        app.toast("Command ran", res.message, ToastKind::Info);
+        app.toast(tr("Command ran"), res.message, ToastKind::Info);
     } else {
-        app.toast("Command failed", res.message, ToastKind::Error);
+        app.toast(tr("Command failed"), res.message, ToastKind::Error);
     }
 }

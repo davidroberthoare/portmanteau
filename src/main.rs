@@ -11,6 +11,7 @@
 mod activity;
 mod app;
 mod history;
+mod i18n;
 mod icons;
 mod platform;
 #[cfg(not(target_arch = "wasm32"))]

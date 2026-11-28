@@ -13,6 +13,7 @@ use serde_json::json;
 
 use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::views::quiet_button;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -113,7 +114,7 @@ pub fn top_bar_meter(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let response = if goals.encouragement {
         response.on_hover_text(progress::encouragement(&p, &goals))
     } else {
-        response.on_hover_text("Open writing statistics")
+        response.on_hover_text(tr("Open writing statistics"))
     };
     if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         app.stats.open = true;
@@ -200,10 +201,10 @@ fn overview(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     }
 
     card(ui, |ui| {
-        section_label(ui, "Time and words");
+        section_label(ui, tr("Time and words"));
         ui.add_space(4.0);
         egui::Grid::new("stats_overview").num_columns(7).spacing([16.0, 6.0]).striped(true).show(ui, |ui| {
-            for h in ["", "Typing", "Reading", "Added", "Edited", "Deleted", "Words / hour"] {
+            for h in ["", tr("Typing"), tr("Reading"), tr("Added"), tr("Edited"), tr("Deleted"), tr("Words / hour")] {
                 ui.label(RichText::new(h).font(ui_small()).color(MUTED()));
             }
             ui.end_row();
@@ -218,7 +219,7 @@ fn overview(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let hours = activity::per_hour_of_day(log);
     if let Some((best, t)) = hours.iter().enumerate().max_by_key(|(_, t)| t.added).filter(|(_, t)| t.added > 0) {
         card(ui, |ui| {
-            section_label(ui, "Habits");
+            section_label(ui, tr("Habits"));
             ui.add_space(4.0);
             ui.label(RichText::new(format!("Your most productive hour is {}:00 to {}:00, with {} words added there.", best, best + 1, thousands(t.added))).font(ui_body()).color(TEXT()));
             let days = activity::per_day(log);
@@ -318,7 +319,7 @@ fn charts(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             })
             .collect(),
     };
-    let (first_name, second_name, unit) = if time { ("Typing", "Reading", "minutes") } else { ("Added", "Edited", "words") };
+    let (first_name, second_name, unit) = if time { (tr("Typing"), tr("Reading"), tr("minutes")) } else { (tr("Added"), tr("Edited"), tr("words")) };
     card(ui, |ui| {
         ui.horizontal(|ui| {
             section_label(
@@ -402,15 +403,15 @@ fn documents(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     rows.sort_by(|a, b| (b.3.typing_secs + b.3.reading_secs).cmp(&(a.3.typing_secs + a.3.reading_secs)).then(a.1.cmp(&b.1)));
     let mut open: Option<String> = None;
     card(ui, |ui| {
-        section_label(ui, "Time and words by document");
+        section_label(ui, tr("Time and words by document"));
         ui.add_space(4.0);
         egui::Grid::new("stats_documents").num_columns(7).spacing([14.0, 6.0]).striped(true).show(ui, |ui| {
-            for h in ["Document", "Words", "Typing", "Reading", "Added", "Edited", "Deleted"] {
+            for h in [tr("Document"), tr("Words"), tr("Typing"), tr("Reading"), tr("Added"), tr("Edited"), tr("Deleted")] {
                 ui.label(RichText::new(h).font(ui_small()).color(MUTED()));
             }
             ui.end_row();
             for (id, title, words, t) in &rows {
-                if ui.add(egui::Label::new(RichText::new(title).font(ui_body()).color(ACCENT())).sense(Sense::click())).on_hover_text("Open this document").clicked() {
+                if ui.add(egui::Label::new(RichText::new(title).font(ui_body()).color(ACCENT())).sense(Sense::click())).on_hover_text(tr("Open this document")).clicked() {
                     open = Some(id.clone());
                 }
                 for text in [thousands(*words), duration(t.typing_secs), duration(t.reading_secs), thousands(t.added), thousands(t.edited), thousands(t.deleted)] {
@@ -453,7 +454,7 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         ("manuscript".into(), prose.iter().flat_map(|d| d.content.paragraphs.iter().map(|p| p.plain_text())).collect(), words)
     };
     let stale = app.stats.analysis.as_ref().is_none_or(|(s, w, _)| *s != scope || *w != words);
-    let refresh = quiet_button(ui, "Refresh").clicked();
+    let refresh = quiet_button(ui, tr("Refresh")).clicked();
     if stale || refresh {
         app.stats.analysis = Some((scope, words, analysis::analyze(&paragraphs)));
     }
@@ -463,7 +464,7 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         return;
     }
     card(ui, |ui| {
-        section_label(ui, "How it reads");
+        section_label(ui, tr("How it reads"));
         ui.add_space(4.0);
         egui::Grid::new("stats_style").num_columns(2).spacing([24.0, 5.0]).show(ui, |ui| {
             let mut line = |name: &str, value: String, hint: &str| {
@@ -486,7 +487,7 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         });
     });
     card(ui, |ui| {
-        section_label(ui, "Sentence lengths");
+        section_label(ui, tr("Sentence lengths"));
         ui.add_space(4.0);
         let bars: Vec<Bar> = ["1–10", "11–20", "21–30", "31+"]
             .iter()
@@ -497,7 +498,7 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     });
     if !a.top_words.is_empty() {
         card(ui, |ui| {
-            section_label(ui, "Most-used words");
+            section_label(ui, tr("Most-used words"));
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
                 for (word, n) in &a.top_words {
@@ -510,7 +511,7 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     }
     if !a.echoes.is_empty() {
         card(ui, |ui| {
-            section_label(ui, "Words that echo");
+            section_label(ui, tr("Words that echo"));
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
                 for (word, n) in &a.echoes {
@@ -543,7 +544,7 @@ fn goals(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut next = g.clone();
 
     card(ui, |ui| {
-        section_label(ui, "Your goals");
+        section_label(ui, tr("Your goals"));
         note(ui, "Set what suits you; leave a goal at 0 to skip it. Goals are kind guides, not rules.");
         ui.add_space(6.0);
         egui::Grid::new("stats_goals").num_columns(3).spacing([16.0, 8.0]).show(ui, |ui| {
@@ -568,14 +569,14 @@ fn goals(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 }
                 ui.end_row();
             };
-            goal_row(ui, "Words each day", &mut next.daily_words, 200_000, "words", p.daily_words);
-            goal_row(ui, "Words each week", &mut next.weekly_words, 1_000_000, "words", p.weekly_words);
+            goal_row(ui, tr("Words each day"), &mut next.daily_words, 200_000, "words", p.daily_words);
+            goal_row(ui, tr("Words each week"), &mut next.weekly_words, 1_000_000, "words", p.weekly_words);
             goal_row(ui, "Typing each day", &mut next.daily_minutes, 1_440, "min", p.daily_minutes);
             goal_row(ui, "Typing each week", &mut next.weekly_minutes, 10_080, "min", p.weekly_minutes);
         });
         ui.add_space(6.0);
-        ui.checkbox(&mut next.show_meter, "Show a progress meter in the top bar");
-        ui.checkbox(&mut next.encouragement, "Show encouraging messages and badges");
+        ui.checkbox(&mut next.show_meter, tr("Show a progress meter in the top bar"));
+        ui.checkbox(&mut next.encouragement, tr("Show encouraging messages and badges"));
         note(ui, "A week runs Monday to Sunday. Words count when they are added at the end of what you have written.");
     });
 
@@ -588,7 +589,7 @@ fn goals(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         let earned = badges.iter().filter(|b| b.earned).count();
         card(ui, |ui| {
             ui.horizontal(|ui| {
-                section_label(ui, "Badges");
+                section_label(ui, tr("Badges"));
                 note(ui, &format!("{earned} of {} earned", badges.len()));
             });
             ui.add_space(6.0);
