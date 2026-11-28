@@ -439,8 +439,9 @@ mod tests {
         if std::env::var("UPDATE_LANGUAGE_TEMPLATE").is_ok() {
             std::fs::write(&path, &fresh).unwrap();
         }
+        // Windows checks text files out with CRLF line endings; the content is the same.
         assert_eq!(
-            TEMPLATE, fresh,
+            TEMPLATE.replace("\r\n", "\n"), fresh,
             "assets/languages/template.json is out of date: run `UPDATE_LANGUAGE_TEMPLATE=1 cargo test the_template` and rebuild"
         );
     }
