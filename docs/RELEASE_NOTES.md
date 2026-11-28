@@ -3,6 +3,16 @@
 The newest section is used as the body of the GitHub release. Start each release
 with a line `## vX.Y.Z` (matching `version` in the top-level `Cargo.toml`).
 
+## v0.3.2
+
+- **Portmanteau speaks more languages.** French and Spanish are built in; choose one in Settings › Preferences › Interface language and the whole interface switches at once. They are machine translations for now, so a native speaker's corrections are very welcome.
+- **First launch.** The app reads your computer's language and uses it when it has it; otherwise a small "Choose your language" window asks. You only see it once.
+- **The welcome project is translated too**, and rebuilds itself in the new language if you switch before changing anything. The spelling dictionary follows the language (French and Spanish dictionaries are included); English keeps your US or UK choice.
+- **Add or fix a language without programming.** A language is one small JSON file. **Export template…** gives you an empty one with a note beside every text saying what it is for; **Export this language…** gives you an existing language to correct; **Import…** tries it straight away. Read the guide: https://github.com/davidroberthoare/portmanteau/blob/master/docs/localization.md and the wiki page https://github.com/davidroberthoare/portmanteau/wiki/Languages-and-Translating . Please send finished translations back as a pull request or an issue.
+- **Help.** The wiki has pages on every main view, compiling, styles and themes: https://github.com/davidroberthoare/portmanteau/wiki (Help › Help and guides opens it).
+- The About window now has links to support the project or join in on GitHub. The "?" button above Settings is gone, since About and Help are in the Help menu.
+- Known limits: the bundled fonts cover Latin scripts only (no Chinese, Arabic or Cyrillic yet), and a few technical messages are still English-only.
+
 ## v0.3.1
 
 - Fixed: the browser version of 0.3.0 did not build, so the web page was not updated. This release brings the web version up to date with the themes.
