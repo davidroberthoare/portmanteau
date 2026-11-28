@@ -126,16 +126,22 @@ pub fn badges(log: &[ActivityRecord], goals: &WritingGoals, today: &str) -> Vec<
 /// A short, kind line for the writer's progress today. Always true to the
 /// numbers; never scolds.
 pub fn encouragement(p: &Progress, goals: &WritingGoals) -> String {
+    encouragement_with(p, goals, &|english| english.to_string())
+}
+
+/// [`encouragement`] with each piece of its text passed through `t` (a
+/// translation; `{n}` in a text is filled in afterwards).
+pub fn encouragement_with(p: &Progress, goals: &WritingGoals, t: &dyn Fn(&str) -> String) -> String {
     let streak_note = match p.streak {
         0 | 1 => String::new(),
-        n => format!(" That is {n} days in a row."),
+        n => t(" That is {n} days in a row.").replace("{n}", &n.to_string()),
     };
-    let pick = |lines: &[&str]| lines[(p.today.added as usize / 7) % lines.len()].to_owned();
+    let pick = |lines: &[&str]| t(lines[(p.today.added as usize / 7) % lines.len()]);
     let Some(share) = p.headline() else {
         return if p.today.added > 0 {
-            format!("{} words today. Nice work.{streak_note}", p.today.added)
+            format!("{}{streak_note}", t("{n} words today. Nice work.").replace("{n}", &p.today.added.to_string()))
         } else {
-            "Set a goal in Project › Writing goals if you would like a gentle target.".into()
+            t("Set a goal in Project › Writing goals if you would like a gentle target.")
         };
     };
     let line = if p.today.is_empty() {
@@ -154,7 +160,7 @@ pub fn encouragement(p: &Progress, goals: &WritingGoals) -> String {
         pick(&["Well past your goal today. Remember to rest too.", "A very productive day.", "Plenty written. Be proud of it."])
     };
     let weekly = match (p.weekly_words, goals.weekly_words) {
-        (Some(w), g) if g > 0 && w >= 1.0 => " Your weekly goal is already met.".to_owned(),
+        (Some(w), g) if g > 0 && w >= 1.0 => t(" Your weekly goal is already met."),
         _ => String::new(),
     };
     format!("{line}{streak_note}{weekly}")

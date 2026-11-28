@@ -10,6 +10,7 @@ use portmanteau_core::{DatabaseItem, ItemKind, StyleSheet};
 
 use crate::app::PortmanteauApp;
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::editor::{load_rich_image_textures, paint_rich_images, script_flow_layout_job};
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button, section_label};
 
@@ -28,11 +29,11 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
     page_head(
         ui,
-        "Story database",
-        "Database",
-        "Characters, places, events and props, with notes, tags and links.",
+        tr("Story database"),
+        tr("Database"),
+        tr("Characters, places, events and props, with notes, tags and links."),
         |ui| {
-            if primary_button(ui, "+ New item").clicked() {
+            if primary_button(ui, tr("+ New item")).clicked() {
                 add_kind = Some(selected_kind(app).unwrap_or(ItemKind::Character));
             }
             ui.add_space(6.0);
@@ -55,15 +56,15 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         if app.ws.project.items.is_empty() {
             ui.add_space(24.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Nothing catalogued yet").font(serif(20.0)).color(TEXT()));
+                ui.label(RichText::new(tr("Nothing catalogued yet")).font(serif(20.0)).color(TEXT()));
                 ui.add_space(4.0);
                 ui.label(
-                    RichText::new("Keep the people, places and things your story needs.")
+                    RichText::new(tr("Keep the people, places and things your story needs."))
                         .font(ui_body())
                         .color(MUTED()),
                 );
                 ui.add_space(12.0);
-                if primary_button(ui, "Create a character").clicked() {
+                if primary_button(ui, tr("Create a character")).clicked() {
                     add_kind = Some(ItemKind::Character);
                 }
             });
@@ -105,7 +106,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                             ui.label(
                                                 RichText::new(format!(
                                                     "{} · {}",
-                                                    kind.label().to_uppercase(),
+                                                    crate::i18n::tr_dyn(kind.label()).to_uppercase(),
                                                     count
                                                 ))
                                                 .font(ui_small())
@@ -266,7 +267,7 @@ fn filter_height(items: &[DatabaseItem]) -> f32 {
 fn filter_ui(ui: &mut egui::Ui, items: &[DatabaseItem], filter: &mut ListFilter) {
     ui.add(
         TextEdit::singleline(&mut filter.search)
-            .hint_text("Search names, tags and notes")
+            .hint_text(tr("Search names, tags and notes"))
             .font(ui_small())
             .desired_width(f32::INFINITY),
     );
@@ -284,7 +285,7 @@ fn filter_ui(ui: &mut egui::Ui, items: &[DatabaseItem], filter: &mut ListFilter)
                 .stroke(Stroke::new(1.0, if active { ACCENT() } else { BORDER() }))
                 .corner_radius(CornerRadius::same(10))
                 .min_size(Vec2::new(0.0, 20.0));
-            if ui.add(button).on_hover_text("Show only items with this tag").clicked() {
+            if ui.add(button).on_hover_text(tr("Show only items with this tag")).clicked() {
                 filter.tag = if active { None } else { Some(tag) };
             }
         }
@@ -377,7 +378,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                 .add(
                                     TextEdit::singleline(&mut draft.title)
                                         .font(serif(23.0))
-                                        .hint_text("Title")
+                                        .hint_text(tr("Title"))
                                         .frame(Frame::NONE)
                                         .desired_width(340.0),
                                 )
@@ -386,14 +387,14 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                 apply = true;
                             }
                             ComboBox::from_id_salt(("item_kind", draft.id.clone()))
-                                .selected_text(draft.kind.label())
+                                .selected_text(crate::i18n::tr_dyn(draft.kind.label()))
                                 .width(140.0)
                                 .show_ui(ui, |ui| {
                                     for kind in ItemKind::all() {
                                         if ui
                                             .selectable_label(
                                                 draft.kind == kind,
-                                                kind.label(),
+                                                crate::i18n::tr_dyn(kind.label()),
                                             )
                                             .clicked()
                                         {
@@ -407,7 +408,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("Delete").font(ui_small()).color(DANGER()),
+                                        RichText::new(tr("Delete")).font(ui_small()).color(DANGER()),
                                     )
                                     .frame(false),
                                 )
@@ -421,7 +422,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     hairline(ui);
                     ui.add_space(10.0);
 
-                    section_label(ui, "Colour");
+                    section_label(ui, tr("Colour"));
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
                         for (i, swatch) in FACE_COLORS.iter().enumerate() {
@@ -443,12 +444,12 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     });
                     ui.add_space(10.0);
 
-                    section_label(ui, "Tags");
+                    section_label(ui, tr("Tags"));
                     ui.add_space(2.0);
                     if ui
                         .add(
                             TextEdit::singleline(&mut draft.tags_text)
-                                .hint_text("Comma-separated, e.g. harbour, family")
+                                .hint_text(tr("Comma-separated, e.g. harbour, family"))
                                 .font(ui_body())
                                 .desired_width(f32::INFINITY),
                         )
@@ -460,7 +461,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                         ui.add_space(3.0);
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
-                            ui.label(RichText::new("Used elsewhere:").font(ui_small()).color(MUTED()));
+                            ui.label(RichText::new(tr("Used elsewhere:")).font(ui_small()).color(MUTED()));
                             for tag in &tag_suggestions {
                                 if ui
                                     .add(
@@ -470,7 +471,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                             .corner_radius(CornerRadius::same(10))
                                             .min_size(Vec2::new(0.0, 20.0)),
                                     )
-                                    .on_hover_text("Add this tag")
+                                    .on_hover_text(tr("Add this tag"))
                                     .clicked()
                                 {
                                     if !draft.tags_text.trim().is_empty() && !draft.tags_text.trim_end().ends_with(',') {
@@ -484,7 +485,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     }
                     ui.add_space(10.0);
 
-                    section_label(ui, "Notes");
+                    section_label(ui, tr("Notes"));
                     ui.add_space(2.0);
                     let notes_id = egui::Id::unique(("database_notes", id));
                     // The fixed formatting bar, as on research notes (see ui/rich_toolbar.rs).
@@ -527,7 +528,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     let notes_output = TextEdit::multiline(&mut draft.notes)
                         .id(notes_id)
                         .layouter(&mut layouter)
-                        .hint_text("What matters about this item?")
+                        .hint_text(tr("What matters about this item?"))
                         .font(ui_body())
                         .desired_rows(8)
                         .desired_width(f32::INFINITY)
@@ -572,11 +573,11 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     hairline(ui);
                     ui.add_space(10.0);
 
-                    section_label(ui, "Linked from");
+                    section_label(ui, tr("Linked from"));
                     ui.add_space(4.0);
                     if linked_from.is_empty() {
                         ui.label(
-                            RichText::new("No other item links here. Type @ in another item's notes to link to this one.")
+                            RichText::new(tr("No other item links here. Type @ in another item's notes to link to this one."))
                                 .font(ui_small())
                                 .color(MUTED()),
                         );
@@ -591,7 +592,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                         .corner_radius(CornerRadius::same(20))
                                         .min_size(Vec2::new(0.0, 24.0)),
                                 )
-                                .on_hover_text("Open this item")
+                                .on_hover_text(tr("Open this item"))
                                 .clicked()
                             {
                                 select = Some(oid.clone());
@@ -602,21 +603,21 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                     ui.add_space(14.0);
                     hairline(ui);
                     ui.add_space(10.0);
-                    section_label(ui, "Appearances");
+                    section_label(ui, tr("Appearances"));
                     ui.add_space(4.0);
                     if appearances.is_empty() {
                         ui.label(
-                            RichText::new("Not yet named or linked in your writing.")
+                            RichText::new(tr("Not yet named or linked in your writing."))
                                 .font(ui_small())
                                 .color(MUTED()),
                         );
                     } else {
                         ui.label(
-                            RichText::new(format!(
-                                "In {} document{} · click one to go to the first place",
-                                appearances.len(),
-                                if appearances.len() == 1 { "" } else { "s" }
-                            ))
+                            RichText::new(if appearances.len() == 1 {
+                                tr("In 1 document · click one to go to the first place").to_string()
+                            } else {
+                                crate::i18n::trf("In {count} documents · click one to go to the first place", &[("count", appearances.len().to_string())])
+                            })
                             .font(ui_small())
                             .color(MUTED()),
                         );
@@ -627,7 +628,7 @@ fn detail(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str) {
                                 let title = if appearance.by_link { format!("{}  @", appearance.title) } else { appearance.title.clone() };
                                 if ui
                                     .add(egui::Button::new(RichText::new(title).font(ui_body()).color(INFO())).frame(false))
-                                    .on_hover_text(if appearance.place.is_some() { "Open at the first appearance" } else { "Open (named in its notes or synopsis)" })
+                                    .on_hover_text(if appearance.place.is_some() { tr("Open at the first appearance") } else { "Open (named in its notes or synopsis)" })
                                     .clicked()
                                 {
                                     open_appearance = Some(appearance.clone());
@@ -704,11 +705,11 @@ fn counts_line(items: &[DatabaseItem]) -> String {
 
 fn plural(kind: ItemKind) -> &'static str {
     match kind {
-        ItemKind::Character => "characters",
-        ItemKind::Place => "places",
-        ItemKind::Event => "events",
-        ItemKind::Prop => "props",
-        ItemKind::Custom => "custom",
+        ItemKind::Character => tr("characters"),
+        ItemKind::Place => tr("places"),
+        ItemKind::Event => tr("events"),
+        ItemKind::Prop => tr("props"),
+        ItemKind::Custom => tr("custom"),
     }
 }
 

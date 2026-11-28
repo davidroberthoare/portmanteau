@@ -12,6 +12,10 @@ pub fn new_id(prefix: &str) -> String {
     format!("{}-{}", prefix, &Uuid::new_v4().simple().to_string()[..8])
 }
 
+fn default_interface_language() -> String {
+    "en".into()
+}
+
 fn default_theme() -> String {
     "light".into()
 }
@@ -1100,6 +1104,13 @@ pub struct AppSettings {
     /// Id of the interface theme (a built-in's name or a themes-folder file name).
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Code of the interface language (`en`, `fr`, or a file in the languages folder).
+    #[serde(default = "default_interface_language")]
+    pub interface_language: String,
+    /// False until the first launch has settled the interface language (by
+    /// detecting the system's, or by asking), so that happens only once.
+    #[serde(default)]
+    pub language_chosen: bool,
     /// Update notices (the one use the program makes of the network).
     #[serde(default)]
     pub updates: UpdatePrefs,
@@ -1167,6 +1178,8 @@ impl Default for AppSettings {
             show_inspector: true,
             ui_scale: default_ui_scale(),
             theme: default_theme(),
+            interface_language: default_interface_language(),
+            language_chosen: false,
             updates: UpdatePrefs::default(),
             last_project: None,
             recent_projects: Vec::new(),

@@ -46,6 +46,7 @@ use eframe::egui::{self, Color32, CornerRadius, Frame, Id, Key, Margin, Modifier
 use portmanteau_core::{InlineMark, RichDocument, StyleSheet};
 
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::editor::{begin_link_edit, link_support};
 
 /// What the toolbar offers beyond the character marks and the link.
@@ -191,14 +192,14 @@ pub fn show(ui: &mut egui::Ui, field: Id, content: &mut RichDocument, options: &
                 let existing = content.link_at(range.start, true);
                 let can_link = !range.is_empty() || existing.is_some();
                 let linked = existing.is_some() && range.is_empty() || content.link_at(range.start, false).is_some();
-                let button = egui::Button::new(RichText::new("Link").font(ui_small()).color(if linked { ACCENT() } else { INFO() }))
+                let button = egui::Button::new(RichText::new(tr("Link")).font(ui_small()).color(if linked { ACCENT() } else { INFO() }))
                     .fill(if linked { ACCENT_SOFT() } else { Color32::TRANSPARENT })
                     .stroke(Stroke::NONE)
                     .corner_radius(CornerRadius::same(5))
                     .min_size(Vec2::new(40.0, 26.0));
                 if ui
                     .add_enabled(can_link, button)
-                    .on_hover_text("Make the selection a link, or edit the link at the caret (Ctrl/Cmd+K)")
+                    .on_hover_text(tr("Make the selection a link, or edit the link at the caret (Ctrl/Cmd+K)"))
                     .clicked()
                 {
                     let target = if range.is_empty() { existing.map(|(_, whole)| whole) } else { Some(range.clone()) };

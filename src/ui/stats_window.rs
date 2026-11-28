@@ -13,6 +13,7 @@ use serde_json::json;
 
 use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::views::quiet_button;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -78,17 +79,17 @@ pub fn top_bar_meter(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let today = portmanteau_core::today();
     let p = progress::progress(&app.ws.project.activity, &goals, &today);
     let (text, share) = if !goals.show_meter {
-        (format!("{} words today", p.today.added), None)
+        (crate::i18n::trf("{count} words today", &[("count", p.today.added.to_string())]), None)
     } else if goals.daily_words > 0 {
-        (format!("{} / {} today", p.today.added, goals.daily_words), p.daily_words)
+        (crate::i18n::trf("{done} / {goal} today", &[("done", p.today.added.to_string()), ("goal", goals.daily_words.to_string())]), p.daily_words)
     } else if goals.daily_minutes > 0 {
-        (format!("{} / {} min today", p.today.typing_secs / 60, goals.daily_minutes), p.daily_minutes)
+        (crate::i18n::trf("{done} / {goal} min today", &[("done", (p.today.typing_secs / 60).to_string()), ("goal", goals.daily_minutes.to_string())]), p.daily_minutes)
     } else if goals.weekly_words > 0 {
-        (format!("{} / {} this week", p.week.added, goals.weekly_words), p.weekly_words)
+        (crate::i18n::trf("{done} / {goal} this week", &[("done", p.week.added.to_string()), ("goal", goals.weekly_words.to_string())]), p.weekly_words)
     } else if goals.weekly_minutes > 0 {
-        (format!("{} / {} min this week", p.week.typing_secs / 60, goals.weekly_minutes), p.weekly_minutes)
+        (crate::i18n::trf("{done} / {goal} min this week", &[("done", (p.week.typing_secs / 60).to_string()), ("goal", goals.weekly_minutes.to_string())]), p.weekly_minutes)
     } else {
-        (format!("{} words today", p.today.added), None)
+        (crate::i18n::trf("{count} words today", &[("count", p.today.added.to_string())]), None)
     };
     // A fixed box, so it neither stretches across the bar nor rides high: the
     // text and the bar are centred as a pair in the bar's height.
@@ -111,9 +112,9 @@ pub fn top_bar_meter(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .response
         .interact(Sense::click());
     let response = if goals.encouragement {
-        response.on_hover_text(progress::encouragement(&p, &goals))
+        response.on_hover_text(progress::encouragement_with(&p, &goals, &crate::i18n::tr_dyn))
     } else {
-        response.on_hover_text("Open writing statistics")
+        response.on_hover_text(tr("Open writing statistics"))
     };
     if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         app.stats.open = true;
@@ -129,7 +130,7 @@ pub fn show(app: &mut PortmanteauApp, ctx: &egui::Context) {
         return;
     }
     let mut open = true;
-    egui::Window::new("Writing statistics")
+    egui::Window::new(tr("Writing statistics"))
         .open(&mut open)
         .resizable(true)
         .collapsible(false)
@@ -139,11 +140,11 @@ pub fn show(app: &mut PortmanteauApp, ctx: &egui::Context) {
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 for (tab, label) in [
-                    (StatsTab::Overview, "Overview"),
-                    (StatsTab::Charts, "Charts"),
-                    (StatsTab::Documents, "Documents"),
-                    (StatsTab::Style, "Writing style"),
-                    (StatsTab::Goals, "Goals & badges"),
+                    (StatsTab::Overview, tr("Overview")),
+                    (StatsTab::Charts, tr("Charts")),
+                    (StatsTab::Documents, tr("Documents")),
+                    (StatsTab::Style, tr("Writing style")),
+                    (StatsTab::Goals, tr("Goals & badges")),
                 ] {
                     ui.selectable_value(&mut app.stats.tab, tab, label);
                 }
@@ -192,54 +193,51 @@ fn overview(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
     if project.goals.encouragement {
         card(ui, |ui| {
-            ui.label(RichText::new(progress::encouragement(&p, &project.goals)).font(serif(16.0)).color(TEXT()));
+            ui.label(RichText::new(progress::encouragement_with(&p, &project.goals, &crate::i18n::tr_dyn)).font(serif(16.0)).color(TEXT()));
             if p.streak > 0 || p.longest_streak > 1 {
-                note(ui, &format!("Current run: {} day{} · Longest run: {} day{}", p.streak, plural(p.streak), p.longest_streak, plural(p.longest_streak)));
+                note(ui, &crate::i18n::trf("Current run: {current} · Longest run: {longest}", &[("current", days_text(p.streak)), ("longest", days_text(p.longest_streak))]));
             }
         });
     }
 
     card(ui, |ui| {
-        section_label(ui, "Time and words");
+        section_label(ui, tr("Time and words"));
         ui.add_space(4.0);
         egui::Grid::new("stats_overview").num_columns(7).spacing([16.0, 6.0]).striped(true).show(ui, |ui| {
-            for h in ["", "Typing", "Reading", "Added", "Edited", "Deleted", "Words / hour"] {
+            for h in ["", tr("Typing"), tr("Reading"), tr("Added"), tr("Edited"), tr("Deleted"), tr("Words / hour")] {
                 ui.label(RichText::new(h).font(ui_small()).color(MUTED()));
             }
             ui.end_row();
-            for (label, t) in [("Today", p.today), ("This week", p.week), ("Last 30 days", month), ("All time", all)] {
+            for (label, t) in [(tr("Today"), p.today), (tr("This week"), p.week), (tr("Last 30 days"), month), (tr("All time"), all)] {
                 row(ui, label, &t);
             }
         });
         ui.add_space(6.0);
-        note(ui, "Typing counts while you type, including pauses up to five seconds. Reading counts while the page is in front and you scroll or move about, for twenty seconds after each action. Added words are written at the end of a sentence or paragraph; edited words are typed into the middle of what is already there.");
+        note(ui, tr("Typing counts while you type, including pauses up to five seconds. Reading counts while the page is in front and you scroll or move about, for twenty seconds after each action. Added words are written at the end of a sentence or paragraph; edited words are typed into the middle of what is already there."));
     });
 
     let hours = activity::per_hour_of_day(log);
     if let Some((best, t)) = hours.iter().enumerate().max_by_key(|(_, t)| t.added).filter(|(_, t)| t.added > 0) {
         card(ui, |ui| {
-            section_label(ui, "Habits");
+            section_label(ui, tr("Habits"));
             ui.add_space(4.0);
-            ui.label(RichText::new(format!("Your most productive hour is {}:00 to {}:00, with {} words added there.", best, best + 1, thousands(t.added))).font(ui_body()).color(TEXT()));
+            ui.label(RichText::new(crate::i18n::trf("Your most productive hour is {from}:00 to {to}:00, with {words} words added there.", &[("from", best.to_string()), ("to", (best + 1).to_string()), ("words", thousands(t.added))])).font(ui_body()).color(TEXT()));
             let days = activity::per_day(log);
             let active = days.values().filter(|t| t.added > 0).count() as u32;
             if active > 0 {
-                ui.label(RichText::new(format!("On the {} days you wrote, you averaged {} words added and {} of typing.", active, thousands(all.added / active), duration(all.typing_secs / active))).font(ui_body()).color(TEXT()));
+                ui.label(RichText::new(crate::i18n::trf("On the {days} days you wrote, you averaged {words} words added and {typing} of typing.", &[("days", active.to_string()), ("words", thousands(all.added / active)), ("typing", duration(all.typing_secs / active))])).font(ui_body()).color(TEXT()));
             }
             if let Some((day, t)) = days.iter().max_by_key(|(_, t)| t.added).filter(|(_, t)| t.added > 0) {
-                ui.label(RichText::new(format!("Your best day was {} with {} words added.", day, thousands(t.added))).font(ui_body()).color(TEXT()));
+                ui.label(RichText::new(crate::i18n::trf("Your best day was {day} with {words} words added.", &[("day", day.to_string()), ("words", thousands(t.added))])).font(ui_body()).color(TEXT()));
             }
         });
     }
     let total_words = project.words();
     if total_words > 0 {
-        note(ui, &format!("The manuscript is {} words long, about {} to read.", thousands(total_words), duration(portmanteau_core::reading_minutes(total_words) * 60)));
+        note(ui, &crate::i18n::trf("The manuscript is {words} words long, about {time} to read.", &[("words", thousands(total_words)), ("time", duration(portmanteau_core::reading_minutes(total_words) * 60))]));
     }
 }
 
-fn plural(n: u32) -> &'static str {
-    if n == 1 { "" } else { "s" }
-}
 
 fn row(ui: &mut egui::Ui, label: &str, t: &ActivityTotals) {
     ui.label(RichText::new(label).font(ui_body()).color(TEXT()));
@@ -266,12 +264,12 @@ struct Bar {
 
 fn charts(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
-        for (p, label) in [(Period::Days, "Days"), (Period::Weeks, "Weeks"), (Period::HourOfDay, "Hour of day")] {
+        for (p, label) in [(Period::Days, tr("Days")), (Period::Weeks, tr("Weeks")), (Period::HourOfDay, tr("Hour of day"))] {
             ui.selectable_value(&mut app.stats.period, p, label);
         }
         ui.add_space(16.0);
-        ui.selectable_value(&mut app.stats.time_mode, false, "Words");
-        ui.selectable_value(&mut app.stats.time_mode, true, "Time");
+        ui.selectable_value(&mut app.stats.time_mode, false, tr("Words"));
+        ui.selectable_value(&mut app.stats.time_mode, true, tr("Time"));
     });
     ui.add_space(8.0);
     let log = &app.ws.project.activity;
@@ -318,15 +316,15 @@ fn charts(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             })
             .collect(),
     };
-    let (first_name, second_name, unit) = if time { ("Typing", "Reading", "minutes") } else { ("Added", "Edited", "words") };
+    let (first_name, second_name, unit) = if time { (tr("Typing"), tr("Reading"), tr("minutes")) } else { (tr("Added"), tr("Edited"), tr("words")) };
     card(ui, |ui| {
         ui.horizontal(|ui| {
             section_label(
                 ui,
                 match app.stats.period {
-                    Period::Days => "The last 28 days",
-                    Period::Weeks => "Recent weeks (week number)",
-                    Period::HourOfDay => "By hour of the day, all time",
+                    Period::Days => tr("The last 28 days"),
+                    Period::Weeks => tr("Recent weeks (week number)"),
+                    Period::HourOfDay => tr("By hour of the day, all time"),
                 },
             );
             ui.label(RichText::new(format!("■ {first_name}")).font(ui_small()).color(ACCENT()));
@@ -337,7 +335,7 @@ fn charts(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         bar_chart(ui, &bars, 150.0);
     });
     if app.ws.project.activity.is_empty() {
-        note(ui, "Nothing is recorded yet. Time and words appear here as you write.");
+        note(ui, tr("Nothing is recorded yet. Time and words appear here as you write."));
     }
 }
 
@@ -402,15 +400,15 @@ fn documents(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     rows.sort_by(|a, b| (b.3.typing_secs + b.3.reading_secs).cmp(&(a.3.typing_secs + a.3.reading_secs)).then(a.1.cmp(&b.1)));
     let mut open: Option<String> = None;
     card(ui, |ui| {
-        section_label(ui, "Time and words by document");
+        section_label(ui, tr("Time and words by document"));
         ui.add_space(4.0);
         egui::Grid::new("stats_documents").num_columns(7).spacing([14.0, 6.0]).striped(true).show(ui, |ui| {
-            for h in ["Document", "Words", "Typing", "Reading", "Added", "Edited", "Deleted"] {
+            for h in [tr("Document"), tr("Words"), tr("Typing"), tr("Reading"), tr("Added"), tr("Edited"), tr("Deleted")] {
                 ui.label(RichText::new(h).font(ui_small()).color(MUTED()));
             }
             ui.end_row();
             for (id, title, words, t) in &rows {
-                if ui.add(egui::Label::new(RichText::new(title).font(ui_body()).color(ACCENT())).sense(Sense::click())).on_hover_text("Open this document").clicked() {
+                if ui.add(egui::Label::new(RichText::new(title).font(ui_body()).color(ACCENT())).sense(Sense::click())).on_hover_text(tr("Open this document")).clicked() {
                     open = Some(id.clone());
                 }
                 for text in [thousands(*words), duration(t.typing_secs), duration(t.reading_secs), thousands(t.added), thousands(t.edited), thousands(t.deleted)] {
@@ -420,7 +418,7 @@ fn documents(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             }
         });
     });
-    note(ui, "Times and counts begin from when this feature was added; older writing shows as words only.");
+    note(ui, tr("Times and counts begin from when this feature was added; older writing shows as words only."));
     if let Some(id) = open {
         app.selected = Some(id);
         app.view = View::Write;
@@ -431,10 +429,10 @@ fn documents(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
 
 fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
-        ui.selectable_value(&mut app.stats.this_document, false, "Whole manuscript");
+        ui.selectable_value(&mut app.stats.this_document, false, tr("Whole manuscript"));
         let title = app.selected.as_deref().and_then(|id| app.ws.project.document(id)).map(|d| d.title.clone());
         if let Some(title) = title {
-            ui.selectable_value(&mut app.stats.this_document, true, format!("This document: {title}"));
+            ui.selectable_value(&mut app.stats.this_document, true, crate::i18n::trf("This document: {title}", &[("title", title.to_string())]));
         } else {
             app.stats.this_document = false;
         }
@@ -453,17 +451,17 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         ("manuscript".into(), prose.iter().flat_map(|d| d.content.paragraphs.iter().map(|p| p.plain_text())).collect(), words)
     };
     let stale = app.stats.analysis.as_ref().is_none_or(|(s, w, _)| *s != scope || *w != words);
-    let refresh = quiet_button(ui, "Refresh").clicked();
+    let refresh = quiet_button(ui, tr("Refresh")).clicked();
     if stale || refresh {
         app.stats.analysis = Some((scope, words, analysis::analyze(&paragraphs)));
     }
     let Some((_, _, a)) = app.stats.analysis.clone() else { return };
     if a.words == 0 {
-        note(ui, "No prose to measure yet. Scripts are not analysed.");
+        note(ui, tr("No prose to measure yet. Scripts are not analysed."));
         return;
     }
     card(ui, |ui| {
-        section_label(ui, "How it reads");
+        section_label(ui, tr("How it reads"));
         ui.add_space(4.0);
         egui::Grid::new("stats_style").num_columns(2).spacing([24.0, 5.0]).show(ui, |ui| {
             let mut line = |name: &str, value: String, hint: &str| {
@@ -471,22 +469,22 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 ui.label(RichText::new(value).font(ui_body()).color(TEXT())).on_hover_text(hint);
                 ui.end_row();
             };
-            line("Words", thousands(a.words), "Words in this text");
-            line("Sentences", thousands(a.sentences), "Counted at . ! and ?");
-            line("Average sentence", format!("{:.1} words", a.avg_sentence_words), "Short sentences move quickly; long ones slow the reader down");
-            line("Longest sentence", format!("{} words", a.longest_sentence_words), "");
-            line("Sentences of 30+ words", thousands(a.long_sentences), "Worth a second look, though fine when deliberate");
-            line("Average paragraph", format!("{:.0} words", a.avg_paragraph_words), "");
-            line("Reading ease", format!("{:.0}  ({})", a.reading_ease, ease_name(a.reading_ease)), "Flesch reading ease: about 90 is very easy, 60 is plain English, 30 is hard going");
-            line("Reading level", format!("grade {:.1}", a.grade_level), "The US school grade needed to follow it (Flesch-Kincaid)");
-            line("Dialogue", format!("{:.0}% of the words", a.dialogue_share * 100.0), "Words between quotation marks");
-            line("Word variety", format!("{:.0}% distinct", a.variety * 100.0), "Distinct words as a share of all words; it falls as a text gets longer, so compare like with like");
-            line("Words ending in -ly", thousands(a.ly_words), "Often adverbs; they are not wrong, but they can pile up");
-            line("Reading time", duration(a.reading_minutes * 60), "At about 238 words a minute");
+            line(tr("Words"), thousands(a.words), tr("Words in this text"));
+            line(tr("Sentences"), thousands(a.sentences), tr("Counted at . ! and ?"));
+            line(tr("Average sentence"), crate::i18n::trf("{n} words", &[("n", format!("{:.1}", a.avg_sentence_words))]), tr("Short sentences move quickly; long ones slow the reader down"));
+            line(tr("Longest sentence"), crate::i18n::trf("{n} words", &[("n", a.longest_sentence_words.to_string())]), tr(""));
+            line(tr("Sentences of 30+ words"), thousands(a.long_sentences), tr("Worth a second look, though fine when deliberate"));
+            line(tr("Average paragraph"), crate::i18n::trf("{n} words", &[("n", format!("{:.0}", a.avg_paragraph_words))]), tr(""));
+            line(tr("Reading ease"), format!("{:.0}  ({})", a.reading_ease, ease_name(a.reading_ease)), tr("Flesch reading ease: about 90 is very easy, 60 is plain English, 30 is hard going"));
+            line(tr("Reading level"), crate::i18n::trf("grade {n}", &[("n", format!("{:.1}", a.grade_level))]), tr("The US school grade needed to follow it (Flesch-Kincaid)"));
+            line(tr("Dialogue"), crate::i18n::trf("{n}% of the words", &[("n", format!("{:.0}", a.dialogue_share * 100.0))]), tr("Words between quotation marks"));
+            line(tr("Word variety"), crate::i18n::trf("{n}% distinct", &[("n", format!("{:.0}", a.variety * 100.0))]), tr("Distinct words as a share of all words; it falls as a text gets longer, so compare like with like"));
+            line(tr("Words ending in -ly"), thousands(a.ly_words), tr("Often adverbs; they are not wrong, but they can pile up"));
+            line(tr("Reading time"), duration(a.reading_minutes * 60), tr("At about 238 words a minute"));
         });
     });
     card(ui, |ui| {
-        section_label(ui, "Sentence lengths");
+        section_label(ui, tr("Sentence lengths"));
         ui.add_space(4.0);
         let bars: Vec<Bar> = ["1–10", "11–20", "21–30", "31+"]
             .iter()
@@ -497,7 +495,7 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     });
     if !a.top_words.is_empty() {
         card(ui, |ui| {
-            section_label(ui, "Most-used words");
+            section_label(ui, tr("Most-used words"));
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
                 for (word, n) in &a.top_words {
@@ -505,12 +503,12 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     ui.add_space(8.0);
                 }
             });
-            note(ui, "Common words like the and was are left out.");
+            note(ui, tr("Common words like the and was are left out."));
         });
     }
     if !a.echoes.is_empty() {
         card(ui, |ui| {
-            section_label(ui, "Words that echo");
+            section_label(ui, tr("Words that echo"));
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
                 for (word, n) in &a.echoes {
@@ -518,19 +516,19 @@ fn style(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     ui.add_space(8.0);
                 }
             });
-            note(ui, "A word used three or more times within sixty words. Use Find to see where.");
+            note(ui, tr("A word used three or more times within sixty words. Use Find to see where."));
         });
     }
 }
 
 fn ease_name(score: f32) -> &'static str {
     match score {
-        s if s >= 90.0 => "very easy",
-        s if s >= 70.0 => "easy",
-        s if s >= 60.0 => "plain",
-        s if s >= 50.0 => "fairly hard",
-        s if s >= 30.0 => "hard",
-        _ => "very hard",
+        s if s >= 90.0 => tr("very easy"),
+        s if s >= 70.0 => tr("easy"),
+        s if s >= 60.0 => tr("plain"),
+        s if s >= 50.0 => tr("fairly hard"),
+        s if s >= 30.0 => tr("hard"),
+        _ => tr("very hard"),
     }
 }
 
@@ -543,8 +541,8 @@ fn goals(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut next = g.clone();
 
     card(ui, |ui| {
-        section_label(ui, "Your goals");
-        note(ui, "Set what suits you; leave a goal at 0 to skip it. Goals are kind guides, not rules.");
+        section_label(ui, tr("Your goals"));
+        note(ui, tr("Set what suits you; leave a goal at 0 to skip it. Goals are kind guides, not rules."));
         ui.add_space(6.0);
         egui::Grid::new("stats_goals").num_columns(3).spacing([16.0, 8.0]).show(ui, |ui| {
             let goal_row = |ui: &mut egui::Ui, label: &str, value: &mut u32, max: u32, unit: &str, done: Option<f32>| {
@@ -568,15 +566,15 @@ fn goals(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 }
                 ui.end_row();
             };
-            goal_row(ui, "Words each day", &mut next.daily_words, 200_000, "words", p.daily_words);
-            goal_row(ui, "Words each week", &mut next.weekly_words, 1_000_000, "words", p.weekly_words);
-            goal_row(ui, "Typing each day", &mut next.daily_minutes, 1_440, "min", p.daily_minutes);
-            goal_row(ui, "Typing each week", &mut next.weekly_minutes, 10_080, "min", p.weekly_minutes);
+            goal_row(ui, tr("Words each day"), &mut next.daily_words, 200_000, "words", p.daily_words);
+            goal_row(ui, tr("Words each week"), &mut next.weekly_words, 1_000_000, "words", p.weekly_words);
+            goal_row(ui, tr("Typing each day"), &mut next.daily_minutes, 1_440, "min", p.daily_minutes);
+            goal_row(ui, tr("Typing each week"), &mut next.weekly_minutes, 10_080, "min", p.weekly_minutes);
         });
         ui.add_space(6.0);
-        ui.checkbox(&mut next.show_meter, "Show a progress meter in the top bar");
-        ui.checkbox(&mut next.encouragement, "Show encouraging messages and badges");
-        note(ui, "A week runs Monday to Sunday. Words count when they are added at the end of what you have written.");
+        ui.checkbox(&mut next.show_meter, tr("Show a progress meter in the top bar"));
+        ui.checkbox(&mut next.encouragement, tr("Show encouraging messages and badges"));
+        note(ui, tr("A week runs Monday to Sunday. Words count when they are added at the end of what you have written."));
     });
 
     if next != g {
@@ -588,8 +586,8 @@ fn goals(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         let earned = badges.iter().filter(|b| b.earned).count();
         card(ui, |ui| {
             ui.horizontal(|ui| {
-                section_label(ui, "Badges");
-                note(ui, &format!("{earned} of {} earned", badges.len()));
+                section_label(ui, tr("Badges"));
+                note(ui, &crate::i18n::trf("{earned} of {total} earned", &[("earned", earned.to_string()), ("total", badges.len().to_string())]));
             });
             ui.add_space(6.0);
             let columns = 3;
@@ -604,9 +602,10 @@ fn goals(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             ui.set_width(190.0);
                             ui.set_min_height(46.0);
                             ui.vertical(|ui| {
-                                let name = if badge.earned { format!("★ {}", badge.name) } else { badge.name.to_owned() };
+                                let shown = crate::i18n::tr_dyn(badge.name);
+                                let name = if badge.earned { format!("★ {shown}") } else { shown };
                                 ui.label(RichText::new(name).font(ui_body()).color(if badge.earned { TEXT() } else { MUTED() }));
-                                ui.label(RichText::new(badge.description).font(ui_small()).color(MUTED()));
+                                ui.label(RichText::new(crate::i18n::tr_dyn(badge.description)).font(ui_small()).color(MUTED()));
                             });
                         });
                     if (i + 1) % columns == 0 {
@@ -615,5 +614,14 @@ fn goals(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 }
             });
         });
+    }
+}
+
+/// "1 day" / "3 days", in the current language.
+fn days_text(n: u32) -> String {
+    if n == 1 {
+        crate::i18n::tr("1 day").to_string()
+    } else {
+        crate::i18n::trf("{n} days", &[("n", n.to_string())])
     }
 }

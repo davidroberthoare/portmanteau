@@ -18,6 +18,7 @@ use serde_json::json;
 
 use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::editor::{load_rich_image_textures, paint_rich_images, script_flow_layout_job};
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button, quiet_button};
 
@@ -167,14 +168,14 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut clip = false;
     page_head(
         ui,
-        "Sources",
-        "Research",
-        "Keep the world of the story close: interviews, archives, images, arguments with yourself.",
+        tr("Sources"),
+        tr("Research"),
+        tr("Keep the world of the story close: interviews, archives, images, arguments with yourself."),
         |ui| {
-            if primary_button(ui, "+ New note").clicked() {
+            if primary_button(ui, tr("+ New note")).clicked() {
                 add = true;
             }
-            if quiet_button(ui, "Paste clipping").on_hover_text("Make a note from what is on the clipboard").clicked() {
+            if quiet_button(ui, tr("Paste clipping")).on_hover_text(tr("Make a note from what is on the clipboard")).clicked() {
                 clip = true;
             }
         },
@@ -193,15 +194,15 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         if all_ids.is_empty() {
             ui.add_space(24.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("No research yet").font(serif(20.0)).color(TEXT()));
+                ui.label(RichText::new(tr("No research yet")).font(serif(20.0)).color(TEXT()));
                 ui.add_space(4.0);
                 ui.label(
-                    RichText::new("A folder of small, useful things. Start with one note, or paste a clipping.")
+                    RichText::new(tr("A folder of small, useful things. Start with one note, or paste a clipping."))
                         .font(ui_body())
                         .color(MUTED()),
                 );
                 ui.add_space(12.0);
-                if primary_button(ui, "Add the first note").clicked() {
+                if primary_button(ui, tr("Add the first note")).clicked() {
                     add = true;
                 }
             });
@@ -243,7 +244,7 @@ fn run_add(app: &mut PortmanteauApp, title: &str, body: &str, source: Option<&st
             app.selected_research = Some(id.to_string());
         }
     } else {
-        app.toast("Could not add the note", res.message, ToastKind::Error);
+        app.toast(tr("Could not add the note"), res.message, ToastKind::Error);
     }
 }
 
@@ -253,11 +254,11 @@ fn paste_clipping(app: &mut PortmanteauApp) {
     let text = match crate::platform::clipboard_text() {
         Ok(text) if !text.trim().is_empty() => text,
         Ok(_) => {
-            app.toast("Clipboard is empty", "Copy some text first.", ToastKind::Info);
+            app.toast(tr("Clipboard is empty"), "Copy some text first.", ToastKind::Info);
             return;
         }
         Err(e) => {
-            app.toast("No text on the clipboard", e, ToastKind::Info);
+            app.toast(tr("No text on the clipboard"), e, ToastKind::Info);
             return;
         }
     };
@@ -284,9 +285,9 @@ fn accept_dropped_files(app: &mut PortmanteauApp, ctx: &egui::Context) {
 fn attach(app: &mut PortmanteauApp, id: &str, path: &std::path::Path) {
     let res = app.ws.execute("research.attach", json!({"id": id, "path": path.display().to_string()}));
     if res.ok {
-        app.toast("File attached", res.message, ToastKind::Ok);
+        app.toast(tr("File attached"), res.message, ToastKind::Ok);
     } else {
-        app.toast("Could not attach the file", res.message, ToastKind::Error);
+        app.toast(tr("Could not attach the file"), res.message, ToastKind::Error);
     }
 }
 
@@ -318,7 +319,7 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                section_label(ui, "Sourcebook");
+                section_label(ui, tr("Sourcebook"));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let label = if shown.len() == total {
                         format!("{total} notes")
@@ -331,7 +332,7 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
             ui.add_space(4.0);
             ui.add(
                 TextEdit::singleline(&mut state.search)
-                    .hint_text("Search titles, sources and text")
+                    .hint_text(tr("Search titles, sources and text"))
                     .font(ui_small())
                     .desired_width(f32::INFINITY),
             );
@@ -350,20 +351,20 @@ fn list_panel(app: &mut PortmanteauApp, ui: &mut egui::Ui, state: &mut ListState
             });
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Sort").font(ui_small()).color(MUTED()));
+                ui.label(RichText::new(tr("Sort")).font(ui_small()).color(MUTED()));
                 egui::ComboBox::from_id_salt("research_sort")
-                    .selected_text(RichText::new(state.sort.label()).font(ui_small()).color(MUTED()))
+                    .selected_text(RichText::new(crate::i18n::tr_dyn(state.sort.label())).font(ui_small()).color(MUTED()))
                     .width(140.0)
                     .show_ui(ui, |ui| {
                         for sort in [Sort::Binder, Sort::Title, Sort::Kind, Sort::Recent] {
-                            ui.selectable_value(&mut state.sort, sort, sort.label());
+                            ui.selectable_value(&mut state.sort, sort, crate::i18n::tr_dyn(sort.label()));
                         }
                     });
             });
             ui.add_space(6.0);
             if shown.is_empty() {
                 ui.add_space(10.0);
-                ui.label(RichText::new("Nothing matches. Clear the search or the kind filter.").font(ui_small()).color(MUTED()));
+                ui.label(RichText::new(tr("Nothing matches. Clear the search or the kind filter.")).font(ui_small()).color(MUTED()));
             }
             ScrollArea::vertical()
                 .id_salt("research_list")
@@ -502,7 +503,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                         let color = kind_color(&kind);
                         let (dot, _) = ui.allocate_exact_size(Vec2::splat(9.0), Sense::hover());
                         ui.painter().circle_filled(dot.center(), 4.0, color);
-                        section_label(ui, "Research note");
+                        section_label(ui, tr("Research note"));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             meta_line(ui, &[&format!("{} words", portmanteau_core::count_words(&body))]);
                         });
@@ -522,7 +523,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                     ui.add_space(6.0);
                     let (source_name, source_hint) = source_label(&kind);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Kind").font(ui_small()).color(MUTED()));
+                        ui.label(RichText::new(tr("Kind")).font(ui_small()).color(MUTED()));
                         egui::ComboBox::from_id_salt("research_kind")
                             .selected_text(RichText::new(&kind).font(ui_small()).color(kind_color(&kind)))
                             .width(118.0)
@@ -595,7 +596,7 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                         .desired_rows(rows.min(40))
                         .desired_width(f32::INFINITY)
                         .frame(Frame::NONE)
-                        .hint_text("What did you find, and why does it matter to the story?")
+                        .hint_text(tr("What did you find, and why does it matter to the story?"))
                         .show(ui);
                     crate::ui::editor::reveal_caret(ui, &body_output, reveal);
                     if body_output.response.changed() {
@@ -639,9 +640,9 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                     hairline(ui);
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
-                        section_label(ui, "Files");
+                        section_label(ui, tr("Files"));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if quiet_button(ui, "Add files…").clicked() {
+                            if quiet_button(ui, tr("Add files…")).clicked() {
                                 actions.push(Action::AddFiles);
                             }
                             meta_line(
@@ -653,13 +654,13 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                     ui.add_space(6.0);
                     if !saved {
                         ui.label(
-                            RichText::new("Save the project to attach files: they are copied into its folder.")
+                            RichText::new(tr("Save the project to attach files: they are copied into its folder."))
                                 .font(ui_small())
                                 .color(MUTED()),
                         );
                     } else if meta.attachments.is_empty() {
                         ui.label(
-                            RichText::new("Add files with the button, or drop them on this window. They are copied into the project; nothing leaves this machine.")
+                            RichText::new(tr("Add files with the button, or drop them on this window. They are copied into the project; nothing leaves this machine."))
                                 .font(ui_small())
                                 .color(MUTED()),
                         );
@@ -678,13 +679,13 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                         ui.add_space(14.0);
                         hairline(ui);
                         ui.add_space(10.0);
-                        section_label(ui, "Mentioned in");
+                        section_label(ui, tr("Mentioned in"));
                         ui.add_space(4.0);
                         ui.horizontal_wrapped(|ui| {
                             for (doc_id, doc_title) in &used_in {
                                 if ui
                                     .add(egui::Button::new(RichText::new(doc_title).font(ui_small()).color(INFO())).frame(false))
-                                    .on_hover_text("Open this document")
+                                    .on_hover_text(tr("Open this document"))
                                     .clicked()
                                 {
                                     actions.push(Action::OpenDoc(doc_id.clone()));
@@ -699,18 +700,18 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         if state.confirm_delete.as_deref() == Some(id) {
-                            ui.label(RichText::new("Delete this note and its files?").font(ui_small()).color(DANGER()));
-                            if ui.button("Delete").clicked() {
+                            ui.label(RichText::new(tr("Delete this note and its files?")).font(ui_small()).color(DANGER()));
+                            if ui.button(tr("Delete")).clicked() {
                                 actions.push(Action::Delete);
                             }
-                            if ui.button("Keep").clicked() {
+                            if ui.button(tr("Keep")).clicked() {
                                 state.confirm_delete = None;
                             }
-                        } else if quiet_button(ui, "Delete note").clicked() {
+                        } else if quiet_button(ui, tr("Delete note")).clicked() {
                             state.confirm_delete = Some(id.to_string());
                         }
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            meta_line(ui, &["It is also in the binder, under Research"]);
+                            meta_line(ui, &[tr("It is also in the binder, under Research")]);
                         });
                     });
                 });
@@ -748,14 +749,14 @@ fn editor(app: &mut PortmanteauApp, ui: &mut egui::Ui, id: &str, state: &mut Lis
             Action::Remove(name) => {
                 let res = app.ws.execute("research.detach", json!({"id": id, "name": name}));
                 if !res.ok {
-                    app.toast("Could not remove the file", res.message, ToastKind::Error);
+                    app.toast(tr("Could not remove the file"), res.message, ToastKind::Error);
                 }
             }
             Action::OpenDoc(doc) => app.open_doc(doc),
             Action::Delete => {
                 let res = app.ws.execute("research.delete", json!({"id": id}));
                 if !res.ok {
-                    app.toast("Could not delete the note", res.message, ToastKind::Error);
+                    app.toast(tr("Could not delete the note"), res.message, ToastKind::Error);
                 }
                 state.confirm_delete = None;
                 app.selected_research = app.ws.project.research_docs().first().map(|d| d.id.clone());
@@ -815,7 +816,7 @@ fn file_card(ui: &mut egui::Ui, id: &str, name: &str, path: Option<&std::path::P
                 ui.add(egui::Label::new(RichText::new(name).font(ui_small()).color(TEXT())).truncate());
                 let detail = match size {
                     Some(bytes) => format!("{kind} · {}", human_size(bytes)),
-                    None => format!("{kind} · missing from the project folder"),
+                    None => crate::i18n::trf("{kind} · missing from the project folder", &[("kind", kind.to_string())]),
                 };
                 ui.add(egui::Label::new(RichText::new(detail).font(mono(8.5)).color(MUTED())).truncate());
                 ui.horizontal(|ui| {
@@ -827,7 +828,7 @@ fn file_card(ui: &mut egui::Ui, id: &str, name: &str, path: Option<&std::path::P
                         if ui.add(link("Open", INFO())).clicked() {
                             actions.push(Action::Open(path.clone()));
                         }
-                        if ui.add(link("Show", INFO())).on_hover_text("Show in the file manager").clicked() {
+                        if ui.add(link("Show", INFO())).on_hover_text(tr("Show in the file manager")).clicked() {
                             actions.push(Action::Reveal(path.clone()));
                         }
                     }

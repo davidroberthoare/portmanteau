@@ -1,14 +1,14 @@
 # AGENTS.md — working on Portmanteau
 
-This is the `agents.md` handoff the person asked for, kept under the standard
-uppercase name so agent tooling finds it. Only one file exists: a second
-lowercase copy would collide on macOS and Windows, which use case-insensitive
-file systems.
+This is the single handoff file for the next developer and for AI coding agents
+(`CLAUDE.md` only points here). It is kept under the standard uppercase name so
+tooling finds it; a lowercase copy would collide on macOS and Windows. Read it
+before changing anything: the product, the rules that are not negotiable, how
+things are now, the architecture, the command surface, how to verify a change,
+and the traps that have already caused bugs.
 
-This file is the handoff for the next developer, and for an AI coding agent in
-particular. Read it before changing anything. It describes the product, the
-rules that are not negotiable, the architecture, the command surface, how to
-verify a change, and the traps that have already caused bugs.
+The owner is not a programmer: keep the app runnable at every commit and
+explain changes in plain language.
 
 Companion documents:
 
@@ -18,6 +18,9 @@ Companion documents:
 | `docs/architecture.md` | Why the code is split the way it is |
 | `docs/notes.md` | Running build log and the visual decisions behind the screens |
 | `docs/roadmap.md` | Prioritised next work, with entry points |
+| `docs/localization.md` | Interface languages: using, translating, adding text |
+| `docs/releasing.md`, `docs/release-and-updates-plan.md` | Releases, updates, the web build |
+| `docs/wiki-draft/` | Drafts of the GitHub wiki pages (the user documentation) |
 
 ---
 
@@ -53,32 +56,27 @@ notes understandable to a non-coder, and never leave a half-wired screen.
 
 ---
 
+---
+
 ## 2. Non-negotiable rules
 
-These come from the request or from the surrounding build tooling. Do not trade
-them away to make a build or a check pass.
+Do not trade these away to make a build or a check pass.
 
-- **Rust + eframe/egui.** The desktop binary must stay a native Rust/egui app.
-- **Edit only inside `app/`.** The rest of the workspace (`checks/`, `capture/`,
-  `investigation.cany/`, `feed.json`, …) is evidence or tooling output and is
-  read-only.
-- **Keep the command layer authoritative.** New behaviour should be expressible
-  as a command before or alongside its UI. Do not put domain logic in a widget.
-- **Keep it local.** No HTTP clients, servers, accounts, telemetry, presence or
-  background daemons. Project files and export bundles stay on the writer's
-  disk.
-- **`--screenshot <file.png>` must always work.** It starts normally, draws 120
-  frames, saves the window as a PNG and exits. A blank picture fails the build
-  check. A normal launch must not require the flag.
-- **No long-running processes.** Never start a dev server, watcher, `cargo
-  watch` or anything that does not exit. The build tooling runs and checks the
-  app itself.
-- **Keep the visual language.** Dark ink-and-paper palette, serif prose, sans
-  chrome, mono script/diff/code, bundled fonts. Read `src/theme.rs` before
-  inventing colours or sizes.
-- **Commit often, in small coherent steps.** The repository is `app/.git`.
+
+- Rust + eframe/egui, native desktop first; a WebAssembly build of the same app is planned (`docs/release-and-updates-plan.md`) and must not make desktop worse. No network, accounts, telemetry, background daemons or long-running processes (never start dev servers/watchers). **One exception** (owner, 2026-11-22): the update check and update download, which talk only to GitHub, send nothing about the writer or projects, and can be switched off.
+- Command layer is authoritative: new behaviour is a command (API arm + catalogue entry + MCP tool + README row + test) before or alongside UI. No domain logic in widgets.
+- `--screenshot` must keep working; a blank PNG is a failure.
+- **No backwards compatibility, ever, until the owner says otherwise.** The project has no users; any change may be breaking. Don't add migrations, aliases or compatibility shims.
+- No collaboration features unless the owner asks.
+- Don't run `cargo fmt` repo-wide; format only files you touched.
+- Don't commit `target/`, `shots/`, `exports/`.
+- **Every visible text goes through `tr()`.** Any new or changed user-facing text (menus, buttons, labels, messages, the welcome project in `sample.rs`) must use `tr("English")` / `trf(...)`, and the language template must be regenerated: `UPDATE_LANGUAGE_TEMPLATE=1 cargo test the_template`, then rebuild. Changing an English text changes its key, so update (or drop) its entry in `assets/languages/*.json` too, or the translation silently stops applying. Details in `docs/localization.md`.
+- **Keep the docs in step.** Any new feature or major change must also be written up in the GitHub wiki (draft pages live in `docs/wiki-draft/`, pushed to the wiki repo) and, if it changes what the product is or how to run it, in `README.md`.
+- Commit small and often, imperative messages. Commit only when asked.
 - **Do not copy brand assets or long copyrighted text.** The demonstration
   project is original sample copy; keep it that way.
+- **Edit only inside `app/`** (the parent folder holds tooling and evidence),
+  except `notes/` in the parent.
 
 ---
 
@@ -107,26 +105,189 @@ Do not commit `target/`, `shots/`, `exports/` or `*.portmanteau.json`.
 
 ---
 
-## 4. Where you are now
 
-As of this handoff:
+```sh
+cargo build --workspace
+cargo test --workspace                     # ~193 tests, all passing at handoff
+./target/debug/portmanteau --screenshot shots/now.png     # must always work; look at the PNG
+PORTMANTEAU_VIEW=compile ./target/debug/portmanteau --screenshot shots/compile.png
+cargo run -p portmanteau-cli -- commands
+```
 
-- Desktop shell, nine workspaces, prose editor, screenplay editor, binder,
-  inspector, search, save/open, modals, toasts and screenshot mode all work.
-- The domain core, export engine, command API, MCP server and CLI are wired.
-- Versioning includes document snapshots, project checkpoints, a writing
-  calendar, restore, automatic checkpoint-before-export, and a line-level
-  **Compare version** dialog. The same comparison is the `snapshot.diff`
-  command and the `compare_snapshot` MCP tool.
-- Binder order is editable through the header arrows, the row context menu, the
-  Edit menu, and the `document.move` command.
-- All ten export formats have been exercised to real files through `portmanteau-cli`.
-- `cargo test --workspace` passes.
-- Collaboration is deliberately absent. Do not reintroduce comment, account,
-  sync or presence scaffolding without asking the person first.
+Export tests call `pdfinfo`/`pdffonts`/`pdftotext` (poppler) and skip if absent.
 
-Read `docs/notes.md` for how the screens were built and `docs/roadmap.md` for
-the next likely work.
+Dev aids for `--screenshot`: `PORTMANTEAU_THEME`, `PORTMANTEAU_LANG`, `PORTMANTEAU_LANGUAGE_PICKER`, `PORTMANTEAU_PROJECT` (`welcome` shows the welcome project), `PORTMANTEAU_SETTINGS_TAB`, `PORTMANTEAU_PAGED`, `PORTMANTEAU_COMPILE_SECTION`, `PORTMANTEAU_FIND`, `PORTMANTEAU_SEARCH`. Screenshot runs never write the writer's config.
+
+---
+
+## 4. How things are now
+
+This section supersedes anything older in this file. If a later section seems
+to disagree with it, this section wins.
+
+### Layout
+
+Repo root is `app/` (own `.git`, branch `master`). The parent folder `myScript/` holds only tooling and evidence: `.opencode/agents/` (old OpenCode conductor/implementer/tester team), `.kilo/`, `notes/next_tasks.md`, `shots/`, `exports/`. Edit inside `app/`. Crates: `portmanteau-core` (model, no I/O) <- `-export` (one module per format over shared `layout`, `web` and `content` modules; PDF via krilla) and `-import` (Fountain, FDX, DOCX, plain text) <- `-api` (command bus, persistence) <- `-mcp`/`-cli`, plus the egui shell in `src/`.
+
+### Corrections to the original design
+
+- **Visual language is now light**, not dark: warm-gray chrome, soft-white paper (`src/theme.rs`, `docs/ui-style-guidelines.md`). Ignore the "dark ink-and-paper" rule. A dark theme is optional future work on the same tokens.
+- **Persistence is a project folder package** (small files, rich bodies as `.rich.json`, Fountain with `/* @kind */` markers, atomic temp-and-rename save), not one `.portmanteau.json`. Legacy `.json` support was dropped.
+- **Content model is `RichDocument`** (styled paragraphs, inline marks, images) shared by prose, scripts and long-form fields; the old text/blocks split is gone. Projects own editable style sheets; program defaults are copied into new projects.
+- Settings is a workspace (global defaults + per-project overrides). Per-format, per-element export styles exist (`Project.formats`, `ElementStyles`); PDF/EPUB/HTML consume them.
+- Compile = one manuscript type per export (Prose/Screenplay/TV/Stage), scope Draft or subtree, optional one file per script. Default paper is US Letter; script geometry scales with paper width/612pt.
+- Binder has a single "Draft" root; Script Lab was removed. Import supports Fountain, FDX, DOCX, plain text.
+- Tests use `egui_kittest` for UI; the OpenCode conductor's rule was "UI bugs get a failing kittest first". Keep that habit.
+
+- **Themes** (`src/theme/`): colours are a palette (`palette.rs`, theme JSON in
+  the `themes` folder beside the settings, editable on Settings › Appearance).
+  Print previews stay white (`PRINT_PAPER`/`PRINT_INK`).
+- **Interface language** (`src/i18n.rs`, `assets/languages/`): every visible
+  text is `tr("English")`; built-in French and Spanish; user files in the
+  `languages` folder; the welcome project is translated through
+  `sample::welcome_with`; the first launch detects the system language;
+  the spelling dictionary follows the language. Read `docs/localization.md`.
+- **There is no backwards compatibility** (see the rules): ignore any older text
+  here about aliases or migrations.
+
+### State at handoff (2026-11-21, plus later work noted inline)
+
+Everything below is on `master`; build is green with no warnings.
+
+Done this session:
+- **Exporters** are one module per format over shared `layout` (margins, paper,
+  script scale), `web` (the HTML/EPUB stylesheet generator), `content` and
+  `util`. Every writer reads styles from `ElementStyle` and margins from
+  `layout::page_margins`; no writer owns a size, indent or margin constant.
+  `ExportSettings.margins` (None = automatic) has a Custom margins control in
+  Compile. Cross-format tests check included documents, the title-page and
+  Contents switches, and scene numbering for every writer.
+- **Importers** (`portmanteau-import`): Fountain, FDX, DOCX, plain text, with a
+  shared `Imported` result and warnings, encoding detection, chapter splitting
+  and a zip-bomb guard. Round-trip tests run through our own exporters.
+- **Undo/redo** (`src/history.rs`): watches whatever rich text is being edited
+  (a document's body/synopsis/notes, a research note, a database item's notes) via
+  the `Tracked` trait; steps are changed-paragraph windows, typing merges until a
+  0.7 s pause. Plain fields (titles, paths) keep egui's own Cmd+Z: the app only
+  handles it when a rich field (registered through `remember_selection_anchor`)
+  or nothing has focus.
+- **Spell-check** now covers every prose field.
+- **UI cleanup**: dead or repeated controls removed, each with a comment on
+  what it should become; a shell test keeps them out.
+- Bugs found by looking at output: PDF ignored Justify and always centred the
+  title page; EPUB referenced fonts it never packaged; DOCX/TXT ignored
+  the Contents switch; only the PDF numbered scenes; the Fountain export was
+  not valid Fountain (blank line between cue and dialogue).
+
+How to check output visually (all on this machine):
+- PDF: `pdftoppm -png`, and `pdftotext -bbox-layout` to measure positions.
+- EPUB / HTML: `ebook-convert x.epub x.pdf`, or `chromium --headless --print-to-pdf`,
+  then `pdftoppm`. Calibre rescales type, so trust it for structure, not size.
+- **DOCX: `wordcraft-cli`** (the WordCraft app). `render f out.png --page N`,
+  `info f` (page count), `inspect f` (parsed paragraph properties as JSON),
+  `convert f out.pdf --strict` (fails on undrawable characters or missing pictures).
+  LibreOffice does not run in this sandbox. When geometry matters, compare via
+  `convert ... out.pdf` and `pdftotext -bbox-layout`.
+- Rebuild with `cargo build --workspace`: a plain `cargo build` leaves the CLI stale.
+
+- **Research** (`src/ui/views/research.rs`): a research note is an ordinary binder
+  document in the Research folder carrying `Document.research: ResearchMeta` (kind,
+  source, attachments); there is no separate research list any more. Commands:
+  `research.add/list/update/attach/detach/delete`. Attachment paths are checked in
+  the API (`checked_research_dir`, `research_file_path`): the folder must be exactly
+  `<project>/assets/research/<id>` as a real directory, names must be bare file
+  names (dropped on load otherwise), and a symlink anywhere is refused. The UI
+  never builds attachment paths itself.
+- **Links** (`TextRun.link`): a web address or `note:<document id>`. Ctrl/Cmd+K
+  or the popup's Link button edits one; Ctrl/Cmd+click follows it (`App::open_link`;
+  only http/https ever reach the system opener; email links are deliberately unsupported); pasting text links the
+  addresses in it; HTML and Markdown exports write anchors (hrefs percent-encoded,
+  `export_href`); DOCX/PDF print the text only.
+- **Fixed formatting toolbar** (`src/ui/rich_toolbar.rs`): `show(ui, field_id,
+  &mut content, &Options{styles})` above any rich `TextEdit`, plus `after_edit(...)`
+  after the edited text is synced back. Works on the selection, or holds "pending
+  marks" for the next typing at the caret; shows which marks are active; paragraph
+  style dropdown; Link button; Ctrl/Cmd+B/I/U. Used on research notes only for now;
+  the other fields still use the floating popup (`inline_format_toolbar`). Both
+  share the link dialog (`link_support`). Lists (bullets, numbering) were
+  considered and set aside: the model has no list concept.
+- **Pictures in text**: Insert > Image… (with a Browse button) puts one at the caret;
+  Ctrl/Cmd+V with a picture on the clipboard pastes it at the caret (egui only passes
+  text through a paste, so `paste_image_shortcut` watches the key); dropped picture
+  files are inserted in Write (attached in Research). All keep the file in
+  `assets/images` and need a saved project. Headings (chapter heading and any style
+  named "heading") draw bold in the editor, as every export sets them.
+- **Hyperlinks in exports**: `ExportSettings.include_hyperlinks` (default on),
+  offered for HTML, EPUB, Markdown and DOCX (`ExportKind::writes_hyperlinks`);
+  off strips links in `prose_paragraphs`, so no writer needs its own switch. PDF
+  does not write links yet (would need link annotations).
+- **Database page** (`ui/views/database.rs`): items have a kind, colour, tags and
+  rich notes (the fixed toolbar is on the notes). The old "Related" list is gone:
+  link items by typing `@` in notes (`ui/mention.rs`, also on research notes; a
+  link `item:<id>` or `note:<id>`, followed with Ctrl/Cmd+click). "Linked from"
+  and "Appearances" are derived (`Project::items_linking_to`, `appearances_of`):
+  appearances are every document naming or linking the item (a character is also
+  found by first name), and clicking one opens it at the first place
+  (`App::open_appearance`, via `CaretRequest`). Tags: search, tag chips and tags
+  shown in the list, "used elsewhere" suggestions on the item, and `@` matches tags.
+- **Binder** no longer lists the Research folder; research is reached from the
+  "Research notes" entry under Collections (and the Research page).
+- **Find and replace** (`portmanteau-core/src/find.rs`; commands `search.find` /
+  `search.replace`; MCP `search_project`, `replace_text`): one engine with plain,
+  case, whole-word and regex options, groups (Manuscript, Front & back matter,
+  Research, Database) and a choice of parts (text, synopsis, notes). Replacing snapshots
+  each changed document first (not for a single-match replace). Two UIs: the
+  **Search page** (`views/search.rs`, rail icon, Ctrl/Cmd+Shift+F; results open the
+  document with the match selected via `CaretRequest.select`) and the editor's
+  **find bar** (`ui/find_bar.rs`, Ctrl/Cmd+F, Ctrl/Cmd+H with Replace; Write view,
+  Continuous mode only; shades matches via `paint_matches`). The top-bar search
+  field hands its text to the Search page on Enter. Not done: replace undo in the
+  editor's own history (use Versions), search inside the Paged view.
+- New documents are created in the selected document's folder, else the top of
+  the Draft (`Project::new_document_home`). The binder no longer lists Research.
+- **Project page** (`src/ui/views/project.rs`, rail icon between Versions and
+  Compile): title, subtitle, author, genre, logline, contact, draft label and
+  date, daily goal. Edits go through `project.update`. A script cover prints
+  contact bottom-left and the draft line bottom-right (`script_title.rs`); a
+  blank draft date means the day of export. Prose title pages do not print
+  contact yet (a copyright page would).
+
+### Next work (priority order)
+
+0. **Releases, updates and web build** — the current major item. Follow
+   `docs/release-and-updates-plan.md` phase by phase. Done (2026-11-22, not yet
+   pushed or run on GitHub): 0 groundwork + CI, 1 release workflow, 2 update
+   notice (`crates/portmanteau-update`, `src/update.rs`), 3 in-app install
+   (minisign-signed `SHA256SUMS`; `install.rs`; key in `update-public-key.pub`,
+   private key is the GitHub secret `UPDATE_SIGNING_KEY`), and the welcome project
+   (first launch and fallback). Phase 4 (web) started: libraries build for wasm (CI
+   job), storage split into pure `package_files`/`project_from_files`, project zip
+   commands. Next: W4 shell split, then the real two-release update test in
+   `docs/releasing.md`.
+
+1. ~~Preview pagination~~ Done: Compile, Settings and the editor's Paged view all
+   draw `pdf_layout` pages (`src/ui/preview.rs`); the old estimator is deleted.
+   Paged shows a document's pages of the real compile with real page numbers.
+   Page counts everywhere (inspector, paper header, Compile list, API) come from
+   `portmanteau_export::page_counts`, refreshed a moment after typing pauses.
+   The Paged view is read-only by decision; clicking a paragraph in Paged opens it for editing
+   in Continuous. Page markers in the editor were tried and removed (docs/roadmap.md).
+2. ~~PDF page per script document~~ Done: scenes run on; only a chapter-level
+   document (episode/act) starts a page (`content::starts_new_page`, all writers).
+3. ~~Import review~~ Done (`src/ui/import_review.rs`, `document.import_preview`):
+   documents, title-page details and Word/Final Draft style mappings are shown and
+   editable before anything is added; the split, details choice and style maps are
+   remembered in the config (`AppSettings.import`). See `docs/roadmap.md` for
+   the remaining import gaps.
+4. Per-document compile overrides and a "compile with last settings" action.
+5. Undo for binder operations, research and database text.
+6. Drag-and-drop binder, native file pickers (`rfd`), word-level diff, FDX
+   image insertion before first save, packaging. Also: DOCX import of hyperlinks,
+   hyperlinks in DOCX/PDF export, research tags.
+
+### Working style
+
+Plan briefly, change small, run build + tests + a screenshot of any screen touched, and report what was verified versus unverified. Keep `docs/notes.md` as the running build log and update `docs/roadmap.md` when priorities shift.
 
 ---
 
@@ -454,19 +615,17 @@ These are documented rather than hidden:
   are future work.
 - Binder reordering is button/menu based; drag-and-drop is not implemented.
   Reparenting exists in the API but the binder does not offer a drag gesture.
-- File pickers are typed paths. A native picker can be added behind the same
-  Save/Open commands.
+- Native file pickers exist on desktop (`rfd`); some fields are still typed paths.
 - The diff is line-level, not word-level, and does not yet offer accept/reject
   hunks or tracked changes.
 - Import covers Fountain, Final Draft (FDX), Word (DOCX) and plain text through
   `document.import`, the `import_document` MCP tool and File → Import. The
   parsers live in `crates/portmanteau-import`; see `docs/roadmap.md` for what is
-  not done (review step, dual dialogue, Word images and footnotes).
+  not done (dual dialogue, Word images and footnotes; the review step exists).
 - Collaboration is out of scope for this version: no accounts, network, sync,
   comments or shared review. Keep future designs file-based and versioned so a
   writer owns their data.
-- Windows/macOS installers and a release pipeline are not set up; the Rust/egui
-  code is platform-neutral.
+- Releases, in-app updates and the web build exist (`docs/releasing.md`).
 
 `docs/roadmap.md` expands these into concrete entry points and acceptance
 criteria.
@@ -493,10 +652,15 @@ criteria.
   room; the diff uses wrapped labels for this reason. Check at 1440×930.
 - **Empty documents.** Prose and script bodies can be empty; diff, word counts
   and export must handle that without panicking.
-- **Project files from older builds.** Serde ignores removed fields, but a
-  renamed field needs an alias or migration. Test open/save around changes.
+- **Project files.** There is no backwards compatibility: a renamed field may
+  simply break old files. Do not add aliases or migrations.
 - **Do not start background services.** The checker runs the binary; a process
   that does not exit will fail the handoff.
+- **Changing an English text changes its translation key.** After editing a
+  `tr("…")` text, update `assets/languages/*.json` and regenerate the template
+  (see `docs/localization.md`), or the translation silently stops applying.
+- **Spelling and the screenshot tests read the writer's config**: tests and
+  screenshot runs override theme, language and view settings; keep it that way.
 - **Do not reintroduce collaboration without asking.** The person explicitly
   chose a local-only version for now.
 

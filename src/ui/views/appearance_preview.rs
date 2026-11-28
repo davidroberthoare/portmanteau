@@ -6,6 +6,7 @@ use eframe::egui::{
 };
 
 use crate::theme::*;
+use crate::i18n::tr;
 
 fn run(job: &mut LayoutJob, text: &str, font: egui::FontId, color: Color32) {
     job.append(text, 0.0, TextFormat { font_id: font, color, ..Default::default() });
@@ -46,14 +47,14 @@ pub fn show(ui: &mut egui::Ui) {
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Portmanteau").font(serif(15.0)).color(TEXT()));
+                        ui.label(RichText::new(tr("Portmanteau")).font(serif(15.0)).color(TEXT()));
                         for name in ["File", "Edit"] {
                             ui.add(egui::Button::new(RichText::new(name).font(ui_small()).color(TEXT())).fill(RAISED()).stroke(Stroke::new(1.0, BORDER())));
                         }
                         let (rect, _) = ui.allocate_exact_size(egui::vec2(80.0, 5.0), egui::Sense::hover());
                         ui.painter().rect_filled(rect, CornerRadius::same(3), RAISED());
                         ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::vec2(32.0, 5.0)), CornerRadius::same(3), ACCENT());
-                        ui.label(RichText::new("608 / 1200 today").font(ui_small()).color(MUTED()));
+                        ui.label(RichText::new(tr("608 / 1200 today")).font(ui_small()).color(MUTED()));
                     });
                 });
             ui.add_space(8.0);
@@ -64,15 +65,15 @@ pub fn show(ui: &mut egui::Ui) {
                 .inner_margin(Margin::same(8))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    section_label(ui, "Binder");
+                    section_label(ui, tr("Binder"));
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("▸ Draft").font(ui_body()).color(FOLDER()));
+                        ui.label(RichText::new(tr("▸ Draft")).font(ui_body()).color(FOLDER()));
                         Frame::new().fill(ACCENT_SOFT()).corner_radius(CornerRadius::same(4)).inner_margin(Margin::symmetric(6, 3)).show(ui, |ui| {
-                            ui.label(RichText::new("Chapter One").font(ui_body()).color(TEXT()));
+                            ui.label(RichText::new(tr("Chapter One")).font(ui_body()).color(TEXT()));
                             ui.label(RichText::new("328").font(ui_small()).color(MUTED()));
                         });
-                        ui.label(RichText::new("Chapter Two").font(ui_body()).color(TEXT()));
+                        ui.label(RichText::new(tr("Chapter Two")).font(ui_body()).color(TEXT()));
                         ui.label(RichText::new("213").font(ui_small()).color(MUTED()));
                     });
                     ui.add_space(4.0);
@@ -85,8 +86,8 @@ pub fn show(ui: &mut egui::Ui) {
                     });
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
-                        ui.add(egui::Button::new(RichText::new("Hovered").font(ui_small()).color(TEXT())).fill(HOVER()).stroke(Stroke::new(1.0, BORDER())));
-                        ui.add(egui::Button::new(RichText::new("Compile").font(ui_small()).color(PANEL())).fill(ACCENT()));
+                        ui.add(egui::Button::new(RichText::new(tr("Hovered")).font(ui_small()).color(TEXT())).fill(HOVER()).stroke(Stroke::new(1.0, BORDER())));
+                        ui.add(egui::Button::new(RichText::new(tr("Compile")).font(ui_small()).color(PANEL())).fill(ACCENT()));
                     });
                 });
             ui.add_space(8.0);

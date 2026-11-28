@@ -7,6 +7,7 @@ use portmanteau_core::{DocKind, Medium, ProjectKind};
 
 use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
+use crate::i18n::tr;
 
 struct Row {
     id: String,
@@ -65,7 +66,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut action: Option<Action> = None;
 
     ui.horizontal(|ui| {
-        section_label(ui, "Binder");
+        section_label(ui, tr("Binder"));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let hide = egui::Button::new(
                 RichText::new("‹").font(ui_strong()).color(MUTED()),
@@ -73,7 +74,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             .frame(false);
             if ui
                 .add(hide)
-                .on_hover_text("Hide the binder")
+                .on_hover_text(tr("Hide the binder"))
                 .clicked()
             {
                 action = Some(Action::HideBinder);
@@ -83,26 +84,26 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 .fill(RAISED())
                 .corner_radius(CornerRadius::same(5))
                 .min_size(Vec2::new(24.0, 22.0));
-            let add = ui.add(add).on_hover_text("Add to the binder");
+            let add = ui.add(add).on_hover_text(tr("Add to the binder"));
             egui::Popup::menu(&add).show(|ui| {
-                if ui.button("New chapter or scene").clicked() {
+                if ui.button(tr("New chapter or scene")).clicked() {
                     action = Some(Action::NewUnder(None));
                     ui.close();
                 }
-                if ui.button("New folder").clicked() {
+                if ui.button(tr("New folder")).clicked() {
                     action = Some(Action::NewFolder(None));
                     ui.close();
                 }
                 ui.separator();
                 let has_selection = app.selected.is_some();
-                let up = ui.add_enabled(has_selection, egui::Button::new("Move selected up"));
+                let up = ui.add_enabled(has_selection, egui::Button::new(tr("Move selected up")));
                 if up.clicked() {
                     if let Some(id) = app.selected.clone() {
                         action = Some(Action::Move(id, -1));
                     }
                     ui.close();
                 }
-                let down = ui.add_enabled(has_selection, egui::Button::new("Move selected down"));
+                let down = ui.add_enabled(has_selection, egui::Button::new(tr("Move selected down")));
                 if down.clicked() {
                     if let Some(id) = app.selected.clone() {
                         action = Some(Action::Move(id, 1));
@@ -141,10 +142,22 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                             .color(TEXT()),
                     );
                     ui.label(
-                        RichText::new(format!(
-                            "{} · {} words",
-                            app.ws.project.kind.label(),
-                            app.ws.project.words()
+                        RichText::new(crate::i18n::trf(
+                            "{kind} · {count} words",
+                            &[
+                                (
+                                    "kind",
+                                    match app.ws.project.kind {
+                                        portmanteau_core::ProjectKind::Novel => tr("Novel"),
+                                        portmanteau_core::ProjectKind::Film => tr("Film"),
+                                        portmanteau_core::ProjectKind::Television => tr("Television"),
+                                        portmanteau_core::ProjectKind::Theatre => tr("Theatre"),
+                                        portmanteau_core::ProjectKind::Mixed => tr("Mixed media"),
+                                    }
+                                    .to_string(),
+                                ),
+                                ("count", app.ws.project.words().to_string()),
+                            ],
                         ))
                         .font(ui_small())
                         .color(MUTED()),
@@ -227,9 +240,9 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 );
                 let painter = ui.painter().with_clip_rect(title_rect);
                 let title_color = if row.include { TEXT() } else { MUTED() };
-                let mut title = row.title.clone();
+                let mut title = if row.kind.is_folder() { crate::i18n::folder_name(&row.title) } else { row.title.clone() };
                 if !row.include {
-                    title.push_str("  (excluded)");
+                    title.push_str(&tr("  (excluded)"));
                 }
                 // The painter clips without an ellipsis, which hid the end of a
                 // long chapter name. Truncate to the available width so a writer
@@ -262,35 +275,35 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     action = Some(Action::Select(row.id.clone()));
                 }
                 resp.context_menu(|ui| {
-                    if ui.button("Open").clicked() {
+                    if ui.button(tr("Open")).clicked() {
                         action = Some(Action::Select(row.id.clone()));
                         ui.close();
                     }
-                    if ui.button("New inside").clicked() {
+                    if ui.button(tr("New document")).clicked() {
                         action = Some(Action::NewUnder(Some(row.id.clone())));
                         ui.close();
                     }
-                    if ui.button("New folder").clicked() {
+                    if ui.button(tr("New folder")).clicked() {
                         action = Some(Action::NewFolder(Some(row.id.clone())));
                         ui.close();
                     }
-                    if ui.button("Move up").clicked() {
+                    if ui.button(tr("Move up")).clicked() {
                         action = Some(Action::Move(row.id.clone(), -1));
                         ui.close();
                     }
-                    if ui.button("Move down").clicked() {
+                    if ui.button(tr("Move down")).clicked() {
                         action = Some(Action::Move(row.id.clone(), 1));
                         ui.close();
                     }
-                    if !row.kind.is_folder() && ui.button("Take snapshot").clicked() {
+                    if !row.kind.is_folder() && ui.button(tr("Take snapshot")).clicked() {
                         action = Some(Action::Snapshot(row.id.clone()));
                         ui.close();
                     }
                     if ui
                         .button(if row.include {
-                            "Exclude from compile"
+                            tr("Exclude from compile")
                         } else {
-                            "Include in compile"
+                            tr("Include in compile")
                         })
                         .clicked()
                     {
@@ -298,7 +311,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Delete").clicked() {
+                    if ui.button(tr("Delete")).clicked() {
                         action = Some(Action::Delete(row.id.clone()));
                         ui.close();
                     }
@@ -309,23 +322,23 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             if app.ws.project.documents.iter().all(|d| d.kind.is_folder()) {
                 ui.add_space(14.0);
                 ui.label(
-                    RichText::new("Nothing here yet.")
+                    RichText::new(tr("Nothing here yet."))
                         .font(serif(15.0))
                         .color(MUTED()),
                 );
                 ui.label(
-                    RichText::new("A chapter or scene is a page in your book. Start with one; you can rearrange them later.")
+                    RichText::new(tr("A chapter or scene is a page in your book. Start with one; you can rearrange them later."))
                         .font(ui_small())
                         .color(MUTED()),
                 );
                 ui.add_space(8.0);
-                if crate::ui::views::primary_button(ui, "Create the first chapter").clicked() {
+                if crate::ui::views::primary_button(ui, tr("Create the first chapter")).clicked() {
                     action = Some(Action::NewUnder(None));
                 }
             }
 
             ui.add_space(10.0);
-            section_label(ui, "Collections");
+            section_label(ui, tr("Collections"));
             ui.add_space(3.0);
             let scenes = app
                 .ws
@@ -336,8 +349,8 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 .count();
             let research = app.ws.project.research_docs().len();
             for (label, count, target_view) in [
-                ("Corkboard", scenes, View::Corkboard),
-                ("Research notes", research, View::Research),
+                (tr("Corkboard"), scenes, View::Corkboard),
+                (tr("Research notes"), research, View::Research),
             ] {
                 let (rect, resp) =
                     ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());
@@ -409,7 +422,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                 let id = app
                     .ws
                     .project
-                    .add_document(parent, "New folder", DocKind::Folder, Medium::Prose);
+                    .add_document(parent, tr("New folder"), DocKind::Folder, Medium::Prose);
                 app.ws.dirty = true;
                 app.selected = Some(id);
                 app.selected_block = 0;
@@ -428,7 +441,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     let label = format!("Snapshot · {}", chrono::Local::now().format("%d %b %H:%M"));
                     doc.snapshot(label.clone(), "Snapshot from the binder");
                     app.ws.dirty = true;
-                    app.toast("Version saved", label, crate::app::ToastKind::Ok);
+                    app.toast(tr("Version saved"), label, crate::app::ToastKind::Ok);
                 }
             }
             Action::ToggleInclude(id) => {

@@ -11,6 +11,7 @@ use eframe::egui::{
 
 use crate::app::PortmanteauApp;
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button};
 
 struct Card {
@@ -35,17 +36,17 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let mut new_card = false;
     page_head(
         ui,
-        "Structure",
-        "Corkboard",
-        "Every chapter and scene as a card. Edit titles and synopses in place, then drag cards to reorder the story.",
+        tr("Structure"),
+        tr("Corkboard"),
+        tr("Every chapter and scene as a card. Edit titles and synopses in place, then drag cards to reorder the story."),
         |ui| {
-            if primary_button(ui, "+ New card").clicked() {
+            if primary_button(ui, tr("+ New card")).clicked() {
                 new_card = true;
             }
             ui.add_space(10.0);
             zoom_control(app, ui);
             ui.add_space(8.0);
-            meta_line(ui, &[&format!("{} cards", card_count(app))]);
+            meta_line(ui, &[&crate::i18n::trf("{count} cards", &[("count", card_count(app).to_string())])]);
         },
     );
 
@@ -70,13 +71,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     ui.add_space(30.0);
                     ui.vertical_centered(|ui| {
                         ui.label(
-                            RichText::new("The board is empty")
+                            RichText::new(tr("The board is empty"))
                                 .font(serif(20.0))
                                 .color(MUTED()),
                         );
                         ui.add_space(4.0);
                         ui.label(
-                            RichText::new("Create a chapter to see it pinned here.")
+                            RichText::new(tr("Create a chapter to see it pinned here."))
                                 .font(ui_body())
                                 .color(MUTED()),
                         );
@@ -198,7 +199,7 @@ fn zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     let zoom = app.corkboard_zoom.clamp(0.6, 1.6);
     let mut next = zoom;
     ui.horizontal(|ui| {
-        if zoom_button(ui, "+").on_hover_text("Zoom in").clicked() {
+        if zoom_button(ui, "+").on_hover_text(tr("Zoom in")).clicked() {
             next = (zoom + 0.1).min(1.6);
         }
         ui.add_sized(
@@ -210,8 +211,8 @@ fn zoom_control(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
             )
             .selectable(false),
         )
-        .on_hover_text("Card size");
-        if zoom_button(ui, "-").on_hover_text("Zoom out").clicked() {
+        .on_hover_text(tr("Card size"));
+        if zoom_button(ui, "-").on_hover_text(tr("Zoom out")).clicked() {
             next = (zoom - 0.1).max(0.6);
         }
     });
@@ -277,7 +278,7 @@ fn collect(app: &PortmanteauApp) -> Vec<Card> {
                         _ => "Scene".into(),
                     }
                 } else {
-                    d.kind.label().to_string()
+                    crate::i18n::tr_dyn(d.kind.label())
                 },
                 group,
             }
@@ -420,7 +421,7 @@ fn card_ui(
                         Stroke::new(1.4, handle_color),
                     );
                 }
-                handle_resp.on_hover_text("Drag to reorder");
+                handle_resp.on_hover_text(tr("Drag to reorder"));
                 ui.add_space(3.0);
                 ui.label(
                     RichText::new(card.kind.to_uppercase())
@@ -451,7 +452,7 @@ fn card_ui(
                     .font(serif(15.0))
                     .text_color(TEXT())
                     .frame(Frame::NONE)
-                    .hint_text("Untitled")
+                    .hint_text(tr("Untitled"))
                     .desired_width(f32::INFINITY),
             );
             if title_resp.changed() {
@@ -479,7 +480,7 @@ fn card_ui(
                         MUTED(),
                         |edit| {
                             edit.frame(Frame::NONE)
-                                .hint_text("Add a synopsis…")
+                                .hint_text(tr("Add a synopsis…"))
                                 .desired_rows(3)
                                 .desired_width(f32::INFINITY)
                         },
@@ -524,7 +525,7 @@ fn card_ui(
     overlay.text(
         rect.left_bottom() + Vec2::new(13.0, -19.0),
         egui::Align2::LEFT_CENTER,
-        format!("{} words", card.words),
+        crate::i18n::trf("{count} words", &[("count", card.words.to_string())]),
         ui_small(),
         MUTED(),
     );
@@ -536,7 +537,7 @@ fn card_ui(
     overlay.text(
         rect.right_bottom() + Vec2::new(-13.0, -19.0),
         egui::Align2::RIGHT_CENTER,
-        &card.status,
+        crate::i18n::tr_dyn(&card.status),
         ui_small(),
         status_color(&card.status),
     );
@@ -568,7 +569,7 @@ fn card_ui(
 
     if pointer_over {
         resp.clone().on_hover_text(
-            "Click to select · Double-click to open · Drag onto another card to reorder",
+            tr("Click to select · Double-click to open · Drag onto another card to reorder"),
         );
     }
 }

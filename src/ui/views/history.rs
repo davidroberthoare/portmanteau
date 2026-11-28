@@ -8,14 +8,15 @@ use eframe::egui::{
 
 use crate::app::{PortmanteauApp, ToastKind};
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::views::{content_frame, meta_line, page_head, primary_button};
 
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     page_head(
         ui,
-        "Time",
-        "Versions",
-        "Nothing is lost. Checkpoints capture the whole project; snapshots capture one document.",
+        tr("Time"),
+        tr("Versions"),
+        tr("Nothing is lost. Checkpoints capture the whole project; snapshots capture one document."),
         |ui| {
             meta_line(
                 ui,
@@ -47,7 +48,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
-                                section_label(ui, "Save a checkpoint");
+                                section_label(ui, tr("Save a checkpoint"));
                                 ui.add_space(2.0);
                                 ui.label(
                                     RichText::new(
@@ -58,7 +59,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                 );
                             });
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                if primary_button(ui, "Save checkpoint").clicked() {
+                                if primary_button(ui, tr("Save checkpoint")).clicked() {
                                     let label = if app.checkpoint_label.trim().is_empty() {
                                         format!(
                                             "Checkpoint · {}",
@@ -70,11 +71,11 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                                     app.ws.project.checkpoint(label.clone(), "manual");
                                     app.checkpoint_label.clear();
                                     app.ws.dirty = true;
-                                    app.toast("Checkpoint saved", label, ToastKind::Ok);
+                                    app.toast(tr("Checkpoint saved"), label, ToastKind::Ok);
                                 }
                                 ui.add(
                                     TextEdit::singleline(&mut app.checkpoint_label)
-                                        .hint_text("Label this moment")
+                                        .hint_text(tr("Label this moment"))
                                         .font(ui_body())
                                         .desired_width(220.0),
                                 );
@@ -128,10 +129,10 @@ fn session_chart(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                section_label(ui, "The last fourteen days");
+                section_label(ui, tr("The last fourteen days"));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let total: u32 = entries.iter().map(|(_, w)| *w).sum();
-                    meta_line(ui, &[&format!("{total} words logged")]);
+                    meta_line(ui, &[&crate::i18n::trf("{total} words logged", &[("total", total.to_string())])]);
                 });
             });
             ui.add_space(8.0);
@@ -191,7 +192,7 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                section_label(ui, "Project checkpoints");
+                section_label(ui, tr("Project checkpoints"));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     meta_line(ui, &[&format!("{}", app.ws.project.checkpoints.len())]);
                 });
@@ -205,7 +206,7 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                     let checkpoints = app.ws.project.checkpoints.clone();
                     if checkpoints.is_empty() {
                         ui.label(
-                            RichText::new("No checkpoints yet.")
+                            RichText::new(tr("No checkpoints yet."))
                                 .font(ui_small())
                                 .color(MUTED()),
                         );
@@ -241,7 +242,7 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                         );
                                     });
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        if ui.small_button("Restore").clicked() {
+                                        if ui.small_button(tr("Restore")).clicked() {
                                             restore = Some(cp.id.clone());
                                         }
                                     });
@@ -267,8 +268,8 @@ fn checkpoints_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                     .map(|d| d.id.clone());
                             }
                             app.toast(
-                                "Project restored",
-                                "The whole project was rolled back to this checkpoint",
+                                tr("Project restored"),
+                                tr("The whole project was rolled back to this checkpoint"),
                                 ToastKind::Info,
                             );
                         }
@@ -285,7 +286,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "Document snapshots");
+            section_label(ui, tr("Document snapshots"));
             ui.add_space(6.0);
             ScrollArea::vertical()
                 .id_salt("snapshot_list")
@@ -302,7 +303,7 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                         .collect();
                     if docs.is_empty() {
                         ui.label(
-                            RichText::new("No document snapshots yet. Use Snapshot in the editor toolbar before a big cut.")
+                            RichText::new(tr("No document snapshots yet. Use Snapshot in the editor toolbar before a big cut."))
                                 .font(ui_small())
                                 .color(MUTED()),
                         );
@@ -350,13 +351,13 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                         ui.with_layout(
                                             Layout::right_to_left(Align::Center),
                                             |ui| {
-                                                if ui.small_button("Restore").clicked() {
+                                                if ui.small_button(tr("Restore")).clicked() {
                                                     restore = Some((
                                                         doc_id.clone(),
                                                         snap.id.clone(),
                                                     ));
                                                 }
-                                                if ui.small_button("Compare").clicked() {
+                                                if ui.small_button(tr("Compare")).clicked() {
                                                     compare = Some((
                                                         doc_id.clone(),
                                                         snap.id.clone(),
@@ -382,8 +383,8 @@ fn snapshots_list(app: &mut PortmanteauApp, ui: &mut egui::Ui, height: f32) {
                                 app.selected = Some(doc_id);
                                 app.ws.dirty = true;
                                 app.toast(
-                                    "Snapshot restored",
-                                    "The document was rolled back",
+                                    tr("Snapshot restored"),
+                                    tr("The document was rolled back"),
                                     ToastKind::Info,
                                 );
                             }

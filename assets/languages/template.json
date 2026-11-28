@@ -1,0 +1,3869 @@
+{
+  "about": "GENERATED FILE: do not edit the notes here (they come from assets/languages/context.json). To translate: change \"code\" and \"name\" above, then type each translation into the \"translation\" field and leave everything else as it is. \"context\" says what a text is for and \"used_in\" which source file shows it; both are ignored when the file loads, so there is nothing to remove. Texts left empty stay in English. Keep {placeholders} like {count} unchanged. See docs/localization.md.",
+  "code": "template",
+  "name": "Template: change code and name, then fill in the translations",
+  "strings": {
+    "  (excluded)": {
+      "context": "Added after a document's title in the binder when it is left out of the compile. Keep the two leading spaces.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    " That is {n} days in a row.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    " Your weekly goal is already met.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "(no suggestions)": {
+      "context": "Shown in the spelling menu when a misspelled word has no suggested corrections.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "+ Add element": {
+      "context": "Button below a script that adds a new line (scene heading, action, dialogue…) to the document.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "+ New card": {
+      "context": "Corkboard button that adds a new card (a new document).",
+      "translation": "",
+      "used_in": "corkboard.rs"
+    },
+    "+ New item": {
+      "context": "Database button that adds a new character, place or other item.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "+ New note": {
+      "context": "Research page button that adds a new research note.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "+ block": {
+      "context": "Small button below a script that adds a new line (a script 'block').",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "+{count} added": {
+      "context": "Version comparison summary: number of words added since the saved version. Keep {count}.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "/path/to/image.png": {
+      "context": "Example file path shown as faint hint text in the Insert image box. Keep it as a path.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "1 day": {
+      "context": "Singular in the writing-streak line ('Current run: 1 day').",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "1 document in this compile · {words} words": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "1 document in this folder.": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "608 / 1200 today": {
+      "context": "Example of the daily goal shown in the top bar: words written today out of the goal. Only the word 'today' is text.",
+      "translation": "",
+      "used_in": "appearance_preview.rs"
+    },
+    "A big day": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "A blank page is just a page waiting. Even ten minutes counts.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "A chapter or scene is a page in your book. Start with one; you can rearrange them later.": {
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "A folder of small, useful things. Start with one note, or paste a clipping.": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "A habit": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "A native writing studio for novels, film, television and theatre.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "A script prints its page number at the top right, from page 2.": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "A very productive day.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "A week runs Monday to Sunday. Words count when they are added at the end of what you have written.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "A whole week": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "A word used three or more times within sixty words. Use Find to see where.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "API · MCP · CLI": {
+      "context": "List of technical names (programming interfaces). Keep unchanged.",
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "About Portmanteau": {
+      "context": "Title of the About window (Help menu).",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Act": {
+      "context": "Script element or document kind: a major division of a play (as in 'Act II').",
+      "translation": "",
+      "used_in": "script.rs"
+    },
+    "Action": {
+      "context": "Script element: a line of description of what happens on screen (as in a screenplay), not a button.",
+      "translation": "",
+      "used_in": "editor.rs, script.rs"
+    },
+    "Add 10,000 words.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Add 50,000 words.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Add 500 words after 10 at night.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Add 500 words before 8 in the morning.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Add 80,000 words.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Add a language file someone shared with you": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Add a synopsis…": {
+      "context": "Hint in an empty synopsis box: a one or two sentence summary of a document.",
+      "translation": "",
+      "used_in": "corkboard.rs"
+    },
+    "Add a theme file someone shared with you": {
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Add custom paragraph style": {
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Add files with the button, or drop them on this window. They are copied into the project; nothing leaves this machine.": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Add files…": {
+      "context": "Button on the Research page that opens a file dialog to attach files to a note.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Add the first note": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Add this tag": {
+      "context": "Button that adds the tag just typed to a database item.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Add to": {
+      "context": "Import review: the label for choosing where in the binder the imported documents go (a folder). A short label before a drop-down.",
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Add to dictionary": {
+      "context": "Spelling menu item: remember this word so it is not flagged again.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Add to the binder": {
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Added": {
+      "context": "Statistics table column: words added while writing (as a count).",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Address": {
+      "context": "Link dialog field: the web address (URL) a link points to.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "All changes saved": {
+      "context": "Status bar message: nothing is waiting to be saved.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "All pages": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "All time": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Also include": {
+      "context": "Compile page heading: extra material (title page, contents, …) to add besides the manuscript.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Alt text": {
+      "context": "Short for alternative text: the description of a picture for screen readers.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "An editor's eye": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Appearance": {
+      "context": "Settings tab for colours and themes.",
+      "translation": "",
+      "used_in": "mod.rs, settings.rs"
+    },
+    "Appearances": {
+      "context": "Database item section: the documents where this character or place appears.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Applies to every editor and new projects.": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Apply link": {
+      "context": "Button in the link dialog that applies the link to the selected text.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Apply to current project": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "As": {
+      "context": "Import review: label before a drop-down choosing what an imported file becomes (for example prose or a screenplay).",
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "At about 238 words a minute": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "At most once a day, at startup. It only asks GitHub for the newest release number; nothing about you or your projects is sent. Last checked: {last}.": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Author notes": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Author's notes": {
+      "context": "Heading for a short list of notes the writer keeps for themselves about the work.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Automation": {
+      "context": "Page heading for the Command desk (the page where JSON commands are run).",
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "Average paragraph": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Average sentence": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Back Matter": {
+      "context": "Name of the binder folder holding pages after the story (acknowledgements, author biography).",
+      "translation": "",
+      "used_in": "labels.rs"
+    },
+    "Back matter": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Back to the colours as they were before the sliders moved": {
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Badges": {
+      "context": "Statistics window section listing achievements earned for writing habits.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Begin at the beginning…": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Binder": {
+      "context": "The left-hand tree listing every document of the project (like a book's table of contents). A Scrivener-style term.",
+      "translation": "",
+      "used_in": "appearance_preview.rs, binder.rs"
+    },
+    "Binder order": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Blank prints today's date ({today})": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Book margins (inside and outside)": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Both versions are empty.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Bring back unsaved work?": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Bring it back": {
+      "context": "Button that restores something that was set aside or removed.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Bringing it back opens it with those changes, still unsaved; its folder is untouched until you save.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Bringing it back opens it with those changes; use File › Save project as… to keep it.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Browse…": {
+      "context": "Button that opens a file dialog to pick a file or folder.",
+      "translation": "",
+      "used_in": "app.rs, compile.rs, import_review.rs"
+    },
+    "By hour of the day, all time": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Call": {
+      "context": "Command desk: heading for the box where the writer types the command to run (not a phone call).",
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "Cancel": {
+      "context": "Button that closes a dialog without doing anything.",
+      "translation": "",
+      "used_in": "app.rs, editor.rs, import_review.rs, update.rs"
+    },
+    "Caption": {
+      "context": "Text printed under a picture.",
+      "translation": "",
+      "used_in": "app.rs, inspector.rs"
+    },
+    "Caption (standalone image)": {
+      "context": "Label of the caption field for a picture that sits on its own line.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Card size": {
+      "context": "Corkboard: slider label for how big the cards are.",
+      "translation": "",
+      "used_in": "corkboard.rs"
+    },
+    "Center": {
+      "context": "Text alignment choice: centred.",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Changes restored": {
+      "context": "Notice after earlier changes were brought back.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Chapter": {
+      "context": "A binder document kind: a chapter of a book (also an episode or act in scripts).",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Chapter One": {
+      "context": "Title given to the first chapter of a new project.",
+      "translation": "",
+      "used_in": "appearance_preview.rs"
+    },
+    "Chapter Two": {
+      "context": "Title given to the second chapter of a new project.",
+      "translation": "",
+      "used_in": "appearance_preview.rs"
+    },
+    "Chapter numbers": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Character": {
+      "context": "Two uses: a character (person) in the story database, and the script element that holds a speaker's name above their dialogue.",
+      "translation": "",
+      "used_in": "model.rs, script.rs"
+    },
+    "Character created": {
+      "context": "Notice after a new database character is made.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Characters, places, events and props, with notes, tags and links.": {
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Charts": {
+      "context": "Statistics tab: charts of time and words.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Check for Updates…": {
+      "context": "Help menu item: look for a newer version of the program.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Check for updates automatically": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Check now": {
+      "context": "Button in Settings that checks for updates immediately.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Checking for updates…": {
+      "context": "Shown while the update check runs.",
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "Checkpoint saved": {
+      "context": "Notice after a whole-project checkpoint is saved.",
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "Choose a document in the binder, or start a new chapter.": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Choose an existing image file.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Choose an image": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Choose another…": {
+      "context": "Button to pick a different file or folder than the current one.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Choose the folder the export is written to": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Choose with the system file dialog": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Choose your language": {
+      "context": "Title of the first-launch window.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Choose…": {
+      "context": "Button that opens a chooser (file dialog).",
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Clear": {
+      "context": "Button on the Command desk that empties the response box.",
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "Click again to remove": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Click to select · Double-click to open · Drag onto another card to reorder": {
+      "translation": "",
+      "used_in": "corkboard.rs"
+    },
+    "Clipboard is empty": {
+      "context": "Notice when the writer tries to paste and nothing was copied.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Close": {
+      "context": "Button that closes a window.",
+      "translation": "",
+      "used_in": "app.rs, editor.rs"
+    },
+    "Close (Esc)": {
+      "context": "Tooltip of a close button; Esc is the Escape key.",
+      "translation": "",
+      "used_in": "find_bar.rs"
+    },
+    "Collections": {
+      "context": "Binder heading above shortcuts to Corkboard and Research notes.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Colour": {
+      "context": "Label for choosing a colour (British spelling in English).",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Colours": {
+      "context": "Appearance tab: heading for the list of theme colours.",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Colours change everywhere at once. Manuscripts and exports are not affected: they have their own styles.": {
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Comma-separated, e.g. harbour, family": {
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Command desk": {
+      "context": "Name of the page for running JSON commands, used by scripts and AI agents. A power-user feature.",
+      "translation": "",
+      "used_in": "agent.rs, app.rs"
+    },
+    "Command failed": {
+      "context": "Notice when a command run from the Command desk returned an error.",
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "Command ran": {
+      "context": "Notice when a command run from the Command desk succeeded.",
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "Commands": {
+      "context": "Command desk: list heading for the available commands.",
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "Common words like the and was are left out.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Compare": {
+      "context": "Button that shows the differences between a saved version and the current text.",
+      "translation": "",
+      "used_in": "history.rs, inspector.rs"
+    },
+    "Compare version": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Compile": {
+      "context": "Name of the page, and the verb: turn the project into a finished file such as a PDF or EPUB. Scrivener-style term.",
+      "translation": "",
+      "used_in": "app.rs, appearance_preview.rs, compile.rs"
+    },
+    "Compile & export…": {
+      "context": "File menu item that opens the Compile page.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Compile as": {
+      "context": "Label before a drop-down choosing the kind of manuscript (prose, screenplay…).",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Compile failed": {
+      "context": "Notice when making the output file failed.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Compile the item now selected in the binder": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Compile {format} again with its last settings": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Contents": {
+      "context": "Compile section and a table-of-contents option: which documents go in, and the printed contents list.",
+      "translation": "",
+      "used_in": "compile.rs, editor.rs, export"
+    },
+    "Continue": {
+      "context": "Button that accepts and moves on.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Continuous": {
+      "context": "Editor view mode: one long scrolling page, as opposed to Paged.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Corkboard": {
+      "context": "Page showing documents as index cards on a board.",
+      "translation": "",
+      "used_in": "app.rs, binder.rs, corkboard.rs"
+    },
+    "Could not add the note": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Could not attach the file": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Could not copy the image into the project: {error}": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not create the project image folder: {error}": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not delete the note": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Could not export the project": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not import manuscript": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Could not insert the picture": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not open project": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not open that zip": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not paste the picture": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not read image dimensions: {error}": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not remove the file": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Could not restore your last project": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not save": {
+      "context": "Title of an error notice when saving failed.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not save defaults": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Could not save in this browser": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not save project": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Could not set the cover": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Could not store the image: {error}": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Couldn't check for updates": {
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "Counted at . ! and ?": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Cover": {
+      "context": "Name of the cover section in the Compile preview's section list, and the cover picture setting.",
+      "translation": "",
+      "used_in": "export"
+    },
+    "Cover picture": {
+      "context": "Label for choosing the picture used as cover.",
+      "translation": "",
+      "used_in": "compile.rs, project.rs"
+    },
+    "Create": {
+      "context": "Button that creates what was just filled in (a project, a note…).",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Create a chapter to see it pinned here.": {
+      "translation": "",
+      "used_in": "corkboard.rs"
+    },
+    "Create a character": {
+      "context": "Button in the empty database to add the first character.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Create project": {
+      "context": "Button in the New project window.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Create the first chapter": {
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Created {date}": {
+      "context": "Document information: when it was created. Keep {date}.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Current run: {current} · Longest run: {longest}": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Custom": {
+      "context": "Choice meaning 'set by the writer' rather than automatic.",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Daily words": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Database": {
+      "context": "Page and binder name for the story database: characters, places, events, props.",
+      "translation": "",
+      "used_in": "app.rs, database.rs, find.rs"
+    },
+    "Days": {
+      "context": "Statistics chart period: one bar per day.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Decide later": {
+      "context": "Button that postpones a choice.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Default paragraph": {
+      "context": "The plain body-text paragraph style.",
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Defaults": {
+      "context": "Settings heading for the starting values used by new projects.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Defaults applied": {
+      "context": "Notice after global defaults were copied into the current project.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Defaults reset": {
+      "context": "Notice after defaults were returned to the program's own.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Defaults saved": {
+      "context": "Notice after defaults were saved.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Delete": {
+      "context": "Button or menu item that removes something.",
+      "translation": "",
+      "used_in": "appearance.rs, binder.rs, database.rs, research.rs"
+    },
+    "Delete note": {
+      "context": "Button that removes a research note.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Delete this note and its files?": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Deleted": {
+      "context": "Statistics table column: words deleted while writing.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Demonstration project · in memory": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Describe the image": {
+      "context": "Hint in the picture description (alt text) box.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Description (for screen readers)": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Detailed statistics…": {
+      "context": "Button opening the full writing statistics window.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Details found in the file": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Details saved with this project and printed on its title page.": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Detect from the text": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Development": {
+      "context": "A label (a coloured tag) for a section in the middle of the story: the development after the opening.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Dialogue": {
+      "context": "Script element: the words a character speaks.",
+      "translation": "",
+      "used_in": "script.rs, stats_window.rs"
+    },
+    "Different first page of each part": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Different left-hand and right-hand pages": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Discard it": {
+      "context": "Button that throws away unsaved or recovered work.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Display": {
+      "context": "Settings tab for how the program looks (text size, zoom…).",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Display and default styles": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Display uppercase": {
+      "context": "Style option: show the text in capitals without changing the typed text.",
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Distinct words as a share of all words; it falls as a text gets longer, so compare like with like": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Document": {
+      "context": "A single binder entry (chapter, scene, note). Inspector tab name too.",
+      "translation": "",
+      "used_in": "inspector.rs, stats_window.rs"
+    },
+    "Document snapshots": {
+      "context": "Heading for saved copies of one document.",
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "Document versions": {
+      "context": "Heading for earlier versions of the open document.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Documents": {
+      "context": "Statistics tab: figures per document.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Documents to create": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Don't save": {
+      "context": "Button in the quit question: leave without saving.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Dots between title and number": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Download": {
+      "context": "Button that downloads something (an update, or the file in the web version).",
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "Draft": {
+      "context": "Two uses: a document status (a first rough version) and the name of the main binder folder that holds the manuscript. The binder folder name is looked up by the program in English, so only the display is translated.",
+      "translation": "",
+      "used_in": "inspector.rs, labels.rs"
+    },
+    "Draft date": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Drag to reorder": {
+      "context": "Tooltip on a handle: drag it to change the order.",
+      "translation": "",
+      "used_in": "corkboard.rs"
+    },
+    "Duplicate": {
+      "context": "Button that makes a copy.",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Early bird": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Edit": {
+      "context": "Menu name (Edit menu) and a button to change something.",
+      "translation": "",
+      "used_in": "app.rs, compile.rs"
+    },
+    "Edit link…": {
+      "context": "Menu item that opens the link dialog for an existing link.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Edit the single paper page": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Editable manuscript for editors": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Edited": {
+      "context": "Statistics column: words edited (changed), and a short word meaning the item was changed.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Edited {date}": {
+      "context": "Document information: when last changed. Keep {date}.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Editor zoom": {
+      "context": "Setting for how large the writing text is on the page.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Enter →": {
+      "context": "Hint beside an element: what it turns into when Enter is pressed (the next script element).",
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Event": {
+      "context": "Story database item kind: something that happens (a battle, a wedding).",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Every action in this studio is a JSON command. Agents use the same commands through MCP.": {
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "Every chapter and scene as a card. Edit titles and synopses in place, then drag cards to reorder the story.": {
+      "translation": "",
+      "used_in": "corkboard.rs"
+    },
+    "Exclude from compile": {
+      "context": "Binder menu item: leave this document out of the compiled output.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Excluded from compile": {
+      "translation": "",
+      "used_in": "compile.rs, labels.rs"
+    },
+    "Exit focus": {
+      "context": "Button that leaves distraction-free mode.",
+      "translation": "",
+      "used_in": "app.rs, editor.rs"
+    },
+    "Export project as zip": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Export project as zip…": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Export template…": {
+      "context": "Button that saves an empty translation file to fill in. Don't translate 'template' as anything but a blank form.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Export theme": {
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Export this language…": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Export…": {
+      "context": "Button that writes something to a file.",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Extension": {
+      "context": "Script element: the small note after a character's name, such as (V.O.) or (O.S.).",
+      "translation": "",
+      "used_in": "script.rs"
+    },
+    "Facing pages: the inside margin sits at the spine of every page": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Fifty hours": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Fifty thousand": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "File": {
+      "context": "Menu name (File menu).",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "File attached": {
+      "context": "Notice after a file was added to a research note.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Filename": {
+      "context": "Label for a file's name.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Files": {
+      "context": "Heading for attached files.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Fill example": {
+      "context": "Command desk button that fills the Call box with an example command.",
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "Film": {
+      "context": "Project kind: a film script.",
+      "translation": "",
+      "used_in": "binder.rs, model.rs"
+    },
+    "Film screenplay": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Final": {
+      "context": "A document status: finished, nothing more to change.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Find": {
+      "context": "Label and hint for the search box in the editor (find text).",
+      "translation": "",
+      "used_in": "find_bar.rs, search.rs"
+    },
+    "Finish": {
+      "context": "Small heading above the Compile page title: the last stage of writing a book (a section label, not an instruction).",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "First page": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "First words": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Fit width": {
+      "context": "Zoom option: scale so the page fills the width.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Flesch reading ease: about 90 is very easy, 60 is plain English, 30 is hard going": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Focus": {
+      "context": "Button that starts distraction-free writing mode.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Focus mode (F11)": {
+      "context": "Tooltip of the Focus button. F11 is a key.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Folder": {
+      "context": "A binder folder that holds other documents.",
+      "translation": "",
+      "used_in": "compile.rs, model.rs"
+    },
+    "Folder for the export (blank = ./exports)": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Folder name": {
+      "context": "Label of the box where a folder's name is typed.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Folders group documents. Add content with the + button in the binder.": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Font": {
+      "context": "Typeface.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Format": {
+      "context": "Inspector heading: the document's format (prose, screenplay…).",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Fountain and Final Draft become screenplays; Word and text become prose. Nothing is added until you press Import.": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Front & back matter": {
+      "translation": "",
+      "used_in": "find.rs"
+    },
+    "Front Matter": {
+      "context": "Name of the binder folder holding pages before the story (title page, dedication).",
+      "translation": "",
+      "used_in": "labels.rs"
+    },
+    "Front matter": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Full width": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "General": {
+      "context": "Script element: ordinary text with no special role.",
+      "translation": "",
+      "used_in": "script.rs"
+    },
+    "Global": {
+      "context": "Appearance tab: heading above sliders that change every colour at once (hue, saturation, lightness).",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Global font": {
+      "context": "Setting: the one typeface used by styles that don't choose their own.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Goal reached. Everything from here is a bonus.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Goals & badges": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Good, steady start.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Habits": {
+      "context": "Statistics window section about when and how often the writer writes.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Header from top": {
+      "context": "Compile layout: distance from the top edge of the page to the page header, in points.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Headers & footers": {
+      "context": "Compile layout heading for text printed at the top and bottom of each page.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Heading": {
+      "context": "A paragraph style for chapter or section titles.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Help": {
+      "context": "Menu name (Help menu).",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Help and guides": {
+      "context": "Title of the notice shown when the help (wiki) address is opened.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Help and guides…": {
+      "context": "Help menu item that opens the online help.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Hide the binder": {
+      "context": "Tooltip: close the left panel.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Hide the binder and inspector (F11)": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Hide the inspector": {
+      "context": "Tooltip: close the right panel.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Hour of day": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Hovered": {
+      "context": "Appearance preview: label of a button shown in its mouse-over state.",
+      "translation": "",
+      "used_in": "appearance_preview.rs"
+    },
+    "How it reads": {
+      "context": "Statistics window section about readability (sentence lengths and so on).",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "How the project is named and credited.": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "How to read it": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Ignore for this session": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Image file": {
+      "context": "Label of the file picker in Insert image.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Image inserted": {
+      "context": "Notice after a picture was placed in the text.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Image…": {
+      "context": "Insert menu item: put a picture in the text.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Import Fountain, FDX, DOCX or Text…": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Import a language": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Import a theme": {
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Import manuscript": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Import…": {
+      "context": "Button/menu item that brings a file in from another program.",
+      "translation": "",
+      "used_in": "appearance.rs, settings.rs"
+    },
+    "In 1 document · click one to go to the first place": {
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "In progress": {
+      "context": "A document status: being worked on.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "In the Research folder": {
+      "translation": "",
+      "used_in": "labels.rs"
+    },
+    "In {count} documents · click one to go to the first place": {
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Include a cover": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Include author notes": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Include in compile": {
+      "context": "Checkbox: whether this document is part of the compiled output.",
+      "translation": "",
+      "used_in": "binder.rs, inspector.rs"
+    },
+    "Include synopses": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Includes 1 manuscript section": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Includes {count} manuscript sections": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Industry-standard screenplay exchange": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Insert": {
+      "context": "Menu name (Insert menu).",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Insert field…": {
+      "context": "Menu item for inserting an automatic value (page number, title) into a header or footer.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Insert image": {
+      "context": "Title of the picture window.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Intentions, questions, things to fix…": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Intercut": {
+      "context": "Script element: a marker that the scene cuts back and forth between two places.",
+      "translation": "",
+      "used_in": "script.rs"
+    },
+    "Interface language": {
+      "context": "Setting: the language of menus and buttons.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Interface text size": {
+      "context": "Setting: the size of menu and button text.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "It is also in the binder, under Research": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Justify": {
+      "context": "Text alignment choice: justified (straight left and right edges).",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Keep": {
+      "context": "Button that keeps something (for example keeps an attached file or a recovered version).",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Keep it": {
+      "context": "Button that keeps what was found (the opposite of Discard it).",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Keep the people, places and things your story needs.": {
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Keep the world of the story close: interviews, archives, images, arguments with yourself.": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Kind": {
+      "context": "Label for the type of an item (character, place, event…); also a sort order.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Label": {
+      "context": "Inspector field: a coloured tag attached to a document (Opening, Development…). Not a form label.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Label this moment": {
+      "context": "Hint for the name box when saving a checkpoint.",
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "Language added": {
+      "context": "Notice after a language file was imported.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Language files go in": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Large": {
+      "context": "Interface text size choice: bigger than standard.",
+      "translation": "",
+      "used_in": "labels.rs"
+    },
+    "Larger": {
+      "context": "Interface text size choice: the biggest.",
+      "translation": "",
+      "used_in": "labels.rs"
+    },
+    "Last 30 days": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Last export · {format} · {size} KB": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Later": {
+      "context": "Button that postpones, as in the update notice.",
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "Leaves a blank left-hand page when a chapter would otherwise open on one": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Left": {
+      "context": "Text or picture alignment choice: left.",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Link": {
+      "context": "A web link or link to another note, and the toolbar button for it.",
+      "translation": "",
+      "used_in": "editor.rs, rich_toolbar.rs"
+    },
+    "Linked from": {
+      "context": "Database item section: other items that link to this one.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Links to {what}": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Live preview": {
+      "context": "Heading of the preview that updates as settings change.",
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Longest sentence": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Look for this in every document, notes and the database": {
+      "translation": "",
+      "used_in": "find_bar.rs"
+    },
+    "Look in": {
+      "context": "Search page: label before choices of where to search (manuscript, research…).",
+      "translation": "",
+      "used_in": "search.rs"
+    },
+    "Look through the manuscript, research and database. Click a result to go there.": {
+      "translation": "",
+      "used_in": "search.rs"
+    },
+    "Lyric": {
+      "context": "Script element: a line of a song.",
+      "translation": "",
+      "used_in": "script.rs"
+    },
+    "Make a note from what is on the clipboard": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Make an editable copy of this theme": {
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Make the selection a link (Ctrl/Cmd+K)": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Make the selection a link, or edit the link at the caret (Ctrl/Cmd+K)": {
+      "translation": "",
+      "used_in": "rich_toolbar.rs"
+    },
+    "Manuscript": {
+      "context": "Search group: the documents of the book itself (not research or the database).",
+      "translation": "",
+      "used_in": "find.rs"
+    },
+    "Manuscript imported": {
+      "context": "Notice after a file was imported.",
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Match case": {
+      "translation": "",
+      "used_in": "find_ui.rs"
+    },
+    "Match whole word": {
+      "translation": "",
+      "used_in": "find_ui.rs"
+    },
+    "Mentioned in": {
+      "context": "Research note section: the documents that mention it.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Menus and labels use this language. Anything not yet translated stays in English. Your own text, and your exports, are never translated.": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Mixed media": {
+      "context": "Project kind: a project mixing prose and scripts.",
+      "translation": "",
+      "used_in": "binder.rs, model.rs"
+    },
+    "More goals and statistics…": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "More than halfway to today's goal.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Most-used words": {
+      "context": "Statistics section listing words used most often.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Move document down": {
+      "context": "Tooltip: move this document later in the binder.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Move document up": {
+      "context": "Tooltip: move this document earlier in the binder.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Move down": {
+      "context": "Menu item: move later in a list.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Move selected down": {
+      "context": "Tooltip: move the chosen item later.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Move selected up": {
+      "context": "Tooltip: move the chosen item earlier.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Move up": {
+      "context": "Menu item: move earlier in a list.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Name": {
+      "context": "Label for a name field.",
+      "translation": "",
+      "used_in": "app.rs, appearance.rs, mod.rs"
+    },
+    "Name this version…": {
+      "context": "Hint for naming a saved version.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Nearly there. A little more.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "New chapter": {
+      "context": "Button or menu item creating a chapter.",
+      "translation": "",
+      "used_in": "app.rs, editor.rs"
+    },
+    "New chapter or scene": {
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "New character": {
+      "context": "Button or title for adding a database character.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "New document": {
+      "context": "Binder context-menu item: create a new document inside the selected folder.",
+      "translation": "",
+      "used_in": "app.rs, binder.rs"
+    },
+    "New folder": {
+      "context": "Binder menu item: create a folder.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "New project": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "New project…": {
+      "context": "File menu item.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "New research note": {
+      "context": "Title of a freshly added research note.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "New style": {
+      "context": "Default name of a new paragraph style.",
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Next match (Enter)": {
+      "context": "Tooltip on the Find bar's next button.",
+      "translation": "",
+      "used_in": "find_bar.rs"
+    },
+    "Next ›": {
+      "context": "Pager button: next page of results.",
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Night owl": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "No changes": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "No checkpoints yet.": {
+      "context": "Empty-state message in the checkpoint list.",
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "No cover yet. Add one on the Project page, or pick one for this format.": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "No document is open": {
+      "translation": "",
+      "used_in": "preview.rs"
+    },
+    "No document snapshots yet. Use Snapshot in the editor toolbar before a big cut.": {
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "No header on the page where a chapter opens": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "No headers or footers here.": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "No misspellings found in this document.": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "No other item links here. Type @ in another item's notes to link to this one.": {
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "No prose to measure yet. Scripts are not analysed.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "No research note is named in this document.": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "No research yet": {
+      "context": "Empty-state heading on the Research page.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "No results": {
+      "context": "Search page empty state.",
+      "translation": "",
+      "used_in": "find_bar.rs"
+    },
+    "No results.": {
+      "context": "Search page empty state (with full stop).",
+      "translation": "",
+      "used_in": "search.rs"
+    },
+    "No snapshots yet. Take one before a big revision.": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "No text on the clipboard": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "No word here": {
+      "context": "Spelling menu message: the caret is not on a word.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "None": {
+      "context": "Choice meaning nothing selected (no label, no cover).",
+      "translation": "",
+      "used_in": "inspector.rs, model.rs"
+    },
+    "Not carried across": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Not opened": {
+      "context": "Title of a notice when a link could not be opened.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Not yet named or linked in your writing.": {
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Note": {
+      "context": "Document format for plain notes, and the kind of a research note.",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Notes": {
+      "context": "Notes attached to a document (never printed). Inspector tab name.",
+      "translation": "",
+      "used_in": "database.rs, find.rs, inspector.rs"
+    },
+    "Nothing catalogued yet": {
+      "context": "Empty-state message in the database.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Nothing here yet.": {
+      "context": "Generic empty-state message.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Nothing is lost. Checkpoints capture the whole project; snapshots capture one document.": {
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "Nothing is recorded yet. Time and words appear here as you write.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Nothing matches. Clear the search or the kind filter.": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Nothing of this kind is in the chosen part of the book.": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Nothing open": {
+      "context": "Message when no document is open.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Nothing replaced": {
+      "context": "Notice when Replace changed nothing.",
+      "translation": "",
+      "used_in": "find_bar.rs, search.rs"
+    },
+    "Nothing to page": {
+      "context": "Message in Paged view when there is nothing to lay out in pages.",
+      "translation": "",
+      "used_in": "preview.rs"
+    },
+    "Novel": {
+      "context": "Project kind: a novel (prose).",
+      "translation": "",
+      "used_in": "binder.rs, model.rs"
+    },
+    "Novel length": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Off: book or script margins for the chosen paper": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Often adverbs; they are not wrong, but they can pile up": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "On target": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "On the {days} days you wrote, you averaged {words} words added and {typing} of typing.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "One manuscript, many finish lines. Pick an output format, then shape what goes in the book.": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "One or two sentences": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "One or two sentences about this piece…": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Only part of the book": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Only “{title}” and what is inside it": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Open": {
+      "context": "Button/menu item that opens something.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Open at the first appearance": {
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Open in Research": {
+      "context": "Button that opens a research note on the Research page.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Open link": {
+      "context": "Menu item that follows a link.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Open project": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Open project zip": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Open project zip…": {
+      "context": "File menu item (web version): open a project saved as a zip file.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Open project…": {
+      "context": "File menu item: open a project folder.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Open recent": {
+      "context": "File menu submenu listing recently opened projects.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Open the file": {
+      "context": "Button that opens an exported file.",
+      "translation": "",
+      "used_in": "app.rs, compile.rs"
+    },
+    "Open this document": {
+      "context": "Tooltip: go to this document in the editor.",
+      "translation": "",
+      "used_in": "research.rs, stats_window.rs"
+    },
+    "Open this item": {
+      "context": "Tooltip: go to this database item.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Open writing statistics": {
+      "context": "Tooltip of the daily-goal meter in the top bar.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Opening": {
+      "context": "A label (a coloured tag) for the beginning section of a story.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Outline": {
+      "context": "Page showing the manuscript as a table; also a document status (a plan, not yet written).",
+      "translation": "",
+      "used_in": "app.rs, inspector.rs, outline.rs"
+    },
+    "Output": {
+      "context": "Compile heading: the format to produce.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Overview": {
+      "context": "Statistics tab: the summary page.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Page & type": {
+      "context": "Compile layout heading: paper size and text font.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Page margins": {
+      "context": "Compile layout heading: space around the text.",
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Page numbers": {
+      "context": "Compile layout heading.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Page {page} of {total}": {
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Paged": {
+      "context": "Editor view mode: shows the text as real printed pages. Opposite of Continuous.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Paper": {
+      "context": "Label before the paper size drop-down (US Letter, A4…).",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Paragraph styles": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Parenthetical": {
+      "context": "Script element: a short direction in brackets under a character's name, e.g. (whispering).",
+      "translation": "",
+      "used_in": "script.rs"
+    },
+    "Paste clipping": {
+      "context": "Button that makes a research note from copied text.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Path to a .fountain, .fdx, .docx or .txt file": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Pick a type of manuscript and a style, then set its font and paragraph. The global defaults live in Settings → Display.": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Picture not changed": {
+      "context": "Notice when a picture edit had no effect.",
+      "translation": "",
+      "used_in": "app.rs, inspector.rs"
+    },
+    "Pictures in this document": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Place": {
+      "context": "Story database item kind: a location.",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Place on its own paragraph": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Plain-text screenplay with formatting": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Plenty written. Be proud of it.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Portable plain text with structure": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Portmanteau": {
+      "context": "The program's name. Normally keep unchanged.",
+      "translation": "",
+      "used_in": "app.rs, appearance_preview.rs"
+    },
+    "Portmanteau can show its menus and the welcome project in other languages. You can change this at any time in Settings.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Portmanteau closed with unsaved changes to “{title}”. A safety copy from {saved} was kept.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Position": {
+      "context": "Picture setting: where it sits (left, centre, right).",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Preferences": {
+      "context": "Settings page heading.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Preferences saved": {
+      "context": "Notice after saving settings.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Previous match (Shift+Enter)": {
+      "context": "Tooltip on the Find bar's previous button.",
+      "translation": "",
+      "used_in": "find_bar.rs"
+    },
+    "Print-ready manuscript or screenplay": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Printed bottom-left on a script's title page. One line each: name, address, email, phone.": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Printed bottom-right on a script's title page.": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Printed on a book's title page": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Project": {
+      "context": "The whole book/script being written; also the page for its title and author.",
+      "translation": "",
+      "used_in": "app.rs, project.rs"
+    },
+    "Project checkpoint saved": {
+      "context": "Notice.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Project checkpoints": {
+      "context": "Heading for the list of whole-project checkpoints.",
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "Project compass": {
+      "context": "Heading of a block summarising the project's idea (logline). Awkward name, may be renamed.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Project created": {
+      "context": "Notice.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Project exported": {
+      "context": "Notice after exporting the project as a zip.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Project folder or file": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Project opened": {
+      "context": "Notice.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Project restored": {
+      "context": "Notice after restoring a checkpoint.",
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "Project saved": {
+      "context": "Notice.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Project, snapshots and notes in one archive": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Prop": {
+      "context": "Story database item kind: an object that matters in the story.",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Prose": {
+      "context": "Document format: ordinary book text, as opposed to a script.",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Prose and screenplay editors with typed elements": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Prose manuscript": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Protagonist, ally, antagonist…": {
+      "context": "Hint text in the Role box for a character.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Put the picture on the left or the right first": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Quit": {
+      "context": "Menu item that closes the program.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Reach your daily word goal.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Read-only page preview — click a paragraph to edit it": {
+      "translation": "",
+      "used_in": "preview.rs"
+    },
+    "Reading": {
+      "context": "Statistics column: time spent reading, as opposed to typing.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Reading ease": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Reading level": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Reading time": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Recent weeks (week number)": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Recently edited": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Redo    ⇧⌘Z": {
+      "context": "Edit menu item with its keyboard shortcut. Keep the shortcut and spaces.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Reflowable ebook for readers and stores": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Refresh": {
+      "context": "Button that reloads a list.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Release page": {
+      "context": "Link to the page of a new version.",
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "Remove": {
+      "context": "Button that takes something out of a list.",
+      "translation": "",
+      "used_in": "mod.rs, project.rs"
+    },
+    "Remove link": {
+      "context": "Menu item that turns a link back into plain text.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Remove picture": {
+      "context": "Menu item that deletes a picture from the text.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Replace": {
+      "context": "Hint of the replacement box, and button that replaces the current match.",
+      "translation": "",
+      "used_in": "find_bar.rs, search.rs"
+    },
+    "Replace all": {
+      "context": "Button that replaces every match.",
+      "translation": "",
+      "used_in": "find_bar.rs, search.rs"
+    },
+    "Replace every match in this document (a snapshot is saved first)": {
+      "translation": "",
+      "used_in": "find_bar.rs"
+    },
+    "Replace every result below. Each changed document is snapshotted first.": {
+      "translation": "",
+      "used_in": "search.rs"
+    },
+    "Replace every result in this document": {
+      "translation": "",
+      "used_in": "search.rs"
+    },
+    "Replace just this one": {
+      "translation": "",
+      "used_in": "search.rs"
+    },
+    "Replace this match and move to the next": {
+      "translation": "",
+      "used_in": "find_bar.rs"
+    },
+    "Replaced": {
+      "context": "Notice after replacing.",
+      "translation": "",
+      "used_in": "search.rs"
+    },
+    "Replaced with “{name}”": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Research": {
+      "context": "Page, binder section and note type for gathered background material.",
+      "translation": "",
+      "used_in": "app.rs, find.rs, labels.rs, model.rs, research.rs"
+    },
+    "Research mentioned here": {
+      "context": "Section listing research notes named in this document.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Research note": {
+      "context": "One entry on the Research page.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Research notes": {
+      "context": "Plural; binder entry under Collections.",
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "Reset defaults": {
+      "context": "Button returning defaults to the program's own.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Reset sliders": {
+      "context": "Appearance button that returns the global colour sliders to zero.",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Reset this format to base style": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Reset to industry standard": {
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Response": {
+      "context": "Command desk: heading for the box showing the result of a command.",
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "Restart at 1": {
+      "context": "Option: page numbering begins again at 1.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Restore": {
+      "context": "Button that brings back an earlier saved version of a document or project.",
+      "translation": "",
+      "used_in": "history.rs, inspector.rs"
+    },
+    "Restore the full workspace (F11)": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Restore this version": {
+      "context": "Button that brings back an earlier saved version.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Restoring replaces the current text with this saved version.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Reveal": {
+      "context": "A label (a coloured tag) for the part of a story where a secret is revealed.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Review misspellings and apply suggestions": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Revised": {
+      "context": "A document status: rewritten after a first draft.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Rework 5,000 words of existing text.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Right": {
+      "context": "Text or picture alignment choice: right.",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Role": {
+      "context": "Database field: a character's role in the story.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Run a command to see its JSON response. Try “stats”, “document.list” or “export.preview”.": {
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "Run command  ▸": {
+      "context": "Button on the Command desk. Keep the spacing and arrow.",
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "Same as the body": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Save a checkpoint": {
+      "context": "Heading/button for saving a whole-project checkpoint.",
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "Save a version": {
+      "context": "Heading/button for saving a snapshot of one document.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Save an empty language file to translate": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Save checkpoint": {
+      "context": "File menu item: save a named copy of the whole project that can be restored later.",
+      "translation": "",
+      "used_in": "app.rs, history.rs"
+    },
+    "Save defaults": {
+      "context": "Button saving the current settings as the defaults for new projects.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Save project": {
+      "context": "File menu item.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Save project as": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Save project as…": {
+      "context": "File menu item.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Save the language template": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Save the project before inserting images.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Save the project before pasting images: they are kept in its folder.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Save the project to attach files: they are copied into its folder.": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Save this language with its translations filled in, to correct or finish it": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Save this theme as a file to share": {
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Save your changes?": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Save your project first (File › Save project as…), then install.": {
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "Saved in this browser · File › Export project as zip… to back up": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Scene": {
+      "context": "A binder document kind: a scene; also the script element heading of a scene.",
+      "translation": "",
+      "used_in": "model.rs, script.rs"
+    },
+    "Scene heading": {
+      "translation": "",
+      "used_in": "script.rs"
+    },
+    "Scene numbers": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Screenplay": {
+      "context": "Document format: film script.",
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Script": {
+      "context": "Format and label for a screenplay-style document.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Script pages": {
+      "context": "Compile option group for script page layout.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Script title page": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Scripts set their font in each style below": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Search": {
+      "context": "Page name for searching the whole project.",
+      "translation": "",
+      "used_in": "app.rs, search.rs"
+    },
+    "Search names, tags and notes": {
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Search project… (Ctrl+Shift+F)": {
+      "context": "Hint of the top-bar search box. Keep the shortcut.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Search titles, sources and text": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Search whole project": {
+      "context": "Button that opens the Search page with the typed text.",
+      "translation": "",
+      "used_in": "find_bar.rs"
+    },
+    "Section": {
+      "context": "Import review column naming a part of the imported file.",
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Seeds from the project-wide element styles.": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Select a document in the binder.": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Select an item in the binder first": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Sentence lengths": {
+      "context": "Statistics heading: how long the sentences are.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Sentences": {
+      "context": "Statistics row: the number of sentences.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Sentences of 30+ words": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Set a goal in Project › Writing goals if you would like a gentle target.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Set what suits you; leave a goal at 0 to skip it. Goals are kind guides, not rules.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Settings": {
+      "context": "Page name for program settings.",
+      "translation": "",
+      "used_in": "app.rs, settings.rs"
+    },
+    "Short sentences move quickly; long ones slow the reader down": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Shot": {
+      "context": "Script element: a camera shot instruction.",
+      "translation": "",
+      "used_in": "script.rs"
+    },
+    "Show a progress meter in the top bar": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Show binder": {
+      "context": "View menu item.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Show encouraging messages and badges": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Show in the file manager": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Show inspector": {
+      "context": "View menu item.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Show only items with this tag": {
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Show or hide Replace": {
+      "translation": "",
+      "used_in": "find_bar.rs, search.rs"
+    },
+    "Show the binder": {
+      "context": "Tooltip: open the left panel.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Show the binder in Write": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Show the inspector": {
+      "context": "Tooltip: open the right panel.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Show the inspector in Write": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Single web page with clean CSS": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Size on the page": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Skip this version": {
+      "context": "Update notice button: do not offer this version again.",
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "Skipped": {
+      "context": "Notice that something was skipped.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Slide every colour at once. The sliders start at zero each time and only the resulting colours are kept.": {
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Snapshot restored": {
+      "context": "Notice.",
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "Software update": {
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "Software updates": {
+      "context": "Settings heading.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Sort": {
+      "context": "Label before a sort-order drop-down.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Sourcebook": {
+      "context": "Research page section listing where research came from.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Sources": {
+      "context": "Research page heading: sources of notes.",
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "Space around": {
+      "context": "Picture setting: blank space around a picture.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Spell-checking in editors": {
+      "context": "Checkbox: underline misspelled words while typing.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Spelling": {
+      "context": "Menu section for spelling.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Spelling language": {
+      "context": "Setting: which dictionary to check spelling with.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Spelling · {count}": {
+      "context": "Toolbar button showing the number of misspellings. Keep {count}.",
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Spend fifty hours writing.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Spend ten hours writing.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Split into several documents at headings": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Stage": {
+      "context": "Format and label for stage plays.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Stage direction": {
+      "translation": "",
+      "used_in": "script.rs"
+    },
+    "Stage play": {
+      "translation": "",
+      "used_in": "compile.rs, model.rs"
+    },
+    "Standard": {
+      "context": "Interface text size choice: normal size.",
+      "translation": "",
+      "used_in": "labels.rs"
+    },
+    "Start chapters on right-hand pages": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Start small: one sentence is a start.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Start the body at page 1": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Statistics": {
+      "context": "Heading for writing statistics.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Status": {
+      "context": "Inspector field: how finished a document is (To do, Draft, Final).",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Story database": {
+      "context": "Full name of the Database page.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Structure": {
+      "context": "Small heading above the Corkboard and Outline page titles.",
+      "translation": "",
+      "used_in": "corkboard.rs, outline.rs"
+    },
+    "Style": {
+      "context": "A paragraph style (Heading, Dialogue…).",
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Subheading": {
+      "context": "Paragraph style for a heading below a chapter title.",
+      "translation": "",
+      "used_in": "script.rs"
+    },
+    "Switch to Continuous to keep writing.": {
+      "translation": "",
+      "used_in": "preview.rs"
+    },
+    "Synopsis": {
+      "context": "A one or two sentence summary of a document (shown on corkboard cards).",
+      "translation": "",
+      "used_in": "editor.rs, find.rs, inspector.rs"
+    },
+    "TV script": {
+      "translation": "",
+      "used_in": "compile.rs, model.rs"
+    },
+    "Table of contents": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Tags": {
+      "context": "Free keywords on database items.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Take snapshot": {
+      "context": "Edit menu item: save a copy of the open document to compare or restore later.",
+      "translation": "",
+      "used_in": "app.rs, binder.rs, inspector.rs"
+    },
+    "Television": {
+      "context": "Project kind: a TV script.",
+      "translation": "",
+      "used_in": "binder.rs, model.rs"
+    },
+    "Template not saved": {
+      "context": "Notice: the translation template could not be written.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Template saved": {
+      "context": "Notice: the template was written.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Ten hours": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Ten thousand": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Text": {
+      "context": "Document kind or search part: ordinary text.",
+      "translation": "",
+      "used_in": "find.rs, model.rs"
+    },
+    "Text wraps around it": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Text wraps in exports and the Compile preview; the editor shows the picture on its own line.": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "That document no longer exists": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "That file is not a usable language": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "That file is not a usable theme": {
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "That item no longer exists": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "The US school grade needed to follow it (Flesch-Kincaid)": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "The Write toolbar shows a Spelling panel with suggestions. Changes here are saved automatically.": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "The board is empty": {
+      "translation": "",
+      "used_in": "corkboard.rs"
+    },
+    "The clipboard image did not have the expected size.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "The compiled file downloads through your browser.": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "The current project now uses the global element styles": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "The document was rolled back": {
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "The exported PDF's own pages, from your compile settings": {
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "The finish line is in sight.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "The house style new projects start from — and the same type the editors use.": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "The house style new projects start from, with a live manuscript preview.": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "The image file needs a normal filename extension.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "The last 28 days": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "The last fourteen days": {
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "The manuscript is {words} words long, about {time} to read.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "The picture an ebook opens with. A saved project keeps its own copy. Each output format can use a different one in Compile.": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "The sidebar layout is remembered between launches. Focus mode (F11) hides both panels without changing this preference.": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "The target text field no longer exists.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "The update is installed, but your project could not be saved. Save it, then quit and start Portmanteau again.": {
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "The update is installed. Restarting…": {
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "The whole project was rolled back to this checkpoint": {
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "The work": {
+      "context": "Small heading above the Project page title (the work being written).",
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Theatre": {
+      "context": "Project kind: a stage play.",
+      "translation": "",
+      "used_in": "binder.rs, model.rs"
+    },
+    "Theme": {
+      "context": "The set of interface colours.",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Theme added": {
+      "context": "Notice after a theme file was imported.",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Theme exported": {
+      "context": "Notice.",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Theme not deleted": {
+      "context": "Notice.",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Theme not exported": {
+      "context": "Notice.",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Theme not saved": {
+      "context": "Notice.",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "This document has no text to print yet.": {
+      "translation": "",
+      "used_in": "preview.rs"
+    },
+    "This document no longer exists.": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "This document: {title}": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "This folder is empty.": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "This format uses {file}": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "This picture is anchored to the text here. Right-click the picture for its settings.": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "This project has more than one kind of document; each export is one kind.": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "This week": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Three in a row": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Ticked details are set on the project, replacing what it has. Edit them first if the file got one wrong.": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Time": {
+      "context": "Statistics switch: show time (minutes) rather than words. Also the History table column.",
+      "translation": "",
+      "used_in": "history.rs, stats_window.rs"
+    },
+    "Time and words": {
+      "context": "Statistics heading.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Time and words by document": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Times and counts begin from when this feature was added; older writing shows as words only.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Tip: right-click a picture in the text for these controls.": {
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Title": {
+      "context": "A document's title; also a sort order.",
+      "translation": "",
+      "used_in": "database.rs, research.rs"
+    },
+    "Title page": {
+      "translation": "",
+      "used_in": "compile.rs, export"
+    },
+    "Titles, labels, status and lengths in one place. Click any row to write.": {
+      "translation": "",
+      "used_in": "outline.rs"
+    },
+    "To do": {
+      "context": "A document status: not started.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Today": {
+      "context": "Statistics row: this day.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Today's goal is done. Well written.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Transition": {
+      "context": "Script element: an edit instruction at the end of a scene, such as CUT TO:.",
+      "translation": "",
+      "used_in": "script.rs"
+    },
+    "Try again": {
+      "context": "Button that repeats a failed action.",
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "Type": {
+      "context": "Label before a choice of element type (scene heading, dialogue…).",
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "Type @ in the text to link to anything in the project.": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Type defaults for every manuscript element. The preview uses them; apply them to a project, then each output tab refines per format.": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Type styles for this format": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Typing": {
+      "context": "Statistics column: time spent typing.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Typing counts while you type, including pauses up to five seconds. Reading counts while the page is in front and you scroll or move about, for twenty seconds after each action. Added words are written at the end of a sentence or paragraph; edited words are typed into the middle of what is already there.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Typing each day": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Typing each week": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "UTF-8 plain text, unformatted": {
+      "translation": "",
+      "used_in": "model.rs"
+    },
+    "Undo    ⌘Z": {
+      "context": "Edit menu item with its shortcut. Keep the shortcut and spaces.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Unpack into a new project folder": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Unsaved changes": {
+      "context": "Status bar message: the project has edits not yet saved.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Untitled": {
+      "context": "Name given to something that has no title yet.",
+      "translation": "",
+      "used_in": "corkboard.rs"
+    },
+    "Update available": {
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "Use a regular expression (replacement may use $1)": {
+      "translation": "",
+      "used_in": "find_ui.rs"
+    },
+    "Use a web address (https://…).": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Use a web address instead": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "Use the project cover": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Use today's date": {
+      "context": "Button filling in the date field with today.",
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Used by every style whose font is left on (inherit).": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Used elsewhere:": {
+      "context": "Label before tags already used by other items.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Uses the body's headers and footers.": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Using the project cover, {file}": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Version restored": {
+      "context": "Notice.",
+      "translation": "",
+      "used_in": "app.rs, inspector.rs"
+    },
+    "Version saved": {
+      "context": "Notice.",
+      "translation": "",
+      "used_in": "app.rs, binder.rs"
+    },
+    "Versions": {
+      "context": "Page and tab for saved versions (checkpoints and snapshots).",
+      "translation": "",
+      "used_in": "app.rs, history.rs, inspector.rs"
+    },
+    "View": {
+      "context": "Menu name (View menu).",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Weeks": {
+      "context": "Statistics chart period: one bar per week.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Welcome back": {
+      "context": "Heading of the update-installed notice.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Welcome project · in memory, not saved yet": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Well past your goal today. Remember to rest too.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "What are you writing?": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "What belongs in this folder?": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "What did you find, and why does it matter to the story?": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "What each style in the file becomes. Your choices are remembered for the next file from the same program.": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "What goes in": {
+      "context": "Compile heading: choose which documents are included.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "What matters about this item?": {
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "Whenever you are ready. The words will keep.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Where it goes": {
+      "context": "Compile heading: the folder and file name of the result.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Whole book": {
+      "context": "Compile option (radio button): compile the entire manuscript, not just one part.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Whole manuscript": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Width": {
+      "context": "Picture setting: its width.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Word target": {
+      "context": "Inspector field: the number of words a document aims for.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "Word variety": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Words": {
+      "context": "Column or unit: number of words.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Words / hour": {
+      "context": "Statistics column: writing speed.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Words are arriving. Keep going.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Words between quotation marks": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Words each day": {
+      "context": "Statistics chart title.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Words each day, shown in the top bar. Weekly and time goals are in the statistics.": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Words each week": {
+      "context": "Statistics chart title.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Words ending in -ly": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Words in this text": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Words that echo": {
+      "context": "Statistics heading: words repeated close together in the text.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Work title": {
+      "translation": "",
+      "used_in": "import_review.rs"
+    },
+    "Working title": {
+      "context": "Project field: the draft title before a final one.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Workspace": {
+      "context": "Settings heading for the layout of the program window.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Worth a second look, though fine when deliberate": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Write": {
+      "context": "Page name for the editor, and the verb.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Write 1,000 words in a day.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Write each script as its own file": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Write links as links": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "Write on seven days in a row.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Write on thirty days in a row.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Write on three days in a row.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Write your first 100 words here.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "Writing": {
+      "context": "Settings heading: how the editor behaves while writing.",
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Writing behavior · per-format styles (film, TV, stage)": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "Writing goals": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Writing statistics": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Writing statistics…": {
+      "context": "Menu item opening the statistics window.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Writing style": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "You did what you set out to do.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "You have begun, and that is the hardest part.": {
+      "translation": "",
+      "used_in": "progress.rs"
+    },
+    "You have {version}.": {
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "You're up to date": {
+      "translation": "",
+      "used_in": "update.rs"
+    },
+    "Your best day was {day} with {words} words added.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Your goals": {
+      "context": "Statistics heading: daily word goal etc.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Your language is missing? Translations are plain files anyone can add; see the project page for how.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Your most productive hour is {from}:00 to {to}:00, with {words} words added there.": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "Your name": {
+      "translation": "",
+      "used_in": "project.rs"
+    },
+    "Your themes": {
+      "context": "Appearance heading above the themes the writer made.",
+      "translation": "",
+      "used_in": "appearance.rs"
+    },
+    "Zip file": {
+      "context": "File type name in the open/save dialog for project zip files.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "Zoom in": {
+      "context": "Tooltip.",
+      "translation": "",
+      "used_in": "corkboard.rs, editor.rs"
+    },
+    "Zoom out": {
+      "context": "Tooltip.",
+      "translation": "",
+      "used_in": "corkboard.rs, editor.rs"
+    },
+    "adds to the box you last clicked": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "characters": {
+      "context": "Lower-case plural in the database summary line, e.g. '4 characters · 0 places'.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "custom": {
+      "context": "Lower-case word in the database summary line: items of a kind the writer defined, e.g. '0 custom'.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "e.g. Mara Venn": {
+      "context": "Hint in a character name box: an example name (a made-up person).",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "e.g. The Salt Road": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "easy": {
+      "context": "Reading-ease description in the statistics (lower case, after the score).",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "events": {
+      "context": "Lower-case plural in the database summary line.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "fairly hard": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "first page is": {
+      "context": "Compile header/footer: label before the number the first page gets (for example 'first page is 1').",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "footer from bottom": {
+      "context": "Compile layout: distance from the bottom edge to the page footer, in points.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "grade {n}": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "hard": {
+      "context": "Reading-ease description (lower case).",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "https://…  (type @ in the text to link to something in the project)": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "in": {
+      "context": "Search page: small word between the search box and where to look ('Look for X in Manuscript').",
+      "translation": "",
+      "used_in": "search.rs"
+    },
+    "minutes": {
+      "context": "Unit in statistics charts.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "pages": {
+      "context": "Unit: number of pages.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "payload": {
+      "context": "Command desk: the data part of a JSON command. Technical; may stay English.",
+      "translation": "",
+      "used_in": "agent.rs"
+    },
+    "places": {
+      "context": "Lower-case plural in the database summary line.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "plain": {
+      "context": "Reading-ease description (lower case): ordinary plain language.",
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "props": {
+      "context": "Lower-case plural in the database summary line.",
+      "translation": "",
+      "used_in": "database.rs"
+    },
+    "read": {
+      "context": "Inspector statistic caption beneath the reading time, e.g. '2m read'.",
+      "translation": "",
+      "used_in": "inspector.rs"
+    },
+    "size": {
+      "context": "Compile header/footer: label before the font size in points.",
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "something that no longer exists": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "very easy": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "very hard": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "words": {
+      "context": "Unit: number of words (lower case caption under a number).",
+      "translation": "",
+      "used_in": "inspector.rs, stats_window.rs"
+    },
+    "{built_in} built-in + {custom} custom": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "{built_in} built-in + {custom} custom element styles": {
+      "translation": "",
+      "used_in": "settings.rs"
+    },
+    "{count} cards": {
+      "context": "Corkboard count. Keep {count}.",
+      "translation": "",
+      "used_in": "corkboard.rs"
+    },
+    "{count} documents in this compile · {words} words": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "{count} words": {
+      "context": "Word count. Keep {count}.",
+      "translation": "",
+      "used_in": "corkboard.rs"
+    },
+    "{count} words in the manuscript": {
+      "translation": "",
+      "used_in": "outline.rs"
+    },
+    "{count} words in the project": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "{count} words today": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "{done} / {goal} min this week": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "{done} / {goal} min today": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "{done} / {goal} this week": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "{done} / {goal} today": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "{earned} of {total} earned": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "{kind} · missing from the project folder": {
+      "translation": "",
+      "used_in": "research.rs"
+    },
+    "{kind} · {count} words": {
+      "translation": "",
+      "used_in": "binder.rs"
+    },
+    "{n} days": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "{n} documents in this folder.": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "{n} words": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "{n}% distinct": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "{n}% of the words": {
+      "translation": "",
+      "used_in": "stats_window.rs"
+    },
+    "{reason}, so it has no pages in a compile.": {
+      "translation": "",
+      "used_in": "preview.rs"
+    },
+    "{status} · {words} words · {pages} pp": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "{title} added to the binder": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "{title} · {count} words": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "{total} words logged": {
+      "translation": "",
+      "used_in": "history.rs"
+    },
+    "{words} words  ·  {minutes} min read": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "{words} words · {pages} pages estimated": {
+      "translation": "",
+      "used_in": "compile.rs"
+    },
+    "“{title}” has changes that have not been saved to its folder. Quit without saving and they are discarded.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "“{title}” has not been saved anywhere yet. If you quit without saving, its changes will be lost.": {
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "“{word}” is spelled correctly": {
+      "translation": "",
+      "used_in": "editor.rs"
+    },
+    "‹ Prev": {
+      "context": "Pager button: previous page of results.",
+      "translation": "",
+      "used_in": "mod.rs"
+    },
+    "−{count} removed": {
+      "context": "Version comparison summary: number of words removed. Keep {count}.",
+      "translation": "",
+      "used_in": "app.rs"
+    },
+    "▸ Draft": {
+      "context": "Label showing the Draft folder in a path. Keep the arrow.",
+      "translation": "",
+      "used_in": "appearance_preview.rs"
+    }
+  },
+  "welcome": {
+    "A WRITER (30s) sits with a cold cup of tea and a blank page. Press Enter to start the next line; the style changes to the one that normally follows.": {
+      "translation": ""
+    },
+    "A place in your story. Tags group items and can be searched.": {
+      "translation": ""
+    },
+    "A sample project. Explore it, change it, delete it.": {
+      "translation": ""
+    },
+    "A sample prose chapter. Its synopsis is what shows on the Corkboard card.": {
+      "translation": ""
+    },
+    "A sample research note.": {
+      "translation": ""
+    },
+    "A sample screenplay scene: heading, action, character, dialogue.": {
+      "translation": ""
+    },
+    "A saved copy you can compare with or restore on the Versions tab.": {
+      "translation": ""
+    },
+    "A tour of Portmanteau in one small project.": {
+      "translation": ""
+    },
+    "About the author (sample)": {
+      "translation": ""
+    },
+    "Back matter comes after the story: acknowledgements, an author biography, an afterword. Write yours here, or delete this sample.": {
+      "translation": ""
+    },
+    "CUT TO:": {
+      "translation": ""
+    },
+    "Characters and dialogue are set out the way a screenplay needs, and compile to PDF or Final Draft.": {
+      "translation": ""
+    },
+    "Dedication (sample)": {
+      "translation": ""
+    },
+    "For anyone who has ever started a book. This is front matter: pages like the title page, copyright and dedication that come before the story.": {
+      "translation": ""
+    },
+    "Getting your work out. File › Compile & export… makes the finished file. Documents marked as not included in the compile, like this one, are left out, so this welcome page will never end up in your manuscript.": {
+      "translation": ""
+    },
+    "Have a look at the other samples in the Binder: a prose chapter, a screenplay scene, front and back matter, a research note, and two database entries. Then start something of your own.": {
+      "translation": ""
+    },
+    "How to get started: read this page, look through the samples, then make your own project.": {
+      "translation": ""
+    },
+    "INT. SMALL KITCHEN — MORNING": {
+      "translation": ""
+    },
+    "Instructions": {
+      "translation": ""
+    },
+    "Looking around. The icons down the left side switch between the main pages. Write is where you are now: the Binder on the left lists everything in the project, the page is in the middle, and the Inspector on the right shows the status, synopsis, notes and version history of the document you have open. Corkboard and Outline show the same documents as cards and as a list. Research keeps notes and files. Database holds characters, places and other things you want to track. Versions compares and restores earlier drafts. Search finds and replaces across the whole project. Project holds the title and author details. Compile turns your writing into a PDF, EPUB, Word file, Final Draft file and more.": {
+      "translation": ""
+    },
+    "Notes stay with the document and never print. Use them for reminders to yourself.": {
+      "translation": ""
+    },
+    "Nothing here is saved anywhere until you choose to save it, and you can change or delete all of it.": {
+      "translation": ""
+    },
+    "Prose is stored as paragraphs with styles, so the chapter heading, the body text and block quotes all look the way they will in the compiled book.": {
+      "translation": ""
+    },
+    "Prose is stored as paragraphs with styles, so the chapter heading, the body text and block quotes all look the way they will in the compiled book. Change the look of any style under Settings, and every document follows.": {
+      "translation": ""
+    },
+    "Research notes are for anything you gather but do not publish: interviews, articles, pictures and PDFs. Open the Research page to attach files and record where each came from. Notes are never included when you compile.": {
+      "translation": ""
+    },
+    "Safety. Save checkpoints from File › Save checkpoint, or take a snapshot of one document on the Versions tab, before trying something bold. You can always go back.": {
+      "translation": ""
+    },
+    "Sample": {
+      "translation": ""
+    },
+    "Sample chapter · Prose": {
+      "translation": ""
+    },
+    "Sample character": {
+      "translation": ""
+    },
+    "Sample place": {
+      "translation": ""
+    },
+    "Sample research note": {
+      "translation": ""
+    },
+    "Sample scene · Screenplay": {
+      "translation": ""
+    },
+    "Sample snapshot": {
+      "translation": ""
+    },
+    "Select this sentence to see the formatting toolbar, and try making a few words bold.": {
+      "translation": ""
+    },
+    "Start here · Welcome": {
+      "translation": ""
+    },
+    "Structure. Use the + button in the Binder to add a chapter, scene or folder. Give each document a one-line synopsis in the Inspector and it appears as a card on the Corkboard.": {
+      "translation": ""
+    },
+    "The Database page keeps characters, places, events and props. Write what you know here. In any document, type @ and pick this name to link to it; this page then shows every document that mentions it.": {
+      "translation": ""
+    },
+    "This copy of Portmanteau keeps your project in this browser, saving a moment after each change, and you can change or delete all of this sample. To keep a copy safe, use File › Export project as zip…; File › Open project zip… brings one back.": {
+      "translation": ""
+    },
+    "This is a sample chapter, now with a few more words than the snapshot above. Open Versions to compare the two.": {
+      "translation": ""
+    },
+    "This is a sample chapter. Replace these words with your own, or delete the document from the Binder.": {
+      "translation": ""
+    },
+    "To begin your own work, choose File › New project…, or File › Open project zip… to continue one you already have. The next time you open this page it shows the project you were working on.": {
+      "translation": ""
+    },
+    "To begin your own work, choose File › New project…, or File › Open project… to continue one you already have. The next time you start Portmanteau it opens the last project you used; if that project has moved or been deleted, it comes back to this welcome project.": {
+      "translation": ""
+    },
+    "WRITER": {
+      "translation": ""
+    },
+    "Welcome to Portmanteau": {
+      "translation": ""
+    },
+    "Welcome to Portmanteau. This is a sample project: every part of the app has a small example in it, so you can see how things fit together.": {
+      "translation": ""
+    },
+    "Writing. Click into any document and type. Select some words to bold, italicise or underline them, or use Ctrl+B, Ctrl+I and Ctrl+U (Cmd on a Mac). Ctrl+K adds a link. Type @ to link to a character, place or note. Ctrl+F finds in the document; Ctrl+Shift+F searches the whole project. The Paged / Continuous switch above the page shows the page as it will print.": {
+      "translation": ""
+    },
+    "Written for the welcome project": {
+      "translation": ""
+    },
+    "You": {
+      "translation": ""
+    },
+    "sample": {
+      "translation": ""
+    }
+  }
+}

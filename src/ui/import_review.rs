@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 
 use crate::app::{PortmanteauApp, ToastKind, View};
 use crate::theme::*;
+use crate::i18n::tr;
 
 /// The writer's choice for one document the file would create.
 #[derive(Clone, Debug, PartialEq)]
@@ -189,7 +190,7 @@ impl ImportReview {
 
         let found = |key: &str| data[key].as_str().map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
         let mut details = Vec::new();
-        for (key, label) in [("title", "Title"), ("author", "Author"), ("contact", "Contact"), ("draft_date", "Draft date")] {
+        for (key, label) in [("title", "Title"), ("author", "Author"), ("contact", "Contact"), ("draft_date", tr("Draft date"))] {
             if let Some(value) = found(key) {
                 let kept = self.details.iter().find(|d| d.key == key);
                 details.push(DetailEdit {
@@ -255,8 +256,8 @@ fn target_label(token: &str, sheet: &StyleSheet) -> String {
             .map_or_else(|| id.to_string(), |style| style.name.clone());
     }
     match token {
-        "title" => "Work title".into(),
-        "auto" => "Detect from the text".into(),
+        "title" => tr("Work title").into(),
+        "auto" => tr("Detect from the text").into(),
         "skip" => "Skip".into(),
         other => other.to_string(),
     }
@@ -284,7 +285,7 @@ pub fn show(app: &mut PortmanteauApp, ctx: &egui::Context) {
     let mut open = true;
     let mut action = Action::None;
     let height = (ctx.content_rect().height() - 90.0).clamp(380.0, 760.0);
-    egui::Window::new("Import manuscript")
+    egui::Window::new(tr("Import manuscript"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
@@ -315,7 +316,7 @@ pub fn show(app: &mut PortmanteauApp, ctx: &egui::Context) {
                 if ui.add_enabled(ready, button).clicked() {
                     action = Action::Import;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     action = Action::Cancel;
                 }
             });
@@ -336,9 +337,9 @@ pub fn show(app: &mut PortmanteauApp, ctx: &egui::Context) {
                 } else {
                     ToastKind::Ok
                 };
-                app.toast("Manuscript imported", response.message, kind);
+                app.toast(tr("Manuscript imported"), response.message, kind);
             } else {
-                app.toast("Could not import manuscript", response.message, ToastKind::Error);
+                app.toast(tr("Could not import manuscript"), response.message, ToastKind::Error);
                 app.import_review = Some(review);
             }
         }
@@ -374,7 +375,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
             let mut path = review.path.clone();
             let edit = ui.add(
                 TextEdit::singleline(&mut path)
-                    .hint_text("Path to a .fountain, .fdx, .docx or .txt file")
+                    .hint_text(tr("Path to a .fountain, .fdx, .docx or .txt file"))
                     .font(mono(10.5))
                     .desired_width(ui.available_width() - 90.0),
             );
@@ -384,7 +385,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
             } else if edit.changed() {
                 review.path = path;
             }
-            if ui.button("Browse…").clicked() {
+            if ui.button(tr("Browse…")).clicked() {
                 if let Some(chosen) = browse(app.settings.import.folder.as_deref()) {
                     review.set_path(&chosen);
                 }
@@ -396,7 +397,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
         } else if review.preview.is_none() {
             ui.add_space(4.0);
             ui.label(
-                RichText::new("Fountain and Final Draft become screenplays; Word and text become prose. Nothing is added until you press Import.")
+                RichText::new(tr("Fountain and Final Draft become screenplays; Word and text become prose. Nothing is added until you press Import."))
                     .font(ui_small())
                     .color(MUTED()),
             );
@@ -405,20 +406,20 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
     let Some(preview) = review.preview.clone() else { return };
 
     // ---- How to read it ----------------------------------------------
-    card(ui, "How to read it", |ui| {
+    card(ui, tr("How to read it"), |ui| {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(preview_summary(&preview)).font(ui_small()).color(MUTED()));
         });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("As").font(ui_small()).color(MUTED()));
+            ui.label(RichText::new(tr("As")).font(ui_small()).color(MUTED()));
             let before = review.medium.clone();
             egui::ComboBox::from_id_salt("import_medium")
                 .selected_text(if review.medium == "auto" { "Automatic".to_string() } else { review.medium.clone() })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut review.medium, "auto".to_string(), "Automatic");
                     for medium in [Medium::Prose, Medium::Screenplay, Medium::TvScript, Medium::StagePlay] {
-                        ui.selectable_value(&mut review.medium, medium.label().to_string(), medium.label());
+                        ui.selectable_value(&mut review.medium, medium.label().to_string(), crate::i18n::tr_dyn(medium.label()));
                     }
                 });
             if review.medium != before {
@@ -428,7 +429,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
             let before = review.split;
             ui.checkbox(
                 &mut review.split,
-                RichText::new("Split into several documents at headings").font(ui_small()).color(MUTED()),
+                RichText::new(tr("Split into several documents at headings")).font(ui_small()).color(MUTED()),
             );
             if review.split != before {
                 review.mark_stale();
@@ -436,7 +437,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
         });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Add to").font(ui_small()).color(MUTED()));
+            ui.label(RichText::new(tr("Add to")).font(ui_small()).color(MUTED()));
             let folders: Vec<(String, String)> = app
                 .ws
                 .project
@@ -463,9 +464,9 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
 
     // ---- Title page details ------------------------------------------
     if !review.details.is_empty() {
-        card(ui, "Details found in the file", |ui| {
+        card(ui, tr("Details found in the file"), |ui| {
             ui.label(
-                RichText::new("Ticked details are set on the project, replacing what it has. Edit them first if the file got one wrong.")
+                RichText::new(tr("Ticked details are set on the project, replacing what it has. Edit them first if the file got one wrong."))
                     .font(ui_small())
                     .color(MUTED()),
             );
@@ -496,9 +497,9 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
         let medium = effective_medium(review);
         let sheet = StyleSheet::for_medium(medium, &app.ws.project.styles);
         let choices = target_choices(&format_key, medium, &sheet);
-        card(ui, "Paragraph styles", |ui| {
+        card(ui, tr("Paragraph styles"), |ui| {
             ui.label(
-                RichText::new("What each style in the file becomes. Your choices are remembered for the next file from the same program.")
+                RichText::new(tr("What each style in the file becomes. Your choices are remembered for the next file from the same program."))
                     .font(ui_small())
                     .color(MUTED()),
             );
@@ -542,7 +543,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
     }
 
     // ---- Documents ---------------------------------------------------
-    card(ui, "Documents to create", |ui| {
+    card(ui, tr("Documents to create"), |ui| {
         let listed = preview["documents"].as_array().cloned().unwrap_or_default();
         egui::Grid::new("import_docs").num_columns(4).spacing([10.0, 5.0]).show(ui, |ui| {
             for (index, edit) in review.docs.iter_mut().enumerate() {
@@ -566,7 +567,7 @@ fn body(app: &mut PortmanteauApp, ui: &mut egui::Ui, review: &mut ImportReview) 
     // ---- Warnings ----------------------------------------------------
     let warnings = preview["warnings"].as_array().cloned().unwrap_or_default();
     if !warnings.is_empty() {
-        card(ui, "Not carried across", |ui| {
+        card(ui, tr("Not carried across"), |ui| {
             for warning in warnings {
                 ui.label(RichText::new(format!("• {}", warning.as_str().unwrap_or_default())).font(ui_small()).color(MUTED()));
             }
@@ -591,7 +592,7 @@ fn preview_summary(preview: &Value) -> String {
 
 fn browse(start: Option<&str>) -> Option<String> {
     let mut dialog = crate::platform::FileDialog::new()
-        .set_title("Import manuscript")
+        .set_title(tr("Import manuscript"))
         .add_filter("Manuscripts", &["fountain", "spmd", "fdx", "docx", "txt", "text", "md", "markdown"]);
     if let Some(dir) = start.filter(|d| Path::new(d).is_dir()) {
         dialog = dialog.set_directory(dir);

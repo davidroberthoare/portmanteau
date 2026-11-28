@@ -53,6 +53,16 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
         .map_err(|e| format!("{e:?}"))
 }
 
+/// Screenshot runs (and their PORTMANTEAU_THEME / PORTMANTEAU_LANG overrides)
+/// must never rewrite the writer's real configuration.
+#[cfg(not(target_arch = "wasm32"))]
+static READ_ONLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn set_read_only(read_only: bool) {
+    READ_ONLY.store(read_only, std::sync::atomic::Ordering::Relaxed);
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn load_settings() -> AppSettings {
     match std::fs::read_to_string(config_path()) {
@@ -72,7 +82,7 @@ pub fn load_settings() -> AppSettings {
 /// no-op save; the app itself still persists normally.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
-    if cfg!(test) {
+    if cfg!(test) || READ_ONLY.load(std::sync::atomic::Ordering::Relaxed) {
         return Ok(());
     }
     let path = config_path();

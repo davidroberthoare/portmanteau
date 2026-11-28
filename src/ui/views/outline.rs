@@ -8,6 +8,7 @@ use portmanteau_core::{DocKind, Medium};
 
 use crate::app::{PortmanteauApp, View};
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::views::{content_frame, meta_line, page_head};
 
 struct Row {
@@ -26,9 +27,9 @@ struct Row {
 pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
     page_head(
         ui,
-        "Structure",
-        "Outline",
-        "Titles, labels, status and lengths in one place. Click any row to write.",
+        tr("Structure"),
+        tr("Outline"),
+        tr("Titles, labels, status and lengths in one place. Click any row to write."),
         |_ui| {},
     );
 
@@ -60,7 +61,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     .iter()
                     .map(|d| d.words())
                     .sum();
-                meta_line(ui, &[&format!("{total} words in the manuscript")]);
+                meta_line(ui, &[&crate::i18n::trf("{count} words in the manuscript", &[("count", total.to_string())])]);
             });
         });
         ui.add_space(10.0);
@@ -147,7 +148,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui) {
                     ui.painter().text(
                         egui::pos2(status_x, rect.center().y),
                         egui::Align2::LEFT_CENTER,
-                        &row.status,
+                        crate::i18n::tr_dyn(&row.status),
                         ui_small(),
                         status_color(&row.status),
                     );

@@ -371,112 +371,138 @@ pub fn demo() -> Project {
 /// part of the binder. Everything in it is safe to edit or delete, and it
 /// is never written to disk unless the writer saves it.
 pub fn welcome() -> Project {
-    let mut p = Project::new("Welcome to Portmanteau", ProjectKind::Mixed);
-    p.subtitle = "A sample project. Explore it, change it, delete it.".into();
-    p.author = "You".into();
-    p.logline = "A tour of Portmanteau in one small project.".into();
+    welcome_with(&|english| english.to_string())
+}
+
+/// Every English text of the welcome project, in the order it is written, so a
+/// language file can carry a translation of each (`welcome` in the file).
+pub fn welcome_texts() -> Vec<String> {
+    let seen = std::cell::RefCell::new(Vec::new());
+    welcome_with(&|english| {
+        seen.borrow_mut().push(english.to_string());
+        english.to_string()
+    });
+    let mut texts = seen.into_inner();
+    texts.sort();
+    texts.dedup();
+    texts
+}
+
+/// [`welcome`] with every piece of its text passed through `t`, which maps the
+/// English text to the reader's language (and returns it unchanged when it has
+/// no translation). Names the program looks things up by (the binder's folders,
+/// the status list) are not passed through.
+pub fn welcome_with(t: &dyn Fn(&str) -> String) -> Project {
+    let mut p = Project::new(&t("Welcome to Portmanteau"), ProjectKind::Mixed);
+    p.subtitle = t("A sample project. Explore it, change it, delete it.");
+    p.author = t("You");
+    p.logline = t("A tour of Portmanteau in one small project.");
     p.goals.daily_words = 500;
 
     let draft = p.folder_id("Draft").unwrap();
 
     // ---- Start here --------------------------------------------------------
-    let start = p.add_document(Some(draft.clone()), "Start here · Welcome", DocKind::Chapter, Medium::Prose);
+    let start = p.add_document(Some(draft.clone()), &t("Start here · Welcome"), DocKind::Chapter, Medium::Prose);
     {
         let doc = p.document_mut(&start).unwrap();
         // The browser version keeps the project in the browser and moves it in
         // and out as zip files; the desktop version works with project folders.
+        // Both versions are passed through `t` so a translator sees both.
+        let saved_web = t("This copy of Portmanteau keeps your project in this browser, saving a moment after each change, and you can change or delete all of this sample. To keep a copy safe, use File › Export project as zip…; File › Open project zip… brings one back.");
+        let begin_web = t("To begin your own work, choose File › New project…, or File › Open project zip… to continue one you already have. The next time you open this page it shows the project you were working on.");
+        let saved_desktop = t("Nothing here is saved anywhere until you choose to save it, and you can change or delete all of it.");
+        let begin_desktop = t("To begin your own work, choose File › New project…, or File › Open project… to continue one you already have. The next time you start Portmanteau it opens the last project you used; if that project has moved or been deleted, it comes back to this welcome project.");
         let (saved, begin) = if cfg!(target_arch = "wasm32") {
-            (
-                "This copy of Portmanteau keeps your project in this browser, saving a moment after each change, and you can change or delete all of this sample. To keep a copy safe, use File › Export project as zip…; File › Open project zip… brings one back.",
-                "To begin your own work, choose File › New project…, or File › Open project zip… to continue one you already have. The next time you open this page it shows the project you were working on.",
-            )
+            (saved_web, begin_web)
         } else {
-            (
-                "Nothing here is saved anywhere until you choose to save it, and you can change or delete all of it.",
-                "To begin your own work, choose File › New project…, or File › Open project… to continue one you already have. The next time you start Portmanteau it opens the last project you used; if that project has moved or been deleted, it comes back to this welcome project.",
-            )
+            (saved_desktop, begin_desktop)
         };
-        let text = "Welcome to Portmanteau. This is a sample project: every part of the app has a small example in it, so you can see how things fit together. {SAVED}\n\
-             {BEGIN}\n\
-             Looking around. The icons down the left side switch between the main pages. Write is where you are now: the Binder on the left lists everything in the project, the page is in the middle, and the Inspector on the right shows the status, synopsis, notes and version history of the document you have open. Corkboard and Outline show the same documents as cards and as a list. Research keeps notes and files. Database holds characters, places and other things you want to track. Versions compares and restores earlier drafts. Search finds and replaces across the whole project. Project holds the title and author details. Compile turns your writing into a PDF, EPUB, Word file, Final Draft file and more.\n\
-             Writing. Click into any document and type. Select some words to bold, italicise or underline them, or use Ctrl+B, Ctrl+I and Ctrl+U (Cmd on a Mac). Ctrl+K adds a link. Type @ to link to a character, place or note. Ctrl+F finds in the document; Ctrl+Shift+F searches the whole project. The Paged / Continuous switch above the page shows the page as it will print.\n\
-             Structure. Use the + button in the Binder to add a chapter, scene or folder. Give each document a one-line synopsis in the Inspector and it appears as a card on the Corkboard.\n\
-             Safety. Save checkpoints from File › Save checkpoint, or take a snapshot of one document on the Versions tab, before trying something bold. You can always go back.\n\
-             Getting your work out. File › Compile & export… makes the finished file. Documents marked as not included in the compile, like this one, are left out, so this welcome page will never end up in your manuscript.\n\
-             Have a look at the other samples in the Binder: a prose chapter, a screenplay scene, front and back matter, a research note, and two database entries. Then start something of your own."
-            .replace("{SAVED}", saved)
-            .replace("{BEGIN}", begin);
-        doc.set_plain_text(&text);
-        doc.set_synopsis_text("How to get started: read this page, look through the samples, then make your own project.");
-        doc.label = "Instructions".into();
-        doc.status = "To read".into();
+        let paragraphs = [
+            format!("{} {}", t("Welcome to Portmanteau. This is a sample project: every part of the app has a small example in it, so you can see how things fit together."), saved),
+            begin,
+            t("Looking around. The icons down the left side switch between the main pages. Write is where you are now: the Binder on the left lists everything in the project, the page is in the middle, and the Inspector on the right shows the status, synopsis, notes and version history of the document you have open. Corkboard and Outline show the same documents as cards and as a list. Research keeps notes and files. Database holds characters, places and other things you want to track. Versions compares and restores earlier drafts. Search finds and replaces across the whole project. Project holds the title and author details. Compile turns your writing into a PDF, EPUB, Word file, Final Draft file and more."),
+            t("Writing. Click into any document and type. Select some words to bold, italicise or underline them, or use Ctrl+B, Ctrl+I and Ctrl+U (Cmd on a Mac). Ctrl+K adds a link. Type @ to link to a character, place or note. Ctrl+F finds in the document; Ctrl+Shift+F searches the whole project. The Paged / Continuous switch above the page shows the page as it will print."),
+            t("Structure. Use the + button in the Binder to add a chapter, scene or folder. Give each document a one-line synopsis in the Inspector and it appears as a card on the Corkboard."),
+            t("Safety. Save checkpoints from File › Save checkpoint, or take a snapshot of one document on the Versions tab, before trying something bold. You can always go back."),
+            t("Getting your work out. File › Compile & export… makes the finished file. Documents marked as not included in the compile, like this one, are left out, so this welcome page will never end up in your manuscript."),
+            t("Have a look at the other samples in the Binder: a prose chapter, a screenplay scene, front and back matter, a research note, and two database entries. Then start something of your own."),
+        ];
+        doc.set_plain_text(&paragraphs.join("\n"));
+        doc.set_synopsis_text(&t("How to get started: read this page, look through the samples, then make your own project."));
+        doc.label = t("Instructions");
+        doc.status = "To do".into();
         doc.pinned = true;
         doc.include_in_export = false;
     }
 
     // ---- Draft: one prose sample, one screenplay sample ---------------------
-    let chapter = p.add_document(Some(draft.clone()), "Sample chapter · Prose", DocKind::Chapter, Medium::Prose);
+    let chapter = p.add_document(Some(draft.clone()), &t("Sample chapter · Prose"), DocKind::Chapter, Medium::Prose);
     {
         let doc = p.document_mut(&chapter).unwrap();
-        doc.set_plain_text("This is a sample chapter. Replace these words with your own, or delete the document from the Binder.\nProse is stored as paragraphs with styles, so the chapter heading, the body text and block quotes all look the way they will in the compiled book. Change the look of any style under Settings, and every document follows.\nSelect this sentence to see the formatting toolbar, and try making a few words bold.");
-        doc.set_synopsis_text("A sample prose chapter. Its synopsis is what shows on the Corkboard card.");
-        doc.set_notes_text("Notes stay with the document and never print. Use them for reminders to yourself.");
-        doc.label = "Sample".into();
+        let heading = t("This is a sample chapter. Replace these words with your own, or delete the document from the Binder.");
+        let styles = t("Prose is stored as paragraphs with styles, so the chapter heading, the body text and block quotes all look the way they will in the compiled book. Change the look of any style under Settings, and every document follows.");
+        let toolbar = t("Select this sentence to see the formatting toolbar, and try making a few words bold.");
+        doc.set_plain_text(&format!("{heading}\n{styles}\n{toolbar}"));
+        doc.set_synopsis_text(&t("A sample prose chapter. Its synopsis is what shows on the Corkboard card."));
+        doc.set_notes_text(&t("Notes stay with the document and never print. Use them for reminders to yourself."));
+        doc.label = t("Sample");
         doc.status = "First draft".into();
         doc.word_target = 1000;
-        doc.snapshot("Sample snapshot", "A saved copy you can compare with or restore on the Versions tab.");
-        doc.set_plain_text("This is a sample chapter, now with a few more words than the snapshot above. Open Versions to compare the two.\nProse is stored as paragraphs with styles, so the chapter heading, the body text and block quotes all look the way they will in the compiled book.\nSelect this sentence to see the formatting toolbar, and try making a few words bold.");
+        doc.snapshot(&t("Sample snapshot"), &t("A saved copy you can compare with or restore on the Versions tab."));
+        let styles_short = t("Prose is stored as paragraphs with styles, so the chapter heading, the body text and block quotes all look the way they will in the compiled book.");
+        doc.set_plain_text(&format!("{}\n{styles_short}\n{toolbar}", t("This is a sample chapter, now with a few more words than the snapshot above. Open Versions to compare the two.")));
     }
 
-    let scene = p.add_document(Some(draft.clone()), "Sample scene · Screenplay", DocKind::Scene, Medium::Screenplay);
+    let scene = p.add_document(Some(draft.clone()), &t("Sample scene · Screenplay"), DocKind::Scene, Medium::Screenplay);
     {
         let doc = p.document_mut(&scene).unwrap();
-        doc.set_synopsis_text("A sample screenplay scene: heading, action, character, dialogue.");
-        doc.label = "Sample".into();
+        doc.set_synopsis_text(&t("A sample screenplay scene: heading, action, character, dialogue."));
+        doc.label = t("Sample");
         doc.status = "First draft".into();
         doc.set_script_blocks(vec![
-            block(ElementKind::SceneHeading, "INT. SMALL KITCHEN — MORNING"),
-            block(ElementKind::Action, "A WRITER (30s) sits with a cold cup of tea and a blank page. Press Enter to start the next line; the style changes to the one that normally follows."),
-            block(ElementKind::Character, "WRITER"),
-            block(ElementKind::Dialogue, "Characters and dialogue are set out the way a screenplay needs, and compile to PDF or Final Draft."),
-            block(ElementKind::Transition, "CUT TO:"),
+            block(ElementKind::SceneHeading, &t("INT. SMALL KITCHEN — MORNING")),
+            block(ElementKind::Action, &t("A WRITER (30s) sits with a cold cup of tea and a blank page. Press Enter to start the next line; the style changes to the one that normally follows.")),
+            block(ElementKind::Character, &t("WRITER")),
+            block(ElementKind::Dialogue, &t("Characters and dialogue are set out the way a screenplay needs, and compile to PDF or Final Draft.")),
+            block(ElementKind::Transition, &t("CUT TO:")),
         ]);
     }
 
     // ---- Front and back matter ---------------------------------------------
     let front = p.folder_id("Front Matter").unwrap();
-    let dedication = p.add_document(Some(front), "Dedication (sample)", DocKind::FrontMatter, Medium::Prose);
+    let dedication = p.add_document(Some(front), &t("Dedication (sample)"), DocKind::FrontMatter, Medium::Prose);
     p.document_mut(&dedication)
         .unwrap()
-        .set_plain_text("For anyone who has ever started a book. This is front matter: pages like the title page, copyright and dedication that come before the story.");
+        .set_plain_text(&t("For anyone who has ever started a book. This is front matter: pages like the title page, copyright and dedication that come before the story."));
     let back = p.folder_id("Back Matter").unwrap();
-    let about = p.add_document(Some(back), "About the author (sample)", DocKind::BackMatter, Medium::Prose);
+    let about = p.add_document(Some(back), &t("About the author (sample)"), DocKind::BackMatter, Medium::Prose);
     p.document_mut(&about)
         .unwrap()
-        .set_plain_text("Back matter comes after the story: acknowledgements, an author biography, an afterword. Write yours here, or delete this sample.");
+        .set_plain_text(&t("Back matter comes after the story: acknowledgements, an author biography, an afterword. Write yours here, or delete this sample."));
 
     // ---- Research ------------------------------------------------------------
     let research = p.folder_id("Research").unwrap();
-    let note = p.add_document(Some(research), "Sample research note", DocKind::Research, Medium::Note);
+    let note = p.add_document(Some(research), &t("Sample research note"), DocKind::Research, Medium::Note);
     {
         let doc = p.document_mut(&note).unwrap();
-        doc.set_plain_text("Research notes are for anything you gather but do not publish: interviews, articles, pictures and PDFs. Open the Research page to attach files and record where each came from. Notes are never included when you compile.");
-        doc.set_synopsis_text("A sample research note.");
+        doc.set_plain_text(&t("Research notes are for anything you gather but do not publish: interviews, articles, pictures and PDFs. Open the Research page to attach files and record where each came from. Notes are never included when you compile."));
+        doc.set_synopsis_text(&t("A sample research note."));
         doc.include_in_export = false;
         let meta = doc.research_meta();
         meta.kind = "Note".into();
-        meta.source = "Written for the welcome project".into();
+        meta.source = t("Written for the welcome project");
     }
 
     // ---- Database -------------------------------------------------------------
-    let mut character = DatabaseItem::new(ItemKind::Character, "Sample character");
-    character.notes.set_plain_text("The Database page keeps characters, places, events and props. Write what you know here. In any document, type @ and pick this name to link to it; this page then shows every document that mentions it.", "body");
-    character.tags = vec!["sample".into()];
+    let sample_tag = t("sample");
+    let mut character = DatabaseItem::new(ItemKind::Character, &t("Sample character"));
+    character.notes.set_plain_text(&t("The Database page keeps characters, places, events and props. Write what you know here. In any document, type @ and pick this name to link to it; this page then shows every document that mentions it."), "body");
+    character.tags = vec![sample_tag.clone()];
     character.color = 0;
     p.items.push(character);
-    let mut place = DatabaseItem::new(ItemKind::Place, "Sample place");
-    place.notes.set_plain_text("A place in your story. Tags (like \"sample\") group items and can be searched.", "body");
-    place.tags = vec!["sample".into()];
+    let mut place = DatabaseItem::new(ItemKind::Place, &t("Sample place"));
+    place.notes.set_plain_text(&t("A place in your story. Tags group items and can be searched."), "body");
+    place.tags = vec![sample_tag];
     place.color = 1;
     p.items.push(place);
 

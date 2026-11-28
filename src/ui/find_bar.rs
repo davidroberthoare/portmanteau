@@ -15,6 +15,7 @@ use serde_json::json;
 
 use crate::app::{CaretRequest, PortmanteauApp, ToastKind};
 use crate::theme::*;
+use crate::i18n::tr;
 use crate::ui::find_ui;
 
 pub struct FindBar {
@@ -103,13 +104,13 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 let arrow = if bar.show_replace { "▾" } else { "▸" };
-                if ui.add(egui::Button::new(RichText::new(arrow).color(MUTED())).frame(false)).on_hover_text("Show or hide Replace").clicked() {
+                if ui.add(egui::Button::new(RichText::new(arrow).color(MUTED())).frame(false)).on_hover_text(tr("Show or hide Replace")).clicked() {
                     bar.show_replace = !bar.show_replace;
                 }
                 let find = ui.add(
                     TextEdit::singleline(&mut bar.query)
                         .id(egui::Id::unique(QUERY_ID))
-                        .hint_text("Find")
+                        .hint_text(tr("Find"))
                         .font(ui_body())
                         .desired_width(220.0),
                 );
@@ -134,26 +135,26 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                 } else if bar.query.is_empty() {
                     RichText::new("").font(ui_small())
                 } else if bar.matches.is_empty() {
-                    RichText::new("No results").font(ui_small()).color(MUTED())
+                    RichText::new(tr("No results")).font(ui_small()).color(MUTED())
                 } else {
                     RichText::new(format!("{} of {}", bar.current + 1, bar.matches.len())).font(ui_small()).color(MUTED())
                 };
                 ui.add(egui::Label::new(label).truncate());
                 let any = !bar.matches.is_empty();
-                if ui.add_enabled(any, egui::Button::new("↑").frame(false)).on_hover_text("Previous match (Shift+Enter)").clicked() {
+                if ui.add_enabled(any, egui::Button::new("↑").frame(false)).on_hover_text(tr("Previous match (Shift+Enter)")).clicked() {
                     step(bar, true, &mut goto);
                 }
-                if ui.add_enabled(any, egui::Button::new("↓").frame(false)).on_hover_text("Next match (Enter)").clicked() {
+                if ui.add_enabled(any, egui::Button::new("↓").frame(false)).on_hover_text(tr("Next match (Enter)")).clicked() {
                     step(bar, false, &mut goto);
                 }
                 if ui
-                    .link(RichText::new("Search whole project").font(ui_small()).color(ACCENT()))
-                    .on_hover_text("Look for this in every document, notes and the database")
+                    .link(RichText::new(tr("Search whole project")).font(ui_small()).color(ACCENT()))
+                    .on_hover_text(tr("Look for this in every document, notes and the database"))
                     .clicked()
                 {
                     whole_project = true;
                 }
-                if ui.add(egui::Button::new("×").frame(false)).on_hover_text("Close (Esc)").clicked() {
+                if ui.add(egui::Button::new("×").frame(false)).on_hover_text(tr("Close (Esc)")).clicked() {
                     close = true;
                 }
             });
@@ -163,7 +164,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                     let replace = ui.add(
                         TextEdit::singleline(&mut bar.replacement)
                             .id(egui::Id::unique(REPLACE_ID))
-                            .hint_text("Replace")
+                            .hint_text(tr("Replace"))
                             .font(ui_body())
                             .desired_width(220.0),
                     );
@@ -172,10 +173,10 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
                         replace.request_focus();
                     }
                     let any = !bar.matches.is_empty();
-                    if ui.add_enabled(any, egui::Button::new("Replace")).on_hover_text("Replace this match and move to the next").clicked() {
+                    if ui.add_enabled(any, egui::Button::new(tr("Replace"))).on_hover_text(tr("Replace this match and move to the next")).clicked() {
                         replace_one = true;
                     }
-                    if ui.add_enabled(any, egui::Button::new("Replace all")).on_hover_text("Replace every match in this document (a snapshot is saved first)").clicked() {
+                    if ui.add_enabled(any, egui::Button::new(tr("Replace all"))).on_hover_text(tr("Replace every match in this document (a snapshot is saved first)")).clicked() {
                         replace_all = true;
                     }
                 });
@@ -218,7 +219,7 @@ pub fn show(app: &mut PortmanteauApp, ui: &mut egui::Ui, doc_id: &str) {
         }
         let response = app.ws.execute("search.replace", payload);
         if replace_all {
-            app.toast(if response.ok { "Replaced" } else { "Nothing replaced" }, response.message, if response.ok { ToastKind::Ok } else { ToastKind::Error });
+            app.toast(if response.ok { "Replaced" } else { tr("Nothing replaced") }, response.message, if response.ok { ToastKind::Ok } else { ToastKind::Error });
         }
         // After replacing one, the next match slides into this one's place.
         app.find_bar.seen = None;
